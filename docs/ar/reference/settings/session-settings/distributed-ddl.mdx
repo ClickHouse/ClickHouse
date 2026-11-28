@@ -12,19 +12,29 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد تم إنشاؤها تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="distributed_ddl_entry_format_version">
-  ## distributed_ddl_entry_format_version
-</div>
+## distributed_ddl_entry_format_version {#distributed_ddl_entry_format_version}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
-إصدار التوافق لاستعلامات DDL الموزعة (ON CLUSTER)
+إصدار التوافق لاستعلامات DDL الموزّع (ON CLUSTER). استخدم قيمة أقل لتظل الخوادم الأقدم في
+العنقود قادرةً على تنفيذ هذه الاستعلامات.
 
-القيمة الافتراضية في Cloud: `6`.
+لا تنفّذ الخوادم الإدخالات ذات الإصدارين `1` و`2`. وتكتب الخوادم الأقدم هذين الإصدارين عند ضبط الإعداد على القيم `1` و`2`
+و`3`، لذا اضبط هذا الإعداد قبل الترقية على `4` على الأقل في جميع الخوادم، وانتظر حتى تكتمل معالجة قائمة انتظار DDL
+الموزّع.
 
-<div id="distributed_ddl_output_mode">
-  ## distributed_ddl_output_mode
-</div>
+القيم الممكنة:
+
+* `3` — مماثلة لـ `4`. تُكتب على أنها `4`، لأن الخوادم الأقدم ترفض الإدخالات ذات الإصدار `3`.
+* `4` — يتضمن الإدخال الإعدادات التي تغيّرت في الـ session وسياق التتبع في OpenTelemetry، وتُوحَّد صيغة استعلامات `CREATE` على المُبادِر.
+* `5` — يحتفظ أيضًا بقيمة `initial_query_id` الخاصة بالاستعلام.
+* `6` — يتضمن أيضًا ما إذا كان الاستعلام جزءًا من عملية `BACKUP` أو `RESTORE`.
+* `7` — يتضمن أيضًا معرّف UUID للجدول الأصل، الذي تستخدمه قاعدة بيانات `Replicated` لتنفيذ الاستعلام فقط إذا كان الجدول موجودًا.
+* `8` — يتضمن أيضًا المستخدم وأدوار المُبادِر، اللذين تستخدمهما المضيفات مع إعداد الخادم `distributed_ddl_use_initial_user_and_roles`.
+
+القيمة الافتراضية في السحابة: `6`.
+
+## distributed_ddl_output_mode {#distributed_ddl_output_mode}
 
 <SettingsInfoBlock type="DistributedDDLOutputMode" default_value="throw" />
 
@@ -42,9 +52,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 Cloud default value: `none_only_active`.
 
-<div id="distributed_ddl_task_timeout">
-  ## distributed_ddl_task_timeout
-</div>
+## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
 
 <SettingsInfoBlock type="Int64" default_value="180" />
 

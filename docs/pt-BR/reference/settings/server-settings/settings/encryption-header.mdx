@@ -14,13 +14,13 @@ Essas configurações configuram o servidor ClickHouse e são geradas automatica
 
 ## encryption_header_cache_policy {#encryption_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Política de evicção do cache de cabeçalhos de criptografia usado pelo caminho de leitura do ReaderExecutor. Valores possíveis: `LRU`, `SLRU`, `SIEVE`. Consulte [`encryption_header_cache_size`](/pt-BR/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size) para a capacidade do cache e [`encryption_header_cache_size_ratio`](/pt-BR/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio) para o tamanho da fila protegida na política SLRU.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Política de evicção do cache de cabeçalhos de criptografia. Valores possíveis: `LRU`, `SLRU`, `SIEVE`. Consulte [`encryption_header_cache_size`](/pt-BR/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size) para a capacidade do cache e [`encryption_header_cache_size_ratio`](/pt-BR/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio) para o tamanho da fila protegida na política SLRU.
 
 ## encryption_header_cache_size {#encryption_header_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="52428800" changeable_without_restart="Yes" />
 
-Tamanho máximo do cache de cabeçalhos de criptografia lidos de arquivos criptografados. Usado apenas pelo caminho de leitura experimental do ReaderExecutor.
+Tamanho máximo do cache de cabeçalhos de criptografia lidos de arquivos criptografados em discos com caminhos de blob aleatórios, como discos `s3`. O cache evita que o cabeçalho de um arquivo seja lido novamente do armazenamento de objetos.
 
 <Note>
   Essa configuração pode ser modificada em tempo de execução e terá efeito imediato.

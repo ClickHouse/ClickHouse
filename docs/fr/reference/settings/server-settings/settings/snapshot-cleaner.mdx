@@ -12,17 +12,19 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="snapshot_cleaner_period">
-  ## snapshot_cleaner_period
-</div>
+## snapshot_cleaner_max_replicas {#snapshot_cleaner_max_replicas}
 
-<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />
+<SettingsInfoBlock type="UInt64" default_value="3" changeable_without_restart="No" />
 
-Période au bout de laquelle les parts de snapshot de SharedMergeTree sont complètement supprimées. Disponible uniquement dans ClickHouse Cloud
+Nombre maximal de répliques qui exécutent le composant de nettoyage des snapshots pour chaque table du registre de snapshots. Chaque réplique exécutant un composant de nettoyage le signale au moyen de l&#39;option de réplique `snapshot_cleaner_enabled` ; les répliques classent celles qui se signalent selon un hachage de rendez-vous (rendezvous hash) de la table et du nom de la réplique, et une réplique ne traite une table que si elle figure parmi les premières entrées. Le nettoyage des différentes tables est ainsi réparti sur l&#39;ensemble du parc, tout en limitant le travail effectué en double. Les répliques dont le composant de nettoyage est désactivé (`snapshot_cleaner_period = 0`) ne se signalent jamais et ne sont jamais élues. `0` signifie aucune limite : chaque réplique traite chaque table. Disponible uniquement dans ClickHouse Cloud
 
-<div id="snapshot_cleaner_pool_size">
-  ## snapshot_cleaner_pool_size
-</div>
+## snapshot_cleaner_period {#snapshot_cleaner_period}
+
+<SettingsInfoBlock type="UInt64" default_value="3600" changeable_without_restart="No" />
+
+Période, en secondes, au bout de laquelle les parts de snapshot de SharedMergeTree sont complètement supprimées. Disponible uniquement dans ClickHouse Cloud
+
+## snapshot_cleaner_pool_size {#snapshot_cleaner_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="128" changeable_without_restart="No" />
 

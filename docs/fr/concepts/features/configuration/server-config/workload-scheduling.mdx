@@ -403,6 +403,14 @@ Le paramètre de workload `max_waiting_queries` limite le nombre de requêtes en
   Les requêtes bloquées attendent indéfiniment et n’apparaissent pas dans `SHOW PROCESSLIST` tant que toutes les contraintes ne sont pas satisfaites.
 </Note>
 
+## Limites à l’échelle du serveur {#server_wide_limits}
+
+Les paramètres du serveur `workloads_respect_server_cpu_limit` et `workloads_respect_server_memory_limit` appliquent, via l’ordonnanceur de charge de travail, les limites globales du serveur `concurrent_threads_soft_limit_num` et `max_server_memory_usage`. Ils créent les ressources `__server_cpu__` (`MASTER THREAD, WORKER THREAD`) et `__server_memory__` (`MEMORY RESERVATION`), sauf si une ressource est déjà définie pour le même rôle, et définissent `max_concurrent_threads` et `max_memory` sur la charge de travail racine (celle dont le nom est vide), de sorte que toutes les charges de travail partagent un budget commun.
+
+<Note>
+  Activez `implicit_default_workload` conjointement à ces paramètres, ou définissez une charge de travail `default`. Seules les requêtes classées dans une charge de travail sont soumises à ces budgets. En l’absence de charge de travail `default`, les requêtes utilisant la valeur par défaut du paramètre `workload`, ainsi que les fusions et mutations de la charge de travail par défaut, ne sont soumises à aucune limite de CPU, car le contrôle de concurrence intégré ne s’applique plus dès lors que le CPU est planifié par l’ordonnanceur de charge de travail. Les fusions et mutations en arrière-plan ne réservent pas de mémoire auprès des charges de travail ; leur mémoire n’est donc pas comptabilisée dans le budget mémoire.
+</Note>
+
 ## Stockage des charges de travail et des ressources {#workload_entity_storage}
 
 Les définitions de toutes les charges de travail et de toutes les ressources, sous la forme de requêtes `CREATE WORKLOAD` et `CREATE RESOURCE`, sont stockées de manière persistante soit sur le disque dans `workload_path`, soit dans ZooKeeper dans `workload_zookeeper_path`. Le stockage ZooKeeper est recommandé pour garantir la cohérence entre les nœuds. Sinon, la clause `ON CLUSTER` peut être utilisée avec le stockage sur disque.
@@ -427,7 +435,7 @@ En plus des définitions basées sur SQL, les charges de travail et les ressourc
 </clickhouse>
 ```
 
-La configuration utilise la même syntaxe SQL que les instructions `CREATE WORKLOAD` et `CREATE RESOURCE`. Toutes les requêtes doivent être valides.
+La configuration utilise la même syntaxe SQL que les instructions `CREATE WORKLOAD` et `CREATE RESOURCE`. Toutes les requêtes doivent être valides. Une charge de travail définie dans la configuration ne peut avoir comme charge de travail parent et comme ressources `FOR` que des éléments également définis dans la configuration. Les charges de travail SQL-defined peuvent être enfants de charges de travail définies par la configuration. Ne supprimez pas une charge de travail ou une ressource de la configuration tant que des charges de travail SQL-defined y font référence : le serveur ne pourrait pas charger ces dernières.
 
 ### Recommandations d’utilisation {#config_based_workloads_usage_recommendations}
 
@@ -537,15 +545,17 @@ Le paramètre de restauration `create_workloads_and_resources` détermine la fa�
 
 ## Voir aussi {#see-also}
 
+* [CREATE WORKLOAD](/fr/reference/statements/create/workload)
+* [CREATE RESOURCE](/fr/reference/statements/create/resource)
 * [system.scheduler](/fr/reference/system-tables/scheduler)
 * [system.workloads](/fr/reference/system-tables/workloads)
 * [system.resources](/fr/reference/system-tables/resources)
 * [merge&#95;workload](/fr/reference/settings/merge-tree-settings/merge#merge_workload) paramètre de MergeTree
-* [merge&#95;workload](/fr/reference/settings/server-settings/settings/merge#merge_workload) paramètre global du serveur
+* [merge&#95;workload](/fr/reference/settings/server-settings/settings/merge#merge_workload) paramètre global du Serveur
 * [mutation&#95;workload](/fr/reference/settings/merge-tree-settings/other#mutation_workload) paramètre de MergeTree
-* [mutation&#95;workload](/fr/reference/settings/server-settings/settings/other#mutation_workload) paramètre global du serveur
-* [workload&#95;path](/fr/reference/settings/server-settings/settings/workload#workload_path) paramètre global du serveur
-* [workload&#95;zookeeper&#95;path](/fr/reference/settings/server-settings/settings/workload#workload_zookeeper_path) paramètre global du serveur
-* [cpu&#95;slot&#95;preemption](/fr/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption) paramètre global du serveur
-* [cpu&#95;slot&#95;quantum&#95;ns](/fr/reference/settings/server-settings/settings/cpu-slot#cpu_slot_quantum_ns) paramètre global du serveur
-* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/fr/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption_timeout_ms) paramètre global du serveur
+* [mutation&#95;workload](/fr/reference/settings/server-settings/settings/other#mutation_workload) paramètre global du Serveur
+* [workload&#95;path](/fr/reference/settings/server-settings/settings/workload#workload_path) paramètre global du Serveur
+* [workload&#95;zookeeper&#95;path](/fr/reference/settings/server-settings/settings/workload#workload_zookeeper_path) paramètre global du Serveur
+* [cpu&#95;slot&#95;preemption](/fr/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption) paramètre global du Serveur
+* [cpu&#95;slot&#95;quantum&#95;ns](/fr/reference/settings/server-settings/settings/cpu-slot#cpu_slot_quantum_ns) paramètre global du Serveur
+* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/fr/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption_timeout_ms) paramètre global du Serveur

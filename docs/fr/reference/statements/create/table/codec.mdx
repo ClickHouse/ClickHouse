@@ -195,18 +195,19 @@ ENGINE = MergeTree()
 
 <ExperimentalBadge />
 
-`Quantized(method, dimensions[, ...])` — Codec spécialisé prenant en charge la recherche vectorielle approximative sur des colonnes de type `Array(Float32)`, `Array(Float64)` ou `Array(BFloat16)`.
+`Quantized(method, dimensions[, ...])` — Codec spécialisé prenant en charge la recherche vectorielle approximative sur des colonnes de type `Array(Float32)`, `Array(Float64)`, `Array(BFloat16)`, `Array(Int8)` ou `Array(UInt8)`.
 Il stocke les vecteurs d’origine en précision complète, ainsi qu’un *code quantifié* compact pour chaque vecteur.
 Sur les tables de la famille `MergeTree`, les requêtes de recherche vectorielle utilisant le paramètre [`vector_search_use_quantized_codes`](/fr/reference/settings/session-settings/vector-search#vector_search_use_quantized_codes) parcourent les codes quantifiés afin d’établir une liste restreinte, puis réévaluent les résultats par rapport aux vecteurs en précision complète.
 Cette recherche en deux étapes lit moins d’octets qu’un parcours ordinaire en précision complète, au prix d’un rappel moindre.
-`dimensions` correspond à la longueur du vecteur ; les valeurs `method` prises en charge sont `rabitq`, `turboquant`, `int8`, `prefix` et `product`, chacune offrant un compromis différent entre taille, précision et fonction de distance.
+`dimensions` correspond à la longueur du vecteur ; les valeurs `method` prises en charge sont `rabitq`, `turboquant`, `int8`, `prefix` et `product`, chacune offrant un compromis différent entre taille, précision et fonction de distance.
+Pour les colonnes `Array(Int8)` et `Array(UInt8)`, la méthode `int8` et la méthode `prefix` avec le format `int8` ne sont pas prises en charge.
 
-Le codec peut uniquement être défini dans `CREATE TABLE` ; il ne peut pas être ajouté, supprimé ni modifié via `ALTER TABLE`, y compris avec `ADD COLUMN ... CODEC(Quantized(...))`.
+Le codec peut uniquement être défini dans `CREATE TABLE` ; il ne peut pas être ajouté, supprimé ni modifié via `ALTER TABLE`, y compris avec `ADD COLUMN ... CODEC(Quantized(...))`.
 Il ne peut pas être chaîné avec un autre codec, pas même un codec de chiffrement tel que `AES_128_GCM_SIV`.
 Pour plus de détails, consultez [Recherche vectorielle avec des codecs quantifiés](/fr/reference/engines/table-engines/mergetree-family/annindexes#vector-search-with-quantized-codecs).
 
 <Note>
-  Son utilisation nécessite `SET enable_quantized_codec = 1`.
+  Ce codec est expérimental et son utilisation nécessite `SET enable_quantized_codec = 1`.
 </Note>
 
 ```sql

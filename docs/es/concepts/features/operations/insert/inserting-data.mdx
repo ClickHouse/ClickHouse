@@ -95,13 +95,13 @@ En general, este mecanismo traslada la agrupación por lotes de datos del lado d
 </Note>
 
 <div id="use-official-clickhouse-clients">
-  ### Usa clientes oficiales de ClickHouse {#use-official-clickhouse-clients}
+  ### Usa Clientes oficiales de ClickHouse {#use-official-clickhouse-clients}
 </div>
 
-ClickHouse dispone de clientes para los lenguajes de programación más populares.
-Están optimizados para garantizar que las inserciones se realicen correctamente y admiten de forma nativa inserciones asíncronas, ya sea directamente, como por ejemplo en el [Go client](/es/integrations/language-clients/go/clickhouse-api#async-insert), o indirectamente, al habilitarlas en la configuración a nivel de consulta, usuario o conexión.
+ClickHouse dispone de Clientes para los lenguajes de programación más populares.
+Están optimizados para garantizar que las inserciones se realicen correctamente y admiten de forma nativa inserciones asíncronas, ya sea directamente, como por ejemplo en el [Go Client](/es/integrations/language-clients/go/clickhouse-api#async-insert), o indirectamente, al habilitarlas en la configuración a nivel de consulta, usuario o conexión.
 
-Consulta [Clientes e interfaces nativas](/es/concepts/features/interfaces/native-clients-interfaces-index) para ver la lista completa de clientes y drivers de ClickHouse disponibles.
+Consulta [Conectarse a ClickHouse](/es/concepts/features/connect-to-clickhouse) para ver la lista completa de Clientes y drivers de ClickHouse disponibles.
 
 <div id="prefer-the-native-format">
   ### Prefiera el formato nativo {#prefer-the-native-format}
@@ -127,10 +127,10 @@ A diferencia de muchas bases de datos tradicionales, ClickHouse admite una inter
 Puedes usarla tanto para insertar datos como para hacer consultas, con cualquiera de los formatos anteriores.
 Esto suele ser preferible al protocolo nativo de ClickHouse, ya que permite redirigir el tráfico fácilmente mediante balanceadores de carga.
 Esperamos pequeñas diferencias en el rendimiento de inserción con el protocolo nativo, que tiene algo menos de sobrecarga.
-Los clientes existentes usan uno u otro protocolo (y en algunos casos ambos; por ejemplo, el Go client).
+Los Clientes existentes usan uno u otro protocolo (y en algunos casos ambos; por ejemplo, el Go Client).
 El protocolo nativo sí permite seguir fácilmente el progreso de la consulta.
 
-Consulta [Interfaz HTTP](/es/concepts/features/interfaces/http) para obtener más información.
+Consulta [Interfaz HTTP](/es/concepts/features/connect-to-clickhouse/protocols/http) para obtener más información.
 
 <div id="basic-example">
   ## Ejemplo básico {#basic-example}
@@ -190,9 +190,9 @@ Para cargar datos desde Postgres, puede usar:
 * `clickhouse-server` está en ejecución
 * Tienes acceso a una terminal con `wget`, `zcat` y `curl`
 
-En este ejemplo verás cómo insertar un archivo CSV en ClickHouse desde la línea de comandos con `clickhouse-client` en modo lote. Para obtener más información y ver más ejemplos de inserción de datos desde la línea de comandos con `clickhouse-client` en modo lote, consulta [&quot;Batch mode&quot;](/es/concepts/features/interfaces/client#batch-mode).
+En este ejemplo verás cómo insertar un archivo CSV en ClickHouse desde la línea de comandos con `clickhouse-client` en modo por lotes. Para obtener más información y ver más ejemplos de inserción de datos desde la línea de comandos con `clickhouse-client` en modo por lotes, consulta [&quot;Modo por lotes&quot;](/es/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client#batch-mode).
 
-Usaremos el [Hacker News dataset](/es/get-started/sample-datasets/hacker-news) en este ejemplo, que contiene 28 millones de filas de datos de Hacker News.
+Usaremos el [conjunto de datos de Hacker News](/es/get-started/sample-datasets/hacker-news) en este ejemplo, que contiene 28 millones de filas de datos de Hacker News.
 
 <Steps>
   <Step title="Descargar el CSV" id="download-csv">

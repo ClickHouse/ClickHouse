@@ -21,7 +21,7 @@ integration:
 
 ### 分区键列 {#key-mysql-snapshot}
 
-启用该功能标志后，你应该会在 ClickPipe 表选择器中看到如下设置 (无论是在创建还是编辑 ClickPipe 时) ：
+你可以在 ClickPipe 表选择器中看到如下设置 (无论是在创建还是编辑 ClickPipe 时) ：
 
 <div className="ch-image-md">
   <Frame>
@@ -61,17 +61,10 @@ MySQL ClickPipe 会使用源表中的某一列对源表进行逻辑分区。该�
   #### 并行快照时的表数量 {#tables-parallel-mysql-snapshot}
 </div>
 
-这项设置其实与并行快照本身并没有直接关系，而是用于控制在初始加载期间并行处理的表数量。默认值为 1。请注意，这一并行度是在分区并行度之外叠加的，因此如果你有 4 个分区和 2 个表，ClickPipe 将并行读取 8 个分区。
+这项设置其实与并行快照本身并没有直接关系，而是用于控制在初始加载期间并行处理的表数量。默认值为 1。请注意，这一并行度是在分区并行度之外叠加的，因此如果初始加载并行度为 4 且你有 2 个表，ClickPipe 将并行读取 8 个分区。
 
 <div id="monitoring-parallel-mysql-snapshot">
   ### 在 MySQL 中监控并行快照 {#monitoring-parallel-mysql-snapshot}
 </div>
 
-你可以在 MySQL 中运行 **SHOW processlist**，查看并行快照的执行情况。ClickPipe 会与源数据库建立多个连接，每个连接读取源表的不同分区。如果你看到带有不同范围的 **SELECT** 查询，就说明 ClickPipe 正在读取源表。你还可以在这里看到 COUNT(*) 和分区查询。
-
-<div id="limitations-parallel-mysql-snapshot">
-  ### 限制 {#limitations-parallel-mysql-snapshot}
-</div>
-
-* 管道创建后，快照参数无法再编辑。如需更改，必须创建新的 ClickPipe。
-* 向现有 ClickPipe 添加表时，不能更改快照参数。新表会沿用现有参数。
+你可以在 MySQL 中运行 **SHOW processlist**，查看并行快照的执行情况。ClickPipe 会与源数据库建立多个连接，每个连接读取源表的不同分区。如果你看到带有不同范围的 **SELECT** 查询，就说明 ClickPipe 正在读取源表。

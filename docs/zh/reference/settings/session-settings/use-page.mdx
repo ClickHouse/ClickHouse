@@ -31,11 +31,11 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 ## use_page_cache_for_object_storage {#use_page_cache_for_object_storage}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "新增设置：对对象存储表函数使用用户态页缓存"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "新增设置：为对象存储表函数使用用户态页缓存"}]}, {"id": "row-2","items": [{"label": "26.12"},{"label": "1"},{"label": "如果服务器上已配置页缓存，则默认对对象存储表引擎和表函数使用用户态页缓存。"}]}]} />
 
-在从对象存储表函数 (s3、azure、hdfs) 和表引擎 (S3、Azure、HDFS) 读取数据时，使用用户态页缓存。
+从对象存储表函数 (s3、azure、hdfs、Iceberg、Delta Lake 等) 和表引擎 (S3、Azure、HDFS、Iceberg、Delta Lake 等) 读取数据时，使用用户态页缓存。仅当服务器上已配置用户态页缓存 (`page_cache_max_size`) 时，此设置才会生效；并且仅适用于具有强 ETag 的对象，或具有取自表记录的不可变身份的对象 (Iceberg 和 Delta Lake 的数据文件) 。用户态页缓存不会与文件系统缓存同时使用。若与分布式缓存配合使用，则还需启用 `use_page_cache_with_distributed_cache`。
 
 ## use_page_cache_lookahead_for_text_index {#use_page_cache_lookahead_for_text_index}
 

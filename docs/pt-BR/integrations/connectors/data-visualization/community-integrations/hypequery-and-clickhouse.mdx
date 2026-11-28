@@ -1,0 +1,230 @@
+---
+sidebarTitle: 'hypequery'
+keywords: ['clickhouse', 'hypequery', 'connect', 'integrate', 'embedded', 'analytics', 'typescript', 'python', 'semantic', 'semantic layer', 'mcp', 'react']
+description: 'O hypequery é uma camada semântica de código aberto para analytics embutido no ClickHouse. Defina métricas uma única vez em TypeScript ou Python e disponibilize-as para dashboards, APIs e agentes de IA a partir do seu próprio backend.'
+title: 'Conectando o hypequery ao ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[hypequery](https://hypequery.com) é uma camada semântica de código aberto, sob licença Apache 2.0, para equipes que desenvolvem analytics embutido e agentes de IA com o ClickHouse. Você define datasets em TypeScript ou Python, com suas dimensões, medidas, métricas, relacionamentos e regras de tenant, e depois os consulta pelo nome. As mesmas definições podem ser expostas como endpoints HTTP autenticados com OpenAPI, hooks React tipados e ferramentas do Model Context Protocol (MCP) para agentes de IA. O SDK TypeScript também inclui um construtor de consultas type-safe para o ClickHouse.
+
+O hypequery não é uma ferramenta de BI hospedada nem um servidor de camada semântica à parte. É um conjunto de bibliotecas que você instala e implanta junto com o seu backend, de modo que suas credenciais do ClickHouse permanecem nos seus servidores. Ele se conecta ao ClickHouse pela interface HTTP, usando [`@clickhouse/client`](/pt-BR/integrations/language-clients/js/index) em TypeScript e [`clickhouse-connect`](/pt-BR/integrations/language-clients/python/index) em Python.
+
+## Pré-requisitos {#prerequisites}
+
+* Um serviço do ClickHouse, seja autogerenciado ou no [ClickHouse Cloud](/pt-BR/get-started/setup/cloud).
+* Node.js, para o SDK de TypeScript, ou Python 3.11 ou superior, para o SDK de Python.
+
+<Steps>
+  <Step title="Reúna seus detalhes de conexão" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="Instale o hypequery" id="2-install-hypequery">
+    <Tabs>
+      <Tab title="TypeScript">
+        ```bash
+        npm install @hypequery/datasets @hypequery/clickhouse
+        npm install -D @hypequery/cli
+        ```
+      </Tab>
+
+      <Tab title="Python">
+        ```bash
+        pip install "hypequery[clickhouse]"
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Configure a conexão" id="3-configure-the-connection">
+    Adicione os detalhes de conexão da etapa 1 às variáveis de ambiente da sua aplicação. Cada SDK lê variáveis diferentes.
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```bash
+        CLICKHOUSE_URL=https://<your-service>.clickhouse.cloud:8443
+        CLICKHOUSE_DATABASE=analytics
+        CLICKHOUSE_USERNAME=<username>
+        CLICKHOUSE_PASSWORD=<password>
+        ```
+      </Tab>
+
+      <Tab title="Python">
+        ```bash
+        CLICKHOUSE_HOST=<your-service>.clickhouse.cloud
+        CLICKHOUSE_PORT=8443
+        CLICKHOUSE_SECURE=true
+        CLICKHOUSE_DATABASE=analytics
+        CLICKHOUSE_USERNAME=<username>
+        CLICKHOUSE_PASSWORD=<password>
+        ```
+
+        Defina `CLICKHOUSE_SECURE=true` para o ClickHouse Cloud e para qualquer outro serviço que use TLS.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Gere conjuntos de dados a partir do seu schema" id="4-generate-datasets">
+    A CLI se conecta ao ClickHouse, lê suas tabelas e gera uma definição de dataset para cada uma delas:
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```bash
+        npx hypequery generate:datasets
+        ```
+
+        Isso gera o arquivo `analytics/datasets.ts`.
+      </Tab>
+
+      <Tab title="Python">
+        ```bash
+        hypequery init
+        ```
+      </Tab>
+    </Tabs>
+
+    Revise as definições geradas e renomeie as dimensões e medidas para que reflitam a terminologia do seu produto. Um dataset refinado fica assim:
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```typescript
+        import { dataset, dimension, measure } from '@hypequery/datasets';
+
+        export const Orders = dataset('orders', {
+          source: 'orders',
+          tenantKey: 'tenant_id',
+          timeKey: 'created_at',
+          dimensions: {
+            country: dimension.string(),
+            status: dimension.string(),
+            createdAt: dimension.timestamp({ column: 'created_at' }),
+          },
+          measures: {
+            revenue: measure.sum('amount'),
+            orderCount: measure.count('id'),
+          },
+        });
+        ```
+      </Tab>
+
+      <Tab title="Python">
+        ```python
+        from hypequery.datasets import dataset, dimension, measure
+
+        orders = dataset(
+            "orders",
+            source="orders",
+            tenant_key="tenant_id",
+            time_key="created_at",
+            dimensions={
+                "country": dimension.string(),
+                "status": dimension.string(),
+                "createdAt": dimension.timestamp(column="created_at"),
+            },
+            measures={
+                "revenue": measure.sum("amount"),
+                "orderCount": measure.count("id"),
+            },
+        )
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Consultar um conjunto de dados" id="5-query-a-dataset">
+    Selecione dimensões e medidas pelo nome. O hypequery valida a requisição, gera SQL parametrizado e o executa no ClickHouse. Como o dataset declara uma `tenantKey`, toda consulta precisa informar o tenant do chamador, e o hypequery adiciona o filtro `WHERE tenant_id = ...` correspondente. Consultas sem tenant são rejeitadas:
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```typescript
+        import { createQueryBuilder } from '@hypequery/clickhouse';
+        import { createDatasetClient, eq } from '@hypequery/datasets';
+        import { Orders } from './analytics/datasets';
+
+        const db = createQueryBuilder({
+          url: process.env.CLICKHOUSE_URL!,
+          username: process.env.CLICKHOUSE_USERNAME!,
+          password: process.env.CLICKHOUSE_PASSWORD!,
+          database: process.env.CLICKHOUSE_DATABASE!,
+        });
+
+        const analytics = createDatasetClient({ queryBuilder: db });
+
+        const result = await analytics.execute(Orders, {
+          dimensions: ['country'],
+          measures: ['revenue', 'orderCount'],
+          filters: [eq('status', 'completed')],
+          orderBy: [{ field: 'revenue', direction: 'desc' }],
+          limit: 10,
+        }, {
+          runtime: { tenant: 'org_123' },
+        });
+
+        console.log(result.data);
+        ```
+      </Tab>
+
+      <Tab title="Python">
+        ```python
+        from hypequery.datasets import (
+            DatasetQuery,
+            ExecutionContext,
+            create_dataset_client,
+            filter,
+            order,
+            tenant,
+        )
+        from hypequery.execution import ClickHouseConnection, create_clickhouse_executor
+
+        analytics = create_dataset_client(
+            executor=create_clickhouse_executor(ClickHouseConnection.from_env()),
+        )
+
+        result = analytics.execute(
+            orders,
+            DatasetQuery(
+                dimensions=("country",),
+                measures=("revenue", "orderCount"),
+                filters=(filter.eq("status", "completed"),),
+                order_by=(order.desc("revenue"),),
+                limit=10,
+            ),
+            context=ExecutionContext(tenant=tenant("org_123")),
+        )
+
+        print(result.data)
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Disponibilize datasets para sua aplicação e seus agentes {#serve-datasets}
+
+Depois que um dataset funcionar no próprio processo, você pode expô-lo sem escrever mais SQL:
+
+* **Endpoints HTTP**: `@hypequery/serve` em TypeScript, ou `hypequery.serve` em Python, transforma cada dataset em um endpoint autenticado, com validação de entrada e um documento OpenAPI. As APIs em Python podem ser montadas em FastAPI, Django ou Flask. Consulte [Serve](https://hypequery.com/docs/datasets/serve-integration) e [Python serving](https://hypequery.com/docs/python/serving).
+* **Hooks do React**: `@hypequery/react` gera hooks tipados do TanStack Query para esses endpoints, de modo que o código executado no navegador nunca tenha acesso às credenciais do ClickHouse. Consulte [React](https://hypequery.com/docs/react/getting-started).
+* **Ferramentas MCP para agentes de IA**: `npx hypequery mcp` inicia um servidor MCP que permite que agentes descubram seus datasets e consultem métricas nomeadas, em vez de executar SQL bruto. Consulte [MCP](https://hypequery.com/docs/mcp/overview).
+
+Todas essas interfaces passam pela mesma definição de dataset, de modo que cada uma aplica o mesmo escopo de tenant e retorna os mesmos números.
+
+## Execução sem um servidor do ClickHouse {#run-without-a-server}
+
+Para desenvolvimento local e CI, o hypequery pode executar os mesmos datasets no [chDB](/pt-BR/chdb/index), o mecanismo do ClickHouse que roda no próprio processo, sem servidor e sem credenciais. Consulte [chDB em TypeScript](https://hypequery.com/docs/chdb) e [chDB em Python](https://hypequery.com/docs/python/datasets/chdb).
+
+## Saiba mais {#learn-more}
+
+* [Início rápido com TypeScript](https://hypequery.com/docs/quick-start)
+* [SDK para Python](https://hypequery.com/docs/python)
+* [Exemplos](https://github.com/hypequery/hypequery-examples)
+* [hypequery no GitHub](https://github.com/hypequery/hypequery)

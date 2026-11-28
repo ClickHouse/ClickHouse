@@ -228,12 +228,12 @@ GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hy
   ## 処理 - フィルタリング、変換、エンリッチ {#processing-filtering-transforming-enriching}
 </div>
 
-ユーザーは、インジェスト時にイベントメッセージのフィルタリング、変換、エンリッチを行いたくなるのが一般的です。ClickStack コネクタの構成は変更できないため、追加のイベントフィルタリングや処理が必要な場合は、次のいずれかを推奨します。
+ユーザーは、インジェスト時にイベントメッセージのフィルタリング、変換、エンリッチを行いたくなるのが一般的です。[カスタム設定](#extending-collector-config)を使用すると、ClickStack collector にプロセッサやパイプラインを追加できます。この処理を ClickStack collector の外部で行う場合は、次のいずれかを推奨します。
 
 * フィルタリングや処理を行う独自の OTel collector をデプロイし、イベントを OTLP 経由で ClickStack collector に送信して ClickHouse に取り込む。
 * 独自の OTel collector をデプロイし、ClickHouse exporter を使用してイベントを ClickHouse に直接送信する。
 
-OTel collector を使って処理を行う場合は、変換はゲートウェイインスタンスで実施し、エージェントインスタンスでの処理は最小限に抑えることを推奨します。これにより、サーバー上で動作するエッジ側エージェントに必要なリソースをできるだけ小さくできます。一般的に、ユーザーがエージェントで行うのは、フィルタリング (不要なネットワーク使用を最小限に抑えるため) 、timestamp の設定 (operator 経由) 、およびコンテキストを必要とするエンリッチのみです。たとえば、ゲートウェイインスタンスが別の Kubernetes クラスターにある場合、k8s のエンリッチはエージェントで行う必要があります。
+OTel collector を使って処理を行う場合は、変換はゲートウェイインスタンスで実施し、エージェントインスタンスでの処理は最小限に抑えることを推奨します。これにより、サーバー上で動作するエッジ側エージェントに必要なリソースをできるだけ小さくできます。一般的に、ユーザーがエージェントで行うのは、フィルタリング (不要なネットワーク使用を最小限に抑えるため) 、タイムスタンプ の設定 (演算子 経由) 、およびコンテキストを必要とするエンリッチのみです。たとえば、ゲートウェイインスタンスが別の Kubernetes クラスターにある場合、k8s のエンリッチはエージェントで行う必要があります。
 
 OpenTelemetry は、活用できる次の処理およびフィルタリング機能をサポートしています。
 
@@ -241,15 +241,15 @@ OpenTelemetry は、活用できる次の処理およびフィルタリング機
 
 * [memory&#95;limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md) は、collector でメモリ不足が発生するのを防ぐために使用します。推奨事項については、[Estimating Resources](#estimating-resources) を参照してください。
 
-* コンテキストに基づくエンリッチを行うプロセッサ。たとえば、[Kubernetes Attributes Processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor) を使うと、spans、メトリクス、logs の resource attributes を k8s メタデータで自動的に設定できます。たとえば、イベントに送信元ポッドの id を付与できます。
+* コンテキストに基づくエンリッチを行うプロセッサ。たとえば、[Kubernetes Attributes Processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor) を使うと、spans、メトリクス、ログ の resource attributes を k8s メタデータで自動的に設定できます。たとえば、イベントに送信元ポッドの id を付与できます。
 
 * traces に必要な場合の [Tail or head sampling](https://opentelemetry.io/docs/concepts/sampling/)。
 
-* [Basic filtering](https://opentelemetry.io/docs/collector/transforming-telemetry/) - operator 経由で実施できない場合に、不要なイベントを破棄します (以下を参照) 。
+* [Basic filtering](https://opentelemetry.io/docs/collector/transforming-telemetry/) - 演算子 経由で実施できない場合に、不要なイベントを破棄します (以下を参照) 。
 
-* [Batching](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - ClickHouse を扱う際には、データをバッチで送信するために不可欠です。[「Optimizing inserts」](#optimizing-inserts) を参照してください。
+* [バッチ処理](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - ClickHouse を扱う際には、データをバッチで送信するために不可欠です。[「Optimizing inserts」](#optimizing-inserts) を参照してください。
 
-* **演算子** - [Operators](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) は、receiver で利用できる最も基本的な処理単位です。基本的なパースがサポートされており、Severity や Timestamp などのフィールドを設定できます。ここでは JSON や regex のパースに加えて、イベントのフィルタリングや基本的な変換もサポートされています。イベントのフィルタリングはここで行うことを推奨します。
+* **演算子** - [演算子](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) は、receiver で利用できる最も基本的な処理単位です。基本的なパースがサポートされており、Severity や タイムスタンプ などのフィールドを設定できます。ここでは JSON や regex のパースに加えて、イベントのフィルタリングや基本的な変換もサポートされています。イベントのフィルタリングはここで行うことを推奨します。
 
 演算子や [transform processors](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md) を使って過度なイベント処理を行うのは避けることを推奨します。これらは、特に JSON パースで、かなりのメモリおよび CPU オーバーヘッドを招く可能性があります。いくつかの例外はあるものの、すべての処理は ClickHouse で insert time に materialized view とカラムを使って実行できます。例外となるのは、k8s メタデータの追加のようなコンテキストを認識したエンリッチです。詳細については、[Extracting structure with SQL](/ja/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql) を参照してください。
 

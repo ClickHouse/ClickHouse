@@ -156,11 +156,11 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
 ### وجهة ClickHouse الأصلية {#native-clickhouse-destination}
 
-ينطبق هذا الخيار على **ClickStack Open Source وClickHouse Observability المُدار ذاتيًا فقط**. أما في حالة ClickHouse Observability المُدار بالكامل، فاستخدم نقطة نهاية OTLP المُدارة الموضّحة في [دليل إمكانية المراقبة](/ar/clickstack/observability/integration-partners/odigos#add-destination-ui).
+يتناول هذا القسم وجهة ClickHouse الأصلية في **ClickStack Open Source**. أما بالنسبة إلى ClickHouse Observability، فاتبع [دليل التكامل مع Odigos](/ar/clickstack/observability/integration-partners/odigos) المخصّص لذلك.
 
 عندما يمكن الوصول إلى ClickHouse مباشرةً من العنقود لديك، يمكنك استخدام وجهة **ClickHouse** الأصلية في Odigos بدلًا من OTLP HTTP. اضبط نقطة النهاية الخاصة بـ ClickHouse واسم قاعدة البيانات وخيارات المخطط في واجهة المستخدم أو باستخدام ملف manifest — راجع [وجهة ClickHouse في Odigos](https://docs.odigos.io/backends/clickhouse).
 
-* **مخطط الإنتاج**: عيّن `CLICKHOUSE_CREATE_SCHEME` إلى `false` وطبّق تعليمات DDL الخاصة بك.
+* **مخطط بيئة الإنتاج**: عيّن `CLICKHOUSE_CREATE_SCHEME` إلى `false` وطبّق تعليمات DDL الخاصة بك.
 * **TLS / المصادقة**: استخدم `CLICKHOUSE_TLS_ENABLED` و`CLICKHOUSE_USERNAME` وKubernetes Secret لكلمة المرور.
 
 ### إعداد الوجهات باستخدام ملفات manifest في Kubernetes {#destination-manifest}

@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualization', 'monitoring', 'observability']
 ---
 
+import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
 ClickHouse Observability 支持对事件进行可视化，并在 UI 中内置了图表功能。您可以将这些图表添加到仪表盘中，与其他用户共享。
 
 您可以基于链路追踪、指标、日志或任意用户自定义的宽事件 schema 创建可视化。
@@ -383,7 +385,7 @@ ClickHouse Observability 支持对事件进行可视化，并在 UI 中内置了
 
 ## 自定义过滤器和变量 {#custom-filters}
 
-除了所有仪表盘均可使用的[自由文本过滤器](#filter-dashboards)之外，已保存的仪表盘还支持自定义下拉过滤器，其选项来自对 ClickHouse 的查询结果。这类过滤器提供可复用的点选式筛选控件，仪表盘查看者无需手动编写表达式即可完成筛选。
+除了所有仪表盘均可使用的[自由文本过滤器](#filter-dashboards)之外，已保存的仪表盘还支持自定义过滤器和变量。它们提供可复用的点选式控件，仪表盘查看者无需手动编写表达式即可完成筛选。其值可以来自从某个 source 查询得到的列、手动编写的列表、SQL 查询、Prometheus 标签值，或自由选择的键值条件。变量还可以决定卡片查询哪个数据源或连接。完整列表请参阅[过滤器类型](#filter-types)。
 
 <div className="ch-image-lg">
   <Frame>
@@ -396,13 +398,13 @@ ClickHouse Observability 支持对事件进行可视化，并在 UI 中内置了
 * **广播** — 将所选值作为过滤条件应用于匹配的卡片。无需修改卡片来引用该过滤器。
 * **变量** — 以 `$variableName` 的形式将所选值提供给卡片查询，由各卡片自行决定在何处、以何种方式使用该值。
 
-过滤器必须至少启用其中一种方式。创建过滤器时，广播默认处于启用状态。
+过滤器支持其中哪种方式取决于其[类型](#filter-types)。**SQL expression values** 类型的过滤器必须至少启用其中一种方式，且默认启用广播。
 
 以下步骤演示如何为[“创建仪表盘”](#creating-dashboards)一节中创建的仪表盘添加过滤器。
 
 <Steps>
   <Step title="打开“编辑筛选器”对话框" id="open-edit-filters">
-    打开一个已保存的仪表盘，然后在工具栏中选择 **Edit 过滤器 and Variables**。
+    打开一个已保存的仪表盘，然后在工具栏中选择 **Edit filters and variables**。
 
     <div className="ch-image-lg">
       <Frame>
@@ -412,9 +414,9 @@ ClickHouse Observability 支持对事件进行可视化，并在 UI 中内置了
   </Step>
 
   <Step title="添加新筛选器" id="add-new-filter">
-    点击 **Add new 过滤器**。填写 **Display Name**，选择 **Data source**，并输入 **Filter expression** (一个 SQL 列或表达式，其不同值将用于填充下拉列表) ，完成过滤器配置。然后点击 **Save 过滤器**。
+    点击 **Add new filter**。选择一个 **Type** (本示例使用默认的 **SQL expression values**) ，然后填写 **Display name**，选择 **Data source**，并输入 **Filter expression** (一个 SQL 列或表达式，其不同值将用于填充下拉列表) ，完成过滤器配置。然后点击 **Save filter**。
 
-    例如，要为链路追踪数据添加服务过滤器，可选择 `Traces` 数据源，并将 `ServiceName` 用作过滤表达式。“Dropdown values 过滤器” 为可选项，用于限制下拉列表中显示的值。
+    例如，要为链路追踪数据添加服务过滤器，可选择 `Traces` 数据源，并将 `ServiceName` 用作过滤表达式。“Dropdown values filter” 为可选项，用于限制下拉列表中显示的值。
 
     <div className="ch-image-md">
       <Frame>
@@ -424,17 +426,17 @@ ClickHouse Observability 支持对事件进行可视化，并在 UI 中内置了
 
     在同一对话框中，还可以设置过滤器是否[广播](#broadcast-filters)其值，以及是否[作为变量使用](#dashboard-variables)，下文将分别介绍。
 
-    **过滤器 and Variables** 对话框会列出该仪表盘的所有已配置过滤器。您可以在此编辑或删除现有过滤器，也可以添加新的过滤器。
+    **Filters and Variables** 对话框会列出该仪表盘的所有已配置过滤器。您可以在此编辑或删除现有过滤器，也可以添加新的过滤器。
 
     <div className="ch-image-md">
       <Frame>
-        ![过滤器 and Variables 对话框，显示一个使用 Demo Traces 并广播到所有数据源的 Services 过滤器](/images/clickstack/observability-dashboard-saved-filters.png)
+        ![Filters and Variables 对话框，显示一个使用 Demo Traces 并广播到所有数据源的 Services 过滤器](/images/clickstack/observability-dashboard-saved-filters.png)
       </Frame>
     </div>
   </Step>
 
   <Step title="使用筛选器" id="use-filter">
-    关闭 **过滤器 and Variables** 对话框。新的下拉过滤器会显示在搜索栏下方。点击它查看可用值，选择其中一个值即可筛选仪表盘上的所有可视化。
+    关闭 **Filters and Variables** 对话框。新的下拉过滤器会显示在搜索栏下方。点击它查看可用值，选择其中一个值即可筛选仪表盘上的所有可视化。
 
     <div className="ch-image-lg">
       <Frame>
@@ -444,11 +446,11 @@ ClickHouse Observability 支持对事件进行可视化，并在 UI 中内置了
   </Step>
 
   <Step title="（可选）将筛选值保存为默认值" id="save-default-filters">
-    如需将当前筛选选择保存为仪表盘的默认设置，请从仪表盘菜单中选择 **Save Query &amp; 过滤器 as Default**。此后每次打开该仪表盘都会自动应用所选过滤器。如需重置，请从同一菜单中选择 **Remove Default Query &amp; 过滤器**。
+    如需将当前筛选选择保存为仪表盘的默认设置，请从仪表盘菜单中选择 **Save Query &amp; Filters as Default**。此后每次打开该仪表盘都会自动应用所选过滤器。如需重置，请从同一菜单中选择 **Remove Default Query &amp; Filters**。
 
     <div className="ch-image-lg">
       <Frame>
-        ![仪表盘菜单显示 Save Query & 过滤器 as Default，且已选择 accounting 服务](/images/clickstack/observability-dashboard-save-filter-values.png)
+        ![仪表盘菜单显示 Save Query & Filters as Default，且已选择 accounting 服务](/images/clickstack/observability-dashboard-save-filter-values.png)
       </Frame>
     </div>
   </Step>
@@ -458,15 +460,136 @@ ClickHouse Observability 支持对事件进行可视化，并在 UI 中内置了
   自定义下拉过滤器仅适用于已保存的仪表盘。有关该用法的实际示例，请参阅 [Kubernetes 仪表板](#kubernetes-dashboard)，其中内置了 Pod、部署、节点名称、命名空间和集群等下拉过滤器。
 </Note>
 
+### 过滤器类型 {#filter-types}
+
+过滤器对话框中的 **类型** 选择器决定过滤器的值从何而来，以及这些值如何传递到各个卡片。
+
+| 类型                                         | 值来源                                            | 广播      | 变量                                              |
+| ------------------------------------------ | ---------------------------------------------- | ------- | ----------------------------------------------- |
+| [SQL 表达式值](#sql-expression-values-filters) | 从某个 source 中查询出的表达式不同值                         | 可选，默认启用 | 可选                                              |
+| [静态值](#static-values-filters)              | 手动编写的列表                                        | 否       | 始终                                              |
+| [SQL 查询值](#sql-query-filters)              | SQL 查询结果的第一列                                   | 否       | 始终                                              |
+| [PromQL 标签值](#promql-label-filters)        | Prometheus 标签的值                                | 否       | 始终                                              |
+| [临时键和值](#adhoc-filters)                    | 基于一个或多个 source 的键和值构建的 `key operator value` 条件 | 始终      | 否                                               |
+| [数据源](#data-source-variables)              | 团队的数据源                                         | 否       | 始终，作为 [source 引用](#source-connection-variables) |
+| [连接](#connection-variables)                | 团队的 ClickHouse 连接                              | 否       | 始终，作为 [连接引用](#source-connection-variables)      |
+
+#### SQL 表达式值 {#sql-expression-values-filters}
+
+其下拉列表会列出所选**数据源**中**过滤表达式**的不同值，并可通过**下拉列表值过滤器**进一步缩小范围。对于指标数据源，还需选择**指标类型**。SQL 表达式值筛选器可以[广播](#broadcast-filters)其选中值，也可以[作为变量使用](#dashboard-variables)，或两者兼具。
+
+#### 静态值 {#static-values-filters}
+
+其下拉列表中的值由手动输入。在 **选项** 中逐个输入值，每输入一个值后按 Enter。每个筛选条件最多可包含 1000 个选项。
+
+静态值筛选条件始终作为变量使用，不会广播，因此内容块需要引用其变量才能使用它，例如 `$__filter(SeverityText, $severity)`。这适用于未存储在列中的值，或需要使用经过筛选的固定值列表的场景。
+
+#### SQL 查询值 {#sql-query-filters}
+
+其下拉列表会列出 ClickHouse SQL 查询返回的第一列，顺序与查询返回行的顺序一致，最多 10,000 个值。需配置以下各项：
+
+* **连接** — 运行该查询所用的 ClickHouse 连接，或一个[连接变量](#connection-variables)。
+* **Source** — 可选。同一连接上的某个 source，或一个[数据源变量](#data-source-variables)。选定 source 后，查询中可以使用 `$__sourceTable` 和 `$__filters`，后者会应用仪表盘中针对该 source 的广播筛选选项，方式与[原始 SQL 卡片](/zh/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro)相同。
+* **SQL 查询** — 查询本身。可以使用[时间宏](/zh/clickstack/observability/features/dashboards/sql-visualizations#time-filter-macros)，也可以引用仪表盘中的其他变量。编辑器会预览该查询在仪表盘当前时间范围内返回的值。
+
+例如，以下查询会列出在仪表盘时间范围内有事件记录的服务，并仅限于 `environment` 筛选器中所选的环境：
+
+```sql
+SELECT DISTINCT ServiceName
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ResourceAttributes['deployment.environment'], $environment)
+ORDER BY ServiceName
+```
+
+SQL 查询值过滤器始终作为变量使用，不会进行广播。
+
+#### PromQL 标签值 {#promql-label-filters}
+
+<PrivatePreviewBadge />
+
+此类筛选器的下拉列表会列出某个 Prometheus 标签的所有值。选择一个 PromQL **数据源**，然后输入 **Label**，下拉列表将由该标签的值填充，例如 `job`、`instance` 或 `__name__`。还可以选择填写 **Series matchers**，即一个 Prometheus 数据系列选择器 (例如 `up{job="api"}`) ，用于限定从哪些数据系列中读取这些值。Series matchers 中可以引用仪表盘中的其他变量。
+
+PromQL 标签值筛选器始终作为变量使用，不会进行广播。在 PromQL 卡片中，请在标签匹配器内引用它，例如 `rate(http_requests_total{job=~"$job"}[$__rate_interval])`。有关值的渲染方式，请参阅[引用变量](#referencing-variables)。
+
+#### 临时键和值 {#adhoc-filters}
+
+临时过滤器不提供单一的下拉列表，而是让查看者基于其数据源中的键构建一组 `key operator value` 条件：对于 SQL 数据源，键为列和 map 键；对于 Prometheus 数据源，键为标签。查看者输入时，系统会自动建议可用的键和值。需配置以下内容：
+
+* **来源类型** — SQL (日志、trace 或会话数据源) 或 Prometheus。
+* **数据源** — 过滤器从中获取建议键和值的数据源。
+* **键和值筛选条件** — 可选，仅适用于 SQL 数据源。一个 SQL 或 Lucene 条件，用于限定从哪些行中提取建议的键和值。可引用仪表盘中的其他变量。
+* **应用到的数据源** — 条件要广播到的数据源。留空则广播到所有使用该过滤器任一数据源的卡片。
+* **唯一名称** — 用于在[仪表盘 URL](/zh/clickstack/observability/url-parameters#dashboard-filter-values) 中标识该过滤器的条件。
+
+SQL 数据源上的条件支持以下运算符：`=`、`!=`、`=~` (正则表达式) 、`!~` (正则表达式) 、`LIKE`、`NOT LIKE`、`IN`。Prometheus 数据源上的条件支持 `=`、`!=`、`=~` (正则表达式) 、`!~` (正则表达式) 和 `IN`；`LIKE` 和 `NOT LIKE` 仅适用于 SQL。
+
+查看者还可以点击仪表盘上表格、时间序列或搜索卡片中的某个值来添加条件。
+
+临时条件始终会被广播，且不能作为变量引用。对应数据源上的图表构建器卡片和 PromQL 卡片会自动应用这些条件，原始 SQL 卡片则通过 [`$__filters` 宏](/zh/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro)应用它们。
+
+#### 数据源 {#data-source-variables}
+
+数据源变量可让查看者选择卡片查询的 source。设置下拉列表中可供选择的**数据源类型**，例如仅提供日志数据源；也可以将这些数据源限定在某个**连接**下，该连接本身也可以是连接变量。有关内容块和筛选条件如何使用此变量，请参阅[数据源和连接变量](#source-connection-variables)。
+
+#### 连接 {#connection-variables}
+
+连接变量可让查看者选择原始 SQL 卡片、SQL 查询值筛选条件以及数据源变量所使用的 ClickHouse 连接。除名称外，该变量没有其他设置。
+
+### 数据源和连接变量 {#source-connection-variables}
+
+数据源和连接变量代表的是 source 或连接 ID,而不是查询文本中的某个值。凡是支持此类变量的 source 或连接选择器,都会在 **Variables** 分组下列出仪表盘中的变量。选择其中一个变量后,会存储一个 `$name` 引用,该引用会解析为查看者当前所选的值。借助这一点,只需构建一个仪表盘,即可在多个环境的日志之间或多个 ClickHouse 集群之间来回切换。
+
+| 使用位置           | 支持数据源变量                         | 支持连接变量     |
+| -------------- | ------------------------------- | ---------- |
+| 图表构建器卡片        | Source                          | —          |
+| 原始 SQL 卡片      | Source                          | Connection |
+| PromQL 卡片      | Source                          | —          |
+| SQL 表达式值筛选条件   | Data source、Applies to sources  | —          |
+| PromQL 标签值筛选条件 | Data source                     | —          |
+| 临时筛选条件         | Data sources、Applies to sources | —          |
+| SQL 查询值筛选条件    | Source                          | Connection |
+| 数据源变量          | —                               | Connection |
+
+只有当数据源变量至少有一种 source 类型适用时,才会提供该变量。例如,PromQL 卡片只会提供允许 PromQL source 的数据源变量。
+
+数据源和连接变量始终为单选且必填,因为没有 source 或连接,卡片就无法执行查询。在选定值之前,引用该变量的卡片和筛选条件会一直处于等待状态。如需让整个仪表盘都等待,请启用 **Block every tile**。[仪表盘链接](/zh/clickstack/observability/url-parameters#dashboard-filter-values)既可以按 ID,也可以按名称选择 source 或连接。
+
+<Note>
+  使用数据源或连接变量的卡片不支持告警。保存此类卡片时,其告警会被移除。
+</Note>
+
+### 选择选项 {#filter-selection-options}
+
+SQL 表达式值、静态值、SQL 查询值和 PromQL 标签值这几类筛选条件还提供以下选项：
+
+* **单选** — 每次只能选择一个值。
+* **必填** — 通过变量或广播使用该筛选条件的卡片，在筛选条件选定值之前不会加载。
+  * **阻止所有卡片** — 在筛选条件选定值之前，阻止仪表盘上的所有卡片加载，而不仅限于使用该筛选条件的卡片。
+
+### 链式筛选器 {#chained-filters}
+
+筛选器自身的配置可以引用仪表盘中的其他变量，使其可选值取决于另一个筛选器的选中项。例如，服务筛选器可以只列出 `environment` 筛选器所选环境中的服务。可在以下位置引用变量：
+
+* SQL 表达式值筛选器的 **Dropdown values filter**，例如 `$__filter(ResourceAttributes['deployment.environment'], $environment)`。
+* SQL 查询值筛选器的 **SQL query**。
+* PromQL 标签值筛选器的 **Series matchers**，例如 `up{env="$env"}`。
+* 临时 (ad hoc) 筛选器的 **Keys and values filter**。
+* source 和连接字段，通过[数据源和连接变量](#source-connection-variables)进行引用。
+
+当被引用筛选器的选中项发生变化时，系统会重新查询依赖它的筛选器的值。如果被引用的必填筛选器尚未选择任何内容，依赖它的临时筛选器将无法添加或编辑条件，并会显示其正在等待的筛选器名称。
+
 ### 广播 {#broadcast-filters}
 
-启用 **Broadcast filter condition** 后，所选值会作为过滤条件应用到仪表盘的各个卡片上，卡片无需显式引用该过滤器。默认情况下，该条件会作用于所有卡片。可通过 **Applies to sources** 将其限定为仅作用于使用指定数据源的卡片；当过滤器的表达式只适用于仪表盘上的部分数据时，此选项尤为有用。
+SQL 表达式值过滤器可以广播其选中的值，而临时 (ad hoc) 过滤器则始终会广播其条件。在 SQL 表达式值过滤器上启用 **Broadcast filter condition** 后，所选值会作为过滤条件应用到仪表盘的各个卡片上，卡片无需显式引用该过滤器。默认情况下，该条件会作用于所有卡片。可通过 **Applies to sources** 将其限定为仅作用于使用指定数据源的卡片；当过滤器的表达式只适用于仪表盘上的部分数据时，此选项尤为有用。
 
 图表构建器卡片会自动应用广播过滤器。原始 SQL 卡片则必须包含 [`$__filters` 宏](/zh/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro)并选定一个 source，因为 UI 无法推断该条件应放在手写查询中的哪个位置。
 
 ### 变量 {#dashboard-variables}
 
-启用 **Available as variable** 后，过滤器的选中值还会以 `$variableName` 的形式提供给卡片查询使用。**Variable name** 默认取过滤器的显示名称 (去除其中的非法字符) ，也可以自行覆盖。名称必须以字母开头，且只能包含字母、数字和下划线。
+静态值、SQL 查询值和 PromQL 标签值过滤器始终是变量。启用 **Available as variable** 后，SQL 表达式值过滤器会成为变量。变量以 `$variableName` 的形式将过滤器的选中值提供给卡片查询使用。**Variable name** 默认取过滤器的显示名称 (去除其中的非法字符) ，也可以自行覆盖。名称必须以字母开头，且只能包含字母、数字和下划线。
+
+临时过滤器不会成为变量，而数据源变量和连接变量是[对 source 或连接的引用](#source-connection-variables)，而非查询文本中的值。
 
 如果广播 `WHERE` 条件无法满足需求，请改用变量。例如，将该值用于 `SELECT` 表达式、`HAVING` 子句或连接键，或者按过滤器自身表达式以外的其他列来过滤卡片。
 
@@ -474,13 +597,14 @@ ClickHouse Observability 支持对事件进行可视化，并在 UI 中内置了
 
 变量会展开为其下拉列表中当前选中的值。引用形式决定渲染方式：
 
-| 引用形式                | 展开结果                                                                               | 未选择时   |
-| ------------------- | ---------------------------------------------------------------------------------- | ------ |
-| `$name`, `${name}`  | 选中的值，根据上下文采用 `sqlstring` 或 `lucene` 格式。当名称后紧跟单词字符时 (如 `${name}_total`) ，需用花括号界定名称。 | `NULL` |
-| `${name:sqlstring}` | 选中的值，用单引号括起、以逗号分隔，并按 SQL 值进行转义，例如 `'a', 'b'`                                       | `NULL` |
-| `${name:csv}`       | 不加引号、以逗号分隔：`a,b`。不进行 SQL 转义。                                                       | 空字符串   |
-| `${name:regex}`     | 经过正则转义的正则表达式多选分支：`(a\|b)`。                                                         | `.*`   |
-| `${name:lucene}`    | 用 `OR` 连接的带引号词项，用于 Lucene 输入：`("a" OR "b")`。                                       | `("")` |
+| 引用形式                | 展开结果                                                                                    | 未选择时             |
+| ------------------- | --------------------------------------------------------------------------------------- | ---------------- |
+| `$name`, `${name}`  | 选中的值，根据上下文采用 `sqlstring` 或 `lucene` 格式。当名称后紧跟单词字符时 (如 `${name}_total`) ，需用花括号界定名称。      | `NULL`           |
+| `${name:sqlstring}` | 选中的值，用单引号括起、以逗号分隔，并按 SQL 值进行转义，例如 `'a', 'b'`                                            | `NULL`           |
+| `${name:csv}`       | 不加引号、以逗号分隔：`a,b`。不进行 SQL 转义。                                                            | 空字符串             |
+| `${name:regex}`     | 经过正则转义的正则表达式多选分支：`(a\|b)`。                                                              | `.*`             |
+| `${name:lucene}`    | 用 `OR` 连接的带引号词项，用于 Lucene 输入：`("a" OR "b")`。                                            | `("")`           |
+| `${name:promql}`    | PromQL 内容块中的默认格式。对于单选过滤器，展开为选中的值，用于 `label="$name"`；否则展开为正则表达式多选分支，用于 `label=~"$name"`。 | `.*` (单选时为空字符串)  |
 
 由于在未选择任何值时 `$name` 会渲染为 `NULL`，因此在需要 SQL 谓词的地方，建议使用以下宏。当对应变量未选择任何值时，这两个宏都会展开为 `1=1`，从而确保查询依然有效：
 

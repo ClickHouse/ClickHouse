@@ -24,11 +24,11 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 ## text_index_dictionary_block_size {#text_index_dictionary_block_size}
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="512" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "新しい設定"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "8192"},{"label": "テキスト索引のデフォルトの辞書ブロックサイズを引き上げ"}]}]} />
 
-テキスト索引のデフォルトのDictionaryブロックサイズです。
+テキスト索引のデフォルトの辞書ブロックサイズです。
 明示的に指定した `dictionary_block_size` の索引引数で上書きできます。
 
 ## text_index_max_memory_usage_before_flush {#text_index_max_memory_usage_before_flush}

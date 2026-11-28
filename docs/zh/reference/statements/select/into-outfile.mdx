@@ -20,6 +20,8 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `file_name` 和 `type` 都是字符串字面量。支持的压缩类型包括：`'none'`、`'gzip'`、`'deflate'`、`'br'`、`'xz'`、`'zstd'`、`'lz4'`、`'bz2'`、`'snappy'`。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置决定 (默认使用 `basic`) 。
 
+将 `max_generic_compression_threads` 设置为大于 `1` 的值后，`'gzip'` 压缩即可使用多个线程运行。输出仍是标准的 gzip 数据流，任何解压缩工具都能读取；仅写入端会并行执行。
+
 `level` 是数值字面量。支持以下范围内的正整数：`gzip`、`deflate` 和 `lz4` 类型为 `1-12`，`zstd` 类型为 `1-22`，其他压缩类型为 `1-9`。对于 `gzip` 和 `deflate`，高于 `9` 的级别需要使用带有 `libdeflate` 的默认构建；不带 `libdeflate` 的构建仅支持 `1-9` 级别。
 
 ## 实现细节 {#implementation-details}

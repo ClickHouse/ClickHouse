@@ -7,9 +7,7 @@ title: 'Visão geral das tabelas do sistema'
 doc_type: 'reference'
 ---
 
-<div id="system-tables-introduction">
-  ## Visão geral das tabelas do sistema
-</div>
+## Visão geral das tabelas do sistema {#system-tables-introduction}
 
 As tabelas do sistema fornecem informações sobre:
 
@@ -59,9 +57,7 @@ Um exemplo:
 
 Por padrão, o crescimento da tabela é ilimitado. Para controlar o tamanho de uma tabela, você pode usar as configurações de [TTL](/pt-BR/reference/statements/alter/ttl) para remover registros de log antigos. Você também pode usar o recurso de particionamento das tabelas com engine `MergeTree`.
 
-<div id="system-tables-sources-of-system-metrics">
-  ## Fontes de métricas do sistema
-</div>
+## Fontes de métricas do sistema {#system-tables-sources-of-system-metrics}
 
 Para coletar métricas do sistema, o servidor ClickHouse usa:
 
@@ -87,11 +83,9 @@ Se o procfs for compatível e estiver habilitado no sistema, o servidor ClickHou
   Você pode habilitá-la usando `sudo sysctl kernel.task_delayacct=1` ou criando um arquivo `.conf` em `/etc/sysctl.d/` com `kernel.task_delayacct = 1`
 </Note>
 
-<div id="system-tables-in-clickhouse-cloud">
-  ## Tabelas do sistema no ClickHouse Cloud
-</div>
+## Tabelas do sistema no ClickHouse Cloud {#system-tables-in-clickhouse-cloud}
 
-No ClickHouse Cloud, as tabelas do sistema fornecem informações essenciais sobre o estado e o desempenho do serviço, assim como em implantações autogerenciadas. Algumas tabelas do sistema operam em nível de cluster, especialmente aquelas que obtêm seus dados dos nós Keeper, que gerenciam metadados distribuídos. Essas tabelas refletem o estado coletivo do cluster e devem apresentar consistência quando consultadas em nós individuais. Por exemplo, a [`parts`](/pt-BR/reference/system-tables/parts) deve ser consistente independentemente do nó em que for consultada:
+No ClickHouse Cloud, as tabelas do sistema fornecem informações essenciais sobre o estado e o desempenho do serviço, assim como em implantações autogerenciadas. Algumas tabelas do sistema operam com abrangência de cluster, especialmente aquelas que obtêm seus dados dos nós Keeper, que gerenciam metadados distribuídos. Essas tabelas refletem o estado coletivo do cluster e devem apresentar consistência quando consultadas em nós individuais. Por exemplo, a [`parts`](/pt-BR/reference/system-tables/parts) deve ser consistente independentemente do nó em que for consultada:
 
 ```sql
 SELECT hostname(), count()
@@ -117,7 +111,7 @@ WHERE `table` = 'pypi'
 1 row in set. Elapsed: 0.004 sec.
 ```
 
-Por outro lado, outras tabelas do sistema são específicas de cada nó, por exemplo, mantendo seus dados em memória ou persistindo-os com o motor de tabela MergeTree. Isso é típico de dados como logs e métricas. Essa persistência garante que os dados históricos continuem disponíveis para análise. No entanto, essas tabelas específicas de nó são, por natureza, exclusivas de cada nó.
+Por outro lado, outras tabelas do sistema são específicas de cada nó, por exemplo, mantendo seus dados em memória ou persistindo-os com o motor de tabela MergeTree. Isso é típico de dados como logs e métricas. Essa persistência garante que os dados históricos continuem disponíveis para análise. No entanto, essas tabelas específicas de nó são, por natureza, exclusivas de cada nó. Observe que, no ClickHouse Cloud, as tabelas persistidas mantêm seus dados no armazenamento de objetos, e não no disco local do nó.
 
 Em geral, as seguintes regras podem ser aplicadas para determinar se uma tabela do sistema é específica de nó:
 
@@ -125,7 +119,7 @@ Em geral, as seguintes regras podem ser aplicadas para determinar se uma tabela 
 * Tabelas do sistema que expõem métricas, por exemplo, `metrics`, `asynchronous_metrics`, `events`.
 * Tabelas do sistema que expõem processos em andamento, por exemplo, `processes`, `merges`.
 
-Além disso, novas versões de tabelas do sistema podem ser criadas em decorrência de upgrades ou mudanças no esquema. Essas versões são nomeadas com um sufixo numérico.
+Além disso, novas versões de tabelas do sistema podem ser criadas em decorrência de upgrades ou mudanças no schema. Essas versões são nomeadas com um sufixo numérico.
 
 Por exemplo, considere as tabelas `system.query_log`, que contêm uma linha para cada consulta executada pelo nó:
 
@@ -149,9 +143,7 @@ SHOW TABLES FROM system LIKE 'query_log%'
 11 rows in set. Elapsed: 0.004 sec.
 ```
 
-<div id="querying-multiple-versions">
-  ### Consultando várias versões
-</div>
+### Consultando várias versões {#querying-multiple-versions}
 
 Podemos fazer consultas nessas tabelas usando a função [`merge`](/pt-BR/reference/functions/table-functions/merge). Por exemplo, a consulta abaixo identifica a consulta mais recente enviada ao nó de destino em cada tabela `query_log`:
 
@@ -187,11 +179,9 @@ Peak memory usage: 28.45 MiB.
   Embora o sufixo numérico das tabelas possa sugerir a ordem dos dados, ele nunca deve ser usado como referência. Por esse motivo, sempre use a função de tabela `merge` combinada com um filtro de data ao consultar intervalos de datas específicos.
 </Info>
 
-É importante destacar que essas tabelas ainda são **locais em cada nó**.
+É importante destacar que essas tabelas ainda são **específicas de cada nó**.
 
-<div id="querying-across-nodes">
-  ### Consultando em todos os nós
-</div>
+### Consultando em todos os nós {#querying-across-nodes}
 
 Para ter uma visão abrangente de todo o cluster, os usuários podem usar a função [`clusterAllReplicas`](/pt-BR/reference/functions/table-functions/cluster) em combinação com a função `merge`. A função `clusterAllReplicas` permite consultar tabelas do sistema em todas as réplicas do cluster &quot;default&quot;, consolidando os dados específicos de cada nó em um resultado unificado. Quando combinada com a função `merge`, ela pode ser usada para abranger todos os dados de sistema de uma tabela específica em um cluster.
 
@@ -233,9 +223,7 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 3 rows in set. Elapsed: 0.026 sec. Processed 1.97 million rows, 7.88 MB (75.51 million rows/s., 302.05 MB/s.)
 ```
 
-<div id="querying-across-nodes-and-versions">
-  ### Consultando entre nós e versões
-</div>
+### Consultando entre nós e versões {#querying-across-nodes-and-versions}
 
 Devido ao versionamento da tabela do sistema, isso ainda não representa todos os dados do cluster. Ao combinar isso com a função `merge`, obtemos um resultado preciso para o nosso intervalo de datas:
 
@@ -256,9 +244,7 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 3 rows in set. Elapsed: 0.462 sec. Processed 7.94 million rows, 31.75 MB (17.17 million rows/s., 68.67 MB/s.)
 ```
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
 * Blog: [Tabelas do sistema e uma visão da estrutura interna do ClickHouse](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
 * Blog: [Consultas essenciais de monitoramento - parte 1 - consultas INSERT](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)

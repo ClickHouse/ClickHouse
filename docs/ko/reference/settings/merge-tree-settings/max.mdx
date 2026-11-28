@@ -53,6 +53,8 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 고정 크기 값으로 구성된 컬럼에서는 블록 크기가 값 크기(바이트)의 배수로 내림되며, 최소 값 1개 크기 이상으로 유지됩니다.
 
+압축 블록에는 비압축 데이터가 최대 256 MiB까지만 담기므로, 256 MiB를 초과하는 값은 256 MiB로 간주됩니다.
+
 ## max_concurrent_queries {#max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

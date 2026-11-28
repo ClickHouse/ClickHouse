@@ -13,6 +13,27 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
+## iceberg_insert_commit_retry_initial_backoff_ms {#iceberg_insert_commit_retry_initial_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "10"},{"label": "新增设置。向 Iceberg 执行 `INSERT` 时，若其提交因并发提交冲突而失败，将在一段随机的指数退避延迟后重试，而不是立即重试。"}]}]} />
+
+向 Iceberg 表执行 `INSERT` 时，若其提交因并发提交冲突而失败，此设置指定首次重试前延迟的上界。
+此后每次重试，该上界翻倍，最大不超过 `iceberg_insert_commit_retry_max_backoff_ms`；每次的延迟在零到该上界之间随机选取，
+从而避免在同一竞态条件中失败的多个写入器在同一时刻重试并再次冲突。
+延迟发生在查找最新元数据之前，因此在并发写入器较多时，它还能限制列出元数据
+目录的频率。`0` 表示不等待、立即重试。
+
+## iceberg_insert_commit_retry_max_backoff_ms {#iceberg_insert_commit_retry_max_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "5000"},{"label": "新增设置。向 Iceberg 执行 `INSERT` 时，若其提交因并发提交冲突而失败，将在随机的指数延迟后重试，而非立即重试。"}]}]} />
+
+向 Iceberg 表执行 `INSERT` 时，若其提交因并发提交冲突而失败，此设置指定重试前延迟边界的最大值，
+参见 `iceberg_insert_commit_retry_initial_backoff_ms`。
+
 ## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
@@ -25,6 +46,14 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 参见 https://iceberg.apache.org/docs/1.5.2/configuration/。该限制比较的对象是文件目前已写入的大小，即压缩后大小，
 因此文件实际大小可能超出该限制，超出量取决于写入器仍在缓冲的数据，例如尚未完成的 Parquet 行组以及正在编码的行组。`iceberg_insert_max_rows_in_data_file`
 会独立于文件大小对文件加以限制。
+
+## iceberg_insert_max_data_files_in_upload {#iceberg_insert_max_data_files_in_upload}
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "新增设置。向 S3 或 Azure 上的 Iceberg 执行 INSERT 时，不再逐个等待已完成数据文件上传。"}]}]} />
+
+适用于在后台执行上传的对象存储 (S3、Azure) ：在 `INSERT` 写入下一个文件期间，单个插入流中可以不等待其上传完成的已完成数据文件的最大数量。此类文件在上传完成前会一直占用其上传缓冲区，因此该值越大，能掩盖的上传延迟越多，但内存占用也越高。设置为 `0` 时，每个数据文件都需上传完成后才会写入下一个文件。
 
 ## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
 
@@ -41,6 +70,15 @@ Iceberg 表引擎单次插入操作允许的最大分区数。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1000000"},{"label": "新增设置。"}]}]} />
 
 插入操作时 Iceberg Parquet 数据文件的最大行数。
+
+## iceberg_insert_max_sort_buffer_bytes {#iceberg_insert_max_sort_buffer_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1073741824"},{"label": "新增设置。"}]}]} />
+
+向定义了排序顺序的 Iceberg 表执行 `INSERT` 时，在数据排序并写入之前，所有分区合计可缓冲的最大未压缩字节数。
+超过该值后，最大的缓冲区会被提前写入，生成一个较小的已排序数据文件。0 表示不限制。
 
 ## iceberg_insert_single_manifest_for_all_partitions {#iceberg_insert_single_manifest_for_all_partitions}
 

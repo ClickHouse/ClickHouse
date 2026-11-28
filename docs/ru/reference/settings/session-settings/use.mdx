@@ -172,9 +172,9 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Новая настройка для отсечения файлов данных Iceberg, групп строк и страниц Parquet с помощью фильтров JOIN времени выполнения."}]}]} />
 
-Пропускает файлы данных Iceberg, а также группы строк и страницы Parquet в читаемых файлах, если они не могут содержать ни одного ключа фильтра времени выполнения JOIN (см. [enable&#95;join&#95;runtime&#95;filters](/ru/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). Как только построение стороны построения JOIN завершается, ключи фильтра (или их диапазон min/max, если множество слишком велико) сверяются с границами столбцов в файлах манифеста, статистикой групп строк и индексом страниц. Файлы данных, запрошенные до этого момента, читаются целиком.
+Пропускает группы строк и страницы Parquet при любом чтении из объектного хранилища (`s3`, `azureBlobStorage`, `hdfs` и соответствующие им движки таблиц, `Iceberg`, `DeltaLake`, `Hudi`), а также целые файлы данных таблицы Iceberg, если они не могут содержать ни одного ключа фильтра времени выполнения JOIN (см. [enable&#95;join&#95;runtime&#95;filters](/ru/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). Как только построение стороны построения JOIN завершается, ключи фильтра (или их диапазон min/max, если множество слишком велико) сверяются с границами столбцов в файлах манифеста Iceberg, статистикой групп строк и индексом страниц. Файлы, запрошенные до этого момента, читаются целиком. Группы строк и страницы отсекаются только по ключу, который файл хранит под собственным именем столбца, поэтому отсечение не выполняется по столбцу партиции Hive, виртуальному столбцу, столбцу Delta Lake, хранящемуся под другим именем, или столбцу с выражением по умолчанию.
 
-Требует включения [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/ru/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) и [use&#95;iceberg&#95;partition&#95;pruning](/ru/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). Для групп строк также требуется [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/ru/reference/settings/formats/input-format#input_format_parquet_filter_push_down), а для страниц — эта настройка и [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/ru/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
+Требует включения [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/ru/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis). Для пропуска файлов данных Iceberg также требуется [use&#95;iceberg&#95;partition&#95;pruning](/ru/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). Для групп строк также требуется [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/ru/reference/settings/formats/input-format#input_format_parquet_filter_push_down), а для страниц — эта настройка и [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/ru/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
 
 ## use_legacy_to_time {#use_legacy_to_time}
 
@@ -259,7 +259,9 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "новая настройка"}]}]} />
 
-Использовать roaring-битмап для позиционных удалений в Iceberg.
+Определяет способ применения файлов позиционного удаления таблиц Iceberg. Если настройка включена, позиции удалённых строк файла данных загружаются в roaring-битмап, который затем используется для фильтрации строк. Если настройка отключена, файлы удалений читаются в потоковом режиме параллельно с файлом данных, без предварительной загрузки всех удалённых позиций в память.
+
+Векторы удаления всегда применяются в виде битмапов, независимо от этой настройки.
 
 ## use_streaming_marks_compression {#use_streaming_marks_compression}
 

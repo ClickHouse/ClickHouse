@@ -20,17 +20,21 @@ ClickHouse Managed Postgres offre différents niveaux de haute disponibilité po
   ### 2 instances de secours {#two-standbys}
 </div>
 
-Avec deux instances de secours, deux nœuds répliques sont provisionnés aux côtés de votre nœud primaire. Les deux instances de secours ont la même taille que le primaire, et l’un comme l’autre peut prendre le relais en cas de défaillance du primaire.
+Avec deux instances de secours, deux nœuds répliques sont provisionnés aux côtés de votre instance principale. Les deux instances de secours ont la même taille que l’instance principale, et l’un comme l’autre peut prendre le relais en cas de défaillance de l’instance principale.
 
-Cette configuration utilise une **réplication synchrone**, dans laquelle le primaire attend l’accusé de réception d’au moins une instance de secours avant de confirmer les écritures. Elle offre des garanties de durabilité plus solides que la réplication asynchrone. Comme un seul accusé de réception est requis (et non les deux), l’impact sur les performances est moins important qu’avec une réplication synchrone avec une seule instance de secours.
+Cette configuration utilise une **réplication synchrone**, dans laquelle l’instance principale attend l’accusé de réception d’au moins une instance de secours avant de confirmer les écritures. Elle offre des garanties de durabilité plus solides que la réplication asynchrone. Comme les deux instances de secours sont des répliques complètes, votre base de données conserve l’intégralité de son débit et dispose toujours d’une cible de basculement prête, même en cas de défaillance prolongée d’une zone de disponibilité.
 
-<div id="one-standby">
-  ### 1 instance de secours {#one-standby}
-</div>
+### 1 instance de secours synchrone (préversion) {#one-standby-synchronous}
 
-Avec une instance de secours, un nœud réplique est déployé aux côtés de votre primaire. L’instance de secours a la même taille que le primaire et peut prendre le relais en cas de défaillance de celui-ci.
+Avec une instance de secours et un point d’écoute WAL léger, l’instance de secours est de même taille que l’instance principale et peut prendre le relais en cas de défaillance de celle-ci.
 
-Les données sont répliquées vers l’instance de secours à l’aide de la **réplication asynchrone**. Cela signifie que les écritures sont validées sur le primaire sans attendre d’accusé de réception de l’instance de secours. La réplication asynchrone garantit que la haute disponibilité ne ralentit pas vos écritures en raison d’une latence réseau supplémentaire. Cependant, cela signifie aussi que l’instance de secours peut ne pas avoir reçu les transactions les plus récentes au moment de la défaillance du primaire. Pour la plupart des applications, ce compromis entre performances et faible risque de perdre des écritures très récentes en vaut la peine. Si la durabilité des écritures est indispensable, il est recommandé d’opter pour 2 instances de secours.
+Le point d’écoute WAL léger fait office de seconde instance de secours sans coût supplémentaire : il reçoit le flux du journal d’écriture anticipée (WAL) et offre un second chemin d’accusé de réception. Cette configuration repose sur la **réplication synchrone** : l’instance principale attend un accusé de réception de l’instance de secours ou du point d’écoute WAL avant de confirmer les écritures. La latence et le débit restent ainsi stables si l’instance de secours ralentit ou subit une brève interruption, tout en conservant de solides garanties de durabilité.
+
+### 1 instance de secours asynchrone {#one-standby-asynchronous}
+
+Avec une instance de secours, un nœud réplique est provisionné aux côtés de votre instance principale. L’instance de secours a la même taille que l’instance principale et peut prendre le relais en cas de défaillance de celle-ci.
+
+Les données sont répliquées vers l’instance de secours à l’aide de la **réplication asynchrone**. Cela signifie que les écritures sont validées sur l’instance principale sans attendre d’accusé de réception de l’instance de secours. La réplication asynchrone garantit que la haute disponibilité ne ralentit pas vos écritures en raison d’une latence réseau supplémentaire. Cependant, cela signifie aussi que l’instance de secours peut ne pas avoir reçu les transactions les plus récentes au moment de la défaillance de l’instance principale. Pour la plupart des applications, ce compromis entre performances et faible risque de perdre des écritures très récentes en vaut la peine. Si la durabilité des écritures est indispensable, il est recommandé d’opter pour l’une des options synchrones.
 
 <div id="no-standby">
   ### Sans instance de secours {#no-standby}

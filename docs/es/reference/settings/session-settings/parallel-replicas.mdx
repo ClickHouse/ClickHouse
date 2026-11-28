@@ -29,7 +29,9 @@ Si es true, la subconsulta de IN se ejecutará en cada réplica seguidora.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Permite usar vistas materializadas con réplicas paralelas"}]}]} />
 
-Permite usar vistas materializadas con réplicas paralelas
+Permite que las consultas que leen de una vista materializada utilicen Réplicas paralelas. En ese caso, la consulta se ejecuta sobre la tabla de destino de la vista materializada.
+
+Las vistas materializadas actualizables no utilizan Réplicas paralelas, independientemente de este parámetro de configuración.
 
 ## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
 
@@ -171,7 +173,9 @@ Esto se refiere al análisis de índices que selecciona los rangos de marcas que
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Usar el plan local para la réplica local en una consulta con réplicas paralelas"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "Usar el plan local para la réplica local en una consulta con réplicas paralelas"}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "1"},{"label": "Usar el plan local para la réplica local en una consulta con réplicas paralelas"}]}]} />
 
-Generar el plan local para la réplica local
+En una consulta con Réplicas paralelas, el initiator ejecuta su propia parte de la lectura mediante un plan de consulta construido localmente, en lugar de enviarse una consulta a sí mismo a través de la red, con lo que se evita la sobrecarga del viaje de ida y vuelta por la red. Solo se utiliza si `parallel_replicas_prefer_local_replica` está habilitado.
+
+La decisión automática de usar o no Réplicas paralelas (consulte `automatic_parallel_replicas_mode`) solo se toma si este parámetro de configuración está habilitado.
 
 ## parallel_replicas_mark_segment_size {#parallel_replicas_mark_segment_size}
 

@@ -184,13 +184,25 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
   这是一项专家级设置，仅供开发人员调试时使用。该设置未来可能会以不向后兼容的方式变更或被移除。
 </Note>
 
+## query_plan_join_multiway_merge {#query_plan_join_multiway_merge}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+对于由 `full_sorting_merge` 内连接构成、且各连接键彼此相等的子树，将其作为一个涵盖所有输入的归并连接来执行，而不是执行由双输入连接组成的连接树。每个输入只按键的顺序读取一次，每一列也只复制到结果中一次。
+
+适用于严格性为 `ALL` 且只有一个条件的 `INNER` 连接。若启用 `query_plan_join_shard_by_pk_ranges`，该连接会按其所有表的主键范围进行拆分。
+
 ## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
 
 <BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置，默认启用：DPsub 连接顺序算法会根据输入的排序顺序，在哈希连接和排序归并连接之间进行选择。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "此更改已回移到 26.10，并记录在该版本中。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，默认启用：DPsub 连接顺序算法会根据输入的排序顺序，在哈希连接和排序归并连接之间进行选择。"}]}]} />
 
 仅影响 `dpsub` 连接顺序算法。启用后，该算法会考虑参与连接的表的排序顺序：对于每个内连接中的等值连接，它会基于代价在哈希连接和 `full_sorting_merge` 之间进行选择，并保留结果已按某个连接键排序、可供后续连接利用的部分执行计划。
 
@@ -334,7 +346,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "500"},{"label": "新增设置"}]}]} />
 
-EXPLAIN PLAN 中步骤描述的最大长度。
+查询计划步骤描述的最大长度 (以字节为单位) 。超过该长度的描述无论在何处展示，都会被截断至此长度。
 
 ## query_plan_merge_expression_into_join {#query_plan_merge_expression_into_join}
 
@@ -374,7 +386,9 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "允许在查询计划中合并过滤器"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "允许在查询计划中合并过滤器。这是正确支持 analyzer 的过滤器下推所必需的。"}]}]} />
 
-允许在查询计划中合并过滤器。
+允许将查询计划中连续的多个过滤步骤合并为一个。为保留合并后条件的短路求值，针对 `AND` 事件链的过滤器会被拆分为多个连续的过滤器执行，每个条件对应一个过滤器。
+
+要使过滤器下推在 analyzer 下正常工作，必须启用此设置。仅当 `query_plan_enable_optimizations` 已启用时，合并才会生效。
 
 ## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
@@ -399,7 +413,7 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 
 <SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "`dpsub` 现为默认的 JOIN 顺序算法；包含超过 12 个 relation 的查询会回退到 `greedy`。"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "新增实验性设置。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "该变更已回移到 26.10，并记录在该版本中。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "dpsub,greedy"},{"label": "`dpsub` 现为默认的 JOIN 顺序算法；包含超过 12 个 relation 的查询会回退到 `greedy`。"}]}, {"id": "row-3","items": [{"label": "25.12"},{"label": "greedy"},{"label": "新增实验性设置。"}]}]} />
 
 指定在优化查询计划时要尝试哪些 JOIN 顺序算法。可用算法如下：
 
@@ -415,7 +429,7 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 
 <SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "新增设置，用于选择在 DPsub JOIN 顺序算法中判定 JOIN 重排序 有效性的 conflict detector：`a` 表示（正确但不完备的）CD-A，`c` 表示（正确且完备的）CD-C，留空表示不使用。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "新增设置，用于选择在 DPsub JOIN 顺序算法中判定 JOIN 重排序 有效性的 conflict detector：`a` 表示（正确但不完备的）CD-A，`c` 表示（正确且完备的）CD-C，留空表示不使用。默认值为 CD-C，与 `query_plan_optimize_join_order_algorithm` 的默认值 `dpsub` 配合使用，使 semi join 和 anti join 也能参与重排序。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "新增设置，用于选择在 DPsub JOIN 顺序算法中判定 JOIN 重排序 有效性的 conflict detector：`a` 表示（正确但不完备的）CD-A，`c` 表示（正确且完备的）CD-C，留空表示不使用。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "该变更已回移至 26.10，并记录在该版本中。"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "c"},{"label": "新增设置，用于选择在 DPsub JOIN 顺序算法中判定 JOIN 重排序 有效性的 conflict detector：`a` 表示（正确但不完备的）CD-A，`c` 表示（正确且完备的）CD-C，留空表示不使用。默认值为 CD-C，与 `query_plan_optimize_join_order_algorithm` 的默认值 `dpsub` 配合使用，使 semi join 和 anti join 也能参与重排序。"}]}]} />
 
 仅对 `dpsub` JOIN 顺序算法生效。用于选择 DPsub 判定哪些 JOIN 重排序 有效时所使用的
 conflict detector。可选取值如下：
@@ -469,9 +483,11 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "新增设置：使用查询计划进行惰性物化优化"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "新增设置：使用查询计划进行延迟物化优化"}]}]} />
 
-使用查询计划进行惰性物化优化。
+为 `ORDER BY ... LIMIT n` 查询启用延迟物化优化：排序和过滤用不到的列，只针对 `LIMIT` 之后剩余的 `n` 行读取，而不是针对所有已读取的行。这样可以减少在宽表上执行 top-N 查询时读取的数据量。
+
+如果 `n` 大于 `query_plan_max_limit_for_lazy_materialization`，或使用了 `LIMIT ... WITH TIES`，则不会应用该优化。
 
 ## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
@@ -493,14 +509,15 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：通过等值连接键传播过滤合取项，使主键裁剪可在连接两侧触发。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：通过等值连接键传播过滤合取项，使主键裁剪可在连接两侧触发。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "1"},{"label": "还会将过滤合取项复制到 Parquet 读取中的整数、Date 和 Decimal 列上，这类读取可依据统计信息跳过行组。"}]}]} />
 
 启用或禁用一项查询计划级别的优化：该优化会通过等值键替换，将过滤合取项从等值连接的一侧复制到另一侧，
 使另一侧的主键/索引裁剪也能利用这些合取项。
 
-当过滤器与 `MergeTree` 读取之间仅隔有表达式和过滤步骤时，以及复制的合取项将主键列与常量进行比较时
-(包括使用常量集合的 `IN`) ，此优化才会生效。位于嵌套连接或 `DISTINCT` 下方的谓词，以及两个键列之间的
-比较，不会被复制：它们无法驱动另一侧的主键裁剪，复制只会增加额外工作。
+当过滤器和读取与连接之间仅隔有表达式和过滤步骤，且复制的合取项将常量 (包括使用常量集合的 `IN`) 与以下任一列进行比较时，
+此优化才会生效：`MergeTree` 读取的主键列；或 `Parquet` 读取 (`file`、`url`、非数据湖的对象存储) 中类型为最多 64 位整数、`Date`、`Date32` 或 `Decimal`、没有
+默认表达式，且该读取可依据 min/max 统计信息跳过其行组的列。位于嵌套连接或 `DISTINCT` 下方的谓词，以及两个键列之间的
+比较，不会被复制：它们无法驱动另一侧的裁剪，复制只会增加额外工作。
 
 仅当 `query_plan_enable_optimizations` 为 1 时生效。
 
@@ -617,6 +634,14 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 * 0 - 禁用
 * 1 - 启用
 
+## query_plan_remove_unused_joins {#query_plan_remove_unused_joins}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "新增设置：移除另一侧未被读取、且保留侧每一行恰好输出一次的 `LEFT` 或 `RIGHT` `JOIN`。"}]}]} />
+
+如果 `LEFT` 或 `RIGHT` `JOIN` 另一侧的列均未被读取，且保留侧的每一行恰好输出一次，则移除该 `JOIN`。符合条件的连接包括：`ANY` 连接，以及另一侧按连接键唯一的连接，例如在连接键上使用 `GROUP BY` 或 `DISTINCT` 的子查询，或者没有分区键、且其 `UNIQUE KEY` 被连接键覆盖的表。此时将完全不读取另一侧。
+
 ## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -629,9 +654,9 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 **别名**: `optimize_read_in_window_order`
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "默认禁用此逻辑。这同样适用于别名 `optimize_read_in_window_order`。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "重新默认启用：排序现在会按 `PARTITION BY` 列将已合并的 stream 分散开，从而使窗口函数能够并行运行。这同样适用于别名 `optimize_read_in_window_order`。"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "默认禁用此逻辑。这同样适用于别名 `optimize_read_in_window_order`。"}]}]} />
 
 切换一项查询计划级别的优化，在对窗口函数进行排序时复用存储排序。
 仅在设置 [`query_plan_enable_optimizations`](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
@@ -640,7 +665,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
   这是一个专家级设置，仅应供开发人员用于调试。该设置未来可能会发生不向后兼容的变更，或被移除。
 </Note>
 
-可能的值：
+可选值：
 
 * 0 - 禁用
 * 1 - 启用

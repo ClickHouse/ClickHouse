@@ -1,0 +1,14 @@
+---
+description: 'Документация по нативному интерфейсу TCP в ClickHouse'
+sidebarTitle: 'Нативный интерфейс (TCP)'
+slug: /concepts/features/connect-to-clickhouse/protocols/native-tcp
+title: 'Нативный интерфейс (TCP)'
+doc_type: 'reference'
+---
+
+Собственный протокол используется в [клиенте командной строки](/ru/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client), для межсерверного взаимодействия при распределённой обработке запросов, а также в некоторых клиентских библиотеках (например, [clickhouse-go](/ru/integrations/go#connection-details)).
+
+ClickHouse предоставляет официальные спецификации собственного протокола и столбцового формата передаваемых по нему данных:
+
+* [Собственный протокол](/ru/resources/develop-contribute/native-protocol/protocol) — обрамление пакетов, конечный автомат соединения, согласование версии и тело каждого сообщения, кроме `Block`.
+* [Формат Native](/ru/resources/develop-contribute/native-protocol/format) — структура `Block` и столбцов, способы кодирования для каждого типа и рамка окна сжатия. Этот формат также используется вне протокола TCP, например при передаче данных по HTTP с `FORMAT Native`.

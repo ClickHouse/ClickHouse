@@ -867,11 +867,13 @@ JSON 컬럼의 내용을 검사하는 데 사용되는 함수에 관한 자세�
 
 직렬화 버전은 MergeTree
 설정 [object&#95;shared&#95;data&#95;serialization&#95;version](/ko/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
-및 [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/ko/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)로
-제어됩니다
-(제로 수준 파트는 테이블에 데이터를 삽입할 때 생성되는 파트이며, 머지 과정에서 생성되는 파트는 더 높은 수준을 가집니다).
+및 [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/ko/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts)로 제어됩니다.
+두 번째 설정은 작은 데이터 파트(small parts)에 사용됩니다. 작은 데이터 파트란 삽입 시 생성되는 파트(
+[use&#95;object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts&#95;on&#95;insert](/ko/reference/settings/merge-tree-settings/use#use_object_shared_data_serialization_version_for_small_parts_on_insert)가
+비활성화되지 않은 경우)와 최소 크기
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/ko/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version)보다 작은 파트를 의미합니다.
 
-참고: 공유 데이터 구조 직렬화 변경은 `v3` [object serialization version](/ko/reference/settings/merge-tree-settings/other#object_serialization_version)에서만
+참고: 공유 데이터 구조 직렬화 변경은 `v3` [object 직렬화 버전](/ko/reference/settings/merge-tree-settings/other#object_serialization_version)에서만
 지원됩니다
 
 #### 맵 {#shared-data-map}

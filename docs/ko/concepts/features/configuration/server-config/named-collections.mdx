@@ -99,7 +99,34 @@ ZooKeeper/Keeper를 사용하려면 설정 파일의
 
 선택 사항인 구성 매개변수 `update_timeout_ms`의 기본값은 `5000`입니다.
 
-`system.server_settings` 및 `getServerSetting`을 통해 활성 저장소 유형을 확인할 수 있습니다:
+#### 키 순환 {#named-collections-key-rotation}
+
+여러 개의 키를 구성할 수 있으며, 각 키에는 `id` 속성을 지정합니다. `current_key_id`는 새 엔트리를 암호화할 키를 선택합니다(`current_key_hex`를 사용하면 키 값으로 선택할 수 있습니다). 구성된 모든 키는
+복호화에 사용됩니다. 실행 중인 서버는 키 변경 사항을 반영하지 않으며,
+`SYSTEM RELOAD CONFIG`를 실행해도 반영되지 않으므로 재시작해야 합니다. 기존 컬렉션은
+이전 키로 계속 읽을 수 있으며, 다음번에 기록될 때 현재 키로 다시 암호화됩니다. 이러한 기록은
+`ALTER NAMED COLLECTION`, `CREATE OR REPLACE NAMED COLLECTION` 또는 백업에서 복원을 통해 이루어집니다. 컬렉션을 암호화한 키가 없는 서버는
+해당 키의 지문(fingerprint)을 포함한 오류를 보고하고, 로딩 시 해당 컬렉션을 건너뜁니다. 이 컬렉션은 서버가 해당
+키를 가지고 재시작되거나, 해당 키를 보유한 서버가 컬렉션을 재작성하면 다시 로드됩니다. 이전 키는
+해당 키로 암호화된 모든 컬렉션이 재작성된 후에만 구성에서 제거하십시오.
+
+```xml
+<clickhouse>
+  <named_collections_storage>
+    <type>local_encrypted</type>
+    <key_hex id="0">bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <key_hex id="1">00112233445566778899aabbccddeeff</key_hex>
+    <current_key_id>1</current_key_id>
+  </named_collections_storage>
+</clickhouse>
+```
+
+`local_encrypted` 저장소의 키를 교체하려면 새 키를 추가하고 위 예시와 같이 이를 현재 키로 지정한 다음 서버를 재시작하십시오. `keeper_encrypted` 또는
+`zookeeper_encrypted` 저장소를 공유하는 서버들은 그중 어느 서버라도 새 키로 쓰기 작업을 수행하기 전에 모두 새 키를 알고 있어야 합니다. 새 현재 키로 재시작된 서버가 기록한 엔트리는 아직 재시작되지 않은 서버에서 복호화할 수 없기 때문입니다.
+따라서 키는 두 단계에 걸쳐 교체하십시오. 먼저 기존 키를 현재 키로 유지한 채 새 키를 추가하고
+모든 서버를 재시작합니다. 그런 다음 새 키를 현재 키로 지정하고 모든 서버를 한 번 더 재시작합니다.
+
+활성 저장소 유형은 `system.server_settings` 및 `getServerSetting`을 통해 확인할 수 있습니다:
 
 ```sql
 SELECT value, getServerSetting('named_collections_storage_type')
@@ -107,7 +134,7 @@ FROM system.server_settings
 WHERE name = 'named_collections_storage.type';
 ```
 
-저장소 유형을 변경하려면 서버를 다시 시작해야 하며, `SYSTEM RELOAD CONFIG`로는 활성 backend가 변경되지 않습니다.
+저장소 유형을 변경하려면 서버를 재시작해야 합니다. `SYSTEM RELOAD CONFIG`를 실행해도 활성 백엔드는 변경되지 않습니다.
 
 ## 설정 파일에 이름이 지정된 컬렉션 저장 {#storing-named-collections-in-configuration-files}
 
@@ -559,19 +586,48 @@ kafka_max_block_size = '1048576';
 
 ### TLS 및 클라이언트 인증서 {#kafka-mtls-named-collection}
 
-TLS 경로와 `ssl.key.password`는 Kafka 테이블 엔진의 `kafka_*` 설정이 아니라 [확장 librdkafka 설정](/ko/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)입니다. 이름이 지정된 컬렉션에서는 DDL에서 `kafka.` 접두사를 붙여 지정하거나(예: `kafka.ssl_ca_location`), XML에서 `<kafka>` 아래에 지정합니다(예: `<ssl_ca_location>`). `ENGINE = Kafka(collection)`에서 해당 컬렉션을 사용하면 서버의 전역 `<kafka>` 구성은 머지되지 않습니다.
+TLS 인증서, 개인 키 및 `ssl.key.password`는 Kafka 테이블 엔진의 `kafka_*` 설정이 아니라 [확장 librdkafka 설정](/ko/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)입니다. 이름이 지정된 컬렉션에서는 DDL에서 `kafka.` 접두사를 붙여 설정하거나(예: `kafka.ssl_ca_pem`), XML에서 `<kafka>` 아래에 설정합니다(예: `<ssl_ca_location>`). `ENGINE = Kafka(collection)`에서 해당 컬렉션을 사용하면 전역 서버 `<kafka>` 구성은 머지되지 않습니다.
+
+SQL로 생성한 이름이 지정된 컬렉션에는 명시적으로 허용된 `librdkafka` 속성만 지정할 수 있습니다. TLS를 사용하려면 `ssl.ca.pem`, `ssl.certificate.pem` 또는 `ssl.key.pem`에 인증서나 키의 내용을 직접 전달하십시오. 파일 경로나 허용 목록에 없는 다른 속성을 사용하려면 서버 설정 파일에 컬렉션을 정의하십시오. 자세한 내용은 [이름이 지정된 컬렉션을 사용한 TLS 및 SASL](/ko/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)을 참조하십시오.
+
+DDL 예시:
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 ```
 
-`kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, `kafka_sasl_username`, `kafka_sasl_password` 값을 테이블마다 다르게 지정해야 하는 경우 테이블 `SETTINGS`를 사용하세요. 전체 `CREATE TABLE` 예시는 [이름이 지정된 컬렉션을 사용한 TLS 및 SASL](/ko/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)을 참고하세요.
+서버의 파일을 참조할 수 있는 XML 예시:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
+```
+
+`kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, `kafka_sasl_username`, `kafka_sasl_password` 값을 테이블마다 다르게 지정해야 한다면 테이블 `SETTINGS`를 사용하십시오. 전체 `CREATE TABLE` 예시는 [이름이 지정된 컬렉션을 사용한 TLS 및 SASL](/ko/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)에서 확인할 수 있습니다.
 
 ### OAUTHBEARER/OIDC 인증 {#oauthbearer-oidc-authentication}
 

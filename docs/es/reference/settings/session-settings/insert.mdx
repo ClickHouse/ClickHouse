@@ -17,7 +17,9 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Si esta configuración está habilitada, permite usar columnas materializadas en INSERT.
+Si está habilitado, las columnas `MATERIALIZED` pueden incluirse en la lista de columnas de una consulta `INSERT`, y los valores insertados se almacenan en lugar de calcularse a partir de las expresiones de las columnas. En el caso de las tablas `Distributed`, los valores de las columnas `MATERIALIZED` también se envían a los fragmentos.
+
+Si está deshabilitado, incluir una columna `MATERIALIZED` en una consulta `INSERT` lanza una excepción, y los valores de dichas columnas siempre se calculan a partir de sus expresiones.
 
 ## insert_deduplicate {#insert_deduplicate}
 

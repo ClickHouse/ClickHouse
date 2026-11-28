@@ -1,0 +1,99 @@
+---
+description: 'توثيق واجهة gRPC في ClickHouse'
+sidebarTitle: 'واجهة gRPC'
+slug: /concepts/features/connect-to-clickhouse/protocols/grpc
+title: 'واجهة gRPC'
+doc_type: 'reference'
+---
+
+## المقدمة {#grpc-interface-introduction}
+
+يدعم ClickHouse واجهة [gRPC](https://grpc.io/)، وهو نظام مفتوح المصدر لاستدعاء الإجراءات عن بُعد يستخدم HTTP/2 و[Protocol Buffers](https://en.wikipedia.org/wiki/Protocol_Buffers). يدعم تطبيق gRPC في ClickHouse ما يلي:
+
+* SSL؛
+* المصادقة؛
+* الجلسات؛
+* الضغط؛
+* تنفيذ الاستعلامات بالتوازي عبر القناة نفسها؛
+* إلغاء الاستعلامات؛
+* الحصول على معلومات التقدم والسجلات؛
+* الجداول الخارجية.
+
+ترد مواصفات الواجهة في [clickhouse&#95;grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto).
+
+## تهيئة gRPC {#grpc-interface-configuration}
+
+لاستخدام واجهة gRPC، اضبط `grpc_port` في [تكوين الخادم](/ar/concepts/features/configuration/server-config/configuration-files) الرئيسي. ويوضّح المثال التالي خيارات التهيئة الأخرى:
+
+```xml
+<grpc_port>9100</grpc_port>
+    <grpc>
+        <enable_ssl>false</enable_ssl>
+
+        <!-- The following two files are used only if SSL is enabled -->
+        <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
+        <ssl_key_file>/path/to/ssl_key_file</ssl_key_file>
+
+        <!-- Whether server requests client for a certificate -->
+        <ssl_require_client_auth>false</ssl_require_client_auth>
+
+        <!-- The following file is used only if ssl_require_client_auth=true -->
+        <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
+
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm, see result_compression in QueryInfo).
+             Supported algorithms: none, deflate, gzip, stream_gzip -->
+        <compression>deflate</compression>
+
+        <!-- Default compression level (applied if client doesn't specify another level, see result_compression in QueryInfo).
+             Supported levels: none, low, medium, high -->
+        <compression_level>medium</compression_level>
+
+        <!-- Send/receive message size limits in bytes. -1 means unlimited -->
+        <max_send_message_size>-1</max_send_message_size>
+        <max_receive_message_size>-1</max_receive_message_size>
+    </grpc>
+```
+
+## المصادقة {#grpc-authentication}
+
+تتم مصادقة الاستعلام باستخدام الحقلين `user_name` و`password` في `QueryInfo` (ويحدد الحقل `quota` مفتاح الحصة). الحقل `user_name` اختياري: فعندما يكون فارغًا، تتم مصادقة الاستعلام على أنه المستخدم المحدد في [إعداد الخادم](/ar/reference/settings/server-settings/settings) `default_session_user` (وهو `default` ما لم تتم تهيئته بخلاف ذلك) باستخدام كلمة المرور المقدَّمة، والتي قد تكون فارغة، تمامًا كما هو الحال مع طلب HTTP لا يتضمن المَعلمة `user`. واسم المستخدم الفارغ ليس سوى اسم بديل لذلك المستخدم: إذ تُطبَّق عليه كلمة المرور الخاصة به و`networks` وسائر عمليات التحقق من الوصول كالمعتاد، ومن ثَمّ فإن قبول الاستعلام الذي لا يتضمن بيانات اعتماد أو رفضه تحدده تهيئة ذلك المستخدم. وإذا عُيِّن `default_session_user` إلى سلسلة فارغة، فستُرفض الاستعلامات التي لا تتضمن `user_name`، وإذا كان القسم `session_log` مفعّلًا في تكوين الخادم، فسيُسجَّل الرفض في [`system.session_log`](/ar/reference/system-tables/session_log) بوصفه حدث `LoginFailure` بقيمة `user` فارغة.
+
+## العميل المدمج {#grpc-client}
+
+يمكنك كتابة عميل بأي من لغات البرمجة التي يدعمها gRPC بالاستعانة بـ[المواصفة](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto) المتوفرة.
+أو يمكنك استخدام عميل Python المدمج، الموجود في [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py) ضمن المستودع. يتطلب العميل المدمج وحدتَي Python ‏[grpcio وgrpcio-tools](https://grpc.io/docs/languages/python/quickstart).
+
+يدعم العميل الوسيطات التالية:
+
+* `--help` – يعرض رسالة المساعدة ثم ينهي التشغيل.
+* `--host HOST, -h HOST` – اسم الخادم. القيمة الافتراضية: `localhost`. يمكنك أيضًا استخدام عناوين IPv4 أو IPv6.
+* `--port PORT` – المنفذ المراد الاتصال به. يجب تمكين هذا المنفذ في تكوين خادم ClickHouse (راجع `grpc_port`). القيمة الافتراضية: `9100`.
+* `--user USER_NAME, -u USER_NAME` – اسم المستخدم. القيمة الافتراضية: `default`.
+* `--password PASSWORD` – كلمة المرور. القيمة الافتراضية: سلسلة فارغة.
+* `--query QUERY, -q QUERY` – الاستعلام المراد معالجته عند استخدام الوضع غير التفاعلي.
+* `--database DATABASE, -d DATABASE` – قاعدة البيانات الافتراضية. إذا لم تُحدَّد، فستُستخدم قاعدة البيانات الحالية المعيّنة في إعدادات الخادم (`default` افتراضيًا).
+* `--format OUTPUT_FORMAT, -f OUTPUT_FORMAT` – [صيغة](/ar/reference/formats/index) إخراج النتيجة. القيمة الافتراضية في الوضع التفاعلي: `PrettyCompact`.
+* `--debug` – يفعّل عرض معلومات التصحيح.
+
+لتشغيل العميل في الوضع التفاعلي، استدعِه دون الوسيطة `--query`.
+
+في وضع الدُفعات، يمكن تمرير بيانات الاستعلام عبر `stdin`.
+
+**مثال على استخدام العميل**
+
+في المثال التالي، يُنشأ جدول وتُحمَّل فيه بيانات من ملف CSV، ثم يُستعلَم عن محتواه.
+
+```bash title="Query"
+./clickhouse-grpc-client.py -q "CREATE TABLE grpc_example_table (id UInt32, text String) ENGINE = MergeTree() ORDER BY id;"
+echo -e "0,Input data for\n1,gRPC protocol example" > a.csv
+cat a.csv | ./clickhouse-grpc-client.py -q "INSERT INTO grpc_example_table FORMAT CSV"
+
+./clickhouse-grpc-client.py --format PrettyCompact -q "SELECT * FROM grpc_example_table;"
+```
+
+```text title="Response"
+┌─id─┬─text──────────────────┐
+│  0 │ Input data for        │
+│  1 │ gRPC protocol example │
+└────┴───────────────────────┘
+```

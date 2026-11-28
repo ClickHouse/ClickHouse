@@ -13,21 +13,17 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas com base no [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="http_headers_progress_interval_ms">
-  ## http_headers_progress_interval_ms
-</div>
+## http_headers_progress_interval_ms {#http_headers_progress_interval_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Não envie os cabeçalhos HTTP X-ClickHouse-Progress com mais frequência do que o intervalo especificado.
 
-<div id="http_headers_read_timeout">
-  ## http_headers_read_timeout
-</div>
+## http_headers_read_timeout {#http_headers_read_timeout}
 
-<SettingsInfoBlock type="Segundos" default_value="30" />
+<SettingsInfoBlock type="Seconds" default_value="30" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "30"},{"label": "Nova configuração para limitar o tempo total de leitura dos cabeçalhos da requisição HTTP, protegendo contra ataques slowloris."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "30"},{"label": "A alteração recebeu backport para a 26.1 e está registrada lá."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "30"},{"label": "Nova configuração para limitar o tempo total de leitura dos cabeçalhos da requisição HTTP, protegendo contra ataques slowloris."}]}]} />
 
 Tempo máximo, em segundos, para ler todos os cabeçalhos da requisição HTTP. Este é um limite de tempo total para toda a fase de análise dos cabeçalhos, não um timeout para cada leitura. Protege contra ataques do tipo slowloris, nos quais um cliente envia os dados do cabeçalho lentamente para manter as conexões abertas.
 

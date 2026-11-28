@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 Этот движок обеспечивает интеграцию с существующими таблицами [Delta Lake](https://github.com/delta-io/delta) в хранилищах S3, GCP и Azure и поддерживает как чтение, так и запись (запись в S3 и GCS — начиная с v25.10, в Azure — с v26.9).
 
-## Создание таблицы DeltaLake
+## Создание таблицы DeltaLake {#create-table}
 
 По умолчанию таблица Delta Lake должна уже существовать в хранилище S3, GCP или Azure, а приведённые ниже команды подключаются к ней без DDL-определений столбцов. При `allow_delta_lake_create_table = 1` команда `CREATE TABLE` с явно заданными столбцами для расположения без `_delta_log` вместо этого создаёт новую таблицу Delta Lake, записывая начальный коммит через `delta-kernel-rs` (создание секционированных таблиц пока не поддерживается); кроме того, в базе данных Unity `DataLakeCatalog` таблица регистрируется в каталоге.
 
@@ -98,22 +98,54 @@ doc_type: 'reference'
     **Синтаксис**
 
     ```sql
+    -- Account key
     CREATE TABLE table_name
-    ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ENGINE = DeltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+    -- Workload identity (mutually exclusive with account_name / account_key)
+    CREATE TABLE table_name
+    ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])
     ```
 
     **Аргументы**
 
     * `connection_string` — строка подключения Azure
-    * `storage_account_url` — URL учётной записи хранилища Azure (например, https://account.blob.core.windows.net)
+    * `storage_account_url` — URL учётной записи хранения Azure (например, https://account.blob.core.windows.net)
     * `container_name` — имя контейнера Azure
     * `blobpath` — путь к таблице Delta Lake внутри контейнера
-    * `account_name` — имя учётной записи хранилища Azure
-    * `account_key` — ключ учётной записи хранилища Azure
+    * `account_name` — имя учётной записи хранения Azure
+    * `account_key` — ключ учётной записи хранения Azure
+    * `extra_credentials` — необязательная альтернатива `account_name` / `account_key`. Для аутентификации через Azure workload identity укажите `client_id` и `tenant_id`. Нельзя использовать вместе с учётными данными аккаунта. Это не та форма `extra_credentials` с `role_arn`, которая используется для S3.
+
+    Параметры движка можно задать с помощью [именованных коллекций](/ru/concepts/features/configuration/server-config/named-collections). Именованные коллекции принимают те же ключи `client_id` и `tenant_id`.
+
+    **Workload identity**
+
+    Для доступа к Azure через delta-kernel также требуются переменные окружения:
+
+    * `AZURE_FEDERATED_TOKEN_FILE` — обязательна (файл проецируемого токена, например в AKS)
+    * `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` — обязательны, если не переданы через `extra_credentials` или именованную коллекцию
+    * `AZURE_AUTHORITY_HOST` — необязательна
+
+    Workload identity использует собственную идентичность сервера, поэтому по умолчанию она запрещена: в каждом сеансе, который создаёт таблицу или выполняет к ней запросы, должна быть включена настройка `allow_server_credentials_in_user_queries` — либо с помощью `SET`, либо в профиле настроек сеанса.
+
+    ```sql
+    SET allow_server_credentials_in_user_queries = 1;
+
+    CREATE NAMED COLLECTION azure_wi AS
+        storage_account_url = 'https://<account>.blob.core.windows.net',
+        container = 'mycontainer',
+        blob_path = 'path/to/table',
+        client_id = '<client-id>',
+        tenant_id = '<tenant-id>';
+
+    CREATE TABLE azureDeltaLake
+    ENGINE = DeltaLakeAzure(azure_wi)
+    ```
   </Tab>
 </Tabs>
 
-## Запись данных с помощью таблицы DeltaLake
+## Запись данных с помощью таблицы DeltaLake {#insert-data}
 
 После создания таблицы на движке таблицы DeltaLake вы можете вставлять в неё данные с помощью:
 
@@ -129,14 +161,13 @@ VALUES (1, 'John', 'Smith', 'M', 32);
 <Note>
   Запись с использованием этого движка таблицы поддерживается только через Delta Kernel.
   Запись работает для S3 и GCS, а для Azure — начиная с версии 26.9.
-  Аутентификация Azure Workload Identity (`extra_credentials(client_id = ..., tenant_id = ...)`) не поддерживается Delta Kernel.
 </Note>
 
-### Кэширование данных
+### Кэширование данных {#data-cache}
 
 Движок таблицы `DeltaLake` и табличная функция поддерживают кэширование данных, как и хранилища `S3`, `AzureBlobStorage` и `HDFS`. Подробнее см. в разделе [&quot;движок таблицы S3&quot;](/ru/reference/engines/table-engines/integrations/s3#data-cache).
 
-## См. также
+## См. также {#see-also}
 
 * [Табличная функция deltaLake](/ru/reference/functions/table-functions/deltalake)
 

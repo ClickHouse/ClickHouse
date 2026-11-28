@@ -9,23 +9,13 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 
 您可以通过 URL 查询参数使用深度链接打开 ClickStack 页面，从外部系统 (如告警通知、运行手册、CI 作业或聊天消息) 直接跳转到特定搜索、仪表盘或面板。
 
-本页示例使用 `<YOUR_CLICKSTACK_URL>`。请将其替换为您的 ClickStack URL：例如，本地开源部署可使用 `http://localhost:8080`，ClickHouse Cloud 中的托管 ClickStack 可使用 `https://hyperdx.clickhouse.cloud`。
+本页示例使用 `<YOUR_CLICKSTACK_URL>`。请将其替换为您的 ClickStack URL：例如，本地开源部署可使用 `http://localhost:8080`。
 
 <Note>
   为便于阅读，示例中的查询参数未经 URL 编码。以编程方式构造链接时，请对每个查询参数值进行 URL 编码。
 </Note>
 
-<Info>
-  **托管 ClickStack 服务 ID 参数**
-
-  在 ClickHouse Cloud 中使用托管 ClickStack 时，若通过链接访问的已验证用户有权使用多个 ClickHouse Cloud 服务，链接应包含 `?chcServiceId=` 参数，以指定要加载的 ClickHouse Cloud 服务。
-
-  示例：在特定 Cloud 服务中打开搜索
-
-  ```text
-  https://hyperdx.clickhouse.cloud/search?chcServiceId=abc123
-  ```
-</Info>
+有关云服务参数和笔记本链接，请参阅 [ClickHouse Observability 深度链接](/zh/clickstack/observability/url-parameters)。
 
 ## 搜索 — `/search` {#search}
 
@@ -76,14 +66,31 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 
 已保存的仪表盘。省略 `<dashboardId>` (`/dashboards`) 可打开一个临时的未保存仪表盘。有关创建仪表盘的详细信息，请参阅[仪表盘](/zh/clickstack/features/dashboards/overview)。
 
-| 参数                  | 格式                                                                                                                                  | 描述                                             |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `from`, `to`        | 纪元毫秒                                                                                                                                | 应用于所有卡片的时间范围。若省略，默认为最近 15 分钟。                  |
-| `where`             | 字符串                                                                                                                                 | 应用于所有卡片的仪表盘级过滤器查询文本。                           |
-| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | 编写 `where` 时使用的查询语言。                           |
-| `filters`           | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]`                                                          | 结构化仪表盘过滤器配置值，用于在 `ServiceName` 过滤器下拉列表中选择两个项目。 |
-| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | 时间序列卡片的分桶大小。`auto` 会根据所选时间范围选择分桶大小。            |
-| `highlightedTileId` | 字符串                                                                                                                                 | 滚动到并突出显示指定卡片——从告警跳转时非常有用。                 |
+| 参数                  | 格式                                                                                                                                  | 描述                                                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `from`, `to`        | 纪元毫秒                                                                                                                                | 应用于所有卡片的时间范围。若省略，默认为最近 15 分钟。                                                                                     |
+| `where`             | 字符串                                                                                                                                 | 应用于所有卡片的仪表盘级过滤器查询文本。                                                                                              |
+| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | 编写 `where` 时使用的查询语言。                                                                                              |
+| `filters`           | 由筛选值条目组成的 JSON 数组                                                                                                                   | 仪表盘中[自定义筛选器和变量](/zh/clickstack/features/dashboards/overview#custom-filters)的当前选择。请参阅[筛选值](#dashboard-filter-values)。 |
+| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | 时间序列卡片的分桶大小。`auto` 会根据所选时间范围选择分桶大小。                                                                               |
+| `highlightedTileId` | 字符串                                                                                                                                 | 滚动到并突出显示指定卡片——从告警跳转时非常有用。                                                                                         |
+
+### 筛选值 {#dashboard-filter-values}
+
+`filters` 参数是一个 JSON 数组。每个条目用于设置一个过滤器的选中值，可采用以下任一形式：
+
+| 条目                                                                                                                | 用途                                                                                                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `{"type":"variable","name":"<variableName>","values":["<value1>","<value2>"]}`                                    | 作为变量的过滤器：静态值、SQL 查询值、PromQL 标签值、数据源和连接变量，以及启用了 **Available as variable** 的 SQL 表达式值过滤器。`name` 为该过滤器的变量名称。                                                                                                       |
+| `{"type":"adhoc","name":"<uniqueName>","conditions":[{"key":"<key>","operator":"<operator>","value":"<value>"}]}` | [临时过滤器](/zh/clickstack/features/dashboards/overview#adhoc-filters)。`name` 为该过滤器的唯一名称，`operator` 为 `=`、`!=`、`=~`、`!~`、`LIKE`、`NOT LIKE` 或 `IN` 之一。`LIKE` 和 `NOT LIKE` 仅适用于 SQL 数据源——Prometheus 临时过滤器会忽略使用这两个运算符的条件。 |
+| `{"type":"sql","condition":"<expression> IN ('<value1>', '<value2>')"}`                                           | 不作为变量的 SQL 表达式值过滤器。条件中的表达式必须与该过滤器的 **Filter expression** 一致。                                                                                                                                                     |
+
+适用以下规则：
+
+* 对于同一过滤器，变量条目优先于 `sql` 条目。在引入变量之前创建的链接 (对所有过滤器均使用 `sql` 条目) 仍可正常使用。
+* 对于数据源和连接变量，值可以使用 source 或连接的**名称**，而不必使用其 ID。名称会先进行精确匹配，再进行不区分大小写的匹配。这样，即使同一 source 在不同环境中的 ID 不同，链接也能保持稳定。
+* 单选过滤器仅使用第一个值。
+* 与仪表盘上任何过滤器均不匹配或格式错误的条目将被忽略。
 
 ### 示例：打开指定时间范围的仪表盘，并高亮显示某个卡片 {#example-dashboard-highlight}
 
@@ -91,6 +98,30 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 
 ```text
 <YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+```
+
+### 示例：在作为变量的过滤器中选择值 {#example-dashboard-variables}
+
+在变量名为 `service` 的过滤器中选中 `checkout` 和 `payments`，并在变量名为 `severity` 的过滤器中选中 `ERROR`。
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"service","values":["checkout","payments"]},{"type":"variable","name":"severity","values":["ERROR"]}]
+```
+
+### 示例：按名称选择数据源和连接 {#example-dashboard-source-variable}
+
+在名为 `logs` 的数据源变量中选择 `Production Logs` source，并在名为 `cluster` 的连接变量中选择 `Production` 连接。
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"logs","values":["Production Logs"]},{"type":"variable","name":"cluster","values":["Production"]}]
+```
+
+### 示例：添加临时过滤条件 {#example-dashboard-adhoc}
+
+向唯一名称为 `adhoc` 的临时过滤器添加两个条件：`ServiceName` 为 `checkout` 或 `payments`，且 `SeverityText` 不是 `DEBUG`。
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"adhoc","name":"adhoc","conditions":[{"key":"ServiceName","operator":"IN","value":"checkout"},{"key":"ServiceName","operator":"IN","value":"payments"},{"key":"SeverityText","operator":"!=","value":"DEBUG"}]}]
 ```
 
 ## 仪表盘列表 — `/dashboards/list` {#dashboards-list}
@@ -217,18 +248,4 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 
 ```text
 <YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
-```
-
-## 笔记本 — `/notebook/<notebookId>` {#notebooks}
-
-<Info>
-  **仅适用于托管 ClickStack**
-
-  笔记本仅在托管 ClickStack 部署中可用。有关该功能的详细信息，请参阅 [AI Notebooks](/zh/clickstack/notebooks)。
-</Info>
-
-### 示例：在指定的 Cloud 服务中打开特定 notebook {#example-notebook-open}
-
-```text
-<YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123
 ```

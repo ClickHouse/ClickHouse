@@ -1,0 +1,84 @@
+---
+sidebarTitle: 'OLake Go'
+slug: /integrations/olake
+description: 'نسخ قواعد البيانات وS3 وKafka نسخًا متماثلًا إلى جداول Apache Iceberg يقرؤها ClickHouse بصورة أصلية'
+title: 'OLake Go وClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://olake.io/'
+keywords: ['olake', 'olake go', 'استيعاب البيانات', 'iceberg', 'parquet', 'cdc', 'replication', 'تكامل البيانات']
+---
+
+import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[OLake Go](https://olake.io/) منصة EL (الاستخراج–التحميل) مفتوحة المصدر وعالية الأداء، تربط قواعد البيانات التشغيلية بتخزين مستودع بحيرة البيانات المفتوح، إذ تكتب جداول Apache Iceberg أو ملفات Parquet على Amazon S3. وتدعم OLake Go المزامنة التزايدية، والتقاط تغييرات البيانات (CDC)، والمزامنة ذات الحالة القابلة للاستئناف.
+
+يقرأ ClickHouse جداول Iceberg بشكل أصلي من خلال دالة الجدول [`iceberg`](/ar/reference/functions/table-functions/iceberg) ومحرك الجدول [`Iceberg`](/ar/reference/engines/table-engines/integrations/iceberg)، ويتصل بكتالوجات Iceberg عبر [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake). توضح هذه الصفحة كيفية استخدام OLake Go لتعبئة جداول Iceberg بالبيانات، ليستعلم عنها ClickHouse لاحقًا.
+
+## المتطلبات المسبقة {#prerequisites}
+
+* OLake Go، مستضاف ذاتيًا عبر Docker Compose أو Kubernetes (Helm) أو حاوية Docker مستقلة
+* نظام مصدر يدعمه OLake Go: PostgreSQL أو MySQL أو MongoDB أو Oracle أو MSSQL أو DB2 أو Kafka أو Amazon S3
+* ClickHouse Cloud أو ClickHouse مستضاف ذاتيًا يدعم القراءة من Iceberg
+* كتالوج Iceberg يكتب إليه OLake Go ويستطيع ClickHouse الاتصال به، مثل AWS Glue أو Hive Metastore أو REST أو Unity Catalog أو Polaris أو BigLake (راجع [مصفوفة توافق الكتالوجات في OLake Go](https://olake.io/docs/understanding/compatibility-catalogs/) و[أنواع كتالوجات `DataLakeCatalog`](/ar/reference/engines/database-engines/datalake) في ClickHouse)
+
+## الإعداد {#setup}
+
+1. انشر OLake Go باتباع [دليل البدء السريع لـ OLake Go](https://olake.io/docs/getting-started/quickstart/).
+2. قم بتهيئة مصدر (مثل PostgreSQL أو MySQL) ووجهة Iceberg على تخزين S3 أو تخزين S3-compatible.
+3. اختر كتالوج Iceberg مدعومًا. يجب أن يدعم كلٌّ من OLake Go و`DataLakeCatalog` في ClickHouse هذا الكتالوج (أنواع الكتالوج: `glue`، `rest`، `hive`، `unity`، `onelake`، `horizon`).
+4. شغّل عملية مزامنة لكتابة جداول Iceberg.
+5. في ClickHouse، استعلم عن بيانات Iceberg باستخدام دالة الجدول `iceberg` أو محرك جداول `Iceberg`، أو اربط الكتالوج عبر [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake).
+
+## مثال: من PostgreSQL إلى Iceberg مع الاستعلام في ClickHouse {#example}
+
+1. في OLake Go، أنشئ مصدر PostgreSQL ووجهة Iceberg على Amazon S3 باستخدام كتالوج AWS Glue.
+2. شغّل مزامنة بتحديث كامل أو مزامنة CDC (التقاط تغييرات البيانات) لنسخ الجداول نسخًا متماثلًا بتنسيق Iceberg.
+3. في ClickHouse، أنشئ جدولًا يستند إلى بيانات Iceberg:
+
+```sql
+CREATE TABLE my_iceberg_table
+ENGINE = IcebergS3(
+  's3://my-bucket/warehouse/my_database/my_table/',
+  'aws_access_key',
+  'aws_secret_key'
+)
+```
+
+4. استعلم عن البيانات المتماثلة:
+
+```sql
+SELECT * FROM my_iceberg_table LIMIT 10;
+```
+
+بدلاً من ذلك، يمكنك ربط كتالوج AWS Glue بـ ClickHouse عبر `DataLakeCatalog`، ثم الاستعلام عن جداول الكتالوج مباشرةً.
+
+## القيود المعروفة {#known-limitations}
+
+* يكتب OLake Go جداول Iceberg، بينما يقرؤها ClickHouse. ويدعم ClickHouse أيضًا تعديل جداول Iceberg (بدءًا من الإصدار 25.7)، لكنها ميزة مستقلة في ClickHouse لا يوفّرها OLake Go.
+* عمليات حذف المساواة (equality deletes) مدعومة بدءًا من الإصدار 25.8 من ClickHouse. وقد لا تتمكن الإصدارات الأقدم من قراءة جميع صيغ الحذف التي يستطيع OLake Go كتابتها. راجع [توثيق Iceberg في ClickHouse](/ar/reference/functions/table-functions/iceberg) للاطلاع على الحالة الراهنة لدعم صيغ الحذف.
+* ليست كل الكتالوجات التي يدعمها OLake Go متاحة كأنواع كتالوجات في `DataLakeCatalog` ضمن ClickHouse. راجع كلًّا من [مصفوفة توافق الكتالوجات في OLake Go](https://olake.io/docs/understanding/compatibility-catalogs/) و[توثيق `DataLakeCatalog`](/ar/reference/engines/database-engines/datalake) قبل اختيار الكتالوج.
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+### عدم ظهور الجداول في ClickHouse {#tables-not-visible}
+
+تأكد من أن كتالوج Iceberg الذي يكتب إليه OLake Go كتالوجٌ يستطيع ClickHouse الاتصال به، ومن صحة معلمات الاتصال بالكتالوج وبيانات الاعتماد. راجع [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake) للاطلاع على أنواع الكتالوجات المدعومة.
+
+### الصفوف المحذوفة لا تزال تظهر {#deleted-rows-visible}
+
+تحقّق من أن إصدار ClickHouse لديك يدعم صيغة الحذف التي كتب بها OLake Go البيانات (حذف قائم على المساواة، أو حذف موضعي، أو متجهات الحذف). تتطلّب عمليات الحذف القائمة على المساواة ClickHouse 25.8 أو أحدث. راجع [توثيق دالة جداول Iceberg](/ar/reference/functions/table-functions/iceberg) لمزيد من التفاصيل.
+
+## قراءات إضافية {#further-reading}
+
+* [وثائق OLake Go](https://olake.io/docs/)
+* [توافق OLake Go مع ClickHouse بوصفه محرك استعلامات](https://olake.io/docs/understanding/compatibility-engines/)
+* [توافق OLake Go مع كتالوجات Iceberg](https://olake.io/docs/understanding/compatibility-catalogs/)
+* [دالة الجدول `iceberg` في ClickHouse](/ar/reference/functions/table-functions/iceberg)
+* [محرك جداول `Iceberg` في ClickHouse](/ar/reference/engines/table-engines/integrations/iceberg)
+* [`DataLakeCatalog` في ClickHouse](/ar/reference/engines/database-engines/datalake)
+* [كتالوج البيانات في ClickHouse](/ar/integrations/data-catalogs)

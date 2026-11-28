@@ -120,13 +120,19 @@ Pour désactiver la division des nœuds `Resize`, définissez ce paramètre sur 
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "Nouveau paramètre : `enable_packed_string_keys_in_hash_join` ne s'applique que lorsque le côté droit de la jointure est estimé à 100000 lignes ou plus, ou ne fait l'objet d'aucune estimation."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "Nouveau paramètre : nombre minimal de lignes côté droit pour une jointure par hachage qui calculerait le hachage de chaque clé gauche, c’est-à-dire une clé d’une longueur moyenne supérieure à 15 octets, ou de longueur inconnue, sans filtre d’exécution. `enable_packed_string_keys_in_hash_join` nécessite également une table de hachage plus grande que le cache L2. 0 compacte toutes les jointures."}]}]} />
 
-Nombre minimal estimé de lignes du côté droit d&#39;une jointure à partir duquel `enable_packed_string_keys_in_hash_join` s&#39;applique. Les jointures plus petites n&#39;en tirent guère de bénéfice et peuvent même être plus lentes avec des clés longues.
+Une jointure par hachage dont le côté droit dispose d’une estimation du nombre de lignes ne compacte ses clés `String` (voir `enable_packed_string_keys_in_hash_join`) que lorsque la table de hachage avec les clés exactes dépasserait approximativement la taille du cache L2 du CPU, ou lorsque ce paramètre vaut 0. La taille de la table correspond au nombre de lignes côté droit multiplié par le nombre d’octets d’une ligne : une cellule de 32 octets plus la longueur moyenne de la clé, qui compte pour 0 lorsqu’elle est inconnue. Les jointures plus petites tirent peu de bénéfice des clés compactées et peuvent même être plus lentes.
 
-L&#39;estimation correspond au nombre de lignes du côté droit observé lors d&#39;une exécution précédente de la même jointure, si `collect_hash_table_stats_during_joins` est activé. Sinon, il s&#39;agit de l&#39;estimation de l&#39;optimiseur de requêtes. `parallel_hash_join_threshold` s&#39;appuie sur la même estimation. Une jointure sans estimation utilise toujours `enable_packed_string_keys_in_hash_join`.
+Le hachage d’une clé compactée de plus de 15 octets est calculé pour chaque ligne du côté gauche. Une jointure dotée d’un filtre d’exécution qui laisse passer principalement les lignes ayant une correspondance (voir `enable_join_runtime_filters`) ne calcule le hachage que des lignes correspondantes ; elle n’a donc besoin d’aucun minimum. Sans un tel filtre, ce paramètre définit le nombre minimal de lignes côté droit. Il s’applique lorsque la longueur moyenne de la clé dépasse 15 octets, ainsi que lorsque la longueur est inconnue, car la clé est alors considérée comme longue. La longueur est déterminée à partir des statistiques de colonne `basic` de la clé. Les tables `MergeTree` les collectent par défaut (voir `auto_statistics_types`).
 
-0 signifie qu&#39;aucun minimum n&#39;est appliqué.
+La clé ne dispose d’aucune statistique lorsqu’elle est une colonne d’une table `Memory`, le résultat d’une fonction d’agrégation d’une sous-requête, ou le résultat d’une expression dans `ON`, telle que `concat(k, 'x')` ou `hex(k)`. Une jointure avec `OR` ne les utilise pas. Une sous-requête qui se contente de transmettre la colonne, ou qui effectue un regroupement sur celle-ci, les conserve.
+
+Une jointure `LEFT` autre que `SEMI` et `ANTI`, ainsi qu’une jointure `FULL`, conservent toutes les lignes de leur côté gauche ; elles ne reçoivent donc pas de filtre d’exécution. Le filtre d’une jointure `LEFT ANTI` laisse passer les lignes sans correspondance ; il n’est donc pas pris en compte.
+
+Le nombre de lignes correspond aux lignes côté droit d’une exécution précédente de la même jointure, si `collect_hash_table_stats_during_joins` est activé. Sinon, il s’agit de l’estimation de l’optimiseur de requêtes, également utilisée par `parallel_hash_join_threshold`. En l’absence d’estimation de l’optimiseur, il s’agit de l’estimation que fait ce serveur pour sa propre lecture de la table de droite. Une jointure ne disposant d’aucune des deux compacte les clés, sauf si le serveur qui a planifié la requête a estimé le côté droit en dessous de ce minimum. Chaque serveur d’une requête distribuée décide en fonction de sa propre estimation, de ses statistiques et de la taille de son cache.
+
+0 compacte les clés de toutes les jointures.
 
 ## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
 

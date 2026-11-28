@@ -1390,8 +1390,10 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 某些 MergeTree 设置可以在列级别进行覆盖：
 
-* `max_compress_block_size` — 写入表时，压缩前未压缩数据块的最大大小。
+* `max_compress_block_size` — 写入表时，压缩前未压缩数据块的最大大小。一个压缩块最多容纳 256 MiB 的未压缩数据，因此大于 256 MiB 的值均按 256 MiB 处理。旧版本以更大的块写入的数据将无法读取。
 * `min_compress_block_size` — 写入下一个标记时，触发压缩所需的未压缩数据块最小大小。
+
+对于使用 `Quantized` 编解码器的列，这两个设置仅作用于其向量 (即数组元素) ；其数组大小和量化编码则使用表级设置值。`Nested` 结构中多个列共享的数组大小只写入一次，并采用最先写入它们的那一列的设置。
 
 示例：
 

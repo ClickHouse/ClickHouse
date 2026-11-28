@@ -1,41 +1,367 @@
 ---
 title: 'Cómo ejecuta ClickHouse los JOIN'
 sidebarTitle: 'Ejecución'
-description: 'Fases de build y sondeo, y optimizaciones del planificador de consultas para JOIN.'
-keywords: ['ejecución de JOIN', 'lado de build', 'lado de sondeo', 'planificador de JOIN', 'reordenación de JOIN', 'pushdown de filtros']
+description: 'Fases de build y sondeo, optimización del orden de los JOIN basada en costes y optimizaciones del planificador de consultas para JOIN.'
+keywords: ['ejecución de JOIN', 'lado de construcción', 'lado de sondeo', 'planificador de JOIN', 'reordenación de JOIN', 'optimizador basado en costes', 'detector de conflictos', 'filtros en tiempo de ejecución', 'pushdown de filtros']
 doc_type: 'guide'
 ---
 
+En esta página se explica cómo ClickHouse planifica y ejecuta un JOIN. Se tratan las fases de ejecución, la optimización del orden de los JOIN basada en costes, las optimizaciones del planificador de consultas y el filtrado en tiempo de ejecución.
+
+## Fases de construcción y sondeo {#build-and-probe-phases}
+
 La mayoría de los algoritmos de join se ejecutan en dos fases:
 
-* **Fase de build.** ClickHouse lee una de las entradas por completo y la almacena en una estructura de datos que permite buscar coincidencias, como una tabla hash o un conjunto de bloques ordenados. Esta entrada es el lado de build.
-* **Fase de sondeo.** ClickHouse lee la otra entrada en streaming, bloque a bloque, y compara cada fila con la estructura de datos creada en la fase de build. Esta entrada es el lado de sondeo.
+* **Fase de construcción.** ClickHouse lee una de las entradas por completo y la almacena en una estructura de datos que permite buscar coincidencias, como una tabla hash o un conjunto de bloques ordenados. Esta entrada es el lado de construcción.
+* **Fase de sondeo.** ClickHouse lee la otra entrada en streaming, bloque a bloque, y compara cada fila con la estructura de datos creada en la fase de construcción. Esta entrada es el lado de sondeo.
 
-La fase de sondeo no comienza hasta que termina la fase de build. Por ello, la memoria que necesita un JOIN depende principalmente del tamaño del lado de build.
+La fase de sondeo no comienza hasta que termina la fase de construcción. Por ello, la memoria que necesita un JOIN depende principalmente del tamaño del lado de construcción.
 
-De forma predeterminada, el lado derecho del JOIN es el lado de build y el lado izquierdo, el lado de sondeo. Algunos algoritmos se apartan de este modelo. El [algoritmo `direct`](/es/concepts/features/operations/select/join-algorithms#direct) no tiene fase de build, ya que el lado derecho ya existe como una estructura clave-valor. El [algoritmo `full_sorting_merge`](/es/concepts/features/operations/select/join-algorithms#full-sorting-merge) ordena ambas entradas y las fusiona. El [algoritmo `ie_join`](/es/concepts/features/operations/select/join-algorithms#ie-join) acumula ambas entradas antes de unirlas.
+De forma predeterminada, el lado derecho del JOIN es el lado de construcción y el lado izquierdo, el lado de sondeo. Algunos algoritmos se apartan de este modelo. El [algoritmo `direct`](/es/concepts/features/operations/select/join-algorithms#direct) no tiene fase de construcción, ya que el lado derecho ya existe como una estructura clave-valor. El [algoritmo `full_sorting_merge`](/es/concepts/features/operations/select/join-algorithms#full-sorting-merge) ordena ambas entradas y las fusiona. El [algoritmo `inequality`](/es/concepts/features/operations/select/join-algorithms#inequality) acumula ambas entradas antes de unirlas.
 
 ## Comportamiento del planificador de consultas {#query-planner-behavior}
 
-El planificador de consultas puede modificar las entradas de un JOIN antes de que se ejecute un algoritmo. Se aplican las siguientes optimizaciones.
+El planificador de consultas transforma un plan de consulta en dos pasadas antes de que se ejecute un algoritmo. La primera pasada aplica reglas locales de abajo hacia arriba de forma repetida hasta que ya no se pueda aplicar ninguna, elimina las columnas no utilizadas de forma global en todo el plan y vuelve a ejecutar las reglas locales. La segunda pasada ejecuta análisis y transformaciones sobre todo el plan en una secuencia fija.
 
-### Selección automática del lado de construcción {#automatic-build-side-selection}
+Si los ajustes lo permiten y la consulta lo admite, el planificador puede aplicar, en este orden, las siguientes optimizaciones relacionadas con JOIN.
+
+**Primera pasada:**
+
+1. Cortocircuito de un JOIN cuya condición `ON` se reduce a la constante false.
+2. División de expresiones de filtrado y extracción de condiciones lógicas `JOIN` `ON`, seguida de la fusión de expresiones y filtros.
+3. Pushdown de filtros por debajo de los JOIN, incluido el pushdown parcial de condiciones `JOIN` conectadas mediante `OR`.
+4. Conversión de un JOIN externo en un JOIN `INNER` cuando un filtro situado directamente encima del JOIN siempre descarta las filas sin coincidencia.
+5. Conversión de un JOIN `INNER` apto en una subconsulta `IN`.
+6. Fusión de los filtros de igualdad situados encima de un JOIN en la condición del `JOIN`, incluida la conversión de un JOIN `CROSS` o de un comma join en un JOIN `INNER`.
+7. Conversión de un JOIN `ANY` en un JOIN `SEMI` o en un JOIN `ANTI` en función de un filtro posterior al JOIN.
+8. Desplazamiento de operaciones top-K `ORDER BY ... LIMIT` por debajo de un JOIN `LEFT` o `RIGHT` cuando la clave de ordenación solo hace referencia a columnas del lado preservado.
+
+**Segunda pasada:**
+
+1. Conversión transitiva de JOIN externos en JOIN `INNER` en función de filtros situados más arriba en el plan o de condiciones de los JOIN que los contienen.
+2. Propagación de predicados de filtro a la otra entrada a través de las claves de equi-JOIN.
+3. Análisis de clave primaria y de límite, configuración de la caché de condiciones de consulta y análisis de índices de texto.
+4. Optimización del orden de los joins y selección automática del lado de compilación.
+5. Inserción de filtros JOIN en tiempo de ejecución, eliminación de las columnas que han dejado de usarse, pushdown de los filtros en tiempo de ejecución hacia los pasos de lectura y registro de estos para el análisis de índices en tiempo de lectura.
+6. Optimización de `PREWHERE`, que puede mover a `PREWHERE` los filtros desplazados mediante pushdown y los filtros en tiempo de ejecución.
+7. Materialización diferida para consultas `LIMIT` sobre JOIN, lectura en orden a través de JOIN y planificación de JOIN distribuidos.
+8. Conversión de los pasos de unión lógicos en algoritmos de join físicos, seguida de la indexación diferida de columnas en los pasos de unión físicos.
+9. Sharding de los JOIN `MergeTree` aptos por rangos de clave primaria, marcado de las lecturas de sondeo condicionadas por sellado para la poda de rangos mediante filtros en tiempo de ejecución, y sharding de los JOIN `parallel_full_sorting_merge`.
+
+## Optimización del orden de JOIN {#multi-table-join-reordering}
+
+En una consulta que une varias tablas dentro de la misma subconsulta, el optimizador del orden de JOIN basado en costes elige el orden de ejecución de las tablas.
+
+### Por qué importa el orden de los JOIN {#why-join-order-matters}
+
+Distintos órdenes de JOIN sobre las mismas tablas producen el mismo resultado final, pero generan resultados intermedios y tablas hash del lado de compilación de tamaños muy diferentes. Unir tablas grandes antes de aplicar una tabla selectiva genera resultados intermedios voluminosos que los pasos de unión posteriores deben procesar con hash y sondear. Si se une primero la tabla selectiva, el número de filas intermedias se reduce desde el principio.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Comparación de dos órdenes de JOIN en una consulta TPC-H SF10 de cuatro tablas sobre lineitem, orders, customer y nation filtrada: unir primero las tablas grandes produce resultados intermedios de 60.0M filas, mientras que unir primero la tabla nation filtrada produce 60K y 602K filas intermedias para el mismo resultado final de 2,407,146 filas](/images/guides/join-execution/tpch-join-orders.png)
+  </Frame>
+</div>
+
+El número de árboles de JOIN posibles crece rápidamente con el número de tablas. Para `n` tablas, existen `n!` órdenes de JOIN de profundidad izquierda (left-deep) y `(2n - 2)! / (n - 1)!` árboles de JOIN frondosos (bushy). Con 10 tablas, esto supone 3,628,800 órdenes de profundidad izquierda y más de 17.6 mil millones de árboles frondosos. Con 12 tablas, el espacio de búsqueda de árboles frondosos se acerca a los 28 billones de árboles.
+
+Un optimizador de JOIN basado en costes divide el problema en tres componentes:
+
+* **Espacio de búsqueda:** el conjunto de árboles de JOIN lógicamente equivalentes que preservan la semántica de la consulta.
+* **Modelo de costes:** una función que estima el número de filas intermedias y asigna un coste numérico a cada plan candidato.
+* **Estrategia de búsqueda:** un algoritmo que enumera los planes candidatos del espacio de búsqueda para seleccionar un árbol de bajo coste.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Diagrama de la optimización de consultas desde una consulta SQL, pasando por un optimizador de consultas compuesto por un espacio de búsqueda, un modelo de costes y una estrategia de búsqueda, hasta un plan físico con entradas de sondeo y de compilación de HashJoin](/images/guides/join-execution/query-to-physical-plan.png)
+  </Frame>
+</div>
+
+### Modelo de costes y estimaciones de cardinalidad {#cost-model-and-cardinality-estimates}
+
+Para cada nodo JOIN candidato, el modelo de costes calcula el coste acumulado como la suma de los costes de sus dos entradas más la cardinalidad de salida estimada del propio paso de unión.
+
+Para estimar la cardinalidad de salida, el optimizador estima primero la selectividad de la condición de `JOIN`:
+
+* Cuando las estadísticas de columna proporcionan el número de valores distintos de ambas claves de un predicado de igualdad, la selectividad se estima como `1 / max(NDV_left, NDV_right)`. Cuando varios predicados de igualdad conectan las dos entradas, el optimizador utiliza la menor selectividad de todos ellos.
+* Cuando no se dispone de estadísticas fiables de valores distintos para un equi-JOIN y se conoce el número de filas de ambas entradas, el optimizador asume una correspondencia de clave foránea a clave primaria y estima el número de filas resultante como `max(left_rows, right_rows)`.
+* Cuando ningún predicado de igualdad conecta las dos entradas, el optimizador estima el producto cartesiano `left_rows * right_rows`.
+
+A continuación, la cardinalidad de salida se ajusta según el tipo de JOIN:
+
+* Un JOIN `INNER` utiliza la estimación de filas unidas, con un mínimo de 1.
+* Los JOIN `LEFT`, `RIGHT` y `FULL` fijan como mínimo de la estimación el tamaño de la entrada izquierda, el de la entrada derecha o la suma de ambos, respectivamente.
+* Los JOIN `SEMI` y `ANTI` no toman como mínimo el tamaño del lado preservado. Estiman una fracción de coincidencia a partir de la selectividad del equi-JOIN y del tamaño de la entrada no preservada, y escalan la entrada preservada por esa fracción en el caso del JOIN `SEMI` y por su complemento en el del JOIN `ANTI`.
+
+A partir de la versión 26.10, cuando las tablas unidas pueden leerse en el orden de la join key y [`query_plan_join_order_use_interesting_orders`](/es/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders) está habilitado, `dpsub` modela el trabajo de build y sondeo de `hash` frente al de ordenación y fusión de `full_sorting_merge` para elegir entre ambos según el coste, y da preferencia a los planes cuya salida ordenada pueda reutilizarse en un JOIN posterior.
+
+### Algoritmos de búsqueda {#search-algorithms}
+
+El parámetro de configuración [`query_plan_optimize_join_order_algorithm`](/es/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm) acepta una lista separada por comas de algoritmos de búsqueda que el planificador prueba en orden. Desde la versión 26.10, el valor predeterminado es `dpsub,greedy`.
+
+* **`dpsub`:** un algoritmo de programación dinámica ascendente sobre subconjuntos de tablas. Partiendo de tablas individuales, enumera los subconjuntos de tablas en orden creciente de tamaño, divide cada subconjunto en pares disjuntos no vacíos conectados por una arista de JOIN válida, evalúa cada candidato con el modelo de costes y conserva el plan más barato de cada subconjunto hasta construir un plan para todas las tablas. `dpsub` contempla tanto árboles frondosos (bushy) como árboles de profundidad izquierda (left-deep) y admite JOINs que no son internos cuando se combina con un detector de conflictos. Tiene un límite estricto de 12 tablas por grafo de JOIN.
+* **`greedy`:** un algoritmo heurístico que parte de tablas individuales y combina repetidamente el par válido más barato sin reconsiderar decisiones anteriores. Se ejecuta en tiempo polinómico y escala hasta el tamaño máximo de grafo de JOIN, de 64 tablas.
+
+El parámetro de configuración [`query_plan_optimize_join_order_limit`](/es/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) limita el número de tablas aplanadas en un único grupo de JOIN, hasta un máximo de 64. Una consulta que une más tablas que este límite se divide en grupos que se optimizan por separado. Si se establece en `0`, se deshabilitan por completo la optimización del orden de los joins y la selección del lado de compilación. Si se establece en `1`, se deshabilita la reordenación de múltiples tablas, pero se sigue permitiendo la selección del lado de compilación para dos tablas. Con el límite predeterminado de `10`, cada grupo contiene como máximo 10 tablas, por lo que `dpsub` optimiza todos los grupos elegibles de hasta 10 tablas. Aumentar `query_plan_optimize_join_order_limit` a `12` permite que `dpsub` optimice grupos de hasta 12 tablas; si se aumenta por encima de 12, los grupos de más de 12 tablas recurren a `greedy` como alternativa.
+
+**Comportamiento de alternativa de respaldo:**
+
+* Si un grafo de JOIN aplanado supera el límite de 12 tablas de `dpsub`, o si un algoritmo encuentra un tipo de JOIN que no admite, el planificador recurre al siguiente algoritmo de `query_plan_optimize_join_order_algorithm`, que de forma predeterminada es `greedy`.
+* Cuando `query_plan_optimize_join_order_limit` se aumenta por encima de 12 y el aplanado de JOINs no internos para el detector de conflictos daría lugar a más de 12 tablas, el planificador desactiva el aplanado para el detector de conflictos, de modo que `greedy` pueda seguir optimizando los subgrafos de JOIN internos restantes.
+* Si ningún algoritmo de `query_plan_optimize_join_order_algorithm` tiene éxito, la consulta falla con un error.
+
+### Reordenación de JOINs no internos y el detector de conflictos {#reordering-non-inner-joins}
+
+Un JOIN `INNER` es conmutativo y asociativo, por lo que cualquier forma de agrupar con paréntesis JOINs `INNER` conectados produce el mismo resultado. Los JOINs externos, los JOINs `SEMI` y los JOINs `ANTI` no cumplen todas las identidades asociativas y conmutativas, por lo que reordenarlos sin comprobar su validez puede devolver resultados incorrectos.
+
+Para reordenar JOINs no internos de forma segura, ClickHouse utiliza un detector de conflictos que se selecciona mediante [`query_plan_optimize_join_order_conflict_detector`](/es/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_conflict_detector). Los valores admitidos son `''` para desactivar el detector, `a` para CD-A, que es correcto pero omite algunos planes válidos, y `c` para CD-C, que es correcto y completo y es el valor predeterminado desde la versión 26.10. El detector de conflictos implementa el algoritmo descrito en [On the Correct and Complete Enumeration of the Core Search Space](https://dl.acm.org/doi/10.1145/2463676.2465314), SIGMOD 2013.
+
+Antes de que comience la enumeración, el detector evalúa los operadores adyacentes del árbol de JOIN original frente a cuatro propiedades algebraicas. Por cada identidad que no se cumple para un par de operadores, el detector genera reglas de conflicto que especifican qué tablas deben haberse unido ya antes de poder aplicar otro operador JOIN. Durante la enumeración `dpsub`, se descarta cualquier división candidata que infrinja una regla de conflicto.
+
+**Tipos de JOIN compatibles y exclusiones:**
+
+* Con `dpsub` y un detector de conflictos habilitado, los JOINs `INNER`, `CROSS`, de coma, `LEFT`, `RIGHT` y `FULL` con estrictez `ALL`, junto con los JOINs `SEMI` y `ANTI` `LEFT` y `RIGHT`, participan en la reordenación de múltiples tablas, incluidos ambos lados de los JOINs externos, `SEMI` y `ANTI`.
+* Sin un detector de conflictos, o cuando `greedy` planifica el grafo, solo se reordenan entre tres o más tablas los JOINs `INNER`, `CROSS`, de coma y `LEFT` o `RIGHT` con estrictez `ALL` cuyos lados no preservados constan de una sola tabla. En ese modo, los JOINs `FULL`, `SEMI` y `ANTI` actúan como barreras de optimización que limitan el grafo a dos tablas.
+* El JOIN `ANY` se limita a la selección del lado de compilación entre dos tablas y no participa en la reordenación de múltiples tablas.
+* Los JOINs `ASOF`, `PASTE`, `GLOBAL` y `LOCAL`, los JOINs con filtros residuales y los JOINs externos que convierten columnas no `Nullable` en `Nullable` con `join_use_nulls = 1` no participan en la reordenación de múltiples tablas.
+
+**Función de las condiciones que rechazan NULL:**
+
+Algunas identidades de los JOINs externos solo se cumplen cuando un predicado rechaza los valores `NULL` en el lado que aporta los NULL. Por ejemplo, dos JOINs `LEFT` adyacentes solo pueden reasociarse si el segundo predicado `ON` no puede evaluarse como verdadero cuando las columnas de la tabla intermedia son `NULL`. Con `join_use_nulls = 0`, las filas sin coincidencia reciben los valores predeterminados del tipo en lugar de `NULL`, por lo que las reglas de rechazo de NULL solo se aplican cuando las columnas correspondientes tienen tipos `Nullable`.
+
+**Ejemplo de reordenación no válida y válida:**
+
+Considere una consulta sobre `customers`, `orders` y `payments` con `join_use_nulls = 1`:
+
+```sql
+SELECT customers.id, orders.id, payments.order_id
+FROM customers
+LEFT JOIN orders ON customers.id = orders.customer_id
+INNER JOIN payments ON orders.id = payments.order_id
+SETTINGS join_use_nulls = 1;
+```
+
+Los siguientes planes lógicos simplificados muestran el orden especificado en el plan A y una posible reordenación en el plan B.
+
+Plan A, original:
+
+```text
+Inner join [orders.id = payments.order_id]
+├── Left outer join [customers.id = orders.customer_id]
+│   ├── Scan customers
+│   └── Scan orders
+└── Scan payments
+```
+
+Plan B, reordenación no válida del Plan A:
+
+```text
+Left outer join [customers.id = orders.customer_id]
+├── Scan customers
+└── Inner join [orders.id = payments.order_id]
+    ├── Scan orders
+    └── Scan payments
+```
+
+Para un cliente sin pedidos, el Plan A genera una fila con valores `NULL` en las columnas de `orders` y luego la descarta en el JOIN `INNER`, ya que `NULL` no coincide con ningún pago. El Plan B une primero `orders` y `payments` y después conserva a ese cliente en el JOIN `LEFT`. Como la asociatividad no se cumple cuando un JOIN `LEFT` va seguido de un JOIN `INNER`, el detector de conflictos rechaza el Plan B.
+
+Si los tipos de JOIN se escriben en el orden inverso, el reordenamiento es válido:
+
+```sql
+SELECT customers.id, orders.id, payments.order_id
+FROM customers
+INNER JOIN orders ON customers.id = orders.customer_id
+LEFT JOIN payments ON orders.id = payments.order_id
+SETTINGS join_use_nulls = 1;
+```
+
+Plan C, original:
+
+```text
+Left outer join [orders.id = payments.order_id]
+├── Inner join [customers.id = orders.customer_id]
+│   ├── Scan customers
+│   └── Scan orders
+└── Scan payments
+```
+
+Plan D, una reordenación válida del Plan C:
+
+```text
+Inner join [customers.id = orders.customer_id]
+├── Scan customers
+└── Left outer join [orders.id = payments.order_id]
+    ├── Scan orders
+    └── Scan payments
+```
+
+Como la asociatividad se cumple para un JOIN `INNER` seguido de un JOIN `LEFT`, el Plan C y el Plan D producen las mismas filas, por lo que el detector de conflictos permite el Plan D.
+
+**Ejemplo de reordenamiento de SEMI JOIN:**
+
+Considere una consulta en la que `big` y `mid` comparten muchas claves coincidentes y `tiny` contiene solo un pequeño conjunto de claves:
+
+```sql
+SELECT sum(big.v + mid.v)
+FROM big
+INNER JOIN mid ON big.k = mid.k
+LEFT SEMI JOIN tiny ON big.k = tiny.k;
+```
+
+Sin un detector de conflictos, el `LEFT SEMI` JOIN permanece fijo por encima de `big INNER JOIN mid`, por lo que ClickHouse evalúa el `INNER` JOIN completo de `big` y `mid` antes de filtrar por `tiny`. Con el detector de conflictos habilitado, `dpsub` desplaza el `LEFT SEMI` JOIN por debajo del `INNER` JOIN para filtrar primero `big`.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Comparación de los planes de ejecución de SEMI JOIN sin y con el detector de conflictos: sin el detector, big y mid se unen primero y producen 503,768,186 filas intermedias antes del SEMI JOIN con tiny; con el detector, primero se aplica un semi-join entre big y tiny, que produce 1,015,092 filas intermedias, aproximadamente 496 veces menos](/images/guides/join-execution/semi-join-reordering.png)
+  </Frame>
+</div>
+
+En un conjunto de datos de benchmark en el que `big` y `mid` comparten claves de alta multiplicidad y `tiny` selecciona una pequeña fracción de las claves, desplazar el `LEFT SEMI` JOIN por debajo del `INNER` JOIN reduce el mayor resultado intermedio aproximadamente 496 veces:
+
+| Configuración              | Plan                 | Mayor resultado intermedio |
+| -------------------------- | -------------------- | -------------------------- |
+| Sin detector de conflictos | `(big ⋈ mid) ⋉ tiny` | 503,768,186 filas          |
+| Con detector de conflictos | `mid ⋈ (big ⋉ tiny)` | 1,015,092 filas            |
+
+Los siguientes planes de `EXPLAIN actions = 1` se obtuvieron en ClickHouse 26.10.11 sobre tablas `MergeTree` de muestra con 3,000,000 filas en `big` y `mid`, 100,000 claves distintas y 100 filas en `tiny`, con `enable_join_runtime_filters = 0` para aislar el orden de los joins.
+
+Sin el detector de conflictos, estableciendo `query_plan_optimize_join_order_conflict_detector = ''`:
+
+```text
+Output: sum(v + v)
+
+Aggregating
+│  Keys:
+│  Aggregates: sum(v + v)
+│  Skip merging: 0
+└──Join (JOIN FillRightFirst)
+   │  big[3000000] ⋈ mid[3000000] ⋉ tiny[100]
+   │  Type: left | Strictness: semi | Algorithm: SpillingHashJoin(HashJoin)
+   │  Cost: estimated 93.41 thousand
+   │  Selectivity: estimated (NDV) 1.019e-05
+   │  Output rows: estimated 91.69 million
+   │  Left: rows estimated 91.69 million
+   │  Right: rows estimated 100.00
+   │  Join conditions: k = k
+   │  Input (left): k, v, v
+   │  Input (right): k
+   ├──Join (JOIN FillRightFirst)
+   │  │  big[3000000] ⋈ mid[3000000]
+   │  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(ConcurrentHashJoin)
+   │  │  Cost: estimated 91.69 million
+   │  │  Selectivity: estimated (NDV) 1.019e-05
+   │  │  Output rows: estimated 91.69 million
+   │  │  Left: rows estimated 3.00 million
+   │  │  Right: rows estimated 3.00 million
+   │  │  Join conditions: k = k
+   │  │  Input (left): k, v
+   │  │  Input (right): k, v
+   │  ├──ReadFromMergeTree (default.big)
+   │  │     Read type: Default
+   │  │     Parts: 3 | Granules: 367
+   │  │     Output: v, k
+   │  └──ReadFromMergeTree (default.mid)
+   │        Read type: Default
+   │        Parts: 3 | Granules: 367
+   │        Output: v, k
+   └──ReadFromMergeTree (default.tiny)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: k
+```
+
+Con el detector de conflictos predeterminado `c`:
+
+```text
+Output: sum(v + v)
+
+Aggregating
+│  Keys:
+│  Aggregates: sum(v + v)
+│  Skip merging: 0
+└──Join (JOIN FillRightFirst)
+   │  mid[3000000] ⋈ (big[3000000] ⋉ tiny[100])
+   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+   │  Cost: estimated 96.45 thousand
+   │  Selectivity: estimated (NDV) 1.019e-05
+   │  Output rows: estimated 93.40 thousand
+   │  Left: rows estimated 3.00 million
+   │  Right: rows estimated 3.06 thousand
+   │  Join conditions: k = k
+   │  Input (left): k, v
+   │  Input (right): k, v
+   ├──ReadFromMergeTree (default.mid)
+   │     Read type: Default
+   │     Parts: 3 | Granules: 367
+   │     Output: v, k
+   └──Join (JOIN FillRightFirst)
+      │  big[3000000] ⋉ tiny[100]
+      │  Type: left | Strictness: semi | Algorithm: SpillingHashJoin(HashJoin)
+      │  Cost: estimated 3.06 thousand
+      │  Selectivity: estimated (NDV) 1.019e-05
+      │  Output rows: estimated 3.06 thousand
+      │  Left: rows estimated 3.00 million
+      │  Right: rows estimated 100.00
+      │  Join conditions: k = k
+      │  Input (left): k, v
+      │  Input (right): k
+      ├──ReadFromMergeTree (default.big)
+      │     Read type: Default
+      │     Parts: 3 | Granules: 367
+      │     Output: v, k
+      └──ReadFromMergeTree (default.tiny)
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: k
+```
+
+### Posición de CROSS JOIN {#cross-join-placement}
+
+Un JOIN `CROSS` no tiene condición de igualdad y no añade ninguna arista de predicado al grafo de JOIN. Para que el grafo siga conectado durante la reordenación, el optimizador añade una arista explícita con selectividad `1` entre los dos lados de un JOIN `CROSS`. Esto permite que `dpsub` sitúe el producto cartesiano donde su costo intermedio sea menor, aunque ClickHouse siga ejecutando y reportando la operación como un JOIN `CROSS`.
+
+### Predicados transitivos {#transitive-predicates}
+
+Cuando [`enable_join_transitive_predicates`](/es/reference/settings/session-settings/enable-join#enable_join_transitive_predicates) está habilitado, el optimizador infiere predicados transitivos de igualdad a partir de las clases de equivalencia de las condiciones `ON` antes de buscar un orden de los joins. Por ejemplo, a partir de `a.k = b.k` y `b.k = c.k`, deduce `a.k = c.k`, lo que permite a la estrategia de búsqueda considerar un join directo entre `a` y `c` en lugar de tratar ese par como un producto cartesiano. Este parámetro de configuración se introdujo en la versión 26.4 y se habilitó de forma predeterminada en la versión 26.6.
+
+## Selección automática del lado de compilación {#automatic-build-side-selection}
 
 Desde la versión 24.12, el planificador puede intercambiar las dos entradas de un JOIN para que la entrada más pequeña pase a ser el lado de construcción. Para ello, compara el número de filas estimado de ambas entradas y, en un JOIN hash-based, las intercambia cuando estima que la entrada izquierda es más pequeña. Este comportamiento se controla mediante el parámetro de configuración [`query_plan_join_swap_table`](/es/reference/settings/session-settings/query-plan#query_plan_join_swap_table).
 
 Cuando se intercambian las entradas, un JOIN `LEFT` se ejecuta como un JOIN `RIGHT`, y viceversa. El orden intercambiado puede verse en la salida de `EXPLAIN`.
 
-### Reordenación de JOIN entre varias tablas {#multi-table-join-reordering}
+Dado que el modelo de costes de `dpsub` asigna el mismo coste a un JOIN independientemente de qué entrada quede a la izquierda o a la derecha, la orientación del lado de compilación se asigna después de que el reordenamiento de JOIN haya seleccionado la estructura del árbol. En los JOIN hash de tipo `INNER`, `CROSS` y en los JOIN externos `ALL`, `dpsub` coloca en el lado derecho, como tabla de construcción, la entrada con el menor número de filas estimado, y refleja los JOIN `LEFT` y `RIGHT` en consecuencia. Cuando las estimaciones de filas son iguales o no están disponibles, coloca en el lado izquierdo la entrada que abarca más tablas.
 
-En una consulta que une varias tablas dentro de la misma subconsulta, el planificador puede cambiar el orden en que se unen. El parámetro de configuración [`query_plan_optimize_join_order_limit`](/es/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) define el número máximo de tablas que el planificador puede reordenar. El valor predeterminado es `10`. Con el valor `1`, la reordenación queda deshabilitada.
+En los JOIN `ANY`, `SEMI` y `ANTI`, el paso de orientación posterior a la búsqueda dentro de `dpsub` no invierte las entradas y restaura la dirección escrita de los JOIN `SEMI` y `ANTI`. Inmediatamente después, cuando el planificador construye los pasos de unión lógicos a partir del árbol elegido, la pasada de selección del lado de compilación todavía puede intercambiar las entradas de los JOIN `ANY`, `SEMI` y `ANTI` para colocar la entrada más pequeña a la derecha, convirtiendo `LEFT` en `RIGHT` y `RIGHT` en `LEFT`. Este intercambio se omite cuando [`join_any_take_last_row`](/es/reference/settings/session-settings/join#join_any_take_last_row) está habilitado para un JOIN `ANY`, cuando [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm) incluye un algoritmo de fusión, como `partial_merge`, que no admite ambas direcciones (la original y la invertida), cuando el optimizador ha elegido `full_sorting_merge` o cuando `query_plan_join_swap_table` está establecido en `false`.
 
-### Uso de estadísticas de columna {#use-of-column-statistics}
+## Estimación de cardinalidad y estadísticas {#use-of-column-statistics}
 
-La selección del lado de construcción (build side) y la reordenación de JOIN dependen de las estimaciones del número de filas. Sin estadísticas de columna, el planificador obtiene las estimaciones a partir del índice primario, que pueden ser imprecisas. Con [estadísticas de columna](/es/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), el planificador recurre a las estadísticas para estimar la selectividad de los filtros y la cardinalidad de las claves de join.
+El optimizador basado en costes utiliza estimaciones del número de filas y de la selectividad para tomar cuatro decisiones:
 
-El parámetro de configuración [`use_statistics`](/es/reference/settings/session-settings/use-statistics#use_statistics) determina si el optimizador utiliza estadísticas. El parámetro de configuración [`materialize_statistics_on_insert`](/es/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) determina si se generan estadísticas para los datos recién insertados.
+* **Orden de los JOIN:** elige el orden de JOIN de menor coste para grupos de hasta 10 tablas de forma predeterminada según [`query_plan_optimize_join_order_limit`](/es/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit), divide las consultas más grandes en grupos que se optimizan por separado y recurre a `greedy` como alternativa cuando el límite se eleva por encima de 12 y un grupo supera las 12 tablas.
+* **Lado de construcción del JOIN:** coloca la entrada con menor tamaño estimado en el lado de construcción de un JOIN hash según [`query_plan_join_swap_table`](/es/reference/settings/session-settings/query-plan#query_plan_join_swap_table).
+* **Algoritmo de JOIN:** cuando las tablas unidas pueden leerse en el orden de la join key, elige entre `hash` y `full_sorting_merge` en función del coste y da preferencia a los planes cuya salida ordenada pueda reutilizar un JOIN posterior según [`query_plan_join_order_use_interesting_orders`](/es/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders).
+* **Orden de los filtros:** mueve las condiciones de `WHERE` a [`PREWHERE`](/es/optimize/prewhere) y las ordena según el tamaño comprimido de las columnas y la selectividad estimada, de modo que las condiciones más baratas y selectivas se ejecuten primero.
 
-### Pushdown de filtros {#filter-pushdown}
+Sin estadísticas de columna, el planificador obtiene las estimaciones del número de filas a partir del índice primario, y estas pueden ser imprecisas. Con [estadísticas de columna](/es/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), el planificador estima tanto la selectividad de los filtros como la cardinalidad de la join key del JOIN.
+
+### Recopilación automática de estadísticas y tipos predeterminados {#automatic-statistics-collection}
+
+Las tablas `MergeTree` recopilan estadísticas de columna automáticamente para cada parte de datos cuando se fusionan las partes. Cuando [`materialize_statistics_on_insert`](/es/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) está habilitado, las estadísticas también se recopilan al insertar en tablas cuyo tamaño no supera [`materialize_statistics_on_insert_max_table_size`](/es/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size), por lo que no es necesario ejecutar `ANALYZE` manualmente. El parámetro de configuración [`use_statistics`](/es/reference/settings/session-settings/use-statistics#use_statistics) controla si el optimizador utiliza estas estadísticas.
+
+El ajuste de tabla [`auto_statistics_types`](/es/reference/settings/merge-tree-settings/other#auto_statistics_types) controla qué tipos de estadísticas se recopilan automáticamente en las columnas adecuadas. Desde la versión 26.7, su valor predeterminado es `basic` y `uniq_v2`, en sustitución de `minmax` y `uniq`, que pasaron a ser automáticos en la versión 26.4:
+
+* **`basic`:** registra los valores mínimo y máximo en columnas numéricas y temporales, el recuento de valores predeterminados y `NULL`, la longitud total en bytes de las cadenas y las sumas exactas en columnas integer y `Decimal` que no son `Nullable`.
+* **`uniq_v2`:** estima el número de valores distintos de una columna.
+
+Para la sintaxis de declaración, los comandos `ALTER TABLE` y los tipos de datos compatibles, consulte [Estadísticas de columna](/es/reference/engines/table-engines/mergetree-family/mergetree#column-statistics).
+
+### Otras fuentes de estimación {#other-estimate-sources}
+
+Además de las estadísticas de columna de `MergeTree` y las estimaciones del índice primario, el optimizador del orden de join puede usar dos fuentes adicionales para estimar la cardinalidad:
+
+* **Estadísticas recopiladas de tablas hash:** se controlan mediante [`use_hash_table_stats_for_join_reordering`](/es/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering) y están disponibles desde la versión 26.1. Cuando [`collect_hash_table_stats_during_joins`](/es/reference/settings/session-settings/collect-hash#collect_hash_table_stats_during_joins) está habilitado, ClickHouse almacena en caché el número de filas medido en el lado de compilación de los subplanes JOIN ejecutados. En ejecuciones posteriores de subplanes coincidentes, si el recuento almacenado en caché es menor que la estimación estática, el planificador utiliza el recuento medido para reordenar los joins.
+* **Estadísticas de metadata del lago de datos:** se controlan mediante [`use_datalake_metadata_statistics`](/es/reference/settings/session-settings/use#use_datalake_metadata_statistics) y están disponibles desde la versión 26.11 para tablas Apache Iceberg cuando `use_statistics` está habilitado. El planificador lee el número de filas, los límites de valores y las fracciones de nulos de los archivos de manifiesto de Iceberg que quedan tras la poda por partición y min-max. Si además está habilitado [`use_iceberg_table_statistics_ndv`](/es/reference/settings/session-settings/use-iceberg#use_iceberg_table_statistics_ndv), los recuentos de valores distintos se leen de las estadísticas de la tabla Iceberg en `metadata.json`.
+
+## Pushdown de filtros {#filter-pushdown}
 
 Cuando [`query_plan_filter_push_down`](/es/reference/settings/session-settings/query-plan#query_plan_filter_push_down) está habilitado, el planificador desplaza las condiciones `WHERE` por debajo del JOIN para que cada entrada se filtre antes de las fases de build y de sondeo (probe).
 
@@ -44,6 +370,43 @@ Cuando [`query_plan_filter_push_down`](/es/reference/settings/session-settings/q
 * Una condición sobre una clave de JOIN de una entrada también puede aplicarse a la otra, ya que las columnas de clave de ambas entradas son iguales en cada fila coincidente.
 * Las condiciones no se trasladan a un lado derecho que ya está rellenado, como un diccionario, ni al lado derecho de un JOIN `ASOF`.
 
+Dos optimizaciones adicionales amplían el pushdown de filtros en torno a los JOIN:
+
+* **Propagación de predicados a través de equi-JOIN:** se controla mediante [`query_plan_propagate_predicate_across_join`](/es/reference/settings/session-settings/query-plan#query_plan_propagate_predicate_across_join), disponible desde la versión 26.9 para claves primarias de `MergeTree` y ampliada a las lecturas de Parquet en la versión 26.11. Antes del análisis de índices, el planificador copia de un lado del equi-JOIN al otro los componentes lógicos del filtro que comparan una clave de JOIN con una constante, lo que permite la poda por clave primaria o por grupos de filas de Parquet en ambas entradas.
+* **Pushdown de disyunciones:** se controla mediante [`use_join_disjunctions_push_down`](/es/reference/settings/session-settings/use#use_join_disjunctions_push_down), introducido en la versión 25.10 y habilitado de forma predeterminada desde la versión 26.1. Para condiciones de `JOIN` unidas por `OR` en las que cada rama contiene al menos un predicado determinista sobre la misma entrada, el planificador extrae un filtro disyuntivo específico de ese lado y lo traslada a dicha entrada antes del JOIN.
+
+## Filtros JOIN en tiempo de ejecución {#runtime-join-filters}
+
+Cuando [`enable_join_runtime_filters`](/es/reference/settings/session-settings/enable-join#enable_join_runtime_filters) está habilitado, ClickHouse utiliza las claves recopiladas durante la fase de construcción para filtrar el lado de sondeo antes de que las filas lleguen al JOIN. Esta funcionalidad está habilitada de forma predeterminada desde la versión 26.2.
+
+Para los JOIN aptos basados en hash, incluidos los JOIN `INNER`, `RIGHT`, `SEMI` y `ANTI`, ClickHouse construye un filtro en tiempo de ejecución a partir de las claves de igualdad del lado de construcción a medida que se rellena la tabla hash. El planificador asocia el filtro al subárbol de sondeo y lo empuja lo más cerca posible de la lectura del almacenamiento del lado de sondeo, incluso dentro de `PREWHERE`, de modo que las filas de sondeo sin coincidencia se eliminan antes de sondear la tabla hash. En el caso de `LEFT ANTI` JOIN, el filtro excluye las filas cuyas claves aparecen en el lado de construcción y deja pasar las filas con claves `NULL`.
+
+Un filtro en tiempo de ejecución adapta su representación interna al número y al tipo de claves distintas del lado de construcción:
+
+* **Conjunto exacto:** el filtro comienza como un conjunto exacto de valores de clave distintos. Los conjuntos vacíos se evalúan como una máscara constante, y los conjuntos de un solo valor que no son `Nullable` se optimizan como una comparación de igualdad directa.
+* **Bitset denso o filtro Bloom:** cuando el número de claves distintas o de bytes supera el límite del conjunto exacto, un filtro positivo pasa a ser un bitset denso para claves enteras de 8 y 16 bits, o un filtro Bloom para otros tipos de clave contiguos. Un filtro de `LEFT ANTI` JOIN no pasa a ser un filtro Bloom aproximado, ya que los falsos positivos descartarían filas que deberían conservarse.
+* **Desactivación:** un filtro en tiempo de ejecución se desactiva de forma permanente si un conjunto exacto positivo se desborda sin un filtro Bloom de respaldo, o si un filtro Bloom supera, o se prevé que supere, su proporción máxima de bits activados. Durante el sondeo, si la fracción de filas que pasan el filtro supera el umbral de proporción de paso, ClickHouse omite temporalmente el filtro durante un número configurado de bloques antes de volver a evaluarlo. ClickHouse tampoco crea un filtro en tiempo de ejecución cuando el número estimado de filas del lado de sondeo es igual o inferior al umbral mínimo de filas de sondeo.
+
+**Poda de gránulos:**
+
+Cuando [`enable_join_runtime_filters_index_analysis`](/es/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) y [`use_skip_indexes_on_data_read`](/es/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) están habilitados, ClickHouse utiliza los filtros en tiempo de ejecución ya completados para descartar gránulos en las lecturas de sondeo de `MergeTree`. Este parámetro de configuración está habilitado de forma predeterminada desde la versión 26.10. Si el filtro en tiempo de ejecución conserva un conjunto exacto de claves, ClickHouse construye un predicado `IN`; en caso contrario, construye un predicado de rango de claves entre el mínimo y el máximo. La poda se aplica a las claves de sondeo que forman parte de la clave primaria, que están cubiertas por un índice de omisión `minmax`, `set` o `bloom_filter`, o que son iguales al índice global de fila `_part_starting_offset + _part_offset`. En las tablas de Apache Iceberg, los filtros en tiempo de ejecución también pueden descartar archivos de datos, grupos de filas de Parquet y páginas de Parquet.
+
+Para ver la lista completa de ajustes para optimizar los filtros en tiempo de ejecución, consulte la [sección del planificador de consultas de la configuración de JOIN](/es/concepts/features/operations/select/join-settings#query-planner).
+
+## Inspección del plan de JOIN {#inspecting-the-join-plan}
+
+Ejecute `EXPLAIN actions = 1` en una consulta para inspeccionar el orden de los JOIN, el tipo, la estrictez, el lado de construcción, las estimaciones de filas y el algoritmo seleccionado. A partir de la versión 26.7, `EXPLAIN` sin opciones genera de forma predeterminada el formato Pretty anotado con acciones; indicar `EXPLAIN actions = 1` explícitamente funciona tanto en versiones anteriores como en las actuales.
+
+En la salida de `EXPLAIN actions = 1`, cada paso `Join (JOIN FillRightFirst)` muestra:
+
+* Una expresión simbólica que resume el orden de ejecución y el número estimado de filas de cada tabla.
+* Una línea `Type`, `Strictness` y `Algorithm` que muestra el tipo de JOIN ejecutado tras cualquier intercambio del lado de compilación o reescritura, la estrictez y el algoritmo físico.
+* El costo estimado, la selectividad, las filas de salida y el número de filas de las entradas izquierda y derecha.
+* Dos ramas hijas: la primera es la entrada de sondeo (izquierda) y la segunda, la entrada de construcción (derecha).
+* Pasos `BuildRuntimeFilter` y anotaciones `Runtime filters` que indican dónde se construyen y aplican los filtros en tiempo de ejecución.
+
+Para comparar las estimaciones del optimizador con la ejecución real, ejecute [`EXPLAIN ANALYZE`](/es/reference/statements/explain#explain-analyze). `EXPLAIN ANALYZE` ejecuta la consulta y muestra las métricas del entorno de ejecución de cada paso. En los pasos de unión, [compara las métricas estimadas y reales](/es/reference/statements/explain#explain-analyze-join-estimation), incluidos el costo estimado y real, la selectividad, el número de filas de salida con q-error y el número de filas de las entradas izquierda y derecha.
+
 ## Páginas relacionadas {#related-pages}
 
 * [Uso de JOINs en ClickHouse](/es/concepts/features/operations/select/joining-tables)
@@ -51,3 +414,4 @@ Cuando [`query_plan_filter_push_down`](/es/reference/settings/session-settings/q
 * [Administración de memoria y volcado a disco en JOINs](/es/concepts/features/operations/select/join-memory-management)
 * [Configuración de JOINs](/es/concepts/features/operations/select/join-settings)
 * [Minimizar y optimizar JOINs](/es/concepts/best-practices/minimize-optimize-joins)
+* [El nuevo optimizador de joins basado en costes que permite reordenar joins no internos](https://clickhouse.com/blog/the-new-cost-based-join-optimizer-with-reordering-support-for-non-inner-joins)

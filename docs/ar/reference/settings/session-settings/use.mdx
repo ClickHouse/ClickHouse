@@ -172,9 +172,9 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "إعداد جديد لاستبعاد ملفات بيانات Iceberg ومجموعات صفوف Parquet وصفحاتها باستخدام مرشحات JOIN وقت التشغيل."}]}]} />
 
-يتخطى ملفات بيانات Iceberg، وكذلك مجموعات صفوف Parquet وصفحاتها في الملفات التي تُقرأ، متى تعذّر أن تحتوي على أي مفتاح من مفاتيح مرشح JOIN وقت التشغيل (راجع [enable&#95;join&#95;runtime&#95;filters](/ar/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). فبمجرد انتهاء جانب البناء في عملية الربط، تُقارَن مفاتيح المرشح (أو نطاق قيمها الدنيا/القصوى إذا كانت المجموعة كبيرة جدًا) بحدود الأعمدة في ملفات البيان، وبإحصاءات مجموعات الصفوف، وبفهرس الصفحات. أما ملفات البيانات التي طُلبت قبل ذلك فتُقرأ بالكامل.
+يتخطى مجموعات صفوف Parquet وصفحاتها في أي قراءة من التخزين الكائني (`s3` و`azureBlobStorage` و`hdfs` ومحركات الجداول الخاصة بها، و`Iceberg` و`DeltaLake` و`Hudi`)، وكذلك ملفات البيانات بأكملها في جدول Iceberg، متى تعذّر أن تحتوي على أي مفتاح من مفاتيح مرشح JOIN وقت التشغيل (راجع [enable&#95;join&#95;runtime&#95;filters](/ar/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). فبمجرد انتهاء جانب البناء في عملية الربط، تُقارَن مفاتيح المرشح (أو نطاق قيمها الدنيا/القصوى إذا كانت المجموعة كبيرة جدًا) بحدود الأعمدة في ملفات البيان الخاصة بـ Iceberg، وبإحصاءات مجموعات الصفوف، وبفهرس الصفحات. أما الملفات التي طُلبت قبل ذلك فتُقرأ بالكامل. ولا تُستبعد مجموعات الصفوف والصفحات إلا بمفتاح يخزّنه الملف تحت اسم العمود نفسه، ومن ثَمّ لا تُستبعد بعمود تقسيم Hive، أو بعمود افتراضي، أو بعمود Delta Lake مخزّن تحت اسم آخر، أو بعمود له تعبير افتراضي.
 
-يتطلب هذا الإعداد [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/ar/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) و[use&#95;iceberg&#95;partition&#95;pruning](/ar/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). وتتطلب مجموعات الصفوف أيضًا [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/ar/reference/settings/formats/input-format#input_format_parquet_filter_push_down)، بينما تتطلب الصفحات هذا الإعداد إضافةً إلى [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/ar/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
+يتطلب هذا الإعداد [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/ar/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis). ويتطلب تخطي ملفات بيانات Iceberg أيضًا [use&#95;iceberg&#95;partition&#95;pruning](/ar/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). وتتطلب مجموعات الصفوف أيضًا [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/ar/reference/settings/formats/input-format#input_format_parquet_filter_push_down)، بينما تتطلب الصفحات هذا الإعداد إضافةً إلى [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/ar/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
 
 ## use_legacy_to_time {#use_legacy_to_time}
 
@@ -259,7 +259,9 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
-استخدم roaring bitmap لعمليات الحذف الموضعي في Iceberg.
+يحدد كيفية تطبيق ملفات الحذف حسب الموضع في جداول Iceberg. عند تفعيله، تُحمَّل مواضع الصفوف المحذوفة من ملف البيانات في roaring bitmap، ثم تُستخدم لتصفية الصفوف. أما عند تعطيله، فتُقرأ ملفات الحذف بطريقة تدفقية بالتوازي مع ملف البيانات، دون تحميل جميع المواضع المحذوفة في الذاكرة مسبقًا.
+
+تُطبَّق متجهات الحذف دائمًا على هيئة خرائط بتات، بصرف النظر عن هذا الإعداد.
 
 ## use_streaming_marks_compression {#use_streaming_marks_compression}
 

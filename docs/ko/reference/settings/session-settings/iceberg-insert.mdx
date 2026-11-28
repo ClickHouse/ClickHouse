@@ -13,6 +13,27 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
+## iceberg_insert_commit_retry_initial_backoff_ms {#iceberg_insert_commit_retry_initial_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "10"},{"label": "새 설정입니다. 동시 커밋과의 경쟁에서 실패한 Iceberg `INSERT` 커밋을 즉시 재시도하는 대신 지수적으로 증가하는 범위에서 무작위로 정한 시간만큼 지연한 후 재시도합니다."}]}]} />
+
+동시 커밋과의 경쟁에서 커밋에 실패한 Iceberg 테이블(Iceberg table)의 `INSERT`를 처음 재시도하기 전까지 대기하는 시간의 상한입니다.
+상한은 재시도할 때마다 2배로 증가하며, 최대 `iceberg_insert_commit_retry_max_backoff_ms`까지 증가합니다. 각 지연 시간은
+0부터 상한 사이에서 무작위로 선택되므로, 동일한 경쟁 상태에서 실패한 writer들이 동시에 재시도하여 다시 충돌하는 것을 방지합니다.
+최신 메타데이터(metadata)를 조회하기 전에 지연이 적용되므로, 동시 writer가 많을 때 메타데이터
+디렉터리의 목록을 조회하는 빈도도 제한합니다. `0`이면 지연 없이 재시도합니다.
+
+## iceberg_insert_commit_retry_max_backoff_ms {#iceberg_insert_commit_retry_max_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "5000"},{"label": "새 설정입니다. Iceberg에 대한 `INSERT` 커밋이 동시 커밋과의 경합에서 실패하면 즉시 재시도하지 않고 무작위 지수 백오프 지연 후에 재시도합니다."}]}]} />
+
+Iceberg 테이블(Iceberg table)에 대한 `INSERT` 커밋이 동시 커밋과의 경합에서 실패했을 때, 재시도 전 지연 시간의 상한입니다.
+`iceberg_insert_commit_retry_initial_backoff_ms`를 참조하십시오.
+
 ## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
@@ -26,6 +47,17 @@ https://iceberg.apache.org/docs/1.5.2/configuration/ 을 참조하십시오. 이
 즉 압축된 크기와 비교됩니다. 따라서 아직 완료되지 않은 Parquet 행 그룹(row groups)이나 인코딩 중인 행 그룹처럼 writer가 아직 버퍼에 보관하고 있는
 데이터만큼 파일 크기가 이 제한을 초과할 수 있습니다. 또한 `iceberg_insert_max_rows_in_data_file`은 파일 크기와는
 별개로 파일을 제한합니다.
+
+## iceberg_insert_max_data_files_in_upload {#iceberg_insert_max_data_files_in_upload}
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "새 설정입니다. S3 또는 Azure의 Iceberg에 INSERT를 수행할 때 더 이상 쓰기가 끝난 각 데이터 파일의 업로드가 완료될 때까지 기다리지 않습니다."}]}]} />
+
+백그라운드에서 업로드하는 객체 스토리지(object storages)(S3, Azure)에서 단일 삽입 스트림이 쓰기를 마친 데이터 파일 중,
+`INSERT`가 업로드 완료를 기다리지 않고 다음 파일을 쓸 수 있는 파일의 최대 개수입니다. 이러한 파일은 업로드가
+완료될 때까지 업로드 버퍼를 유지하므로, 값을 높이면 메모리 사용량이 늘어나는 대신 업로드 지연 시간의 영향을 더 많이 줄일 수 있습니다. `0`으로 설정하면 각 데이터 파일의 업로드가 완료될 때까지 기다린 후
+다음 파일을 씁니다.
 
 ## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
 
@@ -42,6 +74,15 @@ Iceberg 테이블 엔진에서 한 번의 삽입 작업에 허용되는 최대 �
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1000000"},{"label": "새 설정입니다."}]}]} />
 
 삽입 작업 시 Iceberg Parquet 데이터 파일의 최대 행 수입니다.
+
+## iceberg_insert_max_sort_buffer_bytes {#iceberg_insert_max_sort_buffer_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1073741824"},{"label": "새 설정입니다."}]}]} />
+
+정렬 순서(sort order)가 지정된 Iceberg 테이블(Iceberg table)에 `INSERT`할 때, 데이터를 정렬하여 쓰기 전에
+모든 파티션의 버퍼에 보관할 수 있는 비압축 데이터의 최대 바이트 수입니다. 이 한도를 초과하면 가장 큰 버퍼의 데이터를 더 작은 정렬된 데이터 파일로 먼저 기록합니다. 0은 무제한을 의미합니다.
 
 ## iceberg_insert_single_manifest_for_all_partitions {#iceberg_insert_single_manifest_for_all_partitions}
 

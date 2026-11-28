@@ -77,8 +77,10 @@ select a,b,c from {{ source('raw', 'table_2') }}
 --mv2:end
 ```
 
+어떤 뷰에도 자체 `WITH` 절이 없으면 각 뷰는 [일시적 모델(ephemeral models)](https://docs.getdbt.com/docs/build/materializations#ephemeral)에서 데이터를 조회할 수 있습니다. dbt는 일시적 모델의 CTE를 첫 번째 뷰 앞에 한 번만 추가하고, dbt-clickhouse는 이를 각 뷰에 추가합니다. 뷰에 자체 `WITH` 절이 있으면 dbt는 CTE를 해당 절에 대신 추가하므로, CTE 없이 일시적 모델에서 데이터를 조회하는 뷰는 오류가 발생하며 실패합니다. 이 경우 각 뷰를 명시적 target table을 사용하는 별도의 모델로 작성하십시오([암시적 대상에서 명시적 대상으로 마이그레이션](#migration-implicit-to-explicit) 참조).
+
 <Warning>
-  여러 개의 materialized view(MV)가 포함된 model을 업데이트할 때, 특히 MV 이름 중 하나를 변경하는 경우
+  여러 개의 materialized view(MV)가 포함된 모델을 업데이트할 때, 특히 MV 이름 중 하나를 변경하는 경우
   dbt-clickhouse는 기존 MV를 자동으로 삭제하지 않습니다. 대신
   다음과 같은 경고가 표시됩니다:
 

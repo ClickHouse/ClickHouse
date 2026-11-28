@@ -305,10 +305,16 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_cache_*",
-      count: 17,
+      count: 24,
       settings: [
         { name: "distributed_cache_apply_throttling_settings_from_client", path: "/distributed-cache#distributed_cache_apply_throttling_settings_from_client", default: "1" },
         { name: "distributed_cache_keep_up_free_connections_ratio", path: "/distributed-cache#distributed_cache_keep_up_free_connections_ratio", default: "0.1" },
+        { name: "distributed_cache_max_request_processing_time_ms", path: "/distributed-cache#distributed_cache_max_request_processing_time_ms", default: "60000" },
+        { name: "distributed_cache_slow_down_min_stuck_requests", path: "/distributed-cache#distributed_cache_slow_down_min_stuck_requests", default: "10" },
+        { name: "distributed_cache_slow_down_stuck_requests_ratio", path: "/distributed-cache#distributed_cache_slow_down_stuck_requests_ratio", default: "0.2" },
+        { name: "distributed_cache_slow_down_window_ms", path: "/distributed-cache#distributed_cache_slow_down_window_ms", default: "10000" },
+        { name: "distributed_cache_stuck_request_no_progress_timeout_ms", path: "/distributed-cache#distributed_cache_stuck_request_no_progress_timeout_ms", default: "10000" },
+        { name: "distributed_cache_stuck_request_scan_interval_ms", path: "/distributed-cache#distributed_cache_stuck_request_scan_interval_ms", default: "5000" },
         {
           name: "distributed_cache_temporary_data_background_retry_delay_milliseconds",
           path: "/distributed-cache#distributed_cache_temporary_data_background_retry_delay_milliseconds",
@@ -335,6 +341,11 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "distributed_cache_warmer_max_bytes_in_queue", path: "/distributed-cache#distributed_cache_warmer_max_bytes_in_queue", default: "107374182400" },
         { name: "distributed_cache_warmer_max_file_segment_size", path: "/distributed-cache#distributed_cache_warmer_max_file_segment_size", default: "33554432" },
         { name: "distributed_cache_warmer_max_segments_in_queue", path: "/distributed-cache#distributed_cache_warmer_max_segments_in_queue", default: "100000" },
+        {
+          name: "distributed_cache_warmer_skip_parts_produced_in_current_availability_zone",
+          path: "/distributed-cache#distributed_cache_warmer_skip_parts_produced_in_current_availability_zone",
+          default: "1"
+        },
         { name: "distributed_cache_write_pool_size", path: "/distributed-cache#distributed_cache_write_pool_size", default: "100" }
       ],
       children: []
@@ -1157,9 +1168,10 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "snapshot_cleaner_*",
-      count: 2,
+      count: 3,
       settings: [
-        { name: "snapshot_cleaner_period", path: "/snapshot-cleaner#snapshot_cleaner_period", default: "120" },
+        { name: "snapshot_cleaner_max_replicas", path: "/snapshot-cleaner#snapshot_cleaner_max_replicas", default: "3" },
+        { name: "snapshot_cleaner_period", path: "/snapshot-cleaner#snapshot_cleaner_period", default: "3600" },
         { name: "snapshot_cleaner_pool_size", path: "/snapshot-cleaner#snapshot_cleaner_pool_size", default: "128" }
       ],
       children: []
@@ -1419,6 +1431,15 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     },
     {
+      label: "workloads_respect_*",
+      count: 2,
+      settings: [
+        { name: "workloads_respect_server_cpu_limit", path: "/workloads-respect#workloads_respect_server_cpu_limit", default: "0" },
+        { name: "workloads_respect_server_memory_limit", path: "/workloads-respect#workloads_respect_server_memory_limit", default: "0" }
+      ],
+      children: []
+    },
+    {
       label: "zookeeper_*",
       count: 2,
       settings: [
@@ -1429,7 +1450,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "Otros",
-      count: 131,
+      count: 132,
       settings: [
         { name: "abort_on_logical_error", path: "/other#abort_on_logical_error", default: "0" },
         { name: "ai_function_allow_sql_named_collections", path: "/other#ai_function_allow_sql_named_collections", default: "1" },
@@ -1471,6 +1492,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "iceberg_background_schedule_pool_size", path: "/other#iceberg_background_schedule_pool_size", default: "10" },
         { name: "iceberg_manifest_decode_thread_pool_queue_size", path: "/other#iceberg_manifest_decode_thread_pool_queue_size", default: "10000" },
         { name: "ignore_empty_sql_security_in_create_view_query", path: "/other#ignore_empty_sql_security_in_create_view_query", default: "1" },
+        { name: "implicit_default_workload", path: "/other#implicit_default_workload", default: "0" },
         { name: "include_from", path: "/other#include_from", default: '""' },
         { name: "insert_deduplication_version", path: "/other#insert_deduplication_version", default: "new_unified_hash" },
         { name: "io_thread_pool_queue_size", path: "/other#io_thread_pool_queue_size", default: "10000" },

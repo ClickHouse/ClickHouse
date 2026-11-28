@@ -13,25 +13,25 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 이 설정은 ClickHouse 서버를 구성하는 데 사용되며 ClickHouse 소스에서 자동 생성됩니다.
 
 <div id="query_cache.max_entries">
-  ## query_cache.max_entries
+  ## query&#95;cache.max&#95;entries {#query_cache.max_entries}
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="1024" changeable_without_restart="No" />캐시에 저장할 수 있는 SELECT 쿼리 결과의 최대 개수입니다.
+<SettingsInfoBlock type="UInt64" default_value="1024" changeable_without_restart="Yes" />캐시에 저장할 수 있는 SELECT 쿼리 결과의 최대 개수입니다.
 
 <div id="query_cache.max_entry_size_in_bytes">
-  ## query_cache.max_entry_size_in_bytes
+  ## query&#95;cache.max&#95;entry&#95;size&#95;in&#95;bytes {#query_cache.max_entry_size_in_bytes}
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="1048576" changeable_without_restart="No" />캐시에 저장될 수 있는 SELECT 쿼리 결과의 최대 크기(바이트)입니다.
+<SettingsInfoBlock type="UInt64" default_value="1048576" changeable_without_restart="Yes" />캐시에 저장될 수 있는 SELECT 쿼리 결과의 최대 크기(바이트)입니다.
 
 <div id="query_cache.max_entry_size_in_rows">
-  ## query_cache.max_entry_size_in_rows
+  ## query_cache.max_entry_size_in_rows {#query_cache.max_entry_size_in_rows}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="30000000" changeable_without_restart="No" />캐시에 저장할 수 있는 SELECT 쿼리 결과의 최대 행 수입니다.
 
 <div id="query_cache.max_size_in_bytes">
-  ## query_cache.max_size_in_bytes
+  ## query_cache.max_size_in_bytes {#query_cache.max_size_in_bytes}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />바이트 단위의 최대 캐시 크기입니다. 0이면 쿼리 캐시가 비활성화됩니다.

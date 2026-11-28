@@ -57,6 +57,10 @@ ClickHouse 表中列的数据类型可以与插入的 Avro 数据中的对应字
 
 导入数据时，如果在 schema 中找不到某个字段，并且启用了设置 [`input_format_avro_allow_missing_fields`](/zh/reference/settings/formats/input-format#input_format_avro_allow_missing_fields)，则会使用默认值，而不是抛出错误。
 
+### 并行解析 {#parallel-parsing}
+
+启用 [`input_format_parallel_parsing`](/zh/reference/settings/formats/input-format#input_format_parallel_parsing) 后，Avro 对象容器文件会按块 (同步标记) 边界进行拆分，并由多个线程并行解析这些块。由于整个块会被缓冲并并发地解码，峰值内存占用会随解析线程数的增加而增长；如需顺序解析以降低内存占用，可设置 `input_format_parallel_parsing = 0`。此行为不适用于 [`AvroConfluent`](/zh/reference/formats/Avro/AvroConfluent)，因为它并非对象容器文件。
+
 ### 写入 Avro 数据 {#writing-avro-data}
 
 要将 ClickHouse 表中的数据写入 Avro 文件：

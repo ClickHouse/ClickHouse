@@ -96,6 +96,60 @@ ORDER BY name ASC
 * `SourceFromSingleChunk` は待機する必要があります。これは、`ExpressionTransform` が `sleep(1)` の実行中はデータを受け付けないためです。そのため、1e6 us の間 `PortFull` 状態となり、`output_wait_elapsed_us` &gt; 1e6 になります。
 * `LimitsCheckingTransform`/`NullSource`/`LazyOutputFormat` は、結果を処理するために `ExpressionTransform` が `sleep(1)` を実行し終えるまで待機する必要があるため、`input_wait_elapsed_us` &gt; 1e6 になります。
 
+### 結合のプロファイリング {#profiling-a-join}
+
+クエリが複数のテーブルから読み取る場合、テーブルごとに独自の読み取りパイプラインがあり、行は結果に到達するまでに多数のプロセッサーを通過します。
+そのため、すべてのプロセッサーについて `input_rows` や `output_rows` を合計すると、同じ行が重複して数えられ、各テーブルからどれだけ読み取られたかを把握できません。
+次の例では、単一サーバー上でサイズの異なる 2 つの `MergeTree` テーブルを使用します。
+
+```sql title="Query"
+CREATE TABLE big (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE small (id UInt64, w UInt64) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO big SELECT number, number FROM numbers(1000000);
+INSERT INTO small SELECT number, number FROM numbers(1000);
+
+EXPLAIN PIPELINE
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0;
+```
+
+`EXPLAIN PIPELINE` には、結合の両側それぞれについて読み取りパイプライン (`ReadFromMergeTree`。その下に `MergeTreeSelect` ソースが続きます) が 1 つずつ表示され、これらが結合プロセッサーによってつながっています。`join_algorithm = 'hash'` と `enable_join_runtime_filters = 0` を指定しているのは、この例を再現可能にするためです。これにより、`big` のソースが行を出力する前に JOIN ランタイムフィルタが `big` を除外することはありません。
+
+```sql title="Query"
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0, log_processors_profiles = 1;
+-- Note the query ID printed by the client, or look it up in `system.query_log`.
+
+SYSTEM FLUSH LOGS;
+
+SELECT
+    id,
+    parent_ids,
+    plan_step,
+    name,
+    plan_step_name,
+    plan_step_description,
+    input_rows,
+    output_rows,
+    elapsed_us
+FROM system.processors_profile_log
+WHERE query_id = '<query_id>'
+ORDER BY plan_step, id;
+```
+
+結果の解釈方法は次のとおりです。
+
+* ソースプロセッサー、つまり `name` が `MergeTreeSelect(...)` (または `MergeTreeSource`) で、`plan_step_name` が `ReadFromMergeTree` であるものを確認します。その `output_rows` は、各ソースが生成した行数です。この値はクエリ全体ではなく、読み取りステップ (`plan_step`) ごとに合計してください。合計値は、その読み取りステップがパイプラインの後続部分に渡した行数を表します。
+* 結合の両側には、それぞれ異なる `plan_step` を持つ `ReadFromMergeTree` ステップが個別に存在します。この実行で得られた行では、`parent_ids` に下流のプロセッサーの ID が列挙されます。ソースを起点として、すべての `parent_ids` の値を同じ `query_id` 内の `id` と再帰的に照合していくと、結合に至るブランチをたどれます。これにより、たとえば `FillingRightJoinSide` に入力しているブランチを特定できます。
+* ソースより上位のプロセッサー (たとえば `ExpressionTransform`、`FillingRightJoinSide`、`ConcatProcessor`、または結合変換そのもの) は、ソースに由来する行を消費・生成します。これらのカウンターをソースのカウンターに加算すると同じ行を重複して数えることになるため、加算しないでください。
+* ステップ情報だけではソースを特定できない場合があります。`EXPLAIN PIPELINE` は別の実行計画です。プロセッサー名やブランチの形状の比較には役立ちますが、そのプレーンテキスト出力には、ログに記録された `id` の値も `parent_ids` も含まれません。両方のテーブルでステップの説明が似ている場合は、実行されたクエリのグラフと既知の行数を手がかりにしてください。この例では、`big` の読み取りソースの合計は 1,000,000 行、`small` の読み取りソースの合計は 1,000 行です。
+* プロセッサーの行カウンターおよびバイトカウンターが表すのはパイプラインを通過するデータであり、物理ストレージからの読み取りではありません。読み取られた後にフィルタで除外されたグラニュールやマークは含まれず、主キーやその他のインデックスによるフィルタリング、`PREWHERE`、カラムプルーニングの影響を受けます。また、ディスクから読み取られた圧縮バイト数も反映されません。`system.query_log` の `SelectedRows`、`SelectedBytes`、`SelectedMarks` は論理的な選択統計であり、すべてのデータがキャッシュから提供された場合でも 0 以外の値になることがあります。ファイルの読み取りを調査するには、OS page cache から提供された読み取りも含む `ReadBufferFromFileDescriptorReadBytes` を使用してください。OS page cache を除いたローカルディスクまたはブロックデバイスからの読み取りを調査するには、`OSReadBytes` を使用してください。
+
 ## 関連項目 {#see-also}
 
 * [`EXPLAIN PIPELINE`](/ja/reference/statements/explain#explain-pipeline)

@@ -80,6 +80,13 @@ Cloud でのデフォルト値: `50`.
 (ブロックの集約と宛先テーブルへの書き込み) は、
 この数までのスレッドで並列化されます。
 
+挿入順序によって結果が変わる宛先では、入力ストリームが 1 つの場合、書き込みストリームも 1 つのまま維持されます。該当するのは
+`CollapsingMergeTree`、`CoalescingMergeTree`、`GraphiteMergeTree`、`ReplacingMergeTree`
+(それぞれのレプリケーションされたバリアントを含む)、`UNIQUE KEY` を持つ `MergeTree` テーブル、`EmbeddedRocksDB`、および `Distributed`
+(シャード上のテーブルのエンジンが不明なため) です。複数の出力ストリームを持つ `SELECT` には維持すべき入力順序がないため、
+これらの宛先でも並列シンクを維持できます。`KeeperMap` は常に単一の書き込みストリームを維持します。
+これらの制限は、materialized view または `Alias` テーブルを経由して書き込まれる宛先にも適用されます。
+
 設定可能な値:
 
 * 0 — 自動。サーバーで使用可能な CPU コア数 ([`max_threads`](/ja/reference/settings/session-settings/max-threads#max_threads) と同じ自動値) を使用し、[`max_insert_threads_min_free_memory_per_thread`](/ja/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread) によりメモリ逼迫時には減らされます。
@@ -95,9 +102,9 @@ Cloud でのデフォルト値:
 * より大きいノードでは `4`
 
 並列 `INSERT SELECT` が有効なのは、`SELECT` 部分が並列に実行される場合のみです。[`max_threads`](/ja/reference/settings/session-settings/max-threads#max_threads) 設定を参照してください。
-通常の `INSERT` では、入力データは単一ストリームとして読み取り・解析され、その後、書き込みのためにパイプラインがこの数のストリームにリサイズされます。
+通常の `INSERT` では、入力データは単一ストリームとして読み取り・パースされ、その後、書き込みのためにパイプラインがこの数のストリームにリサイズされます。
 書き込み側の並列化は、同期的な通常の `INSERT` にのみ適用されます。非同期挿入 ([`async_insert`](/ja/reference/settings/session-settings/async-insert#async_insert) `= 1`) はキューに格納され、バックグラウンドでフラッシュされるため、この設定の影響を受けず、常に単一ストリームのままです。
-書き込み側は、安全に並列化できる場合にのみ並列化されます。それ以外の場合は単一ストリームのままとなり、この設定は効果を持ちません。特に、[`use_strict_insert_block_limits`](/ja/reference/settings/session-settings/use#use_strict_insert_block_limits) が有効で、宛先テーブル (または宛先が転送するテーブル) が挿入ブロックを重複排除し、かつクエリで挿入の重複排除が有効な場合 ([`deduplicate_insert`](/ja/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) を参照) 、宛先に依存する materialized view がある場合 (宛先が転送するテーブルの view (たとえば `Alias` の背後にあるもの) も含む。ただし、[`parallel_view_processing`](/ja/reference/settings/session-settings/parallel#parallel_view_processing) が有効で、かつ依存 view チェーンに重複排除のリスクがない場合を除く。つまり、view 内の重複排除が無効 ([`deduplicate_blocks_in_dependent_materialized_views`](/ja/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)) であるか、依存 view のどのパスでも重複排除できない場合) 、および宛先が `Buffer` または `Distributed` の場合は常に、書き込みは単一ストリームに維持されます。`Buffer` は独自のコンテキストでフラッシュし、`Distributed` は書き込みをリモートシャードに転送します (リモートシャード自体がデータをバッファリングする場合があります) 。そのため、このクエリの重複排除設定は最終的な書き込みには適用されず、設定にかかわらず単一ストリームに維持されます。並列化されないクォーラム挿入 ([`insert_quorum`](/ja/reference/settings/session-settings/insert-quorum#insert_quorum) が `2` 以上または `'auto'` であり、[`insert_quorum_parallel`](/ja/reference/settings/session-settings/insert-quorum#insert_quorum_parallel) が無効) も、テーブルごとに処理中のクォーラム part を 1 つしか許可しないため、単一ストリームのままとなります。
+書き込み側は、安全に並列化できる場合にのみ並列化されます。それ以外の場合は単一ストリームのままとなり、この設定は効果を持ちません。特に、[`use_strict_insert_block_limits`](/ja/reference/settings/session-settings/use#use_strict_insert_block_limits) が有効で、宛先テーブル (または宛先が転送するテーブル) が挿入ブロックを重複排除し、かつクエリで挿入の重複排除が有効な場合 ([`deduplicate_insert`](/ja/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) を参照) 、宛先に依存する materialized view がある場合 (宛先が転送するテーブルの view (たとえば `Alias` の背後にあるもの) も含む。ただし、[`parallel_view_processing`](/ja/reference/settings/session-settings/parallel#parallel_view_processing) が有効で、かつ依存 view チェーンに重複排除のリスクがない場合を除く。つまり、view 内の重複排除が無効 ([`deduplicate_blocks_in_dependent_materialized_views`](/ja/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)) であるか、依存 view のどのパスでも重複排除できない場合) 、および宛先が `Buffer` または `Distributed` の場合は常に、書き込みは単一ストリームに維持されます。`Buffer` は独自のコンテキストでフラッシュし、`Distributed` は書き込みをリモートシャードに転送します (リモートシャード自体がデータをバッファリングする場合があります) 。そのため、このクエリの重複排除設定は最終的な書き込みには適用されず、設定にかかわらず単一ストリームに維持されます。並列化されないクォーラム挿入 ([`insert_quorum`](/ja/reference/settings/session-settings/insert-quorum#insert_quorum) が `2` 以上または `'auto'` であり、[`insert_quorum_parallel`](/ja/reference/settings/session-settings/insert-quorum#insert_quorum_parallel) が無効) も、テーブルごとに処理中のクォーラム パーツ を 1 つしか許可しないため、単一ストリームのままとなります。
 値を大きくすると、メモリ使用量も増加します。
 
 ## max_insert_threads_min_free_memory_per_thread {#max_insert_threads_min_free_memory_per_thread}

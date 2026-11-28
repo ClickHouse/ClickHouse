@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualization', 'monitoring', 'observability']
 ---
 
+import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
 ClickHouse Observability는 이벤트 시각화를 지원하며, UI에서 차트를 만드는 기능을 기본으로 제공합니다. 이렇게 만든 차트를 대시보드에 추가하면 다른 사용자와 공유할 수 있습니다.
 
 시각화는 trace, 메트릭, 로그뿐만 아니라 사용자가 정의한 모든 wide 이벤트 스키마(schemas)를 기반으로 생성할 수 있습니다.
@@ -383,7 +385,7 @@ Global Filters는 대시보드 수준에서 적용할 수 있으며, 해당 대�
 
 ## 사용자 지정 필터 및 변수 {#custom-filters}
 
-모든 대시보드에서 사용할 수 있는 [자유 텍스트 필터](#filter-dashboards) 외에도, 저장된 대시보드는 ClickHouse에서 조회한 데이터로 채워지는 사용자 지정 드롭다운 필터를 지원합니다. 이 필터는 클릭만으로 조작할 수 있는 재사용 가능한 필터 컨트롤을 제공하므로, 대시보드 뷰어는 표현식을 직접 작성하지 않고도 필터링할 수 있습니다.
+모든 대시보드에서 사용할 수 있는 [자유 텍스트 필터](#filter-dashboards) 외에도, 저장된 대시보드는 사용자 지정 필터와 변수를 지원합니다. 이 기능은 클릭만으로 조작할 수 있는 재사용 가능한 컨트롤을 제공하므로, 대시보드 뷰어는 표현식을 직접 작성하지 않고도 필터링할 수 있습니다. 값은 소스에서 조회한 컬럼, 직접 작성한 목록, SQL 쿼리, Prometheus 레이블 값 또는 자유롭게 선택한 키-값 조건에서 가져올 수 있습니다. 변수를 사용하여 타일이 쿼리할 데이터 소스나 연결을 지정할 수도 있습니다. 전체 목록은 [필터 유형](#filter-types)을 참조하십시오.
 
 <div className="ch-image-lg">
   <Frame>
@@ -396,13 +398,13 @@ Global Filters는 대시보드 수준에서 적용할 수 있으며, 해당 대�
 * **브로드캐스트** — 선택한 값을 일치하는 타일에 필터 조건(filter condition)으로 적용합니다. 필터를 참조하도록 타일을 수정할 필요가 없습니다.
 * **변수** — 선택한 값을 `$variableName` 형태로 타일 쿼리에 노출하며, 값을 어디에서 어떻게 사용할지는 각 타일이 결정합니다.
 
-필터는 두 가지 중 하나 이상을 수행해야 합니다. 필터를 생성하면 브로드캐스트가 기본적으로 활성화됩니다.
+필터가 두 가지 중 어떤 작업을 지원하는지는 필터의 [유형](#filter-types)에 따라 다릅니다. **SQL 표현식 값** 필터는 두 가지 중 하나 이상을 수행해야 하며, 기본적으로 브로드캐스트가 활성화됩니다.
 
 다음 단계에서는 [&quot;대시보드 생성&quot;](#creating-dashboards) 섹션에서 만든 대시보드에 필터를 추가하는 방법을 설명합니다.
 
 <Steps>
   <Step title="필터 편집 대화 상자 열기" id="open-edit-filters">
-    저장된 대시보드를 열고 도구 모음에서 **Edit Filters and Variables**를 선택하십시오.
+    저장된 대시보드를 열고 도구 모음에서 **Edit filters and variables**를 선택하십시오.
 
     <div className="ch-image-lg">
       <Frame>
@@ -412,7 +414,7 @@ Global Filters는 대시보드 수준에서 적용할 수 있으며, 해당 대�
   </Step>
 
   <Step title="새 필터 추가" id="add-new-filter">
-    **Add new filter**를 클릭하십시오. **Display Name**을 입력하고 **Data source**를 선택한 다음 **Filter expression**을 입력하여 필터를 구성하십시오. 필터 표현식(filter expression)은 드롭다운을 고유 값(distinct values)으로 채울 SQL 컬럼 또는 표현식입니다. 그런 다음 **Save filter**를 클릭하십시오.
+    **Add new filter**를 클릭하십시오. **Type**을 선택한 후(이 예시에서는 기본값인 **SQL 표현식 값**을 사용합니다), **Display name**을 입력하고 **Data source**를 선택한 다음 **Filter expression**을 입력하여 필터를 구성하십시오. 필터 표현식(filter expression)은 드롭다운을 고유 값(distinct values)으로 채울 SQL 컬럼 또는 표현식입니다. 그런 다음 **Save filter**를 클릭하십시오.
 
     예를 들어 트레이스 데이터에 서비스 필터를 추가하려면 `Traces` 데이터 소스를 선택하고 필터 표현식으로 `ServiceName`을 사용하십시오. &quot;Dropdown values filter&quot;는 선택 사항이며, 드롭다운에 표시할 값을 제한하는 데 사용합니다.
 
@@ -458,15 +460,136 @@ Global Filters는 대시보드 수준에서 적용할 수 있으며, 해당 대�
   사용자 지정 드롭다운 필터는 저장된 대시보드에서 사용할 수 있습니다. 이 패턴의 실제 활용 예시는 파드, 배포, 노드 이름, 네임스페이스, 클러스터에 대한 기본 제공 드롭다운 필터를 갖춘 [Kubernetes 대시보드](#kubernetes-dashboard)를 참조하십시오.
 </Note>
 
+### 필터 유형 {#filter-types}
+
+필터 대화 상자의 **유형** 셀렉터는 필터 값을 어디에서 가져오고 그 값을 타일에 어떻게 전달할지를 결정합니다.
+
+| 유형                                          | 값의 출처                                                             | 브로드캐스트            | 변수                                           |
+| ------------------------------------------- | ----------------------------------------------------------------- | ----------------- | -------------------------------------------- |
+| [SQL 표현식 값](#sql-expression-values-filters) | 소스에서 조회한 표현식의 고유 값(distinct values)                               | 선택 사항, 기본적으로 활성화됨 | 선택 사항                                        |
+| [정적 값](#static-values-filters)              | 직접 작성한 목록                                                         | 아니요               | 항상                                           |
+| [SQL 쿼리 값](#sql-query-filters)              | SQL 쿼리(SQL query) 결과의 첫 번째 컬럼                                     | 아니요               | 항상                                           |
+| [PromQL 레이블 값](#promql-label-filters)       | Prometheus 레이블의 값                                                 | 아니요               | 항상                                           |
+| [애드혹 키와 값](#adhoc-filters)                   | 하나 이상의 소스에 있는 키와 값(keys and values)으로 구성한 `key operator value` 조건 | 항상                | 아니요                                          |
+| [데이터 소스](#data-source-variables)            | 팀의 소스                                                             | 아니요               | 항상([소스 참조](#source-connection-variables) 형태) |
+| [연결](#connection-variables)                 | 팀의 ClickHouse 연결                                                  | 아니요               | 항상([연결 참조](#source-connection-variables) 형태) |
+
+#### SQL 표현식 값 {#sql-expression-values-filters}
+
+이 필터의 드롭다운에는 선택한 **데이터 소스**에서 **필터 표현식(Filter expression)**&#xC758; 고유 값(distinct values)이 나열되며, 필요하면 **드롭다운 값 필터(Dropdown values filter)**로 목록을 좁힐 수 있습니다. 메트릭 소스라면 **메트릭 유형**도 선택하십시오. SQL 표현식 값 필터는 선택 영역을 [브로드캐스트](#broadcast-filters)하거나 [변수로 사용할 수 있도록](#dashboard-variables) 설정할 수 있으며, 둘 다 적용할 수도 있습니다.
+
+#### 정적 값 {#static-values-filters}
+
+드롭다운에 직접 입력한 값 목록이 표시됩니다. **옵션**에 값을 하나씩 입력하고 Enter를 누르십시오. 필터에는 최대 1000개의 옵션을 추가할 수 있습니다.
+
+정적 값 필터는 항상 변수로 사용되며 브로드캐스트되지 않습니다. 따라서 타일에서는 `$__filter(SeverityText, $severity)`와 같이 해당 변수를 참조하여 사용합니다. 컬럼(column)에 저장되지 않은 값을 사용하거나 미리 선별한 고정 목록이 필요할 때 유용합니다.
+
+#### SQL 쿼리 값 {#sql-query-filters}
+
+드롭다운에는 ClickHouse SQL 쿼리가 반환하는 첫 번째 컬럼의 값이 쿼리가 행을 반환하는 순서대로 최대 10,000개까지 표시됩니다. 다음 항목을 구성하십시오.
+
+* **Connection** — 쿼리를 실행할 ClickHouse 연결 또는 [연결 변수](#connection-variables)입니다.
+* **Source** — 선택 사항입니다. 동일한 연결의 소스 또는 [데이터 소스 변수](#data-source-variables)를 지정합니다. 소스를 선택하면 쿼리에서 `$__sourceTable`과 `$__filters`를 사용할 수 있습니다. `$__filters`는 [원시 SQL 타일](/ko/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro)과 같은 방식으로 해당 소스에 대한 대시보드의 브로드캐스트 필터 선택 항목을 적용합니다.
+* **SQL query** — 실행할 쿼리입니다. [시간 매크로](/ko/clickstack/observability/features/dashboards/sql-visualizations#time-filter-macros)를 사용하거나 대시보드의 다른 변수를 참조할 수 있습니다. 편집기에서는 대시보드의 현재 시간 범위를 기준으로 쿼리가 반환하는 값을 미리 볼 수 있습니다.
+
+예를 들어, 다음 쿼리는 대시보드의 시간 범위 동안 이벤트를 로그에 기록한 서비스 중 `environment` 필터에서 선택한 환경에 속하는 서비스만 나열합니다.
+
+```sql
+SELECT DISTINCT ServiceName
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ResourceAttributes['deployment.environment'], $environment)
+ORDER BY ServiceName
+```
+
+SQL 쿼리(SQL query) 값 필터(filter)는 항상 변수로 동작하며 브로드캐스트되지 않습니다.
+
+#### PromQL 레이블 값 {#promql-label-filters}
+
+<PrivatePreviewBadge />
+
+드롭다운에는 Prometheus 레이블의 값이 나열됩니다. PromQL **데이터 소스**를 선택하고, 드롭다운에 값을 표시할 **레이블**을 입력하십시오. 예를 들면 `job`, `instance`, `__name__` 등이 있습니다. 필요에 따라 **시계열 매처**를 입력하여 값을 읽어 올 시계열을 제한할 수 있습니다. 시계열 매처는 `up{job="api"}`와 같은 Prometheus 시계열 셀렉터이며, 대시보드의 다른 변수를 참조할 수 있습니다.
+
+PromQL 레이블 값 필터는 항상 변수로 사용되며 브로드캐스트되지 않습니다. PromQL 타일에서는 `rate(http_requests_total{job=~"$job"}[$__rate_interval])`과 같이 레이블 매처 안에서 이 변수를 참조하십시오. 값이 렌더링되는 방식은 [변수 참조](#referencing-variables)를 확인하십시오.
+
+#### 애드혹 키와 값(keys and values) {#adhoc-filters}
+
+애드혹 필터는 단일 드롭다운을 제공하는 대신, 뷰어가 소스의 키를 사용해 `key operator value` 형식의 조건 목록을 직접 구성할 수 있도록 합니다. 키는 SQL 소스에서는 컬럼과 map 키이고, Prometheus 소스에서는 레이블입니다. 뷰어가 입력하는 동안 키와 값이 자동으로 제안됩니다. 다음 항목을 구성하십시오.
+
+* **Source type** — SQL(로그, 트레이스 또는 세션 소스) 또는 Prometheus입니다.
+* **Data sources** — 필터가 키와 값을 제안할 때 사용하는 소스입니다.
+* **Keys and values filter** — 선택 사항이며 SQL 소스에만 적용됩니다. 키와 값을 제안할 대상 행의 범위를 좁히는 SQL 또는 Lucene 조건입니다. 대시보드의 다른 변수를 참조할 수 있습니다.
+* **Applies to sources** — 조건을 브로드캐스트할 소스입니다. 비워 두면 필터의 데이터 소스 중 하나를 사용하는 모든 타일에 브로드캐스트됩니다.
+* **Unique name** — [대시보드 URL](/ko/clickstack/observability/url-parameters#dashboard-filter-values)에서 필터의 조건을 식별하는 데 사용됩니다.
+
+SQL 소스의 조건은 `=`, `!=`, `=~`(정규 표현식), `!~`(정규 표현식), `LIKE`, `NOT LIKE`, `IN` 연산자를 지원합니다. Prometheus 소스의 조건은 `=`, `!=`, `=~`(정규 표현식), `!~`(정규 표현식), `IN`을 지원하며, `LIKE`와 `NOT LIKE`는 SQL에서만 사용할 수 있습니다.
+
+뷰어는 대시보드의 테이블, 시계열 또는 검색 타일에서 값을 클릭하여 조건을 추가할 수도 있습니다.
+
+애드혹 조건은 항상 브로드캐스트되며 변수로 참조할 수 없습니다. 일치하는 소스를 사용하는 차트 빌더 타일과 PromQL 타일에는 자동으로 적용되며, 원시 SQL(Raw SQL) 타일에서는 [`$__filters` 매크로](/ko/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro)를 통해 적용됩니다.
+
+#### 데이터 소스 {#data-source-variables}
+
+데이터 소스 변수를 사용하면 뷰어가 타일에서 쿼리할 소스를 직접 선택할 수 있습니다. 드롭다운에 표시할 **Source kinds**(예: 로그 소스만)를 선택하고, 필요한 경우 특정 **Connection** 하나로 범위를 제한할 수 있습니다. 이 Connection 역시 연결 변수로 지정할 수 있습니다. 타일과 필터에서 이 변수를 사용하는 방법은 [데이터 소스 및 연결 변수](#source-connection-variables)를 참조하십시오.
+
+#### 연결 {#connection-variables}
+
+연결 변수를 사용하면 뷰어가 원시 SQL 타일, SQL 쿼리 값 필터, 데이터 소스 변수에서 사용할 ClickHouse 연결을 선택할 수 있습니다. 이 변수에는 이름 외에 다른 설정이 없습니다.
+
+### 데이터 소스 및 연결 변수 {#source-connection-variables}
+
+데이터 소스 및 연결 변수는 쿼리 텍스트(query text) 안의 값이 아니라 소스 또는 연결 ID를 대신합니다. 이러한 변수를 지원하는 소스 또는 연결 선택기에서는 대시보드의 변수가 **Variables** 그룹 아래에 표시됩니다. 변수를 선택하면 `$name` 참조가 저장되며, 이 참조는 대시보드를 보는 사용자가 현재 선택한 값으로 해석됩니다. 이를 활용하면 여러 환경의 로그나 여러 ClickHouse 클러스터를 전환하며 볼 수 있는 하나의 대시보드를 구성할 수 있습니다.
+
+| 사용 위치                        | 데이터 소스 변수 지원                     | 연결 변수 지원   |
+| ---------------------------- | -------------------------------- | ---------- |
+| 차트 빌더 타일                     | Source                           | —          |
+| 원시 SQL(Raw SQL) 타일           | Source                           | Connection |
+| PromQL 타일                    | Source                           | —          |
+| SQL 표현식(SQL expression) 값 필터 | Data source, Applies to sources  | —          |
+| PromQL 레이블 값 필터              | Data source                      | —          |
+| 애드혹(Ad hoc) 필터               | Data sources, Applies to sources | —          |
+| SQL 쿼리(SQL query) 값 필터       | Source                           | Connection |
+| 데이터 소스 변수                    | —                                | Connection |
+
+데이터 소스 변수는 해당 변수의 소스 유형 중 하나 이상이 맞는 위치에서만 표시됩니다. 예를 들어 PromQL 타일에서는 PromQL 소스를 허용하는 데이터 소스 변수만 표시됩니다.
+
+타일은 소스나 연결 없이 쿼리를 실행할 수 없으므로, 데이터 소스 및 연결 변수는 항상 단일 선택이며 필수입니다. 값을 선택하기 전까지 해당 변수를 참조하는 타일과 필터는 대기 상태로 유지됩니다. 대시보드 전체를 대기시키려면 **모든 타일 차단**을 활성화하십시오. [대시보드 링크](/ko/clickstack/observability/url-parameters#dashboard-filter-values)에서는 ID뿐만 아니라 이름으로도 소스나 연결을 선택할 수 있습니다.
+
+<Note>
+  데이터 소스 또는 연결 변수를 사용하는 타일에서는 알림을 사용할 수 없습니다. 이러한 타일을 저장하면 기존 알림이 제거됩니다.
+</Note>
+
+### 선택 옵션 {#filter-selection-options}
+
+SQL 표현식(SQL expression) 값, 정적 값, SQL 쿼리(SQL query) 값, PromQL 레이블 값 필터에는 다음과 같은 추가 옵션이 있습니다.
+
+* **단일 선택** — 한 번에 하나의 값만 선택할 수 있습니다.
+* **필수** — 변수나 브로드캐스트를 통해 필터를 사용하는 타일은 필터에서 값을 선택할 때까지 로드되지 않습니다.
+  * **모든 타일 차단** — 필터를 사용하는 타일뿐 아니라 대시보드의 모든 타일을 필터에서 값을 선택할 때까지 차단합니다.
+
+### 연쇄 필터 {#chained-filters}
+
+필터의 구성에서 대시보드의 다른 변수를 참조할 수 있으므로, 다른 필터에서 선택한 항목에 따라 필터의 값이 달라지도록 설정할 수 있습니다. 예를 들어 서비스 필터가 `environment` 필터에서 선택한 환경에 속한 서비스만 나열하도록 할 수 있습니다. 변수는 다음 위치에서 참조할 수 있습니다.
+
+* SQL 표현식(SQL expression) 값 필터의 **Dropdown values filter**. 예: `$__filter(ResourceAttributes['deployment.environment'], $environment)`
+* SQL 쿼리(SQL query) 값 필터의 **SQL query**
+* PromQL 레이블 값 필터의 **Series matchers**. 예: `up{env="$env"}`
+* 애드혹(ad hoc) 필터의 **Keys and values filter**
+* 소스 및 연결 필드. [데이터 소스 및 연결 변수](#source-connection-variables)를 통해 참조합니다.
+
+참조된 필터의 선택 항목이 변경되면 종속 필터의 값이 다시 조회됩니다. 참조된 필수 필터에 선택된 항목이 없으면 해당 필터에 종속된 애드혹 필터에서 조건을 추가하거나 편집할 수 없으며, 선택을 기다리고 있는 필터의 이름이 표시됩니다.
+
 ### 브로드캐스트 {#broadcast-filters}
 
-**Broadcast filter condition**을 활성화하면 각 타일이 필터를 명시적으로 참조하지 않아도 선택한 값이 대시보드의 타일에 필터 조건(filter condition)으로 적용됩니다. 기본적으로 이 조건은 모든 타일에 적용됩니다. **Applies to sources**를 사용하면 지정한 소스를 사용하는 타일로만 적용 범위를 제한할 수 있습니다. 필터의 표현식이 대시보드 데이터 중 일부에만 의미가 있을 때 유용합니다.
+SQL 표현식(SQL expression) 값 필터는 선택한 값을 브로드캐스트할 수 있으며, 애드혹 필터는 항상 조건을 브로드캐스트합니다. SQL 표현식 값 필터에서 **Broadcast filter condition**을 활성화하면 각 타일이 필터를 명시적으로 참조하지 않아도 선택한 값이 대시보드의 타일에 필터 조건(filter condition)으로 적용됩니다. 기본적으로 이 조건은 모든 타일에 적용됩니다. **Applies to sources**를 사용하면 지정한 소스를 사용하는 타일로만 적용 범위를 제한할 수 있습니다. 필터의 표현식이 대시보드 데이터 중 일부에만 의미가 있을 때 유용합니다.
 
 차트 빌더 타일에는 브로드캐스트 필터가 자동으로 적용됩니다. 원시 SQL(Raw SQL) 타일의 경우 직접 작성한 쿼리에서 조건이 들어갈 위치를 UI가 추론할 수 없으므로, [`$__filters` 매크로](/ko/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro)를 포함하고 소스를 선택해야 합니다.
 
 ### 변수 {#dashboard-variables}
 
-**Available as variable**을 활성화하면 필터(filter)에서 선택한 값이 타일 쿼리에도 `$variableName` 형태로 제공됩니다. **Variable name**의 기본값은 필터의 표시 이름에서 허용되지 않는 문자를 제거한 값이며, 재정의할 수 있습니다. 이름은 영문자로 시작해야 하며 영문자, 숫자, 밑줄만 포함할 수 있습니다.
+정적 값, SQL 쿼리(SQL query) 값, PromQL 레이블 값 필터(filter)는 항상 변수입니다. SQL 표현식(SQL expression) 값 필터는 **변수로 사용**을 활성화하면 변수가 됩니다. 변수는 필터에서 선택한 값을 타일 쿼리에 `$variableName` 형태로 제공합니다. **Variable name**의 기본값은 필터의 표시 이름에서 허용되지 않는 문자를 제거한 값이며, 재정의할 수 있습니다. 이름은 영문자로 시작해야 하며 영문자, 숫자, 밑줄만 포함할 수 있습니다.
+
+애드혹 필터는 변수가 될 수 없으며, 데이터 소스 및 연결 변수는 쿼리 텍스트(query text)에 들어가는 값이 아니라 [소스 또는 연결에 대한 참조](#source-connection-variables)입니다.
 
 `WHERE` 조건을 브로드캐스트하는 방식이 적합하지 않을 때는 변수를 사용하십시오. 예를 들어 값을 `SELECT` 표현식, `HAVING` 절 또는 조인 키에 사용하려는 경우나, 필터 자체의 표현식이 아닌 다른 컬럼을 기준으로 타일을 필터링하려는 경우에 적합합니다.
 
@@ -474,13 +597,14 @@ Global Filters는 대시보드 수준에서 적용할 수 있으며, 해당 대�
 
 변수는 해당 드롭다운에서 현재 선택된 값으로 확장됩니다. 참조 형식에 따라 렌더링 방식이 달라집니다.
 
-| 참조                  | 확장 결과                                                                                                        | 선택 항목이 없을 때 |
-| ------------------- | ------------------------------------------------------------------------------------------------------------ | ----------- |
-| `$name`, `${name}`  | 선택된 값이며, 컨텍스트에 따라 `sqlstring` 또는 `lucene` 포맷이 적용됩니다. `${name}_total`처럼 이름 뒤에 단어 문자가 이어지면 중괄호로 이름의 경계를 구분합니다. | `NULL`      |
-| `${name:sqlstring}` | 선택된 값을 작은따옴표로 감싸고 쉼표로 구분한 뒤 SQL 값으로 이스케이프 처리합니다. 예: `'a', 'b'`                                               | `NULL`      |
-| `${name:csv}`       | 따옴표 없이 쉼표로 구분합니다: `a,b`. SQL용 이스케이프 처리는 적용되지 않습니다.                                                           | 빈 문자열       |
-| `${name:regex}`     | 정규 표현식용으로 이스케이프 처리된 정규 표현식 대안(alternation)입니다: `(a\|b)`.                                                     | `.*`        |
-| `${name:lucene}`    | Lucene 입력용으로, 인용 부호로 감싼 항목들을 `OR`로 결합합니다: `("a" OR "b")`.                                                    | `("")`      |
+| 참조                  | 확장 결과                                                                                                        | 선택 항목이 없을 때            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------- |
+| `$name`, `${name}`  | 선택된 값이며, 컨텍스트에 따라 `sqlstring` 또는 `lucene` 포맷이 적용됩니다. `${name}_total`처럼 이름 뒤에 단어 문자가 이어지면 중괄호로 이름의 경계를 구분합니다. | `NULL`                 |
+| `${name:sqlstring}` | 선택된 값을 작은따옴표로 감싸고 쉼표로 구분한 뒤 SQL 값으로 이스케이프 처리합니다. 예: `'a', 'b'`                                               | `NULL`                 |
+| `${name:csv}`       | 따옴표 없이 쉼표로 구분합니다: `a,b`. SQL용 이스케이프 처리는 적용되지 않습니다.                                                           | 빈 문자열                  |
+| `${name:regex}`     | 정규 표현식용으로 이스케이프 처리된 정규 표현식 대안(alternation)입니다: `(a\|b)`.                                                     | `.*`                   |
+| `${name:lucene}`    | Lucene 입력용으로, 인용 부호로 감싼 항목들을 `OR`로 결합합니다: `("a" OR "b")`.                                                    | `("")`                 |
+| `${name:promql}`    | PromQL 타일의 기본 형식입니다. 단일 선택 필터에서는 `label="$name"`에 사용할 선택된 값이 되고, 그 외에는 `label=~"$name"`에 사용할 정규 표현식 대안이 됩니다. | `.*` (단일 선택인 경우 빈 문자열) |
 
 `$name`은 아무것도 선택되지 않은 상태에서 `NULL`로 렌더링되므로, SQL 프레디케이트가 필요한 곳에서는 다음 매크로를 사용하는 것이 좋습니다. 두 매크로 모두 해당 변수에 선택 항목이 없으면 `1=1`로 확장되므로 쿼리가 항상 유효합니다.
 

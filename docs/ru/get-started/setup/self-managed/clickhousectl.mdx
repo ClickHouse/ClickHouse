@@ -42,14 +42,14 @@ ClickHouse и управляет ими, запускает локальные �
     ```
 
     <Accordion title="Другие способы установки">
-      | Инструмент                            | Команда                         |
-      | ------------------------------------- | ------------------------------- |
-      | npm                                   | `npm install -g clickhousectl`  |
-      | uv                                    | `uv tool install clickhousectl` |
-      | pipx                                  | `pipx install clickhousectl`    |
-      | pip                                   | `pip install clickhousectl`     |
-      | cargo-binstall                        | `cargo binstall clickhousectl`  |
-      | Cargo, из исходного кода (Rust 1.94+) | `cargo install clickhousectl`   |
+      | Инструмент                              | Команда                         |
+      | --------------------------------------- | ------------------------------- |
+      | npm                                     | `npm install -g clickhousectl`  |
+      | uv                                      | `uv tool install clickhousectl` |
+      | pipx                                    | `pipx install clickhousectl`    |
+      | pip                                     | `pip install clickhousectl`     |
+      | cargo-binstall                          | `cargo binstall clickhousectl`  |
+      | Cargo, из исходного кода (Rust 1.94.1+) | `cargo install clickhousectl`   |
 
       Псевдоним `chctl` создают только скрипт установки и npm.
     </Accordion>
@@ -60,6 +60,9 @@ ClickHouse и управляет ими, запускает локальные �
     clickhousectl update --check
     clickhousectl update
     ```
+
+    `update` заменяет установленную версию, если CLI был установлен скриптом, загрузкой или через Cargo. Для установок через npm, uv,
+    pipx и pip вместо этого выводится команда пакетного менеджера, которую нужно выполнить.
   </Step>
 
   <Step title="Установите ClickHouse" id="cli-install-clickhouse">
@@ -103,12 +106,13 @@ ClickHouse и управляет ими, запускает локальные �
   </Step>
 
   <Step title="Запустите clickhouse-server" id="cli-start-clickhouse-server">
-    `clickhousectl` привязывает локальные серверы к каталогу, из которого он запущен. Создайте
-    каталог проекта и запустите в нём сервер:
+    `clickhousectl` привязывает локальные серверы к проекту. Создайте каталог проекта,
+    отметьте его как корневой каталог проекта с помощью `local init` и запустите в нём сервер:
 
     ```bash
     mkdir my-project && cd my-project
-    clickhousectl local server start
+    clickhousectl local init
+    clickhousectl local clickhouse start
     ```
 
     ```response
@@ -118,17 +122,18 @@ ClickHouse и управляет ими, запускает локальные �
       Version:   26.9.1.1312
     ```
 
-    Сервер работает в фоновом режиме и называется `default`. Его данные хранятся в
-    `./.clickhouse/`, поэтому последующие команды `clickhousectl local` запускайте из того же
-    каталога: `clickhousectl` не ищет данные в родительских каталогах. Сервер прослушивает
-    HTTP-порт `8123` и TCP-порт `9000`, а если они заняты — свободные порты.
-    Чтобы задать порты, используйте параметры `--http-port` и `--tcp-port`. Чтобы запустить несколько
-    серверов, присвойте каждому имя, например: `clickhousectl local server start dev`.
+    Сервер работает в фоновом режиме и называется `default`. Его данные хранятся в каталоге
+    `.clickhouse/` в корне проекта. Как и в Git, последующие команды `clickhousectl local`
+    можно выполнять из этого каталога или любого его подкаталога. Сервер
+    прослушивает HTTP-порт `8123` и TCP-порт `9000`, а если они заняты — свободные
+    порты. Чтобы задать порты, укажите `--http-port` и `--tcp-port`. Чтобы запустить несколько
+    серверов, задайте каждому имя, например `clickhousectl local clickhouse start dev`.
+    `local ch` — сокращение для `local clickhouse`.
 
-    Чтобы убедиться, что сервер работает, выполните:
+    Чтобы убедиться, что сервер работает:
 
     ```bash
-    clickhousectl local server list
+    clickhousectl local clickhouse list
     ```
 
     ```response
@@ -138,16 +143,20 @@ ClickHouse и управляет ими, запускает локальные �
 
     1 server, 1 running
     ```
+
+    `clickhousectl local status` выводит список всех серверов ClickHouse и экземпляров Postgres
+    в проекте — как запущенных, так и остановленных.
   </Step>
 
   <Step title="Запустите клиент ClickHouse" id="cli-start-clickhouse-client">
-    Подключитесь к серверу с помощью `clickhouse-client` из того же каталога:
+    Подключитесь к серверу с помощью `clickhouse-client` из любого каталога проекта:
 
     ```bash
     clickhousectl local client
     ```
 
-    Команда `local client` подключается к серверу с именем `default` и использует ту же
+    Команда `local client` подключается к серверу с именем `default` или к единственному серверу
+    проекта, если сервера с именем `default` нет, и использует ту же
     версию ClickHouse, что и сервер. Чтобы подключиться к другому серверу, укажите его имя,
     например `clickhousectl local client dev`. Вывод будет примерно таким:
 
@@ -173,17 +182,17 @@ ClickHouse и управляет ими, запускает локальные �
   </Step>
 
   <Step title="Остановите сервер" id="cli-stop-clickhouse-server">
-    Сервер работает в фоновом режиме, пока вы его не остановите. Чтобы остановить его, выполните команду из того же
-    каталога:
+    Сервер работает в фоновом режиме, пока вы его не остановите. Чтобы остановить его, выполните команду из любого
+    каталога проекта:
 
     ```bash
-    clickhousectl local server stop
+    clickhousectl local clickhouse stop
     ```
 
-    При остановке данные сервера сохраняются до следующего запуска `clickhousectl local server start`.
+    При остановке данные сервера сохраняются до следующего запуска `clickhousectl local clickhouse start`.
 
     <Warning>
-      Команда `clickhousectl local server remove` безвозвратно удаляет данные остановленного сервера.
+      Команда `clickhousectl local clickhouse remove` безвозвратно удаляет данные остановленного сервера.
     </Warning>
   </Step>
 </Steps>

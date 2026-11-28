@@ -1,10 +1,14 @@
 ---
 title: 'كيف ينفّذ ClickHouse عمليات الربط (JOIN)'
 sidebarTitle: 'التنفيذ'
-description: 'مرحلتا البناء والفحص، وتحسينات مخطط الاستعلامات لعمليات JOIN.'
-keywords: ['JOIN execution', 'build side', 'probe side', 'JOIN planner', 'JOIN reordering', 'filter pushdown']
+description: 'مرحلتا البناء والفحص، والتحسين القائم على التكلفة لترتيب JOIN، وتحسينات مخطط الاستعلامات لعمليات JOIN.'
+keywords: ['JOIN execution', 'build side', 'probe side', 'JOIN planner', 'JOIN reordering', 'cost-based optimizer', 'conflict detector', 'runtime filters', 'filter pushdown']
 doc_type: 'guide'
 ---
+
+توضّح هذه الصفحة كيف يخطّط ClickHouse لعملية JOIN وينفّذها، وتتناول مراحل التنفيذ، والتحسين القائم على التكلفة لترتيب JOIN، وتحسينات مخطط الاستعلامات، والتصفية في وقت التشغيل.
+
+## مرحلتا البناء والفحص {#build-and-probe-phases}
 
 تُنفَّذ معظم خوارزميات الربط على مرحلتين:
 
@@ -13,29 +17,351 @@ doc_type: 'guide'
 
 لا تبدأ مرحلة الفحص إلا بعد انتهاء مرحلة البناء، ولذلك يتحدّد مقدار الذاكرة الذي تحتاجه عملية JOIN بصورة رئيسية بحجم جانب البناء.
 
-افتراضيًا، يكون الجانب الأيمن من JOIN هو جانب البناء، والجانب الأيسر هو جانب الفحص. غير أن بعض الخوارزميات تخرج عن هذا النموذج: فـ[خوارزمية `direct`](/ar/concepts/features/operations/select/join-algorithms#direct) لا تتضمّن مرحلة بناء، لأن الجانب الأيمن موجود مسبقًا كبنية مفتاح-قيمة. أما [خوارزمية `full_sorting_merge`](/ar/concepts/features/operations/select/join-algorithms#full-sorting-merge) فتفرز كلا المُدخلين ثم تدمجهما. في حين تجمع [خوارزمية `ie_join`](/ar/concepts/features/operations/select/join-algorithms#ie-join) كلا المُدخلين بالكامل قبل ربطهما.
+افتراضيًا، يكون الجانب الأيمن من JOIN هو جانب البناء، والجانب الأيسر هو جانب الفحص. غير أن بعض الخوارزميات تخرج عن هذا النموذج: فـ[خوارزمية `direct`](/ar/concepts/features/operations/select/join-algorithms#direct) لا تتضمّن مرحلة بناء، لأن الجانب الأيمن موجود مسبقًا كبنية مفتاح-قيمة. أما [خوارزمية `full_sorting_merge`](/ar/concepts/features/operations/select/join-algorithms#full-sorting-merge) فتفرز كلا المُدخلين ثم تدمجهما. في حين تجمع [خوارزمية `inequality`](/ar/concepts/features/operations/select/join-algorithms#inequality) كلا المُدخلين بالكامل قبل ربطهما.
 
 ## سلوك مخطط الاستعلامات {#query-planner-behavior}
 
-يمكن لمخطط الاستعلامات تعديل مدخلات عملية JOIN قبل تنفيذ الخوارزمية، وذلك من خلال التحسينات التالية.
+يحوّل مخطط الاستعلامات خطة تنفيذ الاستعلام عبر مرحلتي معالجة قبل تشغيل أي خوارزمية. تطبّق مرحلة المعالجة الأولى قواعد محلية من الأسفل إلى الأعلى بشكل متكرر إلى أن لا تبقى قاعدة قابلة للتطبيق، ثم تزيل الأعمدة غير المستخدمة على مستوى الخطة بأكملها، وتعيد تشغيل القواعد المحلية. أما مرحلة المعالجة الثانية فتُجري تحليلات وتحويلات على مستوى الخطة بأكملها وفق تسلسل ثابت.
 
-### الاختيار التلقائي لجانب build-side {#automatic-build-side-selection}
+عندما تكون التحسينات التالية المتعلقة بـ JOIN مفعّلة عبر الإعدادات وقابلة للتطبيق على الاستعلام، يمكن لمخطط الاستعلامات تطبيقها بالترتيب.
+
+**مرحلة المعالجة الأولى:**
+
+1. اختصار (short-circuit) عملية JOIN التي يُختزل شرط `ON` الخاص بها إلى القيمة الثابتة false.
+2. تقسيم تعبيرات التصفية واستخراج شروط `JOIN` `ON` المنطقية، ثم دمج التعبيرات وعوامل التصفية.
+3. ترحيل عوامل التصفية إلى ما دون عمليات JOIN، بما في ذلك الترحيل الجزئي لشروط `JOIN` المرتبطة بـ `OR`.
+4. تحويل عملية outer JOIN إلى `INNER` JOIN عندما يرفض عامل تصفية يقع مباشرةً فوق JOIN الصفوفَ غير المتطابقة دائمًا.
+5. تحويل عملية `INNER` JOIN المؤهلة إلى استعلام فرعي `IN`.
+6. دمج عوامل تصفية المساواة الواقعة فوق JOIN في شرط `JOIN`، بما في ذلك تحويل `CROSS` JOIN أو الربط بالفاصلة إلى `INNER` JOIN.
+7. تحويل `ANY` JOIN إلى `SEMI` JOIN أو `ANTI` JOIN بناءً على عامل تصفية لاحق لعملية JOIN.
+8. ترحيل عمليات top-K من نوع `ORDER BY ... LIMIT` إلى ما دون `LEFT` JOIN أو `RIGHT` JOIN عندما لا يشير مفتاح الفرز إلا إلى أعمدة الجانب المحفوظ.
+
+**مرحلة المعالجة الثانية:**
+
+1. التحويل المتعدّي لعمليات outer JOIN إلى `INNER` JOIN بناءً على عوامل تصفية في مستوى أعلى من الخطة أو على شروط عمليات JOIN المحيطة.
+2. نشر مسندات التصفية عبر مفاتيح الربط في equi-JOIN إلى المدخل الآخر.
+3. تحليل المفتاح الأساسي والحد الأقصى، وإعداد ذاكرة التخزين المؤقت لشروط الاستعلام، وتحليل الفهرس النصي.
+4. تحسين ترتيب JOIN والاختيار التلقائي لجانب build-side.
+5. إدراج مرشحات وقت التشغيل الخاصة بـ JOIN، وإزالة الأعمدة التي أصبحت غير مستخدمة، وترحيل مرشحات وقت التشغيل نحو خطوات القراءة، وتسجيلها لتحليل الفهرس أثناء القراءة.
+6. تحسين `PREWHERE`، الذي يمكنه نقل عوامل التصفية المُرحَّلة ومرشحات وقت التشغيل إلى `PREWHERE`.
+7. التجسيد الكسول لاستعلامات `LIMIT` على عمليات JOIN، والقراءة بالترتيب عبر عمليات JOIN، وتخطيط JOIN الموزّع.
+8. تحويل خطوات الربط المنطقية إلى خوارزميات ربط فعلية، ثم الفهرسة الكسولة للأعمدة في خطوات الربط الفعلية.
+9. تجزئة عمليات JOIN المؤهلة على جداول `MergeTree` وفق نطاقات المفتاح الأساسي، ووسم قراءات الفحص المقيّدة بالإغلاق (seal-gated) لتقليص النطاقات بواسطة مرشحات وقت التشغيل، وتجزئة عمليات JOIN من نوع `parallel_full_sorting_merge`.
+
+## تحسين ترتيب JOIN {#multi-table-join-reordering}
+
+عندما يربط استعلام عدة جداول ضمن الاستعلام الفرعي نفسه، يختار مُحسِّن ترتيب عمليات الربط القائم على التكلفة ترتيب تنفيذ هذه الجداول.
+
+### لماذا يهم ترتيب JOIN {#why-join-order-matters}
+
+تُنتج ترتيبات JOIN المختلفة على الجداول نفسها النتيجة النهائية ذاتها، لكنها تولّد نتائج وسيطة وجداول تجزئة في build-side متفاوتة الأحجام تفاوتًا كبيرًا. فربط الجداول الكبيرة قبل تطبيق جدول انتقائي يُنتج نتائج وسيطة كبيرة يجب تجزئتها وفحصها في خطوات JOIN اللاحقة، بينما يؤدي ربط الجدول الانتقائي أولًا إلى تقليل عدد الصفوف الوسيطة في مرحلة مبكرة.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![مقارنة بين ترتيبَي JOIN في استعلام TPC-H SF10 على أربعة جداول هي lineitem وorders وcustomer وnation بعد تصفيته: يؤدي ربط الجداول الكبيرة أولًا إلى نتائج وسيطة من 60.0M صف، بينما يؤدي ربط جدول nation المُصفّى أولًا إلى 60K و602K صف وسيط للنتيجة النهائية نفسها البالغة 2,407,146 صفًا](/images/guides/join-execution/tpch-join-orders.png)
+  </Frame>
+</div>
+
+يتزايد عدد أشجار JOIN الممكنة بسرعة كبيرة مع زيادة عدد الجداول. فمع `n` من الجداول، يوجد `n!` من ترتيبات JOIN ذات العمق الأيسر (left-deep) و`(2n - 2)! / (n - 1)!` من أشجار JOIN المتشعبة (bushy). وعند 10 جداول، يصل العدد إلى 3,628,800 ترتيبًا ذا عمق أيسر وأكثر من 17.6 مليار شجرة متشعبة. أما عند 12 جدولًا، فيقترب فضاء البحث للأشجار المتشعبة من 28 تريليون شجرة.
+
+يقسّم مُحسِّن JOIN القائم على التكلفة هذه المشكلة إلى ثلاثة مكونات:
+
+* **فضاء البحث:** مجموعة أشجار JOIN المتكافئة منطقيًا التي تحافظ على دلالات الاستعلام.
+* **نموذج التكلفة:** دالة تقدّر عدد الصفوف الوسيطة وتُسند تكلفة رقمية إلى كل خطة مرشّحة.
+* **استراتيجية البحث:** خوارزمية ترقّم الخطط المرشّحة في فضاء البحث لاختيار شجرة منخفضة التكلفة.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![مخطط لتحسين الاستعلام يبدأ من استعلام SQL مرورًا بمُحسِّن الاستعلامات المكوّن من فضاء بحث ونموذج تكلفة واستراتيجية بحث وصولًا إلى خطة فعلية تتضمن مدخلات probe وbuild لـ HashJoin](/images/guides/join-execution/query-to-physical-plan.png)
+  </Frame>
+</div>
+
+### نموذج التكلفة وتقديرات عدد العناصر {#cost-model-and-cardinality-estimates}
+
+لكل عقدة JOIN مرشّحة، يحسب نموذج التكلفة التكلفة التراكمية على أنها مجموع تكلفتي مُدخليها، مضافًا إليه عدد العناصر المقدَّر لإخراج خطوة الربط نفسها.
+
+لتقدير عدد العناصر في الإخراج، يقدّر مُحسِّن الاستعلامات أولًا انتقائية شرط `JOIN`:
+
+* عندما توفّر إحصاءات الأعمدة عدد القيم المميزة لكلا مفتاحي مسند المساواة، تُقدَّر الانتقائية بالقيمة `1 / max(NDV_left, NDV_right)`. وعندما تربط عدة مسندات مساواة بين المُدخلين، يعتمد مُحسِّن الاستعلامات أدنى قيمة للانتقائية من بينها.
+* عندما لا تتوفر إحصاءات موثوقة للقيم المميزة في عملية equi-JOIN ويكون عدد الصفوف في كلا المُدخلين معروفًا، يفترض مُحسِّن الاستعلامات وجود تطابق بين مفتاح أجنبي ومفتاح أساسي، ويقدّر عدد الصفوف الناتجة عن الربط بالقيمة `max(left_rows, right_rows)`.
+* عندما لا يربط أي مسند مساواة بين المُدخلين، يقدّر مُحسِّن الاستعلامات الضرب الديكارتي `left_rows * right_rows`.
+
+بعد ذلك يُعدَّل عدد العناصر في الإخراج وفقًا لنوع JOIN:
+
+* يستخدم `INNER` JOIN تقدير الصفوف الناتجة عن الربط، بحد أدنى قدره 1.
+* تضع عمليات `LEFT` و`RIGHT` و`FULL` JOIN حدًّا أدنى للتقدير يساوي حجم المُدخل الأيسر، أو حجم المُدخل الأيمن، أو مجموع حجمي المُدخلين، على الترتيب.
+* لا تضع عمليات `SEMI` و`ANTI` JOIN حدًّا أدنى عند حجم الجانب المحفوظ، بل تقدّر نسبة التطابق انطلاقًا من انتقائية equi-JOIN وحجم المُدخل غير المحفوظ، ثم تضرب حجم المُدخل المحفوظ في نسبة التطابق هذه في حالة `SEMI` JOIN، وفي متمّمها في حالة `ANTI` JOIN.
+
+بدءًا من الإصدار 26.10، عندما يمكن قراءة الجداول المرتبطة بترتيب مفتاح الربط ويكون الإعداد [`query_plan_join_order_use_interesting_orders`](/ar/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders) مفعّلًا، يوازن `dpsub` بين تكلفة البناء والمجسّ في `hash` وتكلفة الفرز والدمج في `full_sorting_merge` ليختار بينهما وفقًا للتكلفة، ويفضّل الخطط التي يمكن إعادة استخدام إخراجها المرتّب في عملية JOIN لاحقة.
+
+### خوارزميات البحث {#search-algorithms}
+
+يقبل الإعداد [`query_plan_optimize_join_order_algorithm`](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm) قائمةً من خوارزميات البحث مفصولةً بفواصل، يجرّبها مخطط الاستعلامات بالترتيب. بدءًا من الإصدار 26.10، تكون القيمة الافتراضية `dpsub,greedy`.
+
+* **`dpsub`:** خوارزمية برمجة ديناميكية تصاعدية تعمل على مجموعات جزئية من الجداول. تبدأ من الجداول المنفردة، ثم ترقّم المجموعات الجزئية من الجداول بحسب أحجامها تصاعديًا، وتقسّم كل مجموعة جزئية إلى أزواج منفصلة غير فارغة تربط بينها حافة JOIN صالحة، وتقيّم كل مرشّح باستخدام نموذج التكلفة، وتحتفظ بالخطة الأقل تكلفةً لكل مجموعة جزئية إلى أن تبني خطة تشمل جميع الجداول. تأخذ `dpsub` في الحسبان الأشجار المتشعبة (bushy) والأشجار ذات العمق الأيسر (left-deep) على حدٍّ سواء، وتدعم عمليات JOIN غير الداخلية عند استخدامها مع كاشف التعارض. ولها حد صارم يبلغ 12 جدولًا لكل رسم بياني لـ JOIN.
+* **`greedy`:** خوارزمية استدلالية تبدأ بالجداول المنفردة وتدمج تكرارًا الزوج الصالح الأقل تكلفةً دون إعادة النظر في القرارات السابقة. تعمل في زمن متعدد الحدود، وتستوعب رسومًا بيانية لـ JOIN تصل إلى الحجم الأقصى البالغ 64 جدولًا.
+
+يحدّد الإعداد [`query_plan_optimize_join_order_limit`](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) سقفًا لعدد الجداول المُسطَّحة في مجموعة JOIN واحدة، بحدٍّ أقصى قدره 64. أما الاستعلام الذي يربط عددًا من الجداول يتجاوز هذا الحد، فيُقسَّم إلى مجموعات يجري تحسين كل منها على حدة. يؤدي ضبطه على `0` إلى تعطيل تحسين ترتيب JOIN واختيار build-side كليًا. ويؤدي ضبطه على `1` إلى تعطيل إعادة ترتيب الجداول المتعددة مع الإبقاء على اختيار build-side بين جدولين. ومع الحد الافتراضي البالغ `10`، تضم كل مجموعة 10 جداول على الأكثر، ولذلك تُحسِّن `dpsub` جميع المجموعات المؤهلة التي تصل إلى 10 جداول. ويتيح رفع `query_plan_optimize_join_order_limit` إلى `12` لـ `dpsub` تحسين مجموعات تصل إلى 12 جدولًا؛ أما رفعه فوق 12 فيؤدي إلى لجوء المجموعات التي تضم أكثر من 12 جدولًا إلى `greedy` كبديل.
+
+**سلوك الآلية الاحتياطية:**
+
+* إذا تجاوز رسم JOIN البياني المُسطَّح الحد الأقصى لـ `dpsub` البالغ 12 جدولًا، أو صادفت خوارزميةٌ نوعًا من JOIN لا تدعمه، يلجأ مخطط الاستعلامات إلى الخوارزمية التالية في `query_plan_optimize_join_order_algorithm`، وهي `greedy` افتراضيًا.
+* عند رفع `query_plan_optimize_join_order_limit` فوق 12، إذا كان تسطيح عمليات JOIN غير الداخلية لصالح كاشف التعارض سينتج أكثر من 12 جدولًا، يعطّل مخطط الاستعلامات التسطيح الخاص بكاشف التعارض، حتى تتمكن `greedy` من تحسين الرسوم البيانية الفرعية المتبقية لعمليات INNER JOIN.
+* إذا لم تنجح أي خوارزمية في `query_plan_optimize_join_order_algorithm`، يفشل الاستعلام ويُبلَّغ عن error.
+
+### إعادة ترتيب عمليات JOIN غير الداخلية وكاشف التعارض {#reordering-non-inner-joins}
+
+تتسم عملية ربط `INNER` بخاصيتي الإبدال والتجميع، لذا فإن أي توزيع للأقواس على عمليات ربط `INNER` المتصلة ينتج النتيجة نفسها. لا تحقق عمليات الربط الخارجية وعمليات ربط `SEMI` و`ANTI` جميع متطابقات التجميع والإبدال، لذا قد تؤدي إعادة ترتيبها دون التحقق من صلاحيتها إلى نتائج خاطئة.
+
+لإعادة ترتيب عمليات JOIN غير الداخلية بأمان، يستخدم ClickHouse كاشف تعارض يُحدَّد باستخدام الإعداد [`query_plan_optimize_join_order_conflict_detector`](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_conflict_detector). القيم المقبولة هي `''` لتعطيل الكاشف، و`a` لاستخدام CD-A، الذي يضمن الصحة لكنه يستبعد بعض الخطط الصالحة، و`c` لاستخدام CD-C، الذي يضمن الصحة والاكتمال، وهو الخيار الافتراضي منذ الإصدار 26.10. ينفّذ كاشف التعارض الخوارزمية الواردة في [التعداد الصحيح والكامل لفضاء البحث الأساسي](https://dl.acm.org/doi/10.1145/2463676.2465314)، SIGMOD 2013.
+
+قبل بدء التعداد، يحلّل الكاشف المعاملات المتجاورة في شجرة JOIN الأصلية للتحقق من أربع خصائص جبرية. ولكل متطابقة لا تتحقق لزوج من المعاملات، ينشئ الكاشف قواعد تعارض تحدد الجداول التي يجب ربطها مسبقاً قبل تطبيق معامل JOIN آخر. أثناء تعداد `dpsub`، يُستبعد أي تقسيم مرشّح يخالف قاعدة تعارض.
+
+**أنواع JOIN المدعومة والاستثناءات:**
+
+* عند استخدام `dpsub` مع كاشف تعارض مفعّل، تشارك عمليات ربط `INNER` و`CROSS` والربط بالفاصلة و`LEFT` و`RIGHT` و`FULL` ذات صرامة `ALL`، إلى جانب عمليات ربط `LEFT` و`RIGHT` من نوعَي `SEMI` و`ANTI`، في إعادة الترتيب متعددة الجداول، بما يشمل كلا جانبَي عمليات الربط الخارجية وعمليات ربط `SEMI` و`ANTI`.
+* دون كاشف تعارض، أو عندما يتولى `greedy` تخطيط الرسم البياني، تقتصر إعادة الترتيب عبر ثلاثة جداول أو أكثر على عمليات ربط `INNER` و`CROSS` والربط بالفاصلة وعمليات ربط `LEFT` أو `RIGHT` ذات صرامة `ALL` التي يتكون الجانب غير المحفوظ فيها من جدول واحد. في هذا الوضع، تعمل عمليات ربط `FULL` و`SEMI` و`ANTI` كحواجز أمام التحسين تقصر الرسم البياني على جدولين.
+* تقتصر عملية ربط `ANY` على اختيار build-side بين جدولين، ولا تشارك في إعادة الترتيب متعددة الجداول.
+* لا تشارك عمليات ربط `ASOF` و`PASTE` و`GLOBAL` و`LOCAL`، وعمليات JOIN ذات عوامل التصفية المتبقية، وعمليات الربط الخارجية التي تحوّل column من أنواع غير `Nullable` إلى `Nullable` عند ضبط `join_use_nulls = 1`، في إعادة الترتيب متعددة الجداول.
+
+**دور الشروط الرافضة للقيم الخالية:**
+
+لا تتحقق بعض متطابقات عمليات الربط الخارجية إلا عندما يرفض مسندٌ قيم `NULL` على الجانب الذي تُملأ قيمه المفقودة بالقيم الخالية. على سبيل المثال، لا يمكن إعادة تجميع عمليتَي ربط `LEFT` متجاورتين إلا إذا استحال أن تكون نتيجة تقييم مسند `ON` الثاني صائبة عندما تكون قيم column من الجدول الأوسط هي `NULL`. عند ضبط `join_use_nulls = 0`، تُسنَد إلى الصفوف غير المتطابقة القيم الافتراضية للنوع بدلاً من `NULL`، لذا لا تنطبق قواعد رفض القيم الخالية إلا عندما تكون column المعنية من أنواع `Nullable`.
+
+**مثال على إعادة ترتيب غير صالحة وأخرى صالحة:**
+
+لنأخذ استعلاماً على `customers` و`orders` و`payments` مع ضبط `join_use_nulls = 1`:
+
+```sql
+SELECT customers.id, orders.id, payments.order_id
+FROM customers
+LEFT JOIN orders ON customers.id = orders.customer_id
+INNER JOIN payments ON orders.id = payments.order_id
+SETTINGS join_use_nulls = 1;
+```
+
+تعرض الخطط المنطقية المبسّطة التالية ترتيب الاستعلام كما كُتب في الخطة A، وإعادة ترتيب مرشّحة في الخطة B.
+
+الخطة A، الأصلية:
+
+```text
+Inner join [orders.id = payments.order_id]
+├── Left outer join [customers.id = orders.customer_id]
+│   ├── Scan customers
+│   └── Scan orders
+└── Scan payments
+```
+
+الخطة B، وهي إعادة ترتيب غير صالحة للخطة A:
+
+```text
+Left outer join [customers.id = orders.customer_id]
+├── Scan customers
+└── Inner join [orders.id = payments.order_id]
+    ├── Scan orders
+    └── Scan payments
+```
+
+بالنسبة إلى عميل ليس لديه طلبات، تُنتج الخطة A صفًا يحتوي على قيم `NULL` في column الخاصة بـ `orders`، ثم تزيل هذا الصف عند إجراء ربط `INNER` لأن `NULL` لا تطابق أي دفعة. أما الخطة B فتربط `orders` و`payments` أولًا، ثم تُبقي على صف هذا العميل عند إجراء ربط `LEFT`. ولأن خاصية التجميع لا تتحقق عند إجراء ربط `LEFT` يليه ربط `INNER`، يرفض كاشف التعارض الخطة B.
+
+عندما تُكتب أنواع JOIN بالترتيب المعاكس، تكون إعادة الترتيب صالحة:
+
+```sql
+SELECT customers.id, orders.id, payments.order_id
+FROM customers
+INNER JOIN orders ON customers.id = orders.customer_id
+LEFT JOIN payments ON orders.id = payments.order_id
+SETTINGS join_use_nulls = 1;
+```
+
+الخطة C، الأصلية:
+
+```text
+Left outer join [orders.id = payments.order_id]
+├── Inner join [customers.id = orders.customer_id]
+│   ├── Scan customers
+│   └── Scan orders
+└── Scan payments
+```
+
+الخطة D، الناتجة عن إعادة ترتيب صحيحة للخطة C:
+
+```text
+Inner join [customers.id = orders.customer_id]
+├── Scan customers
+└── Left outer join [orders.id = payments.order_id]
+    ├── Scan orders
+    └── Scan payments
+```
+
+بما أن خاصية التجميع تنطبق على عملية ربط `INNER` تتبعها عملية ربط `LEFT`، فإن الخطتين C وD تنتجان الصفوف نفسها، ويسمح كاشف التعارض بالخطة D.
+
+**مثال على إعادة ترتيب عمليات SEMI JOIN:**
+
+لنأخذ استعلامًا يشترك فيه `big` و`mid` في عدد كبير من المفاتيح المتطابقة، بينما لا يحتوي `tiny` إلا على مجموعة صغيرة من المفاتيح:
+
+```sql
+SELECT sum(big.v + mid.v)
+FROM big
+INNER JOIN mid ON big.k = mid.k
+LEFT SEMI JOIN tiny ON big.k = tiny.k;
+```
+
+بدون كاشف التعارض، يبقى ربط `LEFT SEMI` مثبتًا فوق `big INNER JOIN mid`، ولذلك يحسب ClickHouse ربط `INNER` الكامل بين `big` و`mid` قبل التصفية بواسطة `tiny`. أما عند تفعيل كاشف التعارض، فإن `dpsub` ينقل ربط `LEFT SEMI` إلى ما دون ربط `INNER` لتصفية `big` أولًا.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![مقارنة بين خطط تنفيذ SEMI JOIN بدون كاشف التعارض ومعه: بدون الكاشف، يُربط big وmid أولًا مما ينتج 503,768,186 صفًا وسيطًا قبل تنفيذ SEMI JOIN مع tiny؛ ومع الكاشف، يُجرى ربط شبه (semi-join) بين big وtiny أولًا مما ينتج 1,015,092 صفًا وسيطًا، أي أصغر بنحو 496 مرة](/images/guides/join-execution/semi-join-reordering.png)
+  </Frame>
+</div>
+
+على مجموعة بيانات لاختبار الأداء يتشارك فيها `big` و`mid` مفاتيح كثيرة التكرار، ويختار فيها `tiny` نسبة صغيرة من المفاتيح، يؤدي نقل ربط `LEFT SEMI` إلى ما دون ربط `INNER` إلى تقليص أكبر نتيجة وسيطة بنحو 496 مرة:
+
+| التهيئة           | الخطة                | أكبر نتيجة وسيطة |
+| ----------------- | -------------------- | ---------------- |
+| بدون كاشف التعارض | `(big ⋈ mid) ⋉ tiny` | 503,768,186 صف   |
+| مع كاشف التعارض   | `mid ⋈ (big ⋉ tiny)` | 1,015,092 صف     |
+
+التُقطت خطط `EXPLAIN actions = 1` التالية على ClickHouse 26.10.11 باستخدام جداول `MergeTree` تجريبية تحتوي على 3,000,000 صف في كلٍّ من `big` و`mid`، و100,000 مفتاح مميز، و100 صف في `tiny`، مع ضبط `enable_join_runtime_filters = 0` لعزل أثر ترتيب JOIN.
+
+بدون كاشف التعارض، مع ضبط الإعداد `query_plan_optimize_join_order_conflict_detector = ''`:
+
+```text
+Output: sum(v + v)
+
+Aggregating
+│  Keys:
+│  Aggregates: sum(v + v)
+│  Skip merging: 0
+└──Join (JOIN FillRightFirst)
+   │  big[3000000] ⋈ mid[3000000] ⋉ tiny[100]
+   │  Type: left | Strictness: semi | Algorithm: SpillingHashJoin(HashJoin)
+   │  Cost: estimated 93.41 thousand
+   │  Selectivity: estimated (NDV) 1.019e-05
+   │  Output rows: estimated 91.69 million
+   │  Left: rows estimated 91.69 million
+   │  Right: rows estimated 100.00
+   │  Join conditions: k = k
+   │  Input (left): k, v, v
+   │  Input (right): k
+   ├──Join (JOIN FillRightFirst)
+   │  │  big[3000000] ⋈ mid[3000000]
+   │  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(ConcurrentHashJoin)
+   │  │  Cost: estimated 91.69 million
+   │  │  Selectivity: estimated (NDV) 1.019e-05
+   │  │  Output rows: estimated 91.69 million
+   │  │  Left: rows estimated 3.00 million
+   │  │  Right: rows estimated 3.00 million
+   │  │  Join conditions: k = k
+   │  │  Input (left): k, v
+   │  │  Input (right): k, v
+   │  ├──ReadFromMergeTree (default.big)
+   │  │     Read type: Default
+   │  │     Parts: 3 | Granules: 367
+   │  │     Output: v, k
+   │  └──ReadFromMergeTree (default.mid)
+   │        Read type: Default
+   │        Parts: 3 | Granules: 367
+   │        Output: v, k
+   └──ReadFromMergeTree (default.tiny)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: k
+```
+
+باستخدام كاشف التعارض الافتراضي `c`:
+
+```text
+Output: sum(v + v)
+
+Aggregating
+│  Keys:
+│  Aggregates: sum(v + v)
+│  Skip merging: 0
+└──Join (JOIN FillRightFirst)
+   │  mid[3000000] ⋈ (big[3000000] ⋉ tiny[100])
+   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+   │  Cost: estimated 96.45 thousand
+   │  Selectivity: estimated (NDV) 1.019e-05
+   │  Output rows: estimated 93.40 thousand
+   │  Left: rows estimated 3.00 million
+   │  Right: rows estimated 3.06 thousand
+   │  Join conditions: k = k
+   │  Input (left): k, v
+   │  Input (right): k, v
+   ├──ReadFromMergeTree (default.mid)
+   │     Read type: Default
+   │     Parts: 3 | Granules: 367
+   │     Output: v, k
+   └──Join (JOIN FillRightFirst)
+      │  big[3000000] ⋉ tiny[100]
+      │  Type: left | Strictness: semi | Algorithm: SpillingHashJoin(HashJoin)
+      │  Cost: estimated 3.06 thousand
+      │  Selectivity: estimated (NDV) 1.019e-05
+      │  Output rows: estimated 3.06 thousand
+      │  Left: rows estimated 3.00 million
+      │  Right: rows estimated 100.00
+      │  Join conditions: k = k
+      │  Input (left): k, v
+      │  Input (right): k
+      ├──ReadFromMergeTree (default.big)
+      │     Read type: Default
+      │     Parts: 3 | Granules: 367
+      │     Output: v, k
+      └──ReadFromMergeTree (default.tiny)
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: k
+```
+
+### موضع CROSS JOIN {#cross-join-placement}
+
+لا يتضمن الربط من نوع `CROSS` شرط مساواة، ولا يضيف أي حافة مسند إلى الرسم البياني لعمليات الربط (JOIN). وللحفاظ على اتصال الرسم البياني أثناء إعادة الترتيب، يضيف مُحسِّن الاستعلامات حافة صريحة ذات انتقائية `1` بين طرفي الربط من نوع `CROSS`. ويتيح ذلك لخوارزمية `dpsub` وضع حاصل الضرب الديكارتي في الموضع الذي تكون فيه تكلفته الوسيطة في أدنى مستوياتها، مع استمرار ClickHouse في تنفيذ العملية وعرضها في تقاريره على أنها ربط من نوع `CROSS`.
+
+### المسندات المتعدية {#transitive-predicates}
+
+عند تفعيل [`enable_join_transitive_predicates`](/ar/reference/settings/session-settings/enable-join#enable_join_transitive_predicates)، يستنتج مُحسِّن الاستعلامات مسندات المساواة المتعدية من أصناف التكافؤ لشروط `ON` قبل البحث عن ترتيب JOIN. فمثلًا، يشتق من `a.k = b.k` و`b.k = c.k` المسند `a.k = c.k`، مما يتيح لاستراتيجية البحث أن تأخذ في الحسبان ربط `a` و`c` مباشرةً بدلًا من التعامل مع هذا الزوج على أنه حاصل الضرب الديكارتي. أُضيف هذا الإعداد في الإصدار 26.4، وأصبح مفعّلًا افتراضيًا بدءًا من الإصدار 26.6.
+
+## الاختيار التلقائي لجانب build-side {#automatic-build-side-selection}
 
 بدءًا من الإصدار 24.12، يستطيع مخطط الاستعلامات تبديل مُدخلَي عملية JOIN ليصبح المُدخل الأصغر هو جانب البناء. إذ يقارن عدد الصفوف المُقدَّر لكلا المُدخلين، ويُبدّلهما في عمليات JOIN القائمة على التجزئة متى قُدِّر أن المُدخل الأيسر هو الأصغر. ويتحكم الإعداد [`query_plan_join_swap_table`](/ar/reference/settings/session-settings/query-plan#query_plan_join_swap_table) في هذا السلوك.
 
 عند تبديل المُدخلين، تُنفَّذ عملية `LEFT` JOIN بوصفها `RIGHT` JOIN، والعكس بالعكس. ويظهر الترتيب الناتج عن التبديل في إخراج `EXPLAIN`.
 
-### إعادة ترتيب عمليات الربط بين جداول متعددة {#multi-table-join-reordering}
+نظرًا إلى أن نموذج التكلفة `dpsub` يُسنِد التكلفة نفسها إلى عملية JOIN بغض النظر عن موضع كل مُدخل على اليسار أو اليمين، يُحدَّد اتجاه build-side بعد اختيار بنية الشجرة أثناء إعادة ترتيب عمليات الربط. في عمليات الربط بالتجزئة من نوعَي `INNER` و`CROSS` وعمليات الربط الخارجية من نوع `ALL`، يضع `dpsub` المُدخل ذا عدد الصفوف المُقدَّر الأقل على الجانب الأيمن بوصفه جدول البناء، ويعكس عمليات JOIN من نوعَي `LEFT` و`RIGHT` وفقًا لذلك. وعندما تتساوى تقديرات عدد الصفوف أو لا تتوفر، يضع المُدخل الذي يشمل عددًا أكبر من الجداول على الجانب الأيسر.
 
-عندما يربط استعلام عدة جداول ضمن الاستعلام الفرعي نفسه، يمكن لمخطط الاستعلامات تغيير ترتيب ربط هذه الجداول. ويحدد الإعداد [`query_plan_optimize_join_order_limit`](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) الحد الأقصى لعدد الجداول التي يعيد مخطط الاستعلامات ترتيبها. القيمة الافتراضية هي `10`، أما القيمة `1` فتعطّل إعادة الترتيب.
+في عمليات JOIN من أنواع `ANY` و`SEMI` و`ANTI`، لا تبدّل خطوة تحديد الاتجاه التي تلي البحث داخل `dpsub` المُدخلين، بل تستعيد الاتجاه المحدَّد في نص الاستعلام لعمليات JOIN من نوعَي `SEMI` و`ANTI`. وبعد ذلك مباشرةً، عندما ينشئ مخطط الاستعلامات خطوات الربط المنطقية من الشجرة المختارة، يظل بإمكان مرحلة معالجة اختيار build-side تبديل مُدخلَي عمليات JOIN من أنواع `ANY` و`SEMI` و`ANTI` لوضع المُدخل الأصغر على اليمين، مع تحويل `LEFT` إلى `RIGHT` و`RIGHT` إلى `LEFT`. ولا يُجرى هذا التبديل عندما يكون الإعداد [`join_any_take_last_row`](/ar/reference/settings/session-settings/join#join_any_take_last_row) مفعّلًا لعملية JOIN من نوع `ANY`، أو عندما يتضمن الإعداد [`join_algorithm`](/ar/reference/settings/session-settings/join#join_algorithm) خوارزمية دمج مثل `partial_merge` لا تدعم الاتجاهين الأصلي والمعكوس معًا، أو عندما يختار مُحسِّن الاستعلامات `full_sorting_merge`، أو عندما يُضبَط `query_plan_join_swap_table` على `false`.
 
-### استخدام إحصاءات الأعمدة {#use-of-column-statistics}
+## تقدير عدد العناصر والإحصاءات {#use-of-column-statistics}
 
-يعتمد اختيار build-side وإعادة ترتيب عمليات الربط على تقديرات عدد الصفوف. وفي غياب إحصاءات الأعمدة، يستنتج مخطط الاستعلامات هذه التقديرات من الفهرس الأساسي، وقد لا تكون دقيقة. أما عند توفر [إحصاءات الأعمدة](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)، فيعتمد مخطط الاستعلامات على الإحصاءات لتقدير انتقائية عوامل التصفية وعدد العناصر في مفاتيح الربط (JOIN).
+يعتمد المُحسِّن القائم على التكلفة على تقديرات عدد الصفوف والانتقائية لاتخاذ أربعة قرارات:
 
-يتحكم الإعداد [`use_statistics`](/ar/reference/settings/session-settings/use-statistics#use_statistics) في ما إذا كان مُحسِّن الاستعلامات يستخدم الإحصاءات. ويتحكم الإعداد [`materialize_statistics_on_insert`](/ar/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) في ما إذا كانت الإحصاءات تُبنى للبيانات المُدرَجة حديثًا.
+* **ترتيب JOIN:** يختار ترتيب JOIN الأقل تكلفةً لمجموعات تضم ما يصل إلى 10 جداول افتراضيًا وفقًا للإعداد [`query_plan_optimize_join_order_limit`](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)، ويقسّم الاستعلامات الأكبر إلى مجموعات يُحسَّن كلٌّ منها على حدة، ويلجأ إلى `greedy` كبديل عند رفع الحد إلى أكثر من 12 وتجاوز إحدى المجموعات 12 جدولًا.
+* **جانب البناء في JOIN:** يضع الإدخال ذا الحجم المقدَّر الأصغر في جانب البناء لعملية الربط بالتجزئة (hash JOIN) وفقًا للإعداد [`query_plan_join_swap_table`](/ar/reference/settings/session-settings/query-plan#query_plan_join_swap_table).
+* **خوارزمية الربط:** عندما يمكن قراءة الجداول المربوطة بترتيب مفتاح الربط، يختار بين `hash` و`full_sorting_merge` بناءً على التكلفة، ويفضّل الخطط التي يمكن إعادة استخدام إخراجها المرتّب في عملية JOIN لاحقة وفقًا للإعداد [`query_plan_join_order_use_interesting_orders`](/ar/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders).
+* **ترتيب عوامل التصفية:** ينقل شروط `WHERE` إلى [`PREWHERE`](/ar/optimize/prewhere) ويرتّبها حسب حجم العمود المضغوط والانتقائية المقدَّرة، بحيث تُنفَّذ الشروط الأقل تكلفةً والأعلى انتقائيةً أولًا.
 
-### ترحيل عامل التصفية {#filter-pushdown}
+في غياب إحصاءات الأعمدة، يستمد مخطط الاستعلامات تقديرات عدد الصفوف من الفهرس الأساسي، وقد تفتقر هذه التقديرات إلى الدقة. أما مع [إحصاءات الأعمدة](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)، فيقدّر مخطط الاستعلامات انتقائية عوامل التصفية وعدد العناصر لمفتاح الربط معًا.
+
+### الجمع التلقائي للإحصاءات والأنواع الافتراضية {#automatic-statistics-collection}
+
+تجمع جداول `MergeTree` إحصاءات الأعمدة تلقائيًا لكل جزء بيانات عند دمج أجزاء البيانات. وعند تفعيل [`materialize_statistics_on_insert`](/ar/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert)، تُجمع الإحصاءات أيضًا عند الإدراج في الجداول التي لا يتجاوز حجمها [`materialize_statistics_on_insert_max_table_size`](/ar/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size)، فلا حاجة إذن إلى تشغيل `ANALYZE` يدويًا. ويتحكم الإعداد [`use_statistics`](/ar/reference/settings/session-settings/use-statistics#use_statistics) في ما إذا كان مُحسِّن الاستعلامات يستخدم هذه الإحصاءات.
+
+يحدد إعداد الجدول [`auto_statistics_types`](/ar/reference/settings/merge-tree-settings/other#auto_statistics_types) أنواع الإحصاءات التي تُجمع تلقائيًا على الأعمدة المناسبة. ومنذ الإصدار 26.7، أصبحت قيمته الافتراضية `basic` و`uniq_v2`، لتحلّا محل `minmax` و`uniq` اللتين كانتا قد أصبحتا تلقائيتين في الإصدار 26.4:
+
+* **`basic`:** يتتبع القيمة الدنيا والقيمة القصوى في الأعمدة الرقمية والزمنية، وأعداد مرات ظهور القيم الافتراضية وقيم `NULL`، وإجمالي الطول بالبايت للسلاسل النصية، والمجاميع الدقيقة في أعمدة الأعداد الصحيحة وأعمدة `Decimal` التي ليست من النوع `Nullable`.
+* **`uniq_v2`:** يقدّر عدد القيم المميزة في العمود.
+
+للاطلاع على صيغة التعريف، وأوامر `ALTER TABLE`، وأنواع البيانات المدعومة، راجع [إحصاءات الأعمدة](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics).
+
+### مصادر التقدير الأخرى {#other-estimate-sources}
+
+إلى جانب إحصاءات الأعمدة في `MergeTree` وتقديرات الفهرس الأساسي، يمكن لمُحسِّن ترتيب عمليات الربط الاعتماد على مصدرين إضافيين لتقدير عدد العناصر:
+
+* **إحصاءات جدول التجزئة المُجمَّعة:** يُتحكَّم فيها عبر [`use_hash_table_stats_for_join_reordering`](/ar/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering)، وهي متاحة منذ الإصدار 26.1. عند تفعيل [`collect_hash_table_stats_during_joins`](/ar/reference/settings/session-settings/collect-hash#collect_hash_table_stats_during_joins)، يخزّن ClickHouse مؤقتًا أعداد صفوف build-side المقيسة للخطط الفرعية لعمليات JOIN المنفَّذة. وعند تنفيذ الخطط الفرعية المطابقة لاحقًا، إذا كان العدد المخزّن مؤقتًا أصغر من التقدير الثابت، يعتمد مخطط الاستعلامات على العدد المقيس لإعادة الترتيب.
+* **إحصاءات البيانات الوصفية لبحيرة البيانات:** يُتحكَّم فيها عبر [`use_datalake_metadata_statistics`](/ar/reference/settings/session-settings/use#use_datalake_metadata_statistics)، وهي متاحة منذ الإصدار 26.11 لجداول Apache Iceberg عند تفعيل `use_statistics`. يقرأ مخطط الاستعلامات أعداد الصفوف وحدود القيم ونسب القيم الفارغة (NULL) من ملفات البيان في Iceberg المتبقية بعد استبعاد التقسيمات واستبعاد min-max. وإذا فُعِّل [`use_iceberg_table_statistics_ndv`](/ar/reference/settings/session-settings/use-iceberg#use_iceberg_table_statistics_ndv) أيضًا، تُقرأ أعداد القيم المميزة من إحصاءات جدول Iceberg في `metadata.json`.
+
+## ترحيل عامل التصفية {#filter-pushdown}
 
 عند تمكين [`query_plan_filter_push_down`](/ar/reference/settings/session-settings/query-plan#query_plan_filter_push_down)، ينقل مخطط الاستعلامات شروط `WHERE` إلى ما قبل عملية JOIN، بحيث يُصفّى كل مُدخل قبل مرحلتي البناء والفحص.
 
@@ -44,6 +370,43 @@ doc_type: 'guide'
 * يمكن أيضًا تطبيق الشرط المفروض على مفتاح الربط في أحد المُدخلين على المُدخل الآخر، لأن قيم أعمدة المفتاح في المُدخلين متساوية في كل صف متطابق.
 * لا تُرحَّل الشروط إلى جانب أيمن مُستكمَل مسبقًا، مثل القاموس، ولا إلى الجانب الأيمن من `ASOF` JOIN.
 
+يوسّع تحسينان إضافيان نطاق ترحيل عامل التصفية حول عمليات JOIN:
+
+* **نقل المسندات عبر عمليات equi-JOIN:** يتحكم فيه الإعداد [`query_plan_propagate_predicate_across_join`](/ar/reference/settings/session-settings/query-plan#query_plan_propagate_predicate_across_join)، وهو متاح منذ الإصدار 26.9 للمفاتيح الأساسية في `MergeTree`، ثم امتد ليشمل عمليات القراءة من Parquet في الإصدار 26.11. قبل تحليل الفهرس، ينسخ مخطط الاستعلامات مكونات الشرط المنطقي في عامل التصفية التي تقارن مفتاح الربط بقيمة ثابتة، من أحد جانبي equi-JOIN إلى الجانب الآخر، مما يتيح استبعاد البيانات بالاعتماد على المفتاح الأساسي أو على مجموعات الصفوف في Parquet في كلا المُدخلين.
+* **ترحيل شروط الفصل:** يتحكم فيه الإعداد [`use_join_disjunctions_push_down`](/ar/reference/settings/session-settings/use#use_join_disjunctions_push_down)، الذي أُضيف في الإصدار 25.10 وأصبح مفعّلًا افتراضيًا منذ الإصدار 26.1. في شروط `JOIN` المرتبطة بـ `OR` التي يتضمن كل فرع فيها مسندًا حتميًا واحدًا على الأقل يخص المُدخل نفسه، يستخرج مخطط الاستعلامات عامل تصفية فصليًا خاصًا بذلك الجانب ويرحّله إلى ذلك المُدخل قبل عملية JOIN.
+
+## مرشحات وقت التشغيل الخاصة بـ JOIN {#runtime-join-filters}
+
+عند تفعيل [`enable_join_runtime_filters`](/ar/reference/settings/session-settings/enable-join#enable_join_runtime_filters)، يستخدم ClickHouse المفاتيح التي جُمعت أثناء مرحلة البناء لتصفية جانب الفحص قبل أن تصل الصفوف إلى JOIN. وقد أصبحت هذه الميزة مفعّلة افتراضيًا منذ الإصدار 26.2.
+
+في عمليات JOIN المؤهلة القائمة على التجزئة، بما فيها عمليات JOIN من نوع `INNER` و`RIGHT` و`SEMI` و`ANTI`، يبني ClickHouse مرشح وقت التشغيل من مفاتيح المساواة في الجانب build-side أثناء ملء جدول التجزئة. ويُلحق مخطط الاستعلامات المرشح بالشجرة الفرعية لجانب الفحص، ثم يدفعه إلى أقرب نقطة ممكنة من عملية القراءة من التخزين في جانب الفحص، بما في ذلك داخل `PREWHERE`، بحيث تُستبعد صفوف جانب الفحص غير المطابقة قبل فحص جدول التجزئة. أما في `LEFT ANTI` JOIN، فيستبعد المرشح الصفوف التي تظهر مفاتيحها في الجانب build-side، ويمرّر الصفوف ذات المفاتيح `NULL`.
+
+يكيّف مرشح وقت التشغيل تمثيله الداخلي بحسب عدد المفاتيح المميزة في الجانب build-side ونوعها:
+
+* **مجموعة دقيقة:** يبدأ المرشح بوصفه مجموعة دقيقة من قيم المفاتيح المميزة. وتُقيَّم المجموعات الفارغة على أنها قناع ثابت، بينما تُحسَّن المجموعات ذات القيمة الواحدة غير `Nullable` لتصبح مقارنة مساواة مباشرة.
+* **مصفوفة بتات كثيفة أو bloom filter:** عندما يتجاوز عدد المفاتيح المميزة أو حجمها بالبايت حدَّ المجموعة الدقيقة، يتحول المرشح الموجب إلى مصفوفة بتات كثيفة للمفاتيح الصحيحة ذات 8 بتات و16 بتًا، أو إلى bloom filter لأنواع المفاتيح المتجاورة الأخرى. ولا يتحول مرشح `LEFT ANTI` JOIN إلى bloom filter تقريبي، لأن حالات التطابق الإيجابي الكاذب ستؤدي إلى إسقاط صفوف يجب الاحتفاظ بها.
+* **التعطيل:** يُعطَّل مرشح وقت التشغيل نهائيًا إذا تجاوزت مجموعة دقيقة موجبة سعتها دون وجود bloom filter بديل، أو إذا تجاوز bloom filter النسبة القصوى للبتات المضبوطة أو كان من المتوقع أن يتجاوزها. وأثناء الفحص، إذا تجاوزت نسبة الصفوف التي تجتاز المرشح عتبة نسبة المرور، يتخطى ClickHouse المرشح مؤقتًا لعدد محدد من الكتل قبل إعادة تقييمه. كما يمتنع ClickHouse عن إنشاء مرشح وقت التشغيل عندما يكون العدد التقديري للصفوف في جانب الفحص مساويًا للحد الأدنى لعتبة صفوف الفحص أو أقل منه.
+
+**استبعاد حبيبات التخزين:**
+
+عند تفعيل [`enable_join_runtime_filters_index_analysis`](/ar/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) و[`use_skip_indexes_on_data_read`](/ar/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read)، يستخدم ClickHouse مرشحات وقت التشغيل المكتملة لاستبعاد الحبيبات في عمليات القراءة من `MergeTree` في جانب الفحص. وقد أصبح هذا الإعداد مفعّلًا افتراضيًا منذ الإصدار 26.10. فإذا احتفظ مرشح وقت التشغيل بمجموعة دقيقة من المفاتيح، ينشئ ClickHouse مسندًا من نوع `IN`؛ وإلا فإنه ينشئ مسندًا لنطاق المفاتيح من القيمة الدنيا إلى القيمة القصوى. وينطبق الاستبعاد على مفاتيح جانب الفحص التي تكون جزءًا من المفتاح الأساسي، أو التي يغطيها فهرس تخطٍّ من نوع `minmax` أو `set` أو `bloom_filter`، أو التي تساوي فهرس الصف العام `_part_starting_offset + _part_offset`. وفي جداول Apache Iceberg، يمكن لمرشحات وقت التشغيل أيضًا استبعاد ملفات البيانات ومجموعات صفوف Parquet وصفحات Parquet.
+
+للاطلاع على القائمة الكاملة لإعدادات ضبط مرشحات وقت التشغيل، راجع [قسم مخطط الاستعلامات في إعدادات JOIN](/ar/concepts/features/operations/select/join-settings#query-planner).
+
+## فحص خطة JOIN {#inspecting-the-join-plan}
+
+نفّذ `EXPLAIN actions = 1` على استعلام لفحص ترتيب JOIN ونوع الربط وصرامته وجانب البناء وتقديرات عدد الصفوف والخوارزمية المختارة. بدءًا من الإصدار 26.7، يعرض `EXPLAIN` وحده افتراضيًا صيغة Pretty مع تعليقات توضيحية للإجراءات؛ ويمكن كتابة `EXPLAIN actions = 1` صراحةً في الإصدارات القديمة والحالية على حد سواء.
+
+في إخراج `EXPLAIN actions = 1`، تعرض كل خطوة `Join (JOIN FillRightFirst)` ما يلي:
+
+* تعبيرًا رمزيًا يلخّص ترتيب التنفيذ وعدد الصفوف المقدّر لكل جدول.
+* سطرًا يتضمن `Type` و`Strictness` و`Algorithm` ويبيّن نوع JOIN المنفَّذ بعد أي تبديل لجانب البناء أو إعادة كتابة، والصرامة، والخوارزمية الفعلية.
+* التكلفة المقدّرة والانتقائية وصفوف الناتج وعدد صفوف الإدخال في الجانبين الأيسر والأيمن.
+* فرعين، يمثّل أولهما مدخل البحث في الجانب الأيسر، ويمثّل الثاني مدخل البناء في الجانب الأيمن.
+* خطوات `BuildRuntimeFilter` والتعليقات التوضيحية `Runtime filters` التي تبيّن مواضع إنشاء مرشحات وقت التشغيل وتطبيقها.
+
+لمقارنة تقديرات مُحسِّن الاستعلامات بنتائج التنفيذ الفعلي، نفّذ [`EXPLAIN ANALYZE`](/ar/reference/statements/explain#explain-analyze). ينفّذ `EXPLAIN ANALYZE` الاستعلام ويعرض مقاييس بيئة التشغيل لكل خطوة. وفي خطوات الربط، [يقارن المقاييس المقدّرة والفعلية](/ar/reference/statements/explain#explain-analyze-join-estimation)، بما في ذلك التكلفة والانتقائية وأعداد صفوف الناتج مع مقياس q-error، وأعداد صفوف الإدخال في الجانبين الأيسر والأيمن.
+
 ## صفحات ذات صلة {#related-pages}
 
 * [استخدام عمليات JOIN في ClickHouse](/ar/concepts/features/operations/select/joining-tables)
@@ -51,3 +414,4 @@ doc_type: 'guide'
 * [إدارة الذاكرة في عمليات JOIN والكتابة إلى القرص](/ar/concepts/features/operations/select/join-memory-management)
 * [إعدادات JOIN](/ar/concepts/features/operations/select/join-settings)
 * [تقليل عمليات JOIN وتحسينها](/ar/concepts/best-practices/minimize-optimize-joins)
+* [مُحسِّن الاستعلامات الجديد للربط القائم على التكلفة مع دعم إعادة ترتيب عمليات الربط غير الداخلية](https://clickhouse.com/blog/the-new-cost-based-join-optimizer-with-reordering-support-for-non-inner-joins)

@@ -16,6 +16,7 @@ doc_type: 'reference'
 
 * `name` ([String](/zh/reference/data-types/string)) — 函数名称。
 * `is_aggregate` ([UInt8](/zh/reference/data-types/int-uint)) — 函数是否为聚合函数。
+* `is_window` ([UInt8](/zh/reference/data-types/int-uint)) — 函数是否为只能与 `OVER` 子句一起使用的窗口函数。
 * `case_insensitive` ([UInt8](/zh/reference/data-types/int-uint)) — 函数名称是否可不区分大小写使用。
 * `alias_to` ([String](/zh/reference/data-types/string)) — 如果函数名称是别名，则为其原始名称。
 * `create_query` ([String](/zh/reference/data-types/string)) — 已废弃。

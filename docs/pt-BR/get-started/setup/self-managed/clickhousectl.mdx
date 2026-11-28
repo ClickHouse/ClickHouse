@@ -42,14 +42,14 @@ o `clickhousectl` já está instalado. Pule para
     ```
 
     <Accordion title="Outros métodos de instalação">
-      | Ferramenta                                   | Comando                         |
-      | -------------------------------------------- | ------------------------------- |
-      | npm                                          | `npm install -g clickhousectl`  |
-      | uv                                           | `uv tool install clickhousectl` |
-      | pipx                                         | `pipx install clickhousectl`    |
-      | pip                                          | `pip install clickhousectl`     |
-      | cargo-binstall                               | `cargo binstall clickhousectl`  |
-      | Cargo, a partir do código-fonte (Rust 1.94+) | `cargo install clickhousectl`   |
+      | Ferramenta                                     | Comando                         |
+      | ---------------------------------------------- | ------------------------------- |
+      | npm                                            | `npm install -g clickhousectl`  |
+      | uv                                             | `uv tool install clickhousectl` |
+      | pipx                                           | `pipx install clickhousectl`    |
+      | pip                                            | `pip install clickhousectl`     |
+      | cargo-binstall                                 | `cargo binstall clickhousectl`  |
+      | Cargo, a partir do código-fonte (Rust 1.94.1+) | `cargo install clickhousectl`   |
 
       Somente o script de instalação e o npm criam o alias `chctl`.
     </Accordion>
@@ -60,6 +60,9 @@ o `clickhousectl` já está instalado. Pule para
     clickhousectl update --check
     clickhousectl update
     ```
+
+    O `update` substitui instalações feitas pelo script, por download ou pelo Cargo. Em instalações via npm, uv,
+    pipx e pip, ele exibe, em vez disso, o comando do gerenciador de pacotes a ser executado.
   </Step>
 
   <Step title="Instale o ClickHouse" id="cli-install-clickhouse">
@@ -103,12 +106,13 @@ o `clickhousectl` já está instalado. Pule para
   </Step>
 
   <Step title="Inicie o clickhouse-server" id="cli-start-clickhouse-server">
-    O `clickhousectl` restringe o escopo dos servidores locais ao diretório em que você o executa. Crie um
-    diretório de projeto e inicie um servidor nele:
+    O `clickhousectl` vincula os servidores locais a um projeto. Crie um diretório de projeto,
+    marque-o como raiz do projeto com `local init` e inicie um servidor nele:
 
     ```bash
     mkdir my-project && cd my-project
-    clickhousectl local server start
+    clickhousectl local init
+    clickhousectl local clickhouse start
     ```
 
     ```response
@@ -119,16 +123,17 @@ o `clickhousectl` já está instalado. Pule para
     ```
 
     O servidor é executado em segundo plano e se chama `default`. Seus dados ficam em
-    `./.clickhouse/`, então execute os comandos `clickhousectl local` seguintes a partir do mesmo
-    diretório; o `clickhousectl` não procura em diretórios pai. O servidor escuta
-    na porta HTTP `8123` e na porta TCP `9000` ou, se elas estiverem ocupadas, em portas livres.
-    Para escolher as portas, use `--http-port` e `--tcp-port`. Para executar mais de um
-    servidor, dê um nome a cada um, como em `clickhousectl local server start dev`.
+    `.clickhouse/`, na raiz do projeto. Assim como no Git, os comandos `clickhousectl local`
+    seguintes funcionam a partir desse diretório ou de qualquer subdiretório dentro dele. O servidor
+    escuta na porta HTTP `8123` e na porta TCP `9000`, ou em portas livres caso elas estejam
+    ocupadas. Para escolher as portas, use `--http-port` e `--tcp-port`. Para executar mais de
+    um servidor, dê um nome a cada um, como em `clickhousectl local clickhouse start dev`.
+    `local ch` é a forma abreviada de `local clickhouse`.
 
     Para verificar se ele está em execução:
 
     ```bash
-    clickhousectl local server list
+    clickhousectl local clickhouse list
     ```
 
     ```response
@@ -138,17 +143,21 @@ o `clickhousectl` já está instalado. Pule para
 
     1 server, 1 running
     ```
+
+    `clickhousectl local status` lista todos os servidores do ClickHouse e todas as instâncias do Postgres
+    do projeto, estejam eles em execução ou parados.
   </Step>
 
   <Step title="Inicie o clickhouse-client" id="cli-start-clickhouse-client">
-    No mesmo diretório, conecte-se ao servidor com o `clickhouse-client`:
+    De qualquer lugar do projeto, conecte-se ao servidor com o `clickhouse-client`:
 
     ```bash
     clickhousectl local client
     ```
 
-    O comando `local client` se conecta ao servidor chamado `default` e usa a mesma
-    versão do ClickHouse que o servidor. Para se conectar a outro servidor, informe um nome,
+    O comando `local client` se conecta ao servidor chamado `default` ou, se nenhum se chamar `default`, ao único
+    servidor do projeto, e usa a mesma versão do ClickHouse que o
+    servidor. Para se conectar a outro servidor, informe um nome,
     como em `clickhousectl local client dev`. Você verá algo semelhante a isto:
 
     ```response
@@ -174,17 +183,17 @@ o `clickhousectl` já está instalado. Pule para
   </Step>
 
   <Step title="Pare o servidor" id="cli-stop-clickhouse-server">
-    O servidor continua em execução em segundo plano até que você o interrompa. Para interrompê-lo, use o
-    mesmo diretório:
+    O servidor continua em execução em segundo plano até que você o interrompa. Para interrompê-lo, execute o comando de
+    qualquer local do projeto:
 
     ```bash
-    clickhousectl local server stop
+    clickhousectl local clickhouse stop
     ```
 
-    Ao parar o servidor, os dados dele são preservados para a próxima execução de `clickhousectl local server start`.
+    Ao parar o servidor, os dados dele são preservados para a próxima execução de `clickhousectl local clickhouse start`.
 
     <Warning>
-      `clickhousectl local server remove` exclui permanentemente os dados de um servidor parado.
+      `clickhousectl local clickhouse remove` exclui permanentemente os dados de um servidor parado.
     </Warning>
   </Step>
 </Steps>

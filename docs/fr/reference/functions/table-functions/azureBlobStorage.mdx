@@ -15,7 +15,7 @@ Fournit une interface de type table pour sélectionner/insérer des fichiers dan
 
 <Tabs>
   <Tab title="Chaîne de connexion">
-    Les informations d&#39;identification sont intégrées à la chaîne de connexion, il n&#39;est donc pas nécessaire de fournir `account_name`/`account_key` séparément :
+    Les identifiants sont intégrés à la chaîne de connexion, il n&#39;est donc pas nécessaire de fournir `account_name`/`account_key` séparément :
 
     ```sql
     azureBlobStorage(connection_string, container_name, blobpath [, format, compression, partition_strategy, structure])
@@ -23,15 +23,25 @@ Fournit une interface de type table pour sélectionner/insérer des fichiers dan
   </Tab>
 
   <Tab title="URL du compte de stockage">
-    Nécessite `account_name` et `account_key` comme arguments distincts :
+    Nécessite `account_name` et `account_key` comme arguments distincts :
 
     ```sql
     azureBlobStorage(storage_account_url, container_name, blobpath, account_name, account_key [, format, compression, partition_strategy, structure])
     ```
   </Tab>
 
+  <Tab title="Workload Identity">
+    Utilise Azure Workload Identity via `extra_credentials` ; cette méthode est mutuellement exclusive avec `account_name` / `account_key` et nécessite `storage_account_url` (et non `connection_string`) :
+
+    ```sql
+    azureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, structure])
+    ```
+
+    Comme Workload Identity utilise l&#39;identité propre du serveur, cette méthode est refusée par défaut : activez `allow_server_credentials_in_user_queries` dans la session qui exécute la requête ou dans son settings profile.
+  </Tab>
+
   <Tab title="Collection nommée">
-    Voir [Collections nommées](#named-collections) ci-dessous pour la liste complète des clés prises en charge :
+    Voir [Collections nommées](#named-collections) ci-dessous pour la liste complète des clés prises en charge :
 
     ```sql
     azureBlobStorage(named_collection[, option=value [,..]])
@@ -44,7 +54,7 @@ Fournit une interface de type table pour sélectionner/insérer des fichiers dan
 | Argument                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `connection_string`              | Une chaîne de connexion qui inclut des identifiants intégrés (nom du compte + clé du compte ou jeton SAS). Lors de l&#39;utilisation de cette forme, `account_name` et `account_key` ne doivent **pas** être transmis séparément. Voir [Configurer une chaîne de connexion](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account).                                                                                                                                                                                                                                                          |
-| `storage_account_url`            | L&#39;URL de point de terminaison du compte de stockage, par ex. `https://myaccount.blob.core.windows.net/`. Lors de l&#39;utilisation de cette forme, vous **devez** également transmettre `account_name` et `account_key`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `storage_account_url`            | L&#39;URL de point de terminaison du compte de stockage, par ex. `https://<account>.blob.core.windows.net/`. Lors de l&#39;utilisation de cette forme, transmettez soit `account_name` et `account_key`, soit `extra_credentials(client_id=, tenant_id=)` pour Workload Identity.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `container_name`                 | Nom du conteneur.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `blobpath`                       | Chemin de fichier. Prend en charge les caractères génériques suivants en mode lecture seule : `*`, `**`, `?`, `{abc,def}` et `{N..M}` où `N`, `M` sont des nombres et `'abc'`, `'def'` des chaînes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `account_name`                   | Nom du compte de stockage. **Obligatoire** lors de l&#39;utilisation de `storage_account_url` sans SAS ; ne doit **pas** être transmis lors de l&#39;utilisation de `connection_string`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -54,31 +64,31 @@ Fournit une interface de type table pour sélectionner/insérer des fichiers dan
 | `structure`                      | Structure de la table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `partition_strategy`             | Facultatif. Valeurs prises en charge : `WILDCARD` ou `HIVE`. `WILDCARD` nécessite un `{_partition_id}` dans le chemin, qui est remplacé par la clé de partitionnement. `HIVE` n&#39;autorise pas les caractères génériques, suppose que le chemin est la racine de la table et génère des répertoires partitionnés au format Hive avec des Snowflake IDs comme noms de fichiers et le format de fichier comme extension. Sans stratégie explicite, un chemin contenant `{_partition_id}` utilise `WILDCARD`. Un chemin contenant un autre glob n&#39;utilise aucune stratégie de partitionnement et ignore `PARTITION BY`. Un chemin sans glob utilise `HIVE` lorsque `file_like_engine_default_partition_strategy` est `HIVE` ; sinon, il n&#39;utilise aucune stratégie de partitionnement. |
 | `partition_columns_in_data_file` | Facultatif. Utilisé uniquement avec la stratégie de partitionnement `HIVE`. Indique à ClickHouse s&#39;il doit s&#39;attendre à ce que les colonnes de partitionnement soient écrites dans le fichier de données. Valeur par défaut : `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `extra_credentials`              | Utilisez `client_id` et `tenant_id` pour l&#39;authentification. Si `extra_credentials` est fourni, il est prioritaire sur `account_name` et `account_key`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `extra_credentials`              | Utilisez `client_id` et `tenant_id` pour l&#39;authentification par Workload Identity Azure. Ce paramètre est incompatible avec `account_name` / `account_key` et nécessite `storage_account_url` (et non `connection_string`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ## Collections nommées {#named-collections}
 
-Les arguments peuvent également être transmis à l’aide de [collections nommées](/fr/concepts/features/configuration/server-config/named-collections). Dans ce cas, les clés suivantes sont prises en charge :
+Les arguments peuvent également être transmis à l’aide de [collections nommées](/fr/concepts/features/configuration/server-config/named-collections). Dans ce cas, les clés suivantes sont prises en charge :
 
-| Key                   | Required | Description                                                                                                                       |
-| --------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `container`           | Yes      | Nom du conteneur. Correspond à l’argument positionnel `container_name`.                                                           |
-| `blob_path`           | Yes      | Chemin de fichier (avec caractères génériques facultatifs). Correspond à l’argument positionnel `blobpath`.                       |
-| `connection_string`   | No*      | Chaîne de connexion avec informations d’identification intégrées. *`connection_string` ou `storage_account_url` doit être fourni. |
-| `storage_account_url` | No*      | URL du point de terminaison du compte de stockage. *`connection_string` ou `storage_account_url` doit être fourni.                |
-| `account_name`        | No       | Obligatoire lors de l’utilisation de `storage_account_url`                                                                        |
-| `account_key`         | No       | Obligatoire lors de l’utilisation de `storage_account_url`                                                                        |
-| `format`              | No       | Format de fichier.                                                                                                                |
-| `compression`         | No       | Type de compression.                                                                                                              |
-| `structure`           | No       | Structure de la table.                                                                                                            |
-| `client_id`           | No       | ID client pour l’authentification.                                                                                                |
-| `tenant_id`           | No       | ID de locataire pour l’authentification.                                                                                          |
+| Key                   | Required | Description                                                                                                                                                                                |
+| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `container`           | Yes      | Nom du conteneur. Correspond à l’argument positionnel `container_name`.                                                                                                                    |
+| `blob_path`           | Yes      | Chemin de fichier (avec caractères génériques facultatifs). Correspond à l’argument positionnel `blobpath`.                                                                                |
+| `connection_string`   | No*      | Chaîne de connexion avec identifiants intégrés. *`connection_string` ou `storage_account_url` doit être fourni. Ne peut pas être combiné avec `client_id` / `tenant_id`. |
+| `storage_account_url` | No*      | URL du point de terminaison du compte de stockage. *`connection_string` ou `storage_account_url` doit être fourni. Obligatoire pour Workload Identity (`client_id` / `tenant_id`).         |
+| `account_name`        | No       | Obligatoire lors de l’utilisation de `storage_account_url` avec l’authentification par clé de compte. Ne peut pas être combiné avec `client_id` / `tenant_id`.                             |
+| `account_key`         | No       | Obligatoire lors de l’utilisation de `storage_account_url` avec l’authentification par clé de compte. Ne peut pas être combiné avec `client_id` / `tenant_id`.                             |
+| `format`              | No       | Format de fichier.                                                                                                                                                                         |
+| `compression`         | No       | Type de compression.                                                                                                                                                                       |
+| `structure`           | No       | Structure de la table.                                                                                                                                                                     |
+| `client_id`           | No       | ID client pour Azure Workload Identity. Nécessite `tenant_id` et `storage_account_url` ; la variable `AZURE_FEDERATED_TOKEN_FILE` doit être définie pour le processus serveur.             |
+| `tenant_id`           | No       | ID de locataire pour Azure Workload Identity. Nécessite `client_id` et `storage_account_url` ; la variable `AZURE_FEDERATED_TOKEN_FILE` doit être définie pour le processus serveur.       |
 
 <Note>
-  Les noms des clés des collections nommées diffèrent des noms des arguments positionnels de la fonction : `container` (et non `container_name`) et `blob_path` (et non `blobpath`).
+  Les noms des clés des collections nommées diffèrent des noms des arguments positionnels de la fonction : `container` (et non `container_name`) et `blob_path` (et non `blobpath`).
 </Note>
 
-**Exemple :**
+**Exemple :**
 
 ```sql
 CREATE NAMED COLLECTION azure_my_data AS
@@ -94,7 +104,7 @@ FROM azureBlobStorage(azure_my_data)
 LIMIT 5;
 ```
 
-Vous pouvez également surcharger les valeurs de la collection nommée au moment de l’exécution de la requête :
+Vous pouvez également surcharger les valeurs de la collection nommée au moment de l’exécution de la requête :
 
 ```sql
 SELECT *

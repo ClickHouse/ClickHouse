@@ -306,7 +306,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
 
 تتيح لك معلمات الاستعلام كتابة استعلامات عامة تحتوي على عناصر نائبة مجردة بدلًا من المعرّفات الفعلية.
 وعند تنفيذ استعلام يتضمن معلمات استعلام،
-تُفسَّر جميع العناصر النائبة وتُستبدل بقيم معلمات الاستعلام الفعلية.
+تُفسَّر جميع العناصر النائبة وتُستبدل بقيم معلمات الاستعلام الفعلية.
 
 يمكن تعريف معلمات الاستعلام بعدة طرق:
 
@@ -314,7 +314,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
 * `--param_<name>='<value>'` — كوسيطة لـ `clickhouse-client` في سطر الأوامر.
 * `param_<name>=<value>` — كمعلمة في سلسلة استعلام URL لواجهة HTTP.
 
-يمكن الإشارة إلى معلمة استعلام داخل استعلام باستخدام `{<name>: <datatype>}`، حيث إن `<name>` هو اسم معلمة الاستعلام و`<datatype>` هو نوع البيانات الذي تُحوَّل إليه.
+يمكن الإشارة إلى معلمة استعلام داخل استعلام باستخدام `{<name>: <datatype>}`، حيث إن `<name>` هو اسم معلمة الاستعلام و`<datatype>` هو نوع البيانات الذي تُحوَّل إليه.
 
 <Accordion title="مثال باستخدام أمر SET">
   على سبيل المثال، يعرّف SQL التالي معلمات بأسماء `a` و`b` و`c` و`d`، ولكل منها نوع بيانات مختلف:
@@ -336,7 +336,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
 </Accordion>
 
 <Accordion title="مثال باستخدام clickhouse-client">
-  إذا كنت تستخدم `clickhouse-client`، فتُحدَّد المعلمات بصيغة `--param_name=value`. على سبيل المثال، تحمل المعلمة التالية الاسم `message` وتُسترجع كـ `String`:
+  إذا كنت تستخدم `clickhouse-client`، فتُحدَّد المعلمات بصيغة `--param_name=value`. على سبيل المثال، تحمل المعلمة التالية الاسم `message` وتُسترجع كـ `String`:
 
   ```bash
   clickhouse-client --param_message='hello' --query="SELECT {message: String}"
@@ -344,7 +344,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
   hello
   ```
 
-  إذا كانت معلمة الاستعلام تمثّل اسم database أو table أو function أو أي Identifier آخر، فاستخدم `Identifier` كنوع لها. على سبيل المثال، يعيد الاستعلام التالي rows من table اسمها `uk_price_paid`:
+  إذا كانت معلمة الاستعلام تمثّل اسم قاعدة بيانات أو جدول أو دالة أو أي Identifier آخر، فاستخدم `Identifier` كنوع لها. على سبيل المثال، يعيد الاستعلام التالي صفوفًا من جدول اسمه `uk_price_paid`:
 
   ```sql
   SET param_mytablename = "uk_price_paid";
@@ -363,12 +363,13 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
 </Accordion>
 
 <Accordion title="مثال باستخدام واجهة الويب">
-  تكتشف واجهة الويب المضمّنة (`play.html`) تلقائيًا العناصر النائبة للمعلمات بصيغة `{name:Type}` في الاستعلام، وتعرض حقول إدخال معنونة لكل معلمة. تُضمَّن قيم المعلمات في HTTP request، كما تُحفَظ أيضًا في URL الصفحة لأغراض وضع الإشارات المرجعية والمشاركة.
+  تكتشف واجهة الويب المضمّنة (`play.html`) تلقائيًا العناصر النائبة للمعلمات بصيغة `{name:Type}` في الاستعلام، وتعرض حقول إدخال معنونة لكل معلمة. تُضمَّن قيم المعلمات في HTTP request، كما تُحفَظ أيضًا في URL الصفحة لأغراض وضع الإشارات المرجعية والمشاركة.
 </Accordion>
 
 <Note>
   ليست معلمات الاستعلام بدائل نصية عامة يمكن استخدامها في مواضع عشوائية ضمن استعلامات SQL كيفما اتفق.
-  فهي مُصمَّمة أساسًا للعمل داخل عبارات `SELECT` بدلًا من المعرّفات أو القيم الحرفية.
+  فهي مُصمَّمة أساسًا للعمل داخل عبارات `SELECT` بدلًا من المعرّفات أو القيم الحرفية.
+  وتعمل كذلك في عبارات DDL بدلًا من أسماء قواعد البيانات والجداول (مثل `CREATE TABLE {db:Identifier}.{tbl:Identifier}`). وفي `ALTER TABLE`، تعمل أيضًا مع `DROP` و`CLEAR` و`MATERIALIZE` و`COMMENT` و`RENAME COLUMN` و`AFTER` (مثل `ALTER TABLE t RENAME COLUMN {c:Identifier} TO {c2:Identifier}`).
 </Note>
 
 ## الدوال {#functions}

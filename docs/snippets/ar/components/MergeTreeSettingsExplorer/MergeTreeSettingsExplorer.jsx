@@ -75,9 +75,10 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "check_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "check_delay_period", path: "/check#check_delay_period", default: "60" },
+        { name: "check_part_use_direct_io", path: "/check#check_part_use_direct_io", default: "1" },
         { name: "check_sample_column_is_correct", path: "/check#check_sample_column_is_correct", default: "1" }
       ],
       children: []
@@ -121,10 +122,11 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "compress_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "compress_marks", path: "/compress#compress_marks", default: "1" },
         { name: "compress_per_column_in_compact_parts", path: "/compress#compress_per_column_in_compact_parts", default: "1" },
+        { name: "compress_per_substream_in_compact_parts", path: "/compress#compress_per_substream_in_compact_parts", default: "1" },
         { name: "compress_primary_key", path: "/compress#compress_primary_key", default: "1" }
       ],
       children: []
@@ -540,10 +542,11 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "min_bytes_*",
-      count: 5,
+      count: 6,
       settings: [
         { name: "min_bytes_for_compact_part", path: "/min-bytes#min_bytes_for_compact_part", default: "0" },
         { name: "min_bytes_for_full_part_storage", path: "/min-bytes#min_bytes_for_full_part_storage", default: "0" },
+        { name: "min_bytes_for_object_shared_data_main_serialization_version", path: "/min-bytes#min_bytes_for_object_shared_data_main_serialization_version", default: "0" },
         { name: "min_bytes_for_wide_part", path: "/min-bytes#min_bytes_for_wide_part", default: "10485760" },
         { name: "min_bytes_to_prewarm_caches", path: "/min-bytes#min_bytes_to_prewarm_caches", default: "0" },
         { name: "min_bytes_to_rebalance_partition_over_jbod", path: "/min-bytes#min_bytes_to_rebalance_partition_over_jbod", default: "0" }
@@ -627,7 +630,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "object_shared_data_buckets_for_compact_part", path: "/object-shared#object_shared_data_buckets_for_compact_part", default: "8" },
         { name: "object_shared_data_buckets_for_wide_part", path: "/object-shared#object_shared_data_buckets_for_wide_part", default: "32" },
         { name: "object_shared_data_serialization_version", path: "/object-shared#object_shared_data_serialization_version", default: "advanced" },
-        { name: "object_shared_data_serialization_version_for_zero_level_parts", path: "/object-shared#object_shared_data_serialization_version_for_zero_level_parts", default: "map_with_buckets" },
+        { name: "object_shared_data_serialization_version_for_small_parts", path: "/object-shared#object_shared_data_serialization_version_for_small_parts", default: "map_with_buckets" },
         { name: "object_shared_data_target_chunk_rows", path: "/object-shared#object_shared_data_target_chunk_rows", default: "8192" }
       ],
       children: []
@@ -748,7 +751,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "shared_merge_*",
-      count: 53,
+      count: 55,
       settings: [
         { name: "shared_merge_tree_activate_coordinated_merges_tasks", path: "/shared-merge#shared_merge_tree_activate_coordinated_merges_tasks", default: "0" },
         { name: "shared_merge_tree_blobs_list_inline_file_max_bytes", path: "/shared-merge#shared_merge_tree_blobs_list_inline_file_max_bytes", default: "0" },
@@ -766,6 +769,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "shared_merge_tree_interserver_http_timeout_ms", path: "/shared-merge#shared_merge_tree_interserver_http_timeout_ms", default: "10000" },
         { name: "shared_merge_tree_leader_update_period_random_add_seconds", path: "/shared-merge#shared_merge_tree_leader_update_period_random_add_seconds", default: "10" },
         { name: "shared_merge_tree_leader_update_period_seconds", path: "/shared-merge#shared_merge_tree_leader_update_period_seconds", default: "30" },
+        { name: "shared_merge_tree_max_noop_updates_from_leader", path: "/shared-merge#shared_merge_tree_max_noop_updates_from_leader", default: "16" },
         { name: "shared_merge_tree_max_outdated_parts_to_process_at_once", path: "/shared-merge#shared_merge_tree_max_outdated_parts_to_process_at_once", default: "1000" },
         { name: "shared_merge_tree_max_parts_update_backoff_ms", path: "/shared-merge#shared_merge_tree_max_parts_update_backoff_ms", default: "5000" },
         { name: "shared_merge_tree_max_parts_update_leaders_in_total", path: "/shared-merge#shared_merge_tree_max_parts_update_leaders_in_total", default: "6" },
@@ -792,6 +796,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
           default: "0.5"
         },
         { name: "shared_merge_tree_parts_load_batch_size", path: "/shared-merge#shared_merge_tree_parts_load_batch_size", default: "32" },
+        { name: "shared_merge_tree_parts_update_leader_tables_budget_factor", path: "/shared-merge#shared_merge_tree_parts_update_leader_tables_budget_factor", default: "2" },
         { name: "shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms", path: "/shared-merge#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms", default: "0" },
         {
           name: "shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold",
@@ -841,7 +846,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
       count: 7,
       settings: [
         { name: "text_index_dictionary_block_frontcoding_compression", path: "/text-index#text_index_dictionary_block_frontcoding_compression", default: "1" },
-        { name: "text_index_dictionary_block_size", path: "/text-index#text_index_dictionary_block_size", default: "512" },
+        { name: "text_index_dictionary_block_size", path: "/text-index#text_index_dictionary_block_size", default: "8192" },
         { name: "text_index_max_memory_usage_before_flush", path: "/text-index#text_index_max_memory_usage_before_flush", default: "1073741824" },
         { name: "text_index_max_processed_tokens_before_flush", path: "/text-index#text_index_max_processed_tokens_before_flush", default: "100000000" },
         { name: "text_index_posting_list_block_size", path: "/text-index#text_index_posting_list_block_size", default: "1048576" },
@@ -852,13 +857,14 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "use_*",
-      count: 6,
+      count: 7,
       settings: [
         { name: "use_adaptive_write_buffer_for_dynamic_subcolumns", path: "/use#use_adaptive_write_buffer_for_dynamic_subcolumns", default: "1" },
         { name: "use_async_block_ids_cache", path: "/use#use_async_block_ids_cache", default: "1" },
         { name: "use_compact_variant_discriminators_serialization", path: "/use#use_compact_variant_discriminators_serialization", default: "1" },
         { name: "use_const_adaptive_granularity", path: "/use#use_const_adaptive_granularity", default: "0" },
         { name: "use_metadata_cache", path: "/use#use_metadata_cache", default: "0" },
+        { name: "use_object_shared_data_serialization_version_for_small_parts_on_insert", path: "/use#use_object_shared_data_serialization_version_for_small_parts_on_insert", default: "1" },
         { name: "use_primary_key_cache", path: "/use#use_primary_key_cache", default: "0" }
       ],
       children: []
@@ -917,7 +923,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "أخرى",
-      count: 60,
+      count: 62,
       settings: [
         { name: "adaptive_codec_selection_period", path: "/other#adaptive_codec_selection_period", default: "8" },
         { name: "adaptive_write_buffer_initial_size", path: "/other#adaptive_write_buffer_initial_size", default: "16384" },
@@ -936,6 +942,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "deduplicate_merge_projection_mode", path: "/other#deduplicate_merge_projection_mode", default: "throw" },
         { name: "deduplication_hashes_cache_update_wait_ms", path: "/other#deduplication_hashes_cache_update_wait_ms", default: "100" },
         { name: "default_compression_codec", path: "/other#default_compression_codec", default: '""' },
+        { name: "delay_merges_after_startup_seconds", path: "/other#delay_merges_after_startup_seconds", default: "60" },
         { name: "disk", path: "/other#disk", default: '""' },
         { name: "dynamic_serialization_version", path: "/other#dynamic_serialization_version", default: "v3" },
         { name: "empty_parts_lifetime", path: "/other#empty_parts_lifetime", default: "0" },
@@ -968,6 +975,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "replicated_can_become_leader", path: "/other#replicated_can_become_leader", default: "1" },
         { name: "search_orphaned_parts_disks", path: "/other#search_orphaned_parts_disks", default: "any" },
         { name: "serialization_info_version", path: "/other#serialization_info_version", default: "with_types" },
+        { name: "serialize_statistics_bounds_with_column_type", path: "/other#serialize_statistics_bounds_with_column_type", default: "0" },
         { name: "share_nested_offsets", path: "/other#share_nested_offsets", default: "1" },
         { name: "simultaneous_parts_removal_limit", path: "/other#simultaneous_parts_removal_limit", default: "0" },
         { name: "skip_empty_columns_on_insert", path: "/other#skip_empty_columns_on_insert", default: "0" },
@@ -983,6 +991,10 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     }
   ])
+  const [settingAliases] = useState(() => ({
+    enable_block_number_column: ["allow_experimental_block_number_column"],
+    object_shared_data_serialization_version_for_small_parts: ["object_shared_data_serialization_version_for_zero_level_parts"]
+  }))
   const [allGroupKeys] = useState(() => {
     const collectGroupKeys = (items, path = []) =>
       items.flatMap((entry) => {
@@ -1031,7 +1043,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
   }
 
   const filterEntry = (entry) => {
-    const settings = entry.settings.filter((setting) => matchesSearch(setting.name))
+    const settings = entry.settings.filter((setting) => matchesSearch([setting.name, ...(settingAliases[setting.name] || [])].join(" ")))
     const children = entry.children.map(filterEntry).filter(Boolean)
     const count = settings.length + children.reduce((total, child) => total + child.count, 0)
     if (!count) return null

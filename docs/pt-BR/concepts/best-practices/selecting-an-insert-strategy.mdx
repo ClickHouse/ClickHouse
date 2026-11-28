@@ -46,9 +46,9 @@ O ClickHouse armazena em disco os dados inseridos,[ ordenados](/pt-BR/guides/cli
 
 Se os dados a serem ingeridos não tiverem um formato predefinido, a **decisão principal** é escolher um formato. O ClickHouse oferece suporte à inserção de dados em [mais de 70 formatos](/pt-BR/reference/formats/index). No entanto, ao usar o cliente de linha de comando do ClickHouse ou clientes para linguagens de programação, essa escolha geralmente é feita automaticamente. Se necessário, essa seleção automática também pode ser substituída explicitamente.
 
-A próxima **decisão importante** é ④ se os dados devem ser compactados antes da transmissão para o servidor ClickHouse. A compactação reduz o volume de dados transferidos e melhora a eficiência da rede, resultando em transferências mais rápidas e menor uso de largura de banda, especialmente para grandes conjuntos de dados.
+A próxima **decisão importante** é ④ se os dados devem ser compactados antes da transmissão para o servidor ClickHouse. A compressão reduz o volume de dados transferidos e melhora a eficiência da rede, resultando em transferências mais rápidas e menor uso de largura de banda, especialmente para grandes conjuntos de dados.
 
-Os dados são ⑤ transmitidos por uma interface de rede do ClickHouse — seja a interface [nativa](/pt-BR/concepts/features/interfaces/tcp) ou a interface [HTTP](/pt-BR/concepts/features/interfaces/http) (que [comparamos](https://clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient#clickhouse-client-defaults) mais adiante neste post).
+Os dados são ⑤ transmitidos por uma interface de rede do ClickHouse — seja a interface [nativa](/pt-BR/concepts/features/connect-to-clickhouse/protocols/native-tcp) ou a interface [HTTP](/pt-BR/concepts/features/connect-to-clickhouse/protocols/http) (que [comparamos](https://clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient#clickhouse-client-defaults) mais adiante neste post).
 
 <div id="server-side-steps">
   #### Etapas no servidor {#server-side-steps}
@@ -123,9 +123,7 @@ Boa prática: use LZ4, a menos que você tenha largura de banda limitada ou inco
   Em testes do benchmark [FastFormats](https://clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient), inserções Native comprimidas com LZ4 reduziram o tamanho dos dados em mais de 50%, diminuindo o tempo de ingestão de 150s para 131s em um conjunto de dados de 5,6 GiB. Ao mudar para ZSTD, o mesmo conjunto de dados foi comprimido para 1,69 GiB, mas o tempo de processamento no lado do servidor aumentou ligeiramente.
 </Note>
 
-<div id="compression-reduces-resource-usage">
-  #### A compressão reduz o uso de recursos {#compression-reduces-resource-usage}
-</div>
+#### A compressão reduz o uso de recursos {#compression-reduces-resource-usage}
 
 A compressão não só reduz o tráfego de rede como também melhora a eficiência de CPU e memória no servidor. Com dados comprimidos, o ClickHouse recebe menos bytes e gasta menos tempo fazendo parsing de entradas grandes. Esse benefício é especialmente importante na ingestão feita por vários clientes simultâneos, como em cenários de observabilidade.
 
@@ -133,9 +131,9 @@ O impacto da compressão sobre CPU e memória é modesto com LZ4 e moderado com 
 
 **Combinar compressão com envio em lotes e um formato de entrada eficiente (como Native) oferece o melhor desempenho de ingestão.**
 
-Ao usar a interface nativa (por exemplo, [clickhouse-client](/pt-BR/concepts/features/interfaces/client)), a compressão LZ4 vem habilitada por padrão. Se quiser, você pode mudar para ZSTD nas configurações.
+Ao usar a interface nativa (por exemplo, [clickhouse-client](/pt-BR/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client)), a compressão LZ4 vem habilitada por padrão. Se quiser, você pode mudar para ZSTD nas configurações.
 
-Com a [interface HTTP](/pt-BR/concepts/features/interfaces/http), use o cabeçalho Content-Encoding para aplicar compressão (por exemplo, Content-Encoding: lz4). Todo o payload deve ser comprimido antes do envio.
+Com a [interface HTTP](/pt-BR/concepts/features/connect-to-clickhouse/protocols/http), use o cabeçalho Content-Encoding para aplicar compressão (por exemplo, Content-Encoding: lz4). Todo o payload deve ser comprimido antes do envio.
 
 <div id="pre-sort-if-low-cost">
   ### Pré-ordene se o custo for baixo {#pre-sort-if-low-cost}
@@ -159,11 +157,9 @@ Quando os dados chegam pré-ordenados, o ClickHouse pode ignorar ou simplificar 
   ## Escolha uma interface: HTTP ou nativa {#choose-an-interface}
 </div>
 
-<div id="choose-an-interface-native">
-  ### Nativa {#choose-an-interface-native}
-</div>
+### Nativa {#choose-an-interface-native}
 
-O ClickHouse oferece duas interfaces principais para ingestão de dados: a **interface nativa** e a **interface HTTP** — cada uma com seus próprios trade-offs entre desempenho e flexibilidade. A interface nativa, usada pelo [clickhouse-client](/pt-BR/concepts/features/interfaces/client) e por alguns clientes de linguagem, como Go e C++, foi projetada especificamente para desempenho. Ela sempre transmite dados no formato Native, altamente eficiente, do ClickHouse, oferece suporte à compressão em blocos com LZ4 ou ZSTD e minimiza o processamento no lado do servidor ao transferir para o cliente tarefas como parsing e conversão de formato.
+O ClickHouse oferece duas interfaces principais para ingestão de dados: a **interface nativa** e a **interface HTTP** — cada uma com seus próprios trade-offs entre desempenho e flexibilidade. A interface nativa, usada pelo [clickhouse-client](/pt-BR/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client) e por alguns clientes de linguagem, como Go e C++, foi projetada especificamente para desempenho. Ela sempre transmite dados no Native Format, altamente eficiente, do ClickHouse, oferece suporte à compressão em blocos com LZ4 ou ZSTD e minimiza o processamento no lado do servidor ao transferir para o cliente tarefas como parsing e conversão de formato.
 
 Ela ainda permite calcular, no lado do cliente, os valores de colunas MATERIALIZED e DEFAULT, fazendo com que o servidor possa pular essas etapas por completo. Isso torna a interface nativa ideal para cenários de ingestão com alto throughput em que a eficiência é crítica.
 
@@ -173,6 +169,6 @@ Diferentemente de muitos bancos de dados tradicionais, o ClickHouse também ofer
 
 Isso costuma ser preferível ao protocolo nativo do ClickHouse, pois permite que o tráfego seja facilmente direcionado por balanceadores de carga. É de se esperar uma pequena diferença no desempenho de inserção com o protocolo nativo, que tem um pouco menos de sobrecarga.
 
-No entanto, ela não conta com a integração mais profunda do protocolo nativo e não consegue realizar otimizações no lado do cliente, como o cálculo de valores materializados ou a conversão automática para o formato Native. Embora inserções via HTTP ainda possam ser comprimidas usando cabeçalhos HTTP padrão (por exemplo, `Content-Encoding: lz4`), a compressão é aplicada ao payload inteiro, e não a blocos de dados individuais. Essa interface costuma ser preferida em ambientes em que a simplicidade do protocolo, o balanceamento de carga ou a ampla compatibilidade de formatos são mais importantes do que o desempenho bruto.
+No entanto, ela não conta com a integração mais profunda do protocolo nativo e não consegue realizar otimizações no lado do cliente, como o cálculo de valores materializados ou a conversão automática para o Native Format. Embora inserções via HTTP ainda possam ser comprimidas usando cabeçalhos HTTP padrão (por exemplo, `Content-Encoding: lz4`), a compressão é aplicada ao payload inteiro, e não a blocos de dados individuais. Essa interface costuma ser preferida em ambientes em que a simplicidade do protocolo, o balanceamento de carga ou a ampla compatibilidade de formatos são mais importantes do que o desempenho bruto.
 
-Para uma descrição mais detalhada dessas interfaces, veja [aqui](/pt-BR/concepts/features/interfaces/overview).
+Para uma descrição mais detalhada dessas interfaces, consulte [Conectar ao ClickHouse](/pt-BR/concepts/features/connect-to-clickhouse).

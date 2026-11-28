@@ -195,11 +195,12 @@ ENGINE = MergeTree()
 
 <ExperimentalBadge />
 
-`Quantized(method, dimensions[, ...])` — Um codec especializado que oferece suporte à busca vetorial aproximada em colunas do tipo `Array(Float32)`, `Array(Float64)` ou `Array(BFloat16)`.
+`Quantized(method, dimensions[, ...])` — Um codec especializado que oferece suporte à busca vetorial aproximada em colunas do tipo `Array(Float32)`, `Array(Float64)`, `Array(BFloat16)`, `Array(Int8)` ou `Array(UInt8)`.
 Ele armazena os vetores originais em precisão total, além de um *código quantizado* compacto para cada vetor.
 Em tabelas da família `MergeTree`, consultas de busca vetorial com a configuração [`vector_search_use_quantized_codes`](/pt-BR/reference/settings/session-settings/vector-search#vector_search_use_quantized_codes) examinam os códigos quantizados para criar uma lista curta e, em seguida, recalculam os resultados usando os vetores em precisão total.
 Essa busca em duas etapas lê menos bytes do que uma varredura normal em precisão total, em troca de menor revocação.
 `dimensions` é o comprimento do vetor; os valores compatíveis de `method` são `rabitq`, `turboquant`, `int8`, `prefix` e `product`, cada um com uma combinação diferente de tamanho, precisão e função de distância.
+Para colunas `Array(Int8)` e `Array(UInt8)`, o método `int8` e o método `prefix` com formato `int8` não são suportados.
 
 O codec só pode ser definido em `CREATE TABLE`; não pode ser adicionado, removido ou alterado por meio de `ALTER TABLE`, inclusive com `ADD COLUMN ... CODEC(Quantized(...))`.
 Ele não pode ser encadeado com nenhum outro codec, nem mesmo com um codec de criptografia como `AES_128_GCM_SIV`.

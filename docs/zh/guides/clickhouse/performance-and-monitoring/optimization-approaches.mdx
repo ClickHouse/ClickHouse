@@ -14,7 +14,7 @@ import NYCTaxiExampleDataset from '/snippets/zh/_nyc_taxi_example_dataset.mdx';
 利用[查询日志](/zh/reference/system-tables/query_log)、受控比较和[查询计划](/zh/reference/statements/explain)提供的证据，评估能够解决已测得瓶颈的优化方法。
 
 <div id="before-you-begin">
-  ## 开始之前
+  ## 开始之前 {#before-you-begin}
 </div>
 
 请先建立可复现的基准，并对性能瓶颈提出假设。如果尚未确定瓶颈，请先参阅[诊断慢查询](/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)和[定位查询瓶颈](/zh/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks)。
@@ -26,7 +26,7 @@ import NYCTaxiExampleDataset from '/snippets/zh/_nyc_taxi_example_dataset.mdx';
 </Accordion>
 
 <div id="choose-an-approach">
-  ## 选择优化方向
+  ## 选择优化方向 {#choose-an-approach}
 </div>
 
 根据收集到的证据确定优化的切入点。优先选择能解决问题且针对性最弱的改动：
@@ -40,17 +40,17 @@ import NYCTaxiExampleDataset from '/snippets/zh/_nyc_taxi_example_dataset.mdx';
 如果证据不属于上述任何类别，请回到查询计划，而不是强行套用某种优化方向。
 
 <div id="reduce-the-data-read">
-  ## 减少数据读取量
+  ## 减少数据读取量 {#reduce-the-data-read}
 </div>
 
 * **适用场景：** 查询读取了宽列或不需要的列。
 * **更改：** 减少查询读取的列大小或列数。
 * **验证：** 在相同条件下比较 `read_bytes`、内存使用量和耗时。
 
-ClickHouse 仅读取查询所需的列，但仍需读取、解压并处理选中的数据。请检查所选列及其类型。[Schema inference](/zh/concepts/features/interfaces/schema-inference) 提供了实用的起点，但推断出的类型可能比生产数据实际所需的类型更宽或限制更少。
+ClickHouse 仅读取查询所需的列，但仍需读取、解压并处理选中的数据。请检查所选列及其类型。[Schema inference](/zh/concepts/features/operations/insert/schema-inference) 提供了实用的起点，但推断出的类型可能比生产数据实际所需的类型更宽或限制更少。
 
 <div id="review-column-types">
-  ### 审查列类型
+  ### 审查列类型 {#review-column-types}
 </div>
 
 <span id="choose-precise-types" />
@@ -76,7 +76,7 @@ ClickHouse 仅读取查询所需的列，但仍需读取、解压并处理选中
 有关更详细的指导，请参阅[选择数据类型](/zh/best-practices/select-data-types)。
 
 <div id="read-only-the-required-columns">
-  ### 仅读取所需列
+  ### 仅读取所需列 {#read-only-the-required-columns}
 </div>
 
 ClickHouse 按列存储数据，因此减少选择的列数可直接减少读取的数据量。请列出所需列，不要使用 `SELECT *`，尤其是对于宽表，或查询仅返回每行少量字段时。
@@ -99,7 +99,7 @@ LIMIT 1000;
 将此查询与使用相同过滤器和限制条件的 `SELECT *` 查询进行比较。返回的行数不变，但 `read_bytes` 应反映出读取的列更少。
 
 <div id="align-the-data-layout-with-the-query">
-  ## 让数据布局与查询相匹配
+  ## 让数据布局与查询相匹配 {#align-the-data-layout-with-the-query}
 </div>
 
 * **适用场景：**选择性过滤器仍会读取大量 parts 或粒度。
@@ -107,7 +107,7 @@ LIMIT 1000;
 * **验证：**比较 [`EXPLAIN indexes = 1`](/zh/reference/statements/explain) 选中的 parts 和粒度，然后检查 `read_rows`、`read_bytes` 和耗时。
 
 <div id="start-with-the-ordering-key">
-  ### 从排序键入手
+  ### 从排序键入手 {#start-with-the-ordering-key}
 </div>
 
 对于 [`MergeTree` 家族表](/zh/reference/engines/table-engines/mergetree-family/)，排序键决定行在磁盘上的排列方式。默认情况下，它还作为定义[稀疏主索引](/zh/primary-indexes)的主键。与 OLTP 数据库中的主键不同，ClickHouse 主键不保证唯一性。其性能优势在于，ClickHouse 可以跳过无法满足查询&#39;过滤条件的粒度。
@@ -143,7 +143,7 @@ SETTINGS
 </Tip>
 
 <div id="evaluate-additional-indexing-and-data-layout-options">
-  ### 评估其他索引和数据布局方案
+  ### 评估其他索引和数据布局方案 {#evaluate-additional-indexing-and-data-layout-options}
 </div>
 
 如果排序键无法高效支持某个重要的访问模式，请评估以下更专用的方案。
@@ -195,7 +195,7 @@ MATERIALIZE PROJECTION trips_by_payment_type;
 对投影进行物化会填充现有数据；后续插入会自动维护该投影。针对原始表重复执行有代表性的查询，并使用 `EXPLAIN projections = 1` 确认 ClickHouse 是否选择了该投影，以及是否读取了更少的行或字节。将此模式广泛应用前，还应评估插入和存储开销。
 
 <div id="precompute-repeatable-work">
-  ## 预计算重复性工作
+  ## 预计算重复性工作 {#precompute-repeatable-work}
 </div>
 
 * **适用场景：** 相同的转换或聚合反复占据大部分查询时间。
@@ -213,7 +213,7 @@ MATERIALIZE PROJECTION trips_by_payment_type;
 每个部分均包含基础实现、主要运维权衡，以及验证结果的方法。
 
 <div id="incremental-materialized-view">
-  ### 增量materialized view
+  ### 增量materialized view {#incremental-materialized-view}
 </div>
 
 当需要让重复执行的过滤、转换或聚合随数据到达持续保持最新时，请使用[增量materialized view](/zh/materialized-view/incremental-materialized-view)。它会处理每个新插入的块，并将转换后的结果写入目标表。代价是增加摄取工作，并需要显式定义目标表。
@@ -242,7 +242,7 @@ GROUP BY pickup_date;
 按 `pickup_date` 分组并使用 `sum(trip_count)` 查询目标表，以便在查询时合并等待后台合并的行。该视图仅处理新插入的数据，因此需要单独回填现有源数据。将耗时和读取行数与原始聚合进行比较，以验证变更，然后确认额外的插入开销可以接受。
 
 <div id="refreshable-materialized-view">
-  ### 可刷新materialized view
+  ### 可刷新materialized view {#refreshable-materialized-view}
 </div>
 
 当可以接受结果略有陈旧，且能够以适当的时间间隔重新计算完整结果时，请使用[可刷新materialized view](/zh/materialized-view/refreshable-materialized-view)。它会按计划重新执行查询。需要权衡的是结果的新鲜度与每次刷新的成本。
@@ -272,7 +272,7 @@ GROUP BY payment_type;
 报表读取预计算结果，而 ClickHouse 会按计划刷新完整结果。将其查询耗时与原始聚合进行比较，以验证变更；然后检查 [`system.view_refreshes`](/zh/reference/system-tables/view_refreshes)，确认刷新耗时、状态和频率是否适合该工作负载。
 
 <div id="purpose-built-table">
-  ### 专用表
+  ### 专用表 {#purpose-built-table}
 </div>
 
 当某个独立工作负载需要显著不同的 schema、排序键或生命周期时，请使用专用表。它能让你明确控制物理设计，相比维护大量 projections，也可能更清晰易懂。代价是需要额外的存储空间和管道管理。当源数据和新鲜度要求允许时，也可将重复的 联接 或转换移入摄取管道。有关详细的设计指导，请参阅[使用 materialized views](/zh/best-practices/use-materialized-views)和[数据反规范化](/zh/data-modeling/denormalization)。
@@ -295,10 +295,8 @@ WHERE source.payment_type IS NOT NULL
 
 此示例会排除排序键值为 null 的数据，并将这两个目标列中的 `Nullable` 移除。请确认这种处理方式符合工作负载的数据要求。仪表板必须显式查询此表，摄取管道也必须确保其保持最新。请通过比较读取的行数和字节数、内存使用量及耗时与源表查询来验证此更改。决策时还应考虑额外的存储和管道维护成本。
 
-<div id="next-steps">
-  ## 后续步骤
-</div>
+## 后续步骤 {#next-steps}
 
-评估变更时，应在可比条件下重复进行原始测量。确认该变更减少了预期工作量，而不会将瓶颈转移到其他环节。
+评估某项变更时，请在可比的条件下重复先前的测量，确认该变更确实减少了目标工作量，且没有将瓶颈转移到其他环节。
 
-继续阅读[优化实例详解](/zh/guides/clickhouse/performance-and-monitoring/query-optimization-example)，了解如何以原始基线为参照，测量 schema 和排序键变更的效果。
+接下来可阅读[优化过程详解示例](/zh/guides/clickhouse/performance-and-monitoring/query-optimization-example)，了解如何以原始基线为参照，衡量 schema 和 ordering-key 变更的效果。

@@ -111,26 +111,37 @@ hyperdx:
     MONGODB_PASSWORD: "your-mongodb-password"
 ```
 
-### Использование внешнего секрета {#using-external-secret}
+### Использование внешнего Secret {#using-external-secret}
 
-Для рабочих развертываний, где нужно хранить учетные данные отдельно от значений Helm, используйте внешний секрет Kubernetes:
+Чтобы не хранить ключ API HyperDX в значениях Helm, сохраните его в собственном Secret Kubernetes:
 
 ```bash
-# Создайте секрет
 kubectl create secret generic my-clickstack-secrets \
-  --from-literal=HYPERDX_API_KEY=my-secret-api-key \
-  --from-literal=CLICKHOUSE_PASSWORD=my-ch-password \
-  --from-literal=CLICKHOUSE_APP_PASSWORD=my-ch-app-password \
-  --from-literal=MONGODB_PASSWORD=my-mongo-password
+  --from-literal=HYPERDX_API_KEY=my-secret-api-key
 ```
 
-Затем укажите это в values:
+Затем удалите его из Secret чарта и считывайте из своего Secret:
 
 ```yaml
 hyperdx:
-  useExistingConfigSecret: true
-  existingConfigSecret: "my-clickstack-secrets"
+  secrets:
+    HYPERDX_API_KEY: null
+  deployment:
+    env:
+      - name: HYPERDX_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: my-clickstack-secrets
+            key: HYPERDX_API_KEY
 ```
+
+Любую другую переменную окружения HyperDX можно таким же образом считывать из Secret.
+
+Пароли ClickHouse и MongoDB должны оставаться в `hyperdx.secrets`, пока включены встроенные компоненты. Чарт использует их для создания пользователей встроенных ClickHouse и MongoDB, а OTel collector считывает их из Secret чарта.
+
+<Note>
+  `hyperdx.deployment.useExistingConfigSecret` загружает из Secret только соединения и источники по умолчанию (`connections.json` и `sources.json`). Ключ API и пароли он не считывает. См. раздел [Внешний ClickHouse](/ru/clickstack/deployment/helm-deployment-options#external-clickhouse-secret).
+</Note>
 
 ## Настройка входного шлюза {#ingress-setup}
 

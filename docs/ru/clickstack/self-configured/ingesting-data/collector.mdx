@@ -248,7 +248,7 @@ GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hy
 
 ## Обработка — фильтрация, преобразование и обогащение {#processing-filtering-transforming-enriching-self-configured}
 
-Пользователям неизбежно потребуется фильтровать, преобразовывать и обогащать сообщения о событиях в ходе ингестии. Поскольку конфигурацию коннектора ClickStack изменить нельзя, тем, кому требуется дополнительная фильтрация и обработка событий, мы рекомендуем один из следующих вариантов:
+Пользователям неизбежно потребуется фильтровать, преобразовывать и обогащать сообщения о событиях в ходе ингестии. Пользователи могут добавлять процессоры и конвейеры в коллектор ClickStack с помощью [пользовательской конфигурации](#extending-collector-config). Чтобы выполнять такую обработку вне коллектора ClickStack, мы рекомендуем один из следующих вариантов:
 
 * Развернуть собственный экземпляр OTel collector, который выполняет фильтрацию и обработку и отправляет события в коллектор ClickStack по OTLP для ингестии в ClickHouse.
 * Развернуть собственный экземпляр OTel collector и отправлять события напрямую в ClickHouse с помощью экспортера ClickHouse.
@@ -269,9 +269,9 @@ OpenTelemetry предоставляет следующие возможност
 
 * [Пакетирование](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) — необходимо при работе с ClickHouse, чтобы данные отправлялись пакетами. См. раздел [«Оптимизация вставок»](#optimizing-inserts-self-configured).
 
-* **Операторы** — [операторы](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) представляют собой самую базовую единицу обработки, доступную в приёмнике. Поддерживается базовый разбор, позволяющий задавать такие поля, как Severity и Timestamp. Здесь также поддерживаются разбор JSON и регулярных выражений, фильтрация событий и базовые преобразования. Фильтрацию событий мы рекомендуем выполнять именно здесь.
+* **Операторы** — [операторы](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) представляют собой самую базовую единицу обработки, доступную в приёмнике. Поддерживается базовый разбор, позволяющий задавать такие поля, как Severity и временная метка. Здесь также поддерживаются разбор JSON и регулярных выражений, фильтрация событий и базовые преобразования. Фильтрацию событий мы рекомендуем выполнять именно здесь.
 
-Мы рекомендуем избегать избыточной обработки событий с помощью операторов или [transform processors](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md). Они могут создавать значительную нагрузку на память и CPU, особенно при разборе JSON. Всю обработку можно выполнять в ClickHouse во время вставки с помощью материализованных представлений и столбцов — за некоторыми исключениями, а именно обогащения с учётом контекста, например добавления метаданных k8s. Подробнее см. в разделе [Извлечение структуры с помощью SQL](/ru/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql).
+Мы рекомендуем избегать избыточной обработки событий с помощью операторов или [transform processors](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md). Они могут создавать значительную нагрузку на память и CPU, особенно при разборе JSON.  Всю обработку можно выполнять в ClickHouse во время вставки с помощью материализованных представлений и столбцов — за некоторыми исключениями, а именно обогащения с учётом контекста, например добавления метаданных k8s. Подробнее см. в разделе [Извлечение структуры с помощью SQL](/ru/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql).
 
 ### Пример {#example-processing-self-configured}
 

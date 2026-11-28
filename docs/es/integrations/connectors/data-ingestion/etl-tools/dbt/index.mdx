@@ -43,11 +43,12 @@ dbt es compatible con ClickHouse mediante un [adaptador con soporte para ClickHo
 
 Lista de funcionalidades compatibles:
 
-* [x] Materialización de tabla
-* [x] Materialización de vista
+* [x] Materialización como tabla
+* [x] Materialización como vista
 * [x] Materialización incremental
 * [x] Materialización incremental de Microbatch
 * [x] Materializaciones de vista materializada (usa la forma `TO` de MATERIALIZED VIEW, experimental)
+* [x] Funciones definidas por el usuario (SQL)
 * [x] Seeds
 * [x] Sources
 * [x] Generación de documentación
@@ -55,7 +56,7 @@ Lista de funcionalidades compatibles:
 * [x] Snapshots
 * [x] La mayoría de las macros de dbt-utils (ahora incluidas en dbt-core)
 * [x] Materialización efímera
-* [x] Materialización de tabla distribuida (experimental)
+* [x] Materialización como tabla distribuida (experimental)
 * [x] Materialización incremental distribuida (experimental)
 * [x] Materialización de diccionario (experimental)
 * [x] Contratos
@@ -172,10 +173,14 @@ Para el despliegue (es decir, el paso de CD), recomendamos usar los artefactos d
 
 A partir de dbt-clickhouse 1.10.1, el comando [`dbt clone`](https://docs.getdbt.com/reference/commands/clone) utiliza la sentencia de copia cero `CREATE OR REPLACE TABLE ... CLONE AS ...` de ClickHouse para clonar modelos materializados como tablas que usan un motor de la familia MergeTree. Esto crea una copia de la tabla sin duplicar las partes de datos subyacentes, lo que permite sincronizar entornos de forma rápida y económica; por ejemplo, al configurar un entorno de desarrollo o [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) a partir del estado de producción.
 
+`CLONE AS` no puede ejecutarse con `ON CLUSTER` ni en una base de datos `Replicated`.
+En su lugar, estas tablas se crean con `CREATE OR REPLACE TABLE ... AS ...` y se rellenan con `ALTER TABLE ... ATTACH PARTITION ALL FROM ...`, lo que también comparte las partes de datos, pero no es atómico.
+En una base de datos `Replicated`, los datos solo llegan a las demás réplicas en el caso de tablas `Replicated*MergeTree`.
+
 Los modelos que no se pueden clonar de esta forma recurren al comportamiento predeterminado de dbt, que consiste en crear una vista que apunta a la relación de origen:
 
 * Tablas que usan motores distintos de MergeTree
-* Materializaciones Distributed
+* Materializaciones distribuidas
 
 En los modelos de vista materializada, solo se clona la tabla de destino; la vista materializada se crea sobre la tabla clonada.
 
@@ -212,11 +217,11 @@ El ID de consulta también permite que las herramientas de observabilidad que co
 
 El adaptador actual de ClickHouse para dbt tiene varias limitaciones que debe tener en cuenta:
 
-* El plugin usa una sintaxis que requiere ClickHouse versión 25.3 o posterior. No probamos versiones anteriores de ClickHouse. Actualmente tampoco probamos tablas Replicated.
+* El plugin se prueba con las versiones de ClickHouse que cuentan con [soporte de seguridad activo](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md), actualmente la 26.3 o posteriores. Las versiones anteriores no se prueban y es posible que no funcionen. Actualmente tampoco probamos tablas Replicated.
 * Distintas ejecuciones de `dbt-adapter` pueden entrar en conflicto si se ejecutan al mismo tiempo, ya que internamente pueden usar los mismos nombres de tabla para las mismas operaciones. Para más información, consulte el issue [#420](https://github.com/ClickHouse/dbt-clickhouse/issues/420).
 * Actualmente, el adaptador materializa los modelos como tablas mediante [INSERT INTO SELECT](/es/reference/statements/insert-into#inserting-the-results-of-select). En la práctica, esto implica duplicación de datos si la ejecución vuelve a realizarse. Los datasets muy grandes (PB) pueden dar lugar a tiempos de ejecución extremadamente largos, lo que hace inviables algunos modelos. Para mejorar el rendimiento, use vistas materializadas de ClickHouse implementando la vista como `materialized: materialization_view`. Además, procure minimizar el número de filas que devuelve cualquier consulta usando `GROUP BY` siempre que sea posible. Priorice modelos que resuman los datos frente a los que simplemente los transforman manteniendo el mismo número de filas del source.
-* Para usar tablas distribuidas para representar un modelo, debe crear manualmente las tablas replicadas subyacentes en cada nodo. La tabla distribuida puede, a su vez, crearse sobre ellas. El adaptador no gestiona la creación del clúster.
-* Cuando dbt crea una relación (table/view) en una database, normalmente la crea como: `{{ database }}.{{ schema }}.{{ table/view id }}`. ClickHouse no tiene el concepto de esquemas. Por lo tanto, el adaptador usa `{{schema}}.{{ table/view id }}`, donde `schema` es la database de ClickHouse.
+* El adaptador no gestiona la creación del clúster. El clúster que usan las materializaciones distribuidas debe estar ya definido en el servidor.
+* Cuando dbt crea una relación (table/view) en una base de datos, normalmente la crea como: `{{ database }}.{{ schema }}.{{ table/view id }}`. ClickHouse no tiene el concepto de esquemas. Por lo tanto, el adaptador usa `{{schema}}.{{ table/view id }}`, donde `schema` es la base de datos de ClickHouse.
 
 ## Fivetran {#fivetran}
 

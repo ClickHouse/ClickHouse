@@ -371,14 +371,15 @@ Las siguientes configuraciones pueden especificarse en el archivo de configuraci
 * `use_insecure_imds_request` — Si se establece en `true`, el cliente de S3 usará una solicitud IMDS no segura al obtener credenciales de los metadatos de Amazon EC2. Opcional; el valor predeterminado es `false`.
 * `expiration_window_seconds` — Período de gracia para comprobar si las credenciales con vencimiento ya han caducado. Opcional; el valor predeterminado es `120`.
 * `no_sign_request` - Ignora todas las credenciales para que las solicitudes no se firmen. Es útil para acceder a buckets públicos.
+* `request_payer` - Establézcalo en `requester` para acceder a un bucket de tipo «requester pays» (el solicitante paga): cada solicitud al endpoint indicado incluirá la cabecera `x-amz-request-payer: requester`. Opcional. Tiene precedencia sobre el parámetro de configuración [`s3_request_payer`](/es/reference/settings/session-settings/s3#s3_request_payer).
 * `header` — Añade la cabecera HTTP especificada a una solicitud para el endpoint indicado. Opcional; puede especificarse varias veces.
 * `access_header` - Añade la cabecera HTTP especificada a una solicitud para el endpoint indicado cuando no hay otras credenciales procedentes de otra fuente.
-* `server_side_encryption_customer_key_base64` — Si se especifica, se establecerán las cabeceras necesarias para acceder a objetos S3 con cifrado SSE-C. Opcional.
-* `server_side_encryption_kms_key_id` - Si se especifica, se establecerán las cabeceras necesarias para acceder a objetos S3 con [cifrado SSE-KMS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html). Si se especifica una cadena vacía, se usará la clave de S3 administrada por AWS. Opcional.
+* `server_side_encryption_customer_key_base64` — Si se especifica, se establecerán las cabeceras necesarias para acceder a objetos de S3 con cifrado SSE-C. Opcional.
+* `server_side_encryption_kms_key_id` - Si se especifica, se establecerán las cabeceras necesarias para acceder a objetos de S3 con [cifrado SSE-KMS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html). Si se especifica una cadena vacía, se usará la clave de S3 administrada por AWS. Opcional.
 * `server_side_encryption_kms_encryption_context` - Si se especifica junto con `server_side_encryption_kms_key_id`, se establecerá la cabecera del contexto de cifrado indicado para SSE-KMS. Opcional.
 * `server_side_encryption_kms_bucket_key_enabled` - Si se especifica junto con `server_side_encryption_kms_key_id`, se establecerá la cabecera para habilitar las claves de bucket de S3 para SSE-KMS. Opcional; puede ser `true` o `false`; de forma predeterminada no se establece nada (coincide con la configuración a nivel de bucket).
 * `max_single_read_retries` — Número máximo de intentos durante una sola lectura. El valor predeterminado es `4`. Opcional.
-* `max_put_rps`, `max_put_burst`, `max_get_rps` y `max_get_burst` - Configuraciones de limitación de velocidad (consulte la descripción anterior) que se usarán para un endpoint específico en lugar de por consulta. Opcional.
+* `max_put_rps`, `max_put_burst`, `max_get_rps` y `max_get_burst` - Configuraciones de limitación de tasa (consulte la descripción anterior) que se usarán para un endpoint específico en lugar de por consulta. Opcional.
 
 **Ejemplo:**
 

@@ -1,0 +1,46 @@
+---
+description: 'توثيق مشغّل ADBC الخاص بـ ClickHouse'
+sidebarTitle: 'مشغّل ADBC'
+slug: /concepts/features/connect-to-clickhouse/drivers/adbc
+title: 'مشغّل ADBC'
+doc_type: 'reference'
+---
+
+يوفّر مشغّل ADBC الخاص بـ ClickHouse واجهة [Arrow Database Connectivity (ADBC)](https://arrow.apache.org/adbc/)
+متوافقة مع المعايير لربط التطبيقات المتوافقة مع ADBC بـ ClickHouse.
+
+يتواصل المشغّل مع خادم ClickHouse عبر [بروتوكول HTTP](/ar/concepts/features/connect-to-clickhouse/protocols/http)، وهو البروتوكول الرئيسي
+المدعوم في جميع عمليات نشر ClickHouse. ويتيح ذلك للمشغّل العمل على نحو متسق في بيئات متنوعة،
+منها التثبيتات المحلية، والخدمات المُدارة سحابيًا، والبيئات التي لا يتاح فيها إلا الوصول عبر HTTP.
+
+تتوفر الشيفرة المصدرية للمشغّل في
+[مستودع adbc&#95;clickhouse على GitHub](https://github.com/clickhouse/adbc_clickhouse).
+
+<Note>
+  لا يزال هذا المشغّل قيد التطوير النشط، وقد لا تكون بعض ميزات ADBC مُنفَّذة بالكامل بعد. يركّز الإصدار الحالي
+  على توفير إمكانات الاتصال الأساسية ووظائف ADBC الجوهرية، على أن تُضاف ميزات أخرى في
+  الإصدارات المستقبلية.
+
+  نقدّر ملاحظاتكم كثيرًا، إذ تساعدنا في تحديد أولويات الميزات الجديدة والتحسينات. إذا واجهتم
+  قيودًا أو وظائف مفقودة أو سلوكًا غير متوقع، فيُرجى مشاركة ملاحظاتكم أو طلبات الميزات عبر
+  متتبّع التذاكر على
+  [github.com/ClickHouse/adbc&#95;clickhouse/issues](https://github.com/ClickHouse/adbc_clickhouse/issues)
+</Note>
+
+## التثبيت {#installation}
+
+يمكنك تثبيت أحدث إصدار من المشغّل باستخدام [dbc](https://docs.columnar.tech/dbc/):
+
+```bash
+dbc install clickhouse
+```
+
+ويمكنك بدلاً من ذلك تنزيله يدويًا من [github.com/adbc-drivers/clickhouse/releases](https://github.com/adbc-drivers/clickhouse/releases).
+
+## خيارات قاعدة البيانات {#database-options}
+
+تُستخدم خيارات قاعدة البيانات التالية لإنشاء اتصال عبر مشغّل ClickHouse ADBC.
+
+* `uri`: يحدد نقطة نهاية HTTP(S) الكاملة لخادم ClickHouse، بما في ذلك البروتوكول والمضيف والمنفذ.
+* `username`: اسم المستخدم المستخدَم للمصادقة على خادم ClickHouse.
+* `password`: كلمة المرور المرتبطة باسم المستخدم المحدد.

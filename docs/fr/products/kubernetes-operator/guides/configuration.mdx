@@ -891,26 +891,23 @@ Définissez `--disable-version-update-checks=true` dans les environnements isol�
   ## Paramètres de ClickHouse {#clickhouse-settings}
 </div>
 
-<div id="default-user-password">
-  ### Mot de passe de l’utilisateur `default` {#default-user-password}
-</div>
+### Mot de passe de l’utilisateur `default` {#default-user-password}
 
 `spec.settings.defaultUserPassword` définit le mot de passe du compte intégré `default`.
-Fournissez la valeur à partir d’une clé d’un Secret (recommandé) ou d’une ConfigMap
-que vous créez, plutôt que de l’indiquer directement dans la CR :
+Fournissez la valeur à partir d’une clé d’un Secret que vous créez, plutôt que
+de l’indiquer directement dans la CR :
 
 ```yaml
 spec:
   settings:
     defaultUserPassword:
       passwordType: password   # default; see "Password types" below
-      secret:                  # exactly one of secret or configMap
-        name: clickhouse-password   # name of the Secret/ConfigMap
+      secret:
+        name: clickhouse-password   # name of the Secret
         key: password               # the key inside it, not the password value
 ```
 
-Indiquez exactement l’un de `secret` ou `configMap`, chacun avec `name` (l’objet)
-et `key` (l’entrée qui contient le mot de passe).
+Renseignez à la fois `name` (le Secret) et `key` (l’entrée qui contient le mot de passe).
 
 <div id="password-types">
   #### Types de mot de passe {#password-types}
@@ -971,13 +968,15 @@ spec:
         key: password
 ```
 
-<div id="using-configmap-for-user-passwords">
-  #### Utiliser un ConfigMap {#using-configmap-for-user-passwords}
-</div>
+#### Utiliser un ConfigMap (déconseillé) {#using-configmap-for-user-passwords}
 
-Un ConfigMap fonctionne de la même manière, mais son contenu n&#39;est pas protégé comme celui d&#39;un Secret.
-Utilisez-le uniquement pour des valeurs non sensibles ou déjà hachées, telles qu&#39;une empreinte
-`password_sha256_hex` :
+<Warning>
+  La source `configMap` est déconseillée et supprimée dans `v1alpha2`. Les ConfigMaps
+  ne sont pas protégés comme les Secrets, et les valeurs de hachage de mots de passe non salées peuvent être cassées par brute-force.
+  Stockez plutôt le mot de passe, plaintext ou haché, dans un Secret.
+</Warning>
+
+Un ConfigMap fonctionne de la même manière qu&#39;un Secret, mais son contenu n&#39;est pas protégé :
 
 ```yaml
 spec:
@@ -990,7 +989,7 @@ spec:
 ```
 
 <Note>
-  Ne stockez pas de mot de passe en clair dans un ConfigMap. Utilisez un Secret pour toute valeur en clair
+  Ne stockez pas de mot de passe plaintext dans un ConfigMap. Utilisez un Secret pour toute valeur plaintext
   (`passwordType: password`).
 </Note>
 

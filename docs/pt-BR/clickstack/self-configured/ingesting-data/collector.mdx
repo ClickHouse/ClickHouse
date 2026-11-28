@@ -248,7 +248,7 @@ Isso pressupõe que o coletor foi configurado para usar o banco de dados `otel`,
 
 ## Processamento - filtragem, transformação e enriquecimento {#processing-filtering-transforming-enriching-self-configured}
 
-Invariavelmente, os usuários vão querer filtrar, transformar e enriquecer as mensagens de eventos durante a ingestão. Como a configuração do conector do ClickStack não pode ser modificada, recomendamos que os usuários que precisam de filtragem e processamento adicionais de eventos optem por uma das seguintes alternativas:
+Invariavelmente, os usuários vão querer filtrar, transformar e enriquecer as mensagens de eventos durante a ingestão. Os usuários podem adicionar processadores e pipelines ao coletor do ClickStack com uma [configuração personalizada](#extending-collector-config). Para manter esse processamento fora do coletor do ClickStack, recomendamos que os usuários optem por uma das seguintes alternativas:
 
 * Implantar sua própria versão do OTel collector para realizar a filtragem e o processamento, enviando os eventos ao coletor do ClickStack via OTLP para ingestão no ClickHouse.
 * Implantar sua própria versão do OTel collector e enviar os eventos diretamente ao ClickHouse usando o exportador do ClickHouse.

@@ -95,7 +95,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "默认启用行掩码更新合并"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "默认启用行掩码更新合并"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "该变更已回移至 26.8，并记录在该版本中。"}]}]} />
 
 在对采用 Full 存储格式的 Wide 分片执行变更时，将相邻的单个 `UPDATE _row_exists = 0` 命令合并执行。已持久化的变更命令及其
 版本保持不变。

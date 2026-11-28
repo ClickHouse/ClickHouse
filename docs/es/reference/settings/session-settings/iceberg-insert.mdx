@@ -13,6 +13,27 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## iceberg_insert_commit_retry_initial_backoff_ms {#iceberg_insert_commit_retry_initial_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "10"},{"label": "Nuevo ajuste. Cuando el commit de un `INSERT` en Iceberg pierde frente a un commit concurrente, se reintenta tras un retraso exponencial aleatorio en lugar de hacerlo de inmediato."}]}]} />
+
+Cota superior del retraso antes del primer reintento de un `INSERT` en una tabla Iceberg cuyo commit ha perdido frente a un commit concurrente.
+El límite se duplica con cada reintento sucesivo, hasta `iceberg_insert_commit_retry_max_backoff_ms`, y cada retraso se elige al azar
+entre cero y el límite, de modo que los escritores que perdieron la misma condición de carrera no vuelvan a intentarlo en el mismo instante y colisionen de nuevo.
+El retraso se aplica antes de consultar la metadata más reciente, por lo que, con muchos escritores concurrentes, también limita la frecuencia con la que se lista el directorio
+de metadata. Con `0`, se reintenta sin retraso.
+
+## iceberg_insert_commit_retry_max_backoff_ms {#iceberg_insert_commit_retry_max_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "5000"},{"label": "Nuevo ajuste. Cuando el commit de un `INSERT` en Iceberg pierde frente a un commit concurrente, se reintenta tras un retraso exponencial aleatorio en lugar de hacerlo de inmediato."}]}]} />
+
+Valor máximo del límite de retraso antes de reintentar un `INSERT` en una tabla Iceberg cuyo commit se perdió frente a un commit concurrente;
+consulte `iceberg_insert_commit_retry_initial_backoff_ms`.
+
 ## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
@@ -26,6 +47,17 @@ consulte https://iceberg.apache.org/docs/1.5.2/configuration/. El límite se com
 escrito hasta ese momento, es decir, el tamaño comprimido, por lo que un archivo puede superarlo en la cantidad de datos que el escritor aún mantiene en búfer, como
 los grupos de filas de Parquet incompletos y los que se están codificando. `iceberg_insert_max_rows_in_data_file` limita el archivo
 con independencia de su tamaño.
+
+## iceberg_insert_max_data_files_in_upload {#iceberg_insert_max_data_files_in_upload}
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "Nuevo ajuste. Una inserción en Iceberg sobre S3 o Azure ya no espera a que finalice la carga de cada archivo de datos terminado."}]}]} />
+
+Número máximo de archivos de datos terminados de un mismo stream de inserción cuya carga no se espera mientras el `INSERT` escribe el siguiente
+archivo, en sistemas de almacenamiento de objetos que realizan la carga en segundo plano (S3, Azure). Cada uno de estos archivos mantiene sus búferes de carga hasta que esta
+finaliza, por lo que los valores más altos ocultan más latencia de carga a costa de consumir más memoria. Con `0`, se espera a que finalice la carga de cada archivo de datos antes de
+escribir el siguiente.
 
 ## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
 
@@ -42,6 +74,15 @@ Número máximo de particiones permitidas por operación de inserción en el mot
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1000000"},{"label": "Nuevo ajuste."}]}]} />
 
 Número máximo de filas del archivo de datos Parquet de Iceberg en una operación de inserción.
+
+## iceberg_insert_max_sort_buffer_bytes {#iceberg_insert_max_sort_buffer_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1073741824"},{"label": "Nuevo ajuste."}]}]} />
+
+Número máximo de bytes sin comprimir que una operación `INSERT` en una tabla Iceberg con un orden distinto almacena en búfer en el conjunto de las particiones antes de
+escribirlos ordenados. Si se supera este límite, el contenido del búfer más grande se escribe de forma anticipada en un archivo de datos ordenado de menor tamaño. 0 significa sin límite.
 
 ## iceberg_insert_single_manifest_for_all_partitions {#iceberg_insert_single_manifest_for_all_partitions}
 

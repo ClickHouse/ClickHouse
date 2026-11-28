@@ -49,6 +49,7 @@
           "pages": [
             "ko/products/cloud/features/infrastructure/on-demand-compute",
             "ko/products/cloud/features/large-single-replica-services",
+            "ko/products/cloud/features/compute-generations",
             "ko/products/cloud/features/infrastructure/parallel-replicas",
             "ko/products/cloud/features/infrastructure/replica-aware-routing",
             "ko/products/cloud/features/infrastructure/shared-catalog",
@@ -222,6 +223,7 @@
           "pages": [
             "ko/products/cloud/features/monitoring/overview",
             "ko/products/cloud/features/monitoring/cloud-console",
+            "ko/products/cloud/features/monitoring/recommendations",
             "ko/products/cloud/features/monitoring/advanced-dashboard",
             "ko/products/cloud/features/monitoring/notifications",
             "ko/products/cloud/features/monitoring/prometheus",
@@ -260,6 +262,7 @@
       "group": "AI tools and agents",
       "pages": [
         "ko/products/cloud/features/ai-ml/index",
+        "ko/products/cloud/features/ai-ml/schema-advisor",
         "ko/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,

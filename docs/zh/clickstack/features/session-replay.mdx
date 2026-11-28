@@ -15,9 +15,9 @@ ClickStack 中的会话回放会捕获并重建用户在 Web 应用中的交互�
   ## 为你的应用添加埋点 {#instrumentation}
 </div>
 
-ClickStack 与 OpenTelemetry 完全兼容，因此你可以使用标准的 OpenTelemetry JavaScript SDK 或任意一个 [ClickStack 语言 SDK](/zh/clickstack/ingesting-data/sdks) 发送浏览器遥测数据 (链路追踪、异常) 。不过，**会话回放需要使用 ClickStack Browser SDK** (`@hyperdx/browser`) ，它在 OpenTelemetry SDK 的基础上扩展了会话录制、控制台捕获和网络请求捕获功能。如果你只需要链路追踪而不需要会话回放，那么任何兼容 OTel 的浏览器 SDK 都可以与 ClickStack 配合使用。
+ClickStack 与 OpenTelemetry 完全兼容，因此你可以使用标准的 OpenTelemetry JavaScript SDK 或任意一个 [ClickStack 语言 SDK](/zh/clickstack/ingesting-data/sdks) 发送浏览器遥测数据 (链路追踪、异常) 。不过，**会话回放需要使用 ClickStack 浏览器 SDK** (`@hyperdx/browser`) ，它在 OpenTelemetry SDK 的基础上扩展了会话录制、控制台捕获和网络请求捕获功能。如果你只需要链路追踪而不需要会话回放，那么任何兼容 OTel 的浏览器 SDK 都可以与 ClickStack 配合使用。
 
-下面的示例使用的是 ClickStack Browser SDK。为你的应用添加会话回放只需三步：安装软件包、初始化 SDK，之后所有用户交互都会被自动捕获——无需再修改代码。
+下面的示例使用的是 ClickStack 浏览器 SDK。为你的应用添加会话回放只需三步：安装软件包、初始化 SDK，之后所有用户交互都会被自动捕获——无需再修改代码。
 
 <Tip>
   请在应用启动时一定会加载的位置初始化 SDK。例如，在 Next.js 应用中，可以放在根级 `layout.js` 中。这样可以确保会话录制立即开始，并完整捕获用户体验。
@@ -34,7 +34,7 @@ ClickStack 与 OpenTelemetry 完全兼容，因此你可以使用标准的 OpenT
 
     HyperDX.init({
       url: 'http://your-otel-collector:4318',
-      apiKey: 'YOUR_INGESTION_API_KEY', // 托管 ClickStack 可省略
+      apiKey: 'YOUR_INGESTION_API_KEY',
       service: 'my-frontend-app',
       tracePropagationTargets: [/api.myapp.domain/i],
       consoleCapture: true,
@@ -53,7 +53,7 @@ ClickStack 与 OpenTelemetry 完全兼容，因此你可以使用标准的 OpenT
 
     HyperDX.init({
       url: 'http://your-otel-collector:4318',
-      apiKey: 'YOUR_INGESTION_API_KEY', // 托管 ClickStack 可省略
+      apiKey: 'YOUR_INGESTION_API_KEY',
       service: 'my-frontend-app',
       tracePropagationTargets: [/api.myapp.domain/i],
       consoleCapture: true,
@@ -70,7 +70,7 @@ ClickStack 与 OpenTelemetry 完全兼容，因此你可以使用标准的 OpenT
     <script>
       window.HyperDX.init({
         url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // 托管 ClickStack 可省略
+        apiKey: 'YOUR_INGESTION_API_KEY',
         service: 'my-frontend-app',
         tracePropagationTargets: [/api.myapp.domain/i],
         consoleCapture: true,
@@ -82,10 +82,10 @@ ClickStack 与 OpenTelemetry 完全兼容，因此你可以使用标准的 OpenT
 </Tabs>
 
 <Note>
-  `tracePropagationTargets` 选项是将会话回放与后端链路追踪关联起来的关键——请将其设置为你的 API 域名，以启用完整的前后端分布式链路追踪。有关 SDK 选项的完整列表，包括隐私控制、自定义操作、React 错误边界和 source maps，请参阅 [Browser SDK 参考文档](/zh/clickstack/ingesting-data/sdks/browser)。
+  `tracePropagationTargets` 选项是将会话回放与后端链路追踪关联起来的关键——请将其设置为你的 API 域名，以启用完整的前后端分布式链路追踪。有关 SDK 选项的完整列表，包括隐私控制、自定义操作、React 错误边界和 源码映射，请参阅 [浏览器 SDK 参考文档](/zh/clickstack/ingesting-data/sdks/browser)。
 </Note>
 
-Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/clickstack/ingesting-data/sdks/browser#initialization-options)，以及[附加用户信息](/zh/clickstack/ingesting-data/sdks/browser#users-and-errors)，这样你就可以在 ClickStack 用户界面 中按用户搜索和过滤会话。
+浏览器 SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/clickstack/ingesting-data/sdks/browser#initialization-options)，以及[附加用户信息](/zh/clickstack/ingesting-data/sdks/browser#users-and-errors)，这样你就可以在 ClickStack 用户界面 中按用户搜索和过滤会话。
 
 ## 查看会话回放 {#viewing-replays}
 

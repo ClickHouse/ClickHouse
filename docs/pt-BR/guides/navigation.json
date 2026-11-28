@@ -234,6 +234,7 @@
             "pt-BR/guides/use-cases/ai-ml/vector-search",
             "pt-BR/guides/use-cases/ai-ml/ai-powered-sql-generation",
             "pt-BR/guides/use-cases/ai-ml/import-langfuse-trace-data",
+            "pt-BR/guides/use-cases/ai-ml/loom",
             {
               "group": "Data exploration",
               "pages": [

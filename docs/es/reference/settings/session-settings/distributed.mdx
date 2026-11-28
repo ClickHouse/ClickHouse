@@ -10,28 +10,23 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="distributed_aggregation_memory_efficient">
-  ## distributed_aggregation_memory_efficient
-</div>
+## distributed_aggregation_memory_efficient {#distributed_aggregation_memory_efficient}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Indica si está habilitado el modo de ahorro de memoria de la agregación distribuida.
 
-<div id="distributed_connections_pool_size">
-  ## distributed_connections_pool_size
-</div>
+## distributed_connections_pool_size {#distributed_connections_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
 El número máximo de conexiones simultáneas con servidores remotos para procesar de forma distribuida todas las consultas a una única tabla Distributed. Recomendamos establecer un valor no inferior al número de servidores del clúster.
 
-<div id="distributed_foreground_insert">
-  ## distributed_foreground_insert
-</div>
+## distributed_foreground_insert {#distributed_foreground_insert}
 
 **Aliases**: `insert_distributed_sync`
 
@@ -53,9 +48,7 @@ Valor predeterminado en Cloud: `1`.
 * [Motor de tabla Distributed](/es/reference/engines/table-engines/special/distributed)
 * [Gestión de tablas distribuidas](/es/reference/statements/system#managing-distributed-tables)
 
-<div id="distributed_group_by_no_merge">
-  ## distributed_group_by_no_merge
-</div>
+## distributed_group_by_no_merge {#distributed_group_by_no_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -96,9 +89,17 @@ FORMAT PrettyCompactMonoBlock
 └───────┘
 ```
 
-<div id="distributed_insert_skip_read_only_replicas">
-  ## distributed_insert_skip_read_only_replicas
-</div>
+## distributed_group_by_top_k {#distributed_group_by_top_k}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nuevo parámetro de configuración interno: el initiator de una consulta con réplicas paralelas permite que las réplicas apliquen el montículo top-K de `GROUP BY` a `GROUP BY ... LIMIT` sin `ORDER BY`."}]}]} />
+
+Se trata de un parámetro de configuración interno que no debe usarse directamente y que constituye un detalle de implementación del modo de «réplicas paralelas». El initiator lo envía como `n` junto con una consulta `GROUP BY ... LIMIT n` sin `ORDER BY` cuando conserva los `n` grupos fusionados más pequeños según todas las grouping keys. Después, cada réplica conserva únicamente sus `n` grupos más pequeños en su agregación parcial (consulte `enable_group_by_top_k_optimization`). No se redirige a otros nodos.
+
+## distributed_insert_skip_read_only_replicas {#distributed_insert_skip_read_only_replicas}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -111,9 +112,7 @@ Valores posibles:
 * 0 — INSERT se realizará como de costumbre; si va a una réplica de solo lectura, fallará
 * 1 — El iniciador omitirá las réplicas de solo lectura antes de enviar datos a los segmentos.
 
-<div id="distributed_product_mode">
-  ## distributed_product_mode
-</div>
+## distributed_product_mode {#distributed_product_mode}
 
 <SettingsInfoBlock type="DistributedProductMode" default_value="deny" />
 
@@ -135,9 +134,7 @@ Posibles valores:
 * `global` — Reemplaza la consulta `IN`/`JOIN` por `GLOBAL IN`/`GLOBAL JOIN`.
 * `allow` — Permite el uso de estos tipos de subconsultas.
 
-<div id="distributed_push_down_limit">
-  ## distributed_push_down_limit
-</div>
+## distributed_push_down_limit {#distributed_push_down_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 

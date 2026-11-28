@@ -899,6 +899,130 @@ SELECT JSONExtractKeysCaseInsensitive('{"User": {"name": "John", "AGE": 25}}', '
 ['name','AGE']
 ```
 
+## JSONExtractLeafPathsAndValues {#JSONExtractLeafPathsAndValues}
+
+導入バージョン: v26.11.0
+
+[`JSONExtractLeafValues`](#JSONExtractLeafValues) と同様ですが、スカラー値を持つ各リーフについてタプル `(path, value)` を返します。
+パスの規則および引数 `skip_regex` と `arrays` については、`JSONExtractLeafValues` の説明を参照してください。
+
+<Note>
+  結果は `allow_simdjson`、`input_format_json_max_depth`、`json_type_escape_dots_in_keys` などの設定に依存しません。
+  そのため、この関数に対する索引を使用しても、フルスキャンと同じ行が得られます。
+</Note>
+
+**構文**
+
+```sql
+JSONExtractLeafPathsAndValues(json[, skip_regex[, arrays]])
+```
+
+**引数**
+
+* `json` — パース対象の JSON 文字列。[`String`](/ja/reference/data-types/string)
+* `skip_regex` — 任意。定数の正規表現 ([re2](https://github.com/google/re2/wiki/Syntax) 構文) 。一致したパスは、その配下にあるすべての要素とともにスキップされます。空文字列 (デフォルト) の場合は何もスキップしません。[`const String`](/ja/reference/data-types/string)
+* `arrays` — 任意。定数で、case-sensitive です。配列の扱い方を `'skip'`、`'string'`、`'elements'` (デフォルト) のいずれかで指定します。[`const String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+スカラー値を持つリーフのパスと値を返します。[`Array(Tuple(path String, value String))`](/ja/reference/data-types/array)
+
+**例**
+
+**パスと値**
+
+```sql title=Query
+SELECT arrayMap(x -> (x.1, x.2), JSONExtractLeafPathsAndValues('{"a": {"b": "x"}, "c": [1, {"d": true}]}')) AS res;
+```
+
+```response title=Response
+┌─res──────────────────────────────────────────┐
+│ [('a.b','x'),('c[0]','1'),('c[1].d','true')] │
+└──────────────────────────────────────────────┘
+```
+
+## JSONExtractLeafValues {#JSONExtractLeafValues}
+
+導入バージョン: v26.11.0
+
+JSON文字列を解析し、top-level オブジェクトに含まれるすべてのスカラーリーフの値を、ドキュメント内での出現順に文字列の配列として返します。
+リーフとは、文字列、数値、またはブール値のことです。`null`、空のオブジェクト、空の配列からは値は生成されません。
+文字列はアンエスケープされた状態で返され、数値とブール値は JSON テキストのまま返されます ([`JSONExtractRaw`](#JSONExtractRaw) が返す形式と同じです) 。
+JSON が無効な場合、または最上位がオブジェクトでない場合、結果は空の配列になります。
+同じキーが複数回出現する場合は、そのすべての値が返されます。
+
+値のパスは、キーを `.` で連結し、配列要素のインデックスを `[i]` で表して構成されます (例: `a.b`、`a[0]`、`a[0].b`、`a[0][1]`) 。
+キーはエスケープされません。そのため、キー `a.b` と、`a` 内にネストされたキー `b` は、どちらも同じパス `a.b` になります。
+`JSON` データ型とは異なり、設定 [`json_type_escape_dots_in_keys`](/ja/reference/settings/formats/other#json_type_escape_dots_in_keys) は適用されません。
+
+`skip_regex` は、走査されるすべてのパス (任意の深さのオブジェクトのメンバー、配列内のメンバー、および `a[0]` のような配列要素のパス) に対して照合されます。
+一致したパスについては、その値と配下のすべてがスキップされます。
+[`match`](/ja/reference/functions/regular-functions/string-search-functions#match) と同様に、部分一致で十分です。パス全体と一致させるには `^` と `$` を使用してください。
+`JSON` データ型の `SKIP REGEXP` とは異なり、設定 [`type_json_use_partial_match_to_skip_paths_by_regexp`](/ja/reference/settings/formats/type-json#type_json_use_partial_match_to_skip_paths_by_regexp) は適用されません。
+
+`'string'` モードでは、配列は深さの制限なく、全体がそのまま返されます。
+
+<Note>
+  結果は `allow_simdjson`、`input_format_json_max_depth`、`json_type_escape_dots_in_keys` などの設定に左右されません。
+  そのため、この関数に対して作成した索引を使用しても、フルスキャンと同じ行が得られます。
+</Note>
+
+`JSON` データ型のカラムには [`JSONAllValues`](/ja/reference/functions/regular-functions/json-functions#JSONAllValues) を使用してください。
+
+**構文**
+
+```sql
+JSONExtractLeafValues(json[, skip_regex[, arrays]])
+```
+
+**引数**
+
+* `json` — パース対象の JSON 文字列。[`String`](/ja/reference/data-types/string)
+* `skip_regex` — 任意。定数の正規表現 ([re2](https://github.com/google/re2/wiki/Syntax) 構文) 。一致したパスは、その配下の要素もすべて含めてスキップされます。空文字列 (デフォルト) の場合は何もスキップしません。[`const String`](/ja/reference/data-types/string)
+* `arrays` — 任意。定数で、大文字と小文字を区別します。配列の扱い方を指定します。`'skip'` は配列に対して何も出力しません。`'string'` は各配列をコンパクトな JSON 形式の 1 つの値として返します。`'elements'` (デフォルト) は要素を走査し、要素のパスは `a[0]`、`a[1]` のようになります。[`const String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+スカラー値を持つリーフの値を返します。[`Array(String)`](/ja/reference/data-types/array)
+
+**例**
+
+**ネストされたオブジェクトと配列**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": {"b": "x", "c": 1.50}, "d": [true, null, {"e": "y"}], "f": null}') AS res;
+```
+
+```response title=Response
+┌─res────────────────────┐
+│ ['x','1.5','true','y'] │
+└────────────────────────┘
+```
+
+**パスのスキップ**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": "x", "b_noindex": {"c": "y"}, "d": [{"e_noindex": "z", "f": "w"}]}', '.*_noindex$') AS res;
+```
+
+```response title=Response
+┌─res───────┐
+│ ['x','w'] │
+└───────────┘
+```
+
+**配列を文字列として扱う**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": [1, 2], "b": "x"}', '', 'string') AS res;
+```
+
+```response title=Response
+┌─res───────────┐
+│ ['[1,2]','x'] │
+└───────────────┘
+```
+
 ## JSONExtractRaw {#JSONExtractRaw}
 
 導入バージョン: v20.1.0

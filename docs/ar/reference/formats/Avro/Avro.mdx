@@ -57,6 +57,10 @@ $ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avr
 
 أثناء استيراد البيانات، إذا لم يُعثر على حقل في المخطط وكان الإعداد [`input_format_avro_allow_missing_fields`](/ar/reference/settings/formats/input-format#input_format_avro_allow_missing_fields) مُمكّنًا، فستُستخدم القيمة الافتراضية بدلًا من إصدار خطأ.
 
+### التحليل المتوازي {#parallel-parsing}
+
+عند تفعيل [`input_format_parallel_parsing`](/ar/reference/settings/formats/input-format#input_format_parallel_parsing)، يُقسَّم ملف حاوية كائنات Avro (Avro object container file) عند حدود كتله (علامات المزامنة sync marker)، ثم تُحلَّل الكتل على عدة خيوط تنفيذ. ولأن الكتل تُخزَّن مؤقتًا بأكملها ويُفك ترميزها بالتزامن، تزداد ذروة استهلاك الذاكرة بازدياد عدد خيوط التحليل؛ لذا اضبط `input_format_parallel_parsing = 0` لإجراء التحليل بالتتابع وإبقاء استهلاك الذاكرة منخفضًا. لا ينطبق ذلك على [`AvroConfluent`](/ar/reference/formats/Avro/AvroConfluent)، إذ إنه ليس ملف حاوية كائنات.
+
 ### كتابة البيانات بتنسيق Avro {#writing-avro-data}
 
 لكتابة بيانات من جدول ClickHouse إلى ملف Avro:

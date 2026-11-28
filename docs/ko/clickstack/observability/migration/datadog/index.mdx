@@ -182,3 +182,5 @@ trace는 에이전트의 전송 성공 카운터에만 의존하지 말고, 알�
 Datadog 수신기는 실험적 기능입니다. 이 수신기는 Datadog 로그, trace 및 지원되는 메트릭을 ClickHouse Observability에서 사용하는 OpenTelemetry 데이터 모델로 변환합니다. 위 구성은 v2 메트릭 수집(intake)을 사용하도록 지정하며, 그 밖의 Datadog 백엔드 기능은 이 마이그레이션(migration) 흐름에서 다루지 않습니다.
 
 기존 Datadog instrumentation을 그대로 유지하면서 애플리케이션을 OpenTelemetry로 점진적으로 마이그레이션할 수 있습니다.
+
+자가 관리형 ClickStack 수집기를 사용하면 애플리케이션에서 DogStatsD 사용자 지정 메트릭을 collector로 직접 전송할 수도 있으며, collector는 trace에서 요청, 오류, 소요 시간 메트릭을 도출할 수 있습니다. 자세한 내용은 [StatsD 메트릭 수신](/ko/clickstack/self-configured/ingesting-data/collector#statsd-receiver) 및 [스팬에서 메트릭 도출](/ko/clickstack/self-configured/ingesting-data/collector#span-metrics)을 참조하십시오.

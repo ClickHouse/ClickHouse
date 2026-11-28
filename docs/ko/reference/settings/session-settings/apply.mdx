@@ -105,9 +105,6 @@ FINAL 전에 적용됩니다. 이러한 필터링은 중복 제거 결과에 영
 `MergeTree` 테이블과 `Parquet` 포맷에서 읽을 때 지원됩니다. `Parquet`에서는 `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY` 및
 딕셔너리 인코딩(dictionary encoding)을 사용하는 페이지에 필터가 적용됩니다.
 
-병렬 레플리카 사용 여부를 자동으로 결정하기 위해 수집되는 입력 바이트 추정치(`RuntimeDataflowStatisticsInputBytes`)는 읽은 블록의 인메모리 크기를 기준으로 하므로,
-값이 빈 문자열로 대체되면 디스크에서 읽은 데이터 양이 실제보다 적게 추정된다는 점에 유의하십시오.
-
 가능한 값:
 
 * 0 — 비활성화됨.

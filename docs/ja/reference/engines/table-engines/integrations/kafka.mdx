@@ -118,17 +118,27 @@ Kafka テーブルエンジンは、[librdkafka](https://github.com/confluentinc
 
 名前付きコレクションを使用する場合、**`config.xml` 内のサーバー全体の `<kafka>` ブロックはマージされません**。各コレクションには、テーブルに必要な拡張プロパティ (TLS ファイルのほか、空でないテーブルの `SETTINGS` で設定していない場合は `security.protocol` も含む) をすべて含める必要があります。
 
-クライアント証明書を使用する `SASL_SSL` の一般的な構成は次のとおりです。TLS のパスと `ssl.key.password` は名前付きコレクションに保存し、`kafka_broker_list`、`kafka_topic_list`、`kafka_group_name`、`kafka_format`、および必要に応じて `kafka_sasl_username` / `kafka_sasl_password` をテーブルの `SETTINGS` 句で設定します。`kafka.security_protocol` と `kafka_security_protocol` はいずれも `security.protocol` を設定しますが、空でないテーブル設定が優先されます。コレクションにそのプロパティがすでに保存されている場合、テーブル設定は名前付きコレクションのオーバーライドとして扱われます。この場合、そのコレクションに対する `SHOW NAMED COLLECTIONS SECRETS` 権限が必要であり、キーが `NOT OVERRIDABLE` であれば `Override not allowed` エラーで失敗します。`kafka_sasl_mechanism`、`kafka_sasl_username`、`kafka_sasl_password` についても同様です。
+`CREATE NAMED COLLECTION` で作成した名前付きコレクションでは、`security.protocol`、`sasl.username`、`fetch.min.bytes` など、[許可リスト](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp)に含まれる `librdkafka` プロパティのみを指定できます。許可リストにないプロパティを含むコレクションをテーブルで使用すると、ClickHouse は `BAD_ARGUMENTS` を返します。`sasl.kerberos.keytab` や `sasl.oauthbearer.token.endpoint.url` など、サポートされているその他のプロパティを使用するには、サーバー設定ファイルでコレクションを定義してください。この制限は、テーブル作成後に `ALTER NAMED COLLECTION` で追加したプロパティにも適用されます。
 
-例 (証明書のパスは、そのテーブルのコンシューマーを実行するすべての ClickHouseサーバー上に存在している必要があります) :
+SQL で作成した名前付きコレクションでは、`ssl.key.pem`、`ssl.certificate.pem`、`ssl.ca.pem`、`https.ca.pem`、`sasl.oauthbearer.assertion.private.key.pem` に、ファイルのパスではなくファイルの内容を指定してください。なお、`ssl.ca.location` および `https.ca.location` の値 `probe` はパスではないため、指定可能です。
+
+クライアント証明書を使用する `SASL_SSL` の一般的な構成は次のとおりです。証明書、秘密鍵、および `ssl.key.password` は名前付きコレクションに保存し、`kafka_broker_list`、`kafka_topic_list`、`kafka_group_name`、`kafka_format`、および必要に応じて `kafka_sasl_username` / `kafka_sasl_password` をテーブルの `SETTINGS` 句で設定します。`kafka.security_protocol` と `kafka_security_protocol` はいずれも `security.protocol` を設定しますが、空でないテーブル設定が優先されます。コレクションにそのプロパティがすでに保存されている場合、テーブル設定は名前付きコレクションのオーバーライドとして扱われます。この場合、そのコレクションに対する `SHOW NAMED COLLECTIONS SECRETS` 権限が必要であり、キーが `NOT OVERRIDABLE` であれば `Override not allowed` エラーで失敗します。`kafka_sasl_mechanism`、`kafka_sasl_username`、`kafka_sasl_password` についても同様です。
+
+証明書と秘密鍵を PEMフォーマットで格納した、SQL で作成した名前付きコレクションの例:
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 
 CREATE TABLE queue (
@@ -144,7 +154,7 @@ SETTINGS
     kafka_sasl_password = 'password';
 ```
 
-同じ拡張設定を XML で定義した名前付きコレクションで指定する例:
+同じ拡張設定を XML で定義した名前付きコレクションで指定する例です。この場合は代わりにファイルを参照できます (ファイルは、そのテーブルのコンシューマーを実行するすべての ClickHouseサーバー上に存在している必要があります) :
 
 ```xml
 <clickhouse>
@@ -226,18 +236,18 @@ CREATE TABLE queue3 (
 
 グループは柔軟で、クラスター全体で同期されます。たとえば、10 個のトピックと、クラスター内に 5 個のテーブルのコピーがある場合、各コピーは 2 個のトピックを受け取ります。コピー数が変わると、トピックは各コピー間で自動的に再配分されます。詳細は http://kafka.apache.org/intro を参照してください。
 
-各 Kafka トピックには専用のコンシューマグループを割り当て、特にトピックが動的に作成・削除される可能性のある環境 (たとえばテスト環境やステージング環境) では、トピックとグループが 1 対 1 で対応するようにすることを推奨します。
+各 Kafka トピックには専用のコンシューマーグループを割り当て、特にトピックが動的に作成・削除される可能性のある環境 (たとえばテスト環境やステージング環境) では、トピックとグループが 1 対 1 で対応するようにすることを推奨します。
 
 メッセージの読み取りに `SELECT` はあまり適していません (デバッグ用途を除く) 。各メッセージは一度しか読み取れないためです。より実用的なのは、materialized view を使ってリアルタイムのストリームを作成することです。これを行うには、次のようにします。
 
-1. エンジンを使用して Kafka コンシューマを作成し、それをデータストリームとして扱います。
+1. エンジンを使用して Kafka コンシューマーを作成し、それをデータストリームとして扱います。
 2. 必要な構造を持つテーブルを作成します。
 3. エンジンからデータを変換し、あらかじめ作成したテーブルに格納する materialized view を作成します。
 
 `MATERIALIZED VIEW` がエンジンに接続されると、バックグラウンドでデータの収集を開始します。これにより、Kafka から継続的にメッセージを受信し、`SELECT` を使って必要なフォーマットに変換できます。
 1 つの Kafka テーブルには、必要な数だけ materialized view を持たせることができます。これらは Kafka テーブルから直接データを読み取るのではなく、新しいレコードを (ブロック単位で) 受け取ります。これにより、異なる粒度の複数のテーブル (グループ化あり - aggregation あり、グループ化なし) に書き込むことができます。
 
-接続パラメーターの保存に [named collections](/ja/concepts/features/configuration/server-config/named-collections) を使用する例:
+接続パラメータの保存に [名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使用する例:
 
 ```sql
   CREATE NAMED COLLECTION kafka_creds AS
@@ -268,6 +278,24 @@ CREATE TABLE queue3 (
 ```
 
 パフォーマンスを向上させるため、受信したメッセージは [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings/max-insert#max_insert_block_size) のサイズでブロックにまとめられます。[stream&#95;flush&#95;interval&#95;ms](/ja/reference/settings/session-settings/stream#stream_flush_interval_ms) ミリ秒以内にブロックが形成されない場合は、ブロックが完全でなくても、データはテーブルにフラッシュされます。
+
+消費されたデータを materialized view に書き込む頻度は、以下のテーブル設定で制御します。
+
+* `kafka_max_block_size` — ブロックの行数がこの値に達した時点で flush されます。デフォルト: `max_insert_block_size` を `kafka_num_consumers` で割った値。
+* `kafka_flush_interval_ms` — ブロックが満杯でなくても、この時間が経過すると flush されます。デフォルト: [stream&#95;flush&#95;interval&#95;ms](/ja/reference/settings/session-settings/stream#stream_flush_interval_ms) (7500 ms)。メッセージが生成されてからターゲットテーブルで参照できるようになるまでの遅延を短縮するには、この値を小さくしてください。
+* `kafka_consumer_reschedule_ms` — 新しいメッセージがない場合に、エンジンが次のポーリングまで待機する時間です。デフォルト: `500` ms。
+
+これらは Kafka テーブルの設定であり、テーブルの `SETTINGS` 句で指定します。サーバー設定ファイルの `<kafka>` セクションでは指定できません。このセクションに記述したキーはすべてプロパティとして librdkafka に渡されるため ([設定](#configuration) を参照)、たとえばここに記述した `<flush_interval_ms>` は ClickHouse の設定としては扱われません。
+
+```sql
+CREATE TABLE queue (timestamp UInt64, level String, message String)
+ENGINE = Kafka
+SETTINGS kafka_broker_list = 'localhost:9092',
+         kafka_topic_list = 'topic',
+         kafka_group_name = 'group1',
+         kafka_format = 'JSONEachRow',
+         kafka_flush_interval_ms = 1000;
+```
 
 トピック データの受信を停止するか、変換ロジックを変更するには、materialized view をデタッチします:
 

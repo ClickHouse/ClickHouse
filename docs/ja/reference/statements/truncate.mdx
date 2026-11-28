@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 ClickHouse の `TRUNCATE` ステートメントは、テーブルまたはデータベースの構造を保持したまま、すべてのデータをすばやく削除するために使用します。
 
-## テーブルをTRUNCATEする
+## テーブルをTRUNCATEする {#truncate-table}
 
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
@@ -18,7 +18,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 
 <br />
 
-| パラメーター               | Description                                                            |
+| パラメーター               | 説明                                                            |
 | -------------------- | ---------------------------------------------------------------------- |
 | `IF EXISTS`          | テーブルが存在しない場合にエラーを防ぎます。省略すると、クエリはエラーを返します。                              |
 | `db.name`            | 省略可能なデータベース名。                                                          |
@@ -33,6 +33,11 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
   `alter_sync` が `2` に設定されており、`replication_wait_for_inactive_replica_timeout` 設定で指定された時間を超えて一部のレプリカが非アクティブである場合、例外 `UNFINISHED` がスローされます。`alter_sync = 3` では非アクティブなレプリカを待機しないため、例外はスローされません。
 </Note>
 
+<Note>
+  非レプリケーションの `MergeTree` テーブルでは、削除されたパーツは `old_parts_lifetime` 秒間、非アクティブなパーツとしてディスク上に残ります。直ちに削除するには `SETTINGS truncate_removes_parts_immediately = 1` を使用してください。
+  `ReplicatedMergeTree` テーブルでは、`TRUNCATE` は `DROP PARTITION` と同様に `DROP_RANGE` ログエントリとして各レプリカで実行されるため、削除されたパーツは直ちに削除されます。
+</Note>
+
 `TRUNCATE TABLE` クエリは、次のテーブルエンジンでは**サポートされていません**。
 
 * [`View`](/ja/reference/engines/table-engines/special/view)
@@ -41,7 +46,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 * [`Buffer`](/ja/reference/engines/table-engines/special/buffer)
 * [`Null`](/ja/reference/engines/table-engines/special/null)
 
-## すべてのテーブルをTRUNCATEする
+## すべてのテーブルをTRUNCATEする {#truncate-all-tables}
 
 ```sql
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
@@ -59,7 +64,7 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 
 データベース内のすべてのテーブルからすべてのデータを削除します。
 
-## TRUNCATE DATABASE
+## TRUNCATE DATABASE {#truncate-database}
 
 ```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]

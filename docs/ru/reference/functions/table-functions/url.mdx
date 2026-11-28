@@ -94,6 +94,24 @@ SELECT count() FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TS
 
 Предикат по `_path` или `_file` применяется к каждому адресу в момент его генерации, поэтому отклонённые им адреса тоже генерируются и учитываются в ограничении; пропускается только чтение адресов, не прошедших фильтр.
 
+### Шаблоны генерируют адреса, а не фильтруют список файлов {#patterns-generate-addresses}
+
+Обычный HTTP не позволяет получить список файлов, имеющихся на сервере, поэтому шаблон в `url` — это *генератор* адресов, а не *фильтр* по существующим файлам. Каждый адрес, который читает запрос, необходимо сгенерировать и запросить, а их количество ограничено настройкой [glob&#95;expansion&#95;max&#95;elements](/ru/reference/settings/session-settings/other#glob_expansion_max_elements). Адреса, которые на деле не существуют, пропускаются при чтении, если включена настройка [http&#95;skip&#95;not&#95;found&#95;url&#95;for&#95;globs](/ru/reference/settings/session-settings/http#http_skip_not_found_url_for_globs).
+
+Табличные функции для объектных хранилищ, такие как [s3](/ru/reference/functions/table-functions/s3), работают иначе: шаблон компилируется в регулярное выражение и сопоставляется со списком объектов в бакете, поэтому шаблон, описывающий огромное пространство ключей, не влечёт дополнительных затрат. Поэтому один и тот же шаблон функция `s3` прочитает полностью, а функция `url` отклонит:
+
+```sql
+-- Matched against the bucket listing, so only the objects that exist are read.
+SELECT count() FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+
+-- The same pattern would have to generate 100020001 addresses for `url`, and is rejected.
+SELECT count() FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+-- Code: 36. DB::Exception: Table function 'url': first argument generates too many result addresses: 100020001,
+-- while at most 1000 are allowed (see the 'glob_expansion_max_elements' setting). ...
+```
+
+Используйте `s3` (или другую табличную функцию для работы с объектным хранилищем), если шаблон предназначен для поиска совпадений в списке объектов, и увеличивайте `glob_expansion_max_elements` только тогда, когда действительно необходимо отправить запрос по каждому сгенерированному адресу.
+
 ## Подстановочные шаблоны с HTTP-страницами индекса {#wildcards-with-http-index-pages}
 
 Для `url` и движка таблицы `URL` ClickHouse может разворачивать подстановочные шаблоны, получая HTTP-страницы индекса (HTML или plaintext) и извлекая URL из тела ответа. Это позволяет использовать шаблоны вида `/**/`, если сервер предоставляет листинг каталогов.

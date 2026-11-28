@@ -31,11 +31,11 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 ## use_page_cache_for_object_storage {#use_page_cache_for_object_storage}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "إعداد جديد لاستخدام ذاكرة التخزين المؤقت للصفحات في فضاء المستخدم مع دوال الجدول الخاصة بتخزين الكائنات"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "إعداد جديد لاستخدام ذاكرة التخزين المؤقت للصفحات في فضاء المستخدم مع دوال الجداول الخاصة بالتخزين الكائني"}]}, {"id": "row-2","items": [{"label": "26.12"},{"label": "1"},{"label": "استخدام ذاكرة التخزين المؤقت للصفحات في فضاء المستخدم افتراضيًا مع محركات الجداول ودوال الجداول الخاصة بالتخزين الكائني، إذا كانت ذاكرة التخزين المؤقت للصفحات مهيّأة على الخادم."}]}]} />
 
-استخدم ذاكرة التخزين المؤقت للصفحات في فضاء المستخدم عند القراءة من دوال الجدول الخاصة بتخزين الكائنات (s3, azure, hdfs) ومحركات الجداول (S3, Azure, HDFS).
+يستخدم ذاكرة التخزين المؤقت للصفحات في فضاء المستخدم عند القراءة من دوال الجداول الخاصة بالتخزين الكائني (s3 وazure وhdfs وIceberg وDelta Lake وغيرها) ومحركات الجداول (S3 وAzure وHDFS وIceberg وDelta Lake وغيرها). لا يكون لهذا الإعداد أي تأثير إلا إذا كانت ذاكرة التخزين المؤقت للصفحات في فضاء المستخدم مهيّأة على الخادم (`page_cache_max_size`)، ولا ينطبق إلا على الكائنات التي تمتلك ETag قويًا أو هوية غير قابلة للتغيير مأخوذة من سجلات الجدول (ملفات البيانات في Iceberg وDelta Lake). ولا يُستخدم هذا الإعداد مع ذاكرة التخزين المؤقت لنظام الملفات، أما مع distributed cache فلا يُستخدم إلا إذا كان `use_page_cache_with_distributed_cache` مفعّلًا أيضًا.
 
 ## use_page_cache_lookahead_for_text_index {#use_page_cache_lookahead_for_text_index}
 

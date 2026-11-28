@@ -192,14 +192,15 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
         MONGODB_PASSWORD: "your-mongodb-password"
     ```
 
-    외부 시크릿 관리(예: secrets operator 사용)를 사용할 경우, 기존 Kubernetes 시크릿을 참조할 수 있습니다:
+    기존 Kubernetes 시크릿(예: secrets operator로 관리되는 시크릿)에서 기본 연결과 소스를 불러오려면:
 
     ```yaml
     hyperdx:
-      useExistingConfigSecret: true
-      existingConfigSecret: "my-external-secret"
-      existingConfigConnectionsKey: "connections.json"
-      existingConfigSourcesKey: "sources.json"
+      deployment:
+        useExistingConfigSecret: true
+        existingConfigSecret: "my-external-secret"
+        existingConfigConnectionsKey: "connections.json"
+        existingConfigSourcesKey: "sources.json"
     ```
 
     <Tip>
@@ -210,9 +211,7 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
   </Step>
 </Steps>
 
-<div id="using-clickhouse-cloud">
-  ## ClickHouse Cloud 사용 {#using-clickhouse-cloud}
-</div>
+## ClickHouse Cloud 사용 {#using-clickhouse-cloud}
 
 ClickHouse Cloud를 사용하는 경우 기본 제공 ClickHouse 인스턴스를 비활성화하고 Cloud 자격 증명을 입력하십시오:
 
@@ -222,35 +221,41 @@ clickhouse:
   enabled: false
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-cloud-instance.clickhouse.cloud:9440?secure=true"
+    CLICKHOUSE_USER: "default"
   secrets:
     CLICKHOUSE_PASSWORD: "your-cloud-password"
     CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
 
-  useExistingConfigSecret: true
-  existingConfigSecret: "clickhouse-cloud-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "clickhouse-cloud-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
-연결 시크릿을 별도로 생성하세요:
+연결 시크릿을 별도로 생성하세요. `connections.json`과 `sources.json`은 모두 필수입니다. 이 예시에서는 빈 소스 목록을 사용합니다. 설치 후 UI에서 소스를 구성하거나, [외부 ClickHouse](/ko/clickstack/deployment/helm-deployment-options#external-clickhouse-secret)에 나온 것처럼 소스 정의를 직접 지정하십시오:
 
 ```bash
 cat <<EOF > connections.json
 [
   {
     "name": "ClickHouse Cloud",
-    "host": "https://your-cloud-instance.clickhouse.cloud",
-    "port": 8443,
+    "host": "https://your-cloud-instance.clickhouse.cloud:8443",
     "username": "default",
     "password": "your-cloud-password"
   }
 ]
 EOF
 
-kubectl create secret generic clickhouse-cloud-config \
-  --from-file=connections.json=connections.json
+echo '[]' > sources.json
 
-rm connections.json
+kubectl create secret generic clickhouse-cloud-config \
+  --from-file=connections.json=connections.json \
+  --from-file=sources.json=sources.json
+
+rm connections.json sources.json
 ```
 
 ```shell

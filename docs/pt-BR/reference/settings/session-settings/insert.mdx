@@ -17,7 +17,9 @@ Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Se a configuração estiver habilitada, permite o uso de colunas materializadas em INSERT.
+Se habilitada, colunas `MATERIALIZED` podem ser incluídas na lista de colunas de uma consulta `INSERT`, e os valores inseridos são armazenados em vez de serem calculados a partir das expressões das colunas. Para tabelas `Distributed`, os valores das colunas `MATERIALIZED` também são enviados aos shards.
+
+Se desabilitada, incluir uma coluna `MATERIALIZED` em uma consulta `INSERT` lança uma exceção, e os valores dessas colunas são sempre calculados a partir de suas expressões.
 
 ## insert_deduplicate {#insert_deduplicate}
 

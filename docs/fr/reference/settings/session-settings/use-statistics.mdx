@@ -59,12 +59,13 @@ Valeurs possibles :
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant de calculer les agrégations `sum`, `avg`, `sumCount` et `count(column)` sans `GROUP BY` ni filtres à partir des statistiques de colonne de chaque part. previous_value=false, de sorte que `compatibility` avec les versions antérieures à 26.11 laisse l'optimisation désactivée et rétablit le plan précédent."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant de calculer les agrégations `sum`, `avg`, `sumCount` et `count(column)` sans `GROUP BY` ni filtres à partir des statistiques de colonnes par partie. previous_value=false, de sorte que `compatibility` avec les versions antérieures à 26.11 laisse l'optimisation désactivée et rétablit le plan précédent."}]}]} />
 
-Calcule les agrégations `sum`, `avg` et `sumCount` sur des colonnes de type integer et `Decimal` qui ne sont ni `Nullable` ni
-`LowCardinality`, sans `GROUP BY` ni filtres, à partir des statistiques de colonne de chaque part (type de statistiques `basic`, voir le
+Calcule les agrégations `sum`, `avg` et `sumCount` sur des colonnes de type integer et `Decimal` qui ne sont pas `LowCardinality`,
+sans `GROUP BY` ni filtres, à partir des statistiques de colonnes par partie (type de statistiques `basic`, voir le
 paramètre `MergeTree` `auto_statistics_types`) pour les parts où elles sont matérialisées, et ne lit que les
-parts restantes. Dans ce cas, `count(column)` sur une colonne qui n&#39;est ni `Nullable` ni `LowCardinality` est calculé à partir du nombre de lignes.
+parts restantes. Dans ce cas, `count(column)` sur une colonne qui n&#39;est pas `LowCardinality` est calculé à partir du nombre de lignes. Pour une
+colonne `Nullable`, les statistiques contiennent la somme des valeurs non-NULL et le nombre de valeurs NULL, que les agrégats ignorent.
 L&#39;ensemble de résultats est strictement identique à celui obtenu en lisant les données.
 
 Valeurs possibles :

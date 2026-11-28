@@ -1,0 +1,117 @@
+---
+description: 'Documentation de l’interface SSH de ClickHouse'
+keywords: ['client', 'ssh', 'putty']
+sidebarTitle: 'Interface SSH'
+slug: /concepts/features/connect-to-clickhouse/protocols/ssh
+title: 'Interface SSH avec PTY'
+doc_type: 'reference'
+---
+
+import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+## Préface {#preface}
+
+Le serveur ClickHouse accepte les connexions directes via le protocole SSH. Tous les clients sont autorisés.
+
+Après avoir créé un [utilisateur de base de données identifié par une clé SSH](/fr/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) :
+
+```sql
+CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY '<REDACTED>' TYPE 'ssh-ed25519';
+```
+
+Vous pouvez utiliser cette clé pour vous connecter à un serveur ClickHouse. Un pseudo-terminal (PTY) s&#39;ouvrira alors avec une session interactive de clickhouse-client.
+
+```bash
+> ssh -i ~/test_ssh/id_ed25519 abcuser@localhost -p 9022
+ClickHouse embedded version 25.1.1.1.
+
+ip-10-1-13-116.us-west-2.compute.internal :) SELECT 1;
+
+SELECT 1
+
+Query id: cdd91b7f-215b-4537-b7df-86d19bf63f64
+
+   ┌─1─┐
+1. │ 1 │
+   └───┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+L&#39;exécution de commandes via SSH (mode non interactif) est également prise en charge :
+
+```bash
+> ssh -i ~/test_ssh/id_ed25519 abcuser@localhost -p 9022 "select 1"
+1
+```
+
+## Configuration du serveur {#server-configuration}
+
+Pour activer la fonctionnalité de serveur SSH, vous devez décommenter ou ajouter la section suivante dans votre fichier `config.xml` :
+
+```xml
+<tcp_ssh_port>9022</tcp_ssh_port>
+<ssh_server>
+   <host_rsa_key>path-to-the-key</host_rsa_key>
+   <!--host_ecdsa_key>path-to-the-key</host_ecdsa_key-->
+   <!--host_ed25519_key>path-to-the-key</host_ed25519_key-->
+</ssh_server>
+```
+
+La clé d’hôte fait partie intégrante du protocole SSH. Sa partie publique est stockée dans le fichier `~/.ssh/known_hosts` côté client et sert généralement à prévenir les attaques de type « homme du milieu » (man-in-the-middle). Lors de la première connexion au serveur, le message suivant s’affiche :
+
+```shell
+The authenticity of host '[localhost]:9022 ([127.0.0.1]:9022)' can't be established.
+RSA key fingerprint is SHA256:3qxVlJKMr/PEKw/hfeg06HAK451Tt0eenhwqQvh58Do.
+This key is not known by any other names
+Are you sure you want to continue connecting (yes/no/[fingerprint])?
+```
+
+Cela signifie en fait : « Voulez-vous mémoriser la clé publique de cet hôte et poursuivre la connexion ? ».
+
+Vous pouvez indiquer à votre client SSH de ne pas vérifier l&#39;hôte en lui passant une option :
+
+```bash
+ssh -o "StrictHostKeyChecking no" user@host
+```
+
+## Configuration du client intégré {#configuring-embedded-client}
+
+Vous pouvez transmettre des options à un client intégré comme avec le `clickhouse-client` ordinaire, avec toutefois quelques limitations.
+Comme il s&#39;agit d&#39;un protocole SSH, le seul moyen de transmettre des paramètres à l&#39;hôte cible est de passer par des variables d’environnement.
+
+Par exemple, le paramètre `format` peut être défini de la manière suivante :
+
+```bash
+> ssh -o SetEnv="format=Pretty" -i ~/test_ssh/id_ed25519  abcuser@localhost -p 9022 "SELECT 1"
+   ┏━━━┓
+   ┃ 1 ┃
+   ┡━━━┩
+1. │ 1 │
+   └───┘
+```
+
+Vous pouvez ainsi modifier n&#39;importe quel paramètre au niveau utilisateur, et également transmettre la plupart des options habituelles de `clickhouse-client` (sauf celles qui n&#39;ont pas de sens dans cette configuration).
+
+Important :
+
+Si l&#39;option `query` et la commande SSH sont toutes deux transmises, cette dernière est ajoutée à la liste des requêtes à exécuter :
+
+```bash
+ubuntu ip-10-1-13-116@~$ ssh -o SetEnv="format=Pretty query=\"SELECT 2;\"" -i ~/test_ssh/id_ed25519  abcuser@localhost -p 9022 "SELECT 1"
+   ┏━━━┓
+   ┃ 2 ┃
+   ┡━━━┩
+1. │ 2 │
+   └───┘
+   ┏━━━┓
+   ┃ 1 ┃
+   ┡━━━┩
+1. │ 1 │
+   └───┘
+```

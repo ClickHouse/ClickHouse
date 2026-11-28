@@ -1,0 +1,107 @@
+---
+description: '选择用于连接 ClickHouse 的客户端、驱动程序、协议或内置接口'
+sidebarTitle: '概览'
+keywords: ['客户端', '接口', '命令行客户端', 'SQL 控制台', '驱动程序', '协议']
+slug: /concepts/features/connect-to-clickhouse
+title: '连接 ClickHouse'
+doc_type: 'landing-page'
+mode: wide
+---
+
+请根据您使用 ClickHouse 的方式，选择最合适的接口。如需开发应用程序，建议首先选用官方语言客户端或驱动程序；如需交互式操作，可使用原生工具或基于 Web 的工具；如需直接集成，请使用网络协议。连接之前，请根据需要配置[网络端口](/zh/concepts/features/security/network-ports)、[访问权限](/zh/concepts/features/security/access-rights)和 [TLS](/zh/concepts/features/security/tls/configuring-tls)。
+
+## 原生工具 {#native-tools}
+
+<CardGroup cols={2}>
+  <Card title="clickhousectl" icon="terminal" href="/zh/concepts/features/connect-to-clickhouse/native-tools/clickhousectl">
+    ClickHouse 官方命令行客户端 (`chctl`) ：用于本地 ClickHouse 和 Postgres 开发，以及 ClickHouse Cloud 管理。
+  </Card>
+
+  <Card title="ClickHouse 客户端" icon="keyboard" href="/zh/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client">
+    原生命令行客户端，支持命令行选项和配置文件。
+  </Card>
+
+  <Card title="Web 终端" icon="globe" href="/zh/concepts/features/connect-to-clickhouse/native-tools/web-terminal">
+    在浏览器中通过 WebSocket 运行的 `clickhouse-client` 会话。
+  </Card>
+
+  <Card title="Model Context Protocol (MCP)" icon="/images/mcp.svg" href="/zh/concepts/features/connect-to-clickhouse/native-tools/mcp">
+    通过标准化接口将 AI 助手连接到 ClickHouse。
+  </Card>
+</CardGroup>
+
+## 驱动程序与各编程语言的客户端 {#drivers-and-language-clients}
+
+<CardGroup cols={2}>
+  <Card title="ADBC 驱动程序" icon="database" href="/zh/concepts/features/connect-to-clickhouse/drivers/adbc">
+    将兼容 ADBC 的应用程序连接到 ClickHouse。
+  </Card>
+
+  <Card title="ODBC 驱动程序" icon="database" href="/zh/concepts/features/connect-to-clickhouse/drivers/odbc">
+    将兼容 ODBC 的应用程序连接到 ClickHouse。
+  </Card>
+
+  <Card title="各编程语言的客户端" icon="code" href="/zh/integrations/language-clients">
+    浏览适用于您所用编程语言的 ClickHouse 官方客户端。
+  </Card>
+</CardGroup>
+
+## 协议 {#protocols}
+
+<CardGroup cols={2}>
+  <Card title="HTTP 接口" icon="globe" href="/zh/concepts/features/connect-to-clickhouse/protocols/http">
+    在任意平台上使用任意编程语言，通过 HTTP 使用 ClickHouse。
+  </Card>
+
+  <Card title="原生 TCP 接口" icon="network-wired" href="/zh/concepts/features/connect-to-clickhouse/protocols/native-tcp">
+    面向支持 ClickHouse 的客户端及服务器间通信的原生协议。
+  </Card>
+
+  <Card title="gRPC 接口" icon="arrows-left-right" href="/zh/concepts/features/connect-to-clickhouse/protocols/grpc">
+    使用 ClickHouse 的 gRPC 接口。
+  </Card>
+
+  <Card title="Arrow Flight 接口" icon="arrow-right-arrow-left" href="/zh/concepts/features/connect-to-clickhouse/protocols/arrow-flight">
+    基于 Apache Arrow 连接 Flight SQL 客户端。
+  </Card>
+
+  <Card title="MySQL 接口" icon="database" href="/zh/concepts/features/connect-to-clickhouse/protocols/compatibility/mysql">
+    连接兼容 MySQL 的客户端。
+  </Card>
+
+  <Card title="PostgreSQL 接口" icon="database" href="/zh/concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql">
+    连接兼容 PostgreSQL 的客户端。
+  </Card>
+
+  <Card title="SSH 接口" icon="terminal" href="/zh/concepts/features/connect-to-clickhouse/protocols/ssh">
+    使用 SSH 客户端连接到 ClickHouse 服务器。
+  </Card>
+</CardGroup>
+
+## Prometheus {#prometheus}
+
+<CardGroup cols={2}>
+  <Card title="Prometheus API 和 PromQL" icon="chart-line" href="/zh/concepts/features/connect-to-clickhouse/prometheus">
+    将 Prometheus 指标存储在 ClickHouse 中，并使用 PromQL 进行查询。
+  </Card>
+
+  <Card title="Prometheus 指标端点" icon="chart-line" href="/zh/concepts/features/connect-to-clickhouse/prometheus/metrics">
+    暴露 ClickHouse 服务器指标，供 Prometheus 服务器抓取。
+  </Card>
+</CardGroup>
+
+## 内置 Web 界面 {#built-in-web-interfaces}
+
+<CardGroup cols={2}>
+  <Card title="Web SQL 界面（Play）" icon="browser" href="/zh/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql">
+    ClickHouse 在 `/play` 路径下提供的内置浏览器 SQL 界面。
+  </Card>
+
+  <Card title="SQL 控制台" icon="browser" href="/zh/concepts/features/connect-to-clickhouse/built-in-web-interfaces/sql-console">
+    用于运行查询和探索数据的嵌入式 Web 界面。
+  </Card>
+
+  <Card title="文档搜索" icon="book-open" href="/zh/concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search">
+    搜索内嵌在运行中的 ClickHouse 服务器里的参考文档。
+  </Card>
+</CardGroup>

@@ -25,14 +25,14 @@ JOIN のメモリは 2 種類の設定によって制御されます。ほとん
 
 その他のアルゴリズムでは、制限の動作が異なります。
 
-* [`ie_join`](/ja/concepts/features/operations/select/join-algorithms#ie-join) では、制限は両側の入力を合わせた累積量に適用されます。
+* [`inequality`](/ja/concepts/features/operations/select/join-algorithms#inequality) では、制限は両側の入力を合わせた累積量に適用されます。
 * [ブロックネステッドループのフォールバック](/ja/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback) では、制限はディスクに退避されたブロックを含む、マテリアライズされた右側全体に適用されます。
 * [`partial_merge`](/ja/concepts/features/operations/select/join-algorithms#partial-merge) では、制限に達してもクエリは停止せず、代わりに実行戦略が切り替わります。JOIN は、ソート済みの右側のブロックをディスクへ書き込み始めます。
 
 ## スピル threshold {#spill-thresholds}
 
 * [`max_bytes_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) は、ハッシュベースの JOIN の右側に対するスピル threshold を、バイト単位の絶対値で設定します。
-* [`max_bytes_ratio_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) は、ユーザーおよびサーバーのメモリ制限に対する残りメモリの比率として、スピル threshold を設定します。メモリ制限が設定されていない場合、この比率は無効です。
+* [`max_bytes_ratio_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) は、クエリの `max_memory_usage`、ならびにユーザーおよびサーバーのメモリ制限に対する残りメモリの比率として、スピル threshold を設定します。メモリ制限が設定されていない場合、この比率は無効です。
 
 両方の設定を指定した場合は、算出されたしきい値のうち小さい方が適用されます。これらのしきい値は、`hash`、`parallel_hash`、`grace_hash`、`auto` 値、およびブロックネステッドループのフォールバックに適用されます。利用するには、一時データパスが設定されている必要があります。
 
@@ -46,7 +46,7 @@ JOIN のメモリは 2 種類の設定によって制御されます。ほとん
 * **`partial_merge`。** 右側がハードリミットに達すると、ソート済みの右側ブロックとその min-max 索引が一時ファイルに書き込まれます。
 * **ブロックネステッドループのフォールバック。** スピル threshold に達すると、右側のブロックはメモリ上で圧縮されたうえで一時ファイルに書き込まれます。
 
-[`direct`](/ja/concepts/features/operations/select/join-algorithms#direct) および [`ie_join`](/ja/concepts/features/operations/select/join-algorithms#ie-join) アルゴリズムはディスクへのスピルを行いません。
+[`direct`](/ja/concepts/features/operations/select/join-algorithms#direct) および [`inequality`](/ja/concepts/features/operations/select/join-algorithms#inequality) アルゴリズムはディスクへのスピルを行いません。
 
 一時ファイルは、[`tmp_path`](/ja/reference/settings/server-settings/settings/tmp#tmp_path)、[`tmp_policy`](/ja/reference/settings/server-settings/settings/tmp#tmp_policy)、または [`temporary_data_in_cache`](/ja/reference/settings/server-settings/settings/temporary-data#temporary_data_in_cache) サーバー設定で指定されたストレージに書き込まれます。一時ファイルの読み書きによってディスク I/O が発生するため、スピルする JOIN は、同じ JOIN をメモリ上だけで実行する場合よりも低速になります。
 

@@ -41,6 +41,18 @@ Valeurs possibles :
 * manifest&#95;file&#95;metadata - Tout ce qui précède + les métadonnées des fichiers manifestes Avro parcourus.
 * manifest&#95;file&#95;entry - Tout ce qui précède + les entrées des fichiers manifestes Avro parcourus.
 
+## iceberg_metadata_previous_versions_max {#iceberg_metadata_previous_versions_max}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "100"},{"label": "Nouveau paramètre. Les écritures dans les tables Iceberg limitent la taille du `metadata-log`, qui augmentait auparavant à chaque validation."}]}]} />
+
+Nombre maximal d’entrées qu’une écriture conserve dans le `metadata-log` d’une table Iceberg, y compris l’entrée correspondant au fichier de métadonnées qu’elle écrit. Lorsqu’une écriture ajoute une entrée qui fait dépasser cette limite, les entrées les plus anciennes sont supprimées. Les fichiers de métadonnées eux-mêmes ne sont pas supprimés.
+
+La propriété de table Iceberg `write.metadata.previous-versions-max` prime sur ce paramètre. Comme dans l’implémentation Java, cette propriété indique le nombre de fichiers de métadonnées précédents et vaut au moins un. Le `metadata-log` conserve donc une entrée de plus que cette valeur.
+
+Ce paramètre n’a aucun effet sur les tables d’un catalogue qui écrit lui-même les fichiers de métadonnées, tel qu’un catalogue REST : le catalogue gère le `metadata-log` selon sa propre configuration et la propriété de la table.
+
 ## iceberg_metadata_staleness_ms {#iceberg_metadata_staleness_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

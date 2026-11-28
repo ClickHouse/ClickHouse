@@ -225,7 +225,9 @@ Désactiver ce paramètre refuse uniquement les lectures : la création, l&#39;a
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Autorise l’exécution de la fonction multiIf en mode colonnaire
+Permet à la fonction `multiIf` de calculer son résultat pour une colonne entière en une seule fois plutôt que ligne par ligne, ce qui est plus rapide.
+
+L’exécution en colonnes n’est utilisée que si le type de résultat est un nombre, `Decimal`, un type date ou date-heure, `Enum`, `IPv4` ou `IPv6`, et si la fonction comporte au plus 255 branches. Dans les autres cas, l’exécution row-by-row est utilisée, quelle que soit la valeur de ce paramètre.
 
 ## allow_expire_snapshots {#allow_expire_snapshots}
 

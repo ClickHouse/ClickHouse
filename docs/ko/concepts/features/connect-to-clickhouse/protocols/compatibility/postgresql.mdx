@@ -1,0 +1,93 @@
+---
+description: 'ClickHouse의 PostgreSQL 통신 프로토콜(PostgreSQL wire protocol) 인터페이스 문서'
+sidebarTitle: 'PostgreSQL 인터페이스'
+slug: /concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql
+title: 'PostgreSQL 인터페이스'
+doc_type: 'reference'
+---
+
+import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+<Tip>
+  [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview) 서비스를 확인해 보십시오. 컴퓨트와 물리적으로 같은 위치에 배치된 NVMe 스토리지를 기반으로 하므로, 디스크 입출력에 병목이 있는 워크로드에서 EBS와 같은 네트워크 연결 스토리지를 사용하는 대안보다 최대 10배 빠른 성능을 제공합니다. 또한 ClickPipes의 Postgres CDC 커넥터를 사용하여 Postgres 데이터를 ClickHouse로 복제할 수 있습니다.
+</Tip>
+
+ClickHouse는 PostgreSQL 통신 프로토콜(PostgreSQL wire protocol)을 지원하므로 Postgres 클라이언트로 ClickHouse에 연결할 수 있습니다. 즉, ClickHouse는 PostgreSQL 인스턴스처럼 동작할 수 있으므로, ClickHouse가 아직 직접 지원하지 않는 PostgreSQL 클라이언트 애플리케이션(예: Amazon Redshift)도 ClickHouse에 연결할 수 있습니다.
+
+PostgreSQL 통신 프로토콜을 활성화하려면 서버의 설정 파일에 [postgresql&#95;port](/ko/reference/settings/server-settings/settings/postgresql#postgresql_port) 설정을 추가하십시오. 예를 들어 `config.d` 폴더에 새 XML 파일을 만들어 포트를 정의할 수 있습니다.
+
+```xml
+<clickhouse>
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>
+```
+
+ClickHouse 서버를 시작한 후, 다음과 같이 **Listening for PostgreSQL compatibility protocol**이라는 문구가 포함된 로그 메시지가 출력되는지 확인하십시오:
+
+```response
+{} <Information> Application: Listening for PostgreSQL compatibility protocol: 127.0.0.1:9005
+```
+
+## psql을 ClickHouse에 연결하기 {#connect-psql-to-clickhouse}
+
+다음 명령은 PostgreSQL 클라이언트 `psql`을 ClickHouse에 연결하는 방법을 보여 줍니다.
+
+```bash
+psql -p [port] -h [hostname] -U [username] [database_name]
+```
+
+예를 들면 다음과 같습니다:
+
+```bash
+psql -p 9005 -h 127.0.0.1 -U alice default
+```
+
+<Note>
+  `psql` 클라이언트는 비밀번호를 사용한 로그인이 필요하므로, 비밀번호가 없는 `default` 사용자로는 연결할 수 없습니다. `default` 사용자에게 비밀번호를 할당하거나 다른 사용자로 로그인하십시오.
+</Note>
+
+`psql` 클라이언트에서 비밀번호를 입력하라는 프롬프트가 표시됩니다:
+
+```response
+Password for user alice:
+psql (14.2, server 22.3.1.1)
+WARNING: psql major version 14, server major version 22.
+         Some psql features might not work.
+Type "help" for help.
+
+default=>
+```
+
+이제 모든 설정이 끝났습니다! PostgreSQL 클라이언트가 ClickHouse에 연결되었으며, 모든 명령어와 쿼리는 ClickHouse에서 실행됩니다.
+
+<Note>
+  PostgreSQL 프로토콜은 현재 평문 비밀번호만 지원합니다.
+</Note>
+
+## SSL 사용 {#using-ssl}
+
+ClickHouse 인스턴스에 SSL/TLS가 구성되어 있으면 `postgresql_port`에도 동일한 설정이 적용됩니다(이 포트는 보안 클라이언트와 비보안 클라이언트가 공유합니다).
+
+SSL을 사용해 연결하는 방법은 클라이언트마다 다릅니다. 다음 명령은 인증서와 개인 키를 전달하여 `psql`을 ClickHouse에 안전하게 연결하는 방법을 보여줍니다.
+
+```bash
+psql "port=9005 host=127.0.0.1 user=alice dbname=default sslcert=/path/to/certificate.pem sslkey=/path/to/key.pem sslrootcert=/path/to/rootcert.pem sslmode=verify-ca"
+```
+
+## SCRAM-SHA-256으로 ClickHouse 사용자 인증 구성하기 {#using-scram-sha256}
+
+ClickHouse에서 사용자 인증을 안전하게 처리하려면 SCRAM-SHA-256 프로토콜을 사용하는 것이 좋습니다. users.xml 파일에 `password_scram_sha256_hex` 요소를 지정하여 사용자를 구성하십시오. 비밀번호 해시는 num&#95;iterations=4096으로 생성해야 합니다.
+
+psql 클라이언트가 연결 시 SCRAM-SHA-256을 지원하고 이를 협상하는지 확인하십시오.
+
+비밀번호가 `abacaba`인 사용자 `user_with_sha256`의 구성 예시는 다음과 같습니다.
+
+```xml
+<user_with_sha256>
+    <password_scram_sha256_hex>04e7a70338d7af7bb6142fe7e19fef46d9b605f3e78b932a60e8200ef9154976</password_scram_sha256_hex>
+</user_with_sha256>
+```
+
+PostgreSQL의 SSL 설정에 대한 자세한 내용은 [PostgreSQL 문서](https://jdbc.postgresql.org/documentation/head/ssl-client.html)를 참조하십시오.

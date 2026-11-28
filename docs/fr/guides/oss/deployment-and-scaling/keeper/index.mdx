@@ -116,12 +116,13 @@ La configuration du quorum se trouve dans la section `<keeper_server>.<raft_conf
 
 Le seul paramètre pour l’ensemble du quorum est `secure`, qui active une connexion chiffrée pour la communication entre les participants au quorum. Le paramètre peut être défini sur `true` si une connexion SSL est requise pour la communication interne entre les nœuds, ou laissé non spécifié dans le cas contraire.
 
-Les principaux paramètres de chaque `<server>` sont :
+Les principaux paramètres de chaque `<server>` sont :
 
 * `id` — Identifiant du serveur dans un quorum.
 * `hostname` — Nom d’hôte où ce serveur est hébergé.
 * `port` — Port sur lequel ce serveur écoute les connexions.
 * `can_become_leader` — Définissez `false` pour configurer le serveur comme `learner`. Si ce paramètre est omis, la valeur est `true`.
+  Au moins un serveur doit conserver la valeur `true`, faute de quoi Keeper refuse de démarrer.
 
 <Note>
   En cas de modification de la topologie de votre cluster ClickHouse Keeper (par ex., remplacement d’un serveur), veillez à conserver une association cohérente entre `server_id` et `hostname`, et évitez de permuter ou de réutiliser un `server_id` existant pour différents serveurs (par ex., cela peut se produire si vous utilisez des scripts d’automatisation pour déployer ClickHouse Keeper)
@@ -133,7 +134,7 @@ Les principaux paramètres de chaque `<server>` sont :
   `async_replication` est désactivé par défaut afin d’éviter de rompre la compatibilité descendante. Si toutes les instances Keeper de votre cluster exécutent une version prenant en charge `async_replication` (v23.9+), nous recommandons de l’activer, car cela peut améliorer les performances sans aucun inconvénient.
 </Note>
 
-Des exemples de configuration pour un quorum à trois nœuds sont disponibles dans les [tests d’intégration](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration) avec le préfixe `test_keeper_`. Exemple de configuration pour le serveur #1 :
+Des exemples de configuration pour un quorum à trois nœuds sont disponibles dans les [tests d’intégration](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration) avec le préfixe `test_keeper_`. Exemple de configuration pour le serveur #1 :
 
 ```xml
 <keeper_server>

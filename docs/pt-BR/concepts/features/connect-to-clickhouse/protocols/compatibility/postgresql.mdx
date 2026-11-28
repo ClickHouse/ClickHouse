@@ -1,0 +1,93 @@
+---
+description: 'Documentação da interface do protocolo de comunicação do PostgreSQL no ClickHouse'
+sidebarTitle: 'Interface PostgreSQL'
+slug: /concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql
+title: 'Interface PostgreSQL'
+doc_type: 'reference'
+---
+
+import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+<Tip>
+  Conheça nosso serviço [ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/overview). Com armazenamento NVMe fisicamente colocalizado com a capacidade computacional, ele oferece desempenho até 10x mais rápido para cargas de trabalho disk-bound em comparação com alternativas que usam armazenamento conectado à rede, como o EBS, e permite replicar seus dados do Postgres para o ClickHouse usando o conector de CDC do Postgres no ClickPipes.
+</Tip>
+
+O ClickHouse oferece suporte ao protocolo de comunicação do PostgreSQL, o que permite usar clientes Postgres para se conectar ao ClickHouse. De certa forma, o ClickHouse pode se passar por uma instância PostgreSQL, permitindo conectar ao ClickHouse uma aplicação cliente PostgreSQL que ainda não seja diretamente compatível com o ClickHouse (por exemplo, o Amazon Redshift).
+
+Para habilitar o protocolo de comunicação do PostgreSQL, adicione a configuração [postgresql&#95;port](/pt-BR/reference/settings/server-settings/settings/postgresql#postgresql_port) ao arquivo de configuração do seu servidor. Por exemplo, você pode definir a porta em um novo arquivo XML na sua pasta `config.d`:
+
+```xml
+<clickhouse>
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>
+```
+
+Inicie o seu servidor do ClickHouse e procure uma mensagem de log semelhante à seguinte, que menciona **Listening for PostgreSQL compatibility protocol**:
+
+```response
+{} <Information> Application: Listening for PostgreSQL compatibility protocol: 127.0.0.1:9005
+```
+
+## Conectar o psql ao ClickHouse {#connect-psql-to-clickhouse}
+
+O comando a seguir mostra como conectar o cliente PostgreSQL `psql` ao ClickHouse:
+
+```bash
+psql -p [port] -h [hostname] -U [username] [database_name]
+```
+
+Por exemplo:
+
+```bash
+psql -p 9005 -h 127.0.0.1 -U alice default
+```
+
+<Note>
+  O cliente `psql` exige login com senha, portanto não será possível se conectar com o usuário `default` sem senha. Defina uma senha para o usuário `default` ou faça login com outro usuário.
+</Note>
+
+O cliente `psql` solicita a senha:
+
+```response
+Password for user alice:
+psql (14.2, server 22.3.1.1)
+WARNING: psql major version 14, server major version 22.
+         Some psql features might not work.
+Type "help" for help.
+
+default=>
+```
+
+Pronto! Agora você tem um cliente PostgreSQL conectado ao ClickHouse, e todos os comandos e consultas são executados no ClickHouse.
+
+<Note>
+  Atualmente, o protocolo PostgreSQL oferece suporte apenas a senhas em texto simples.
+</Note>
+
+## Usando SSL {#using-ssl}
+
+Se você tiver SSL/TLS configurado na sua instância do ClickHouse, a `postgresql_port` usará as mesmas configurações (a porta é compartilhada entre clientes seguros e não seguros).
+
+Cada cliente tem seu próprio método para se conectar usando SSL. O comando a seguir mostra como passar os certificados e a chave para conectar o `psql` ao ClickHouse de forma segura:
+
+```bash
+psql "port=9005 host=127.0.0.1 user=alice dbname=default sslcert=/path/to/certificate.pem sslkey=/path/to/key.pem sslrootcert=/path/to/rootcert.pem sslmode=verify-ca"
+```
+
+## Configurando a autenticação de usuários do ClickHouse com SCRAM-SHA-256 {#using-scram-sha256}
+
+Para garantir uma autenticação de usuários segura no ClickHouse, recomenda-se usar o protocolo SCRAM-SHA-256. Configure o usuário especificando o elemento `password_scram_sha256_hex` no arquivo users.xml. O hash da senha deve ser gerado com num&#95;iterations=4096.
+
+Verifique se o cliente psql oferece suporte ao SCRAM-SHA-256 e o negocia durante a conexão.
+
+Exemplo de configuração para o usuário `user_with_sha256` com a senha `abacaba`:
+
+```xml
+<user_with_sha256>
+    <password_scram_sha256_hex>04e7a70338d7af7bb6142fe7e19fef46d9b605f3e78b932a60e8200ef9154976</password_scram_sha256_hex>
+</user_with_sha256>
+```
+
+Consulte a [documentação do PostgreSQL](https://jdbc.postgresql.org/documentation/head/ssl-client.html) para mais detalhes sobre as configurações de SSL.

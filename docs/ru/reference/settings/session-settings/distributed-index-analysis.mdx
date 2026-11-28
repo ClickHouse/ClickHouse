@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHistory.jsx";
+import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -39,6 +40,16 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "новая настройка"}]}]} />
 
 Включает распределённый анализ индексов даже для отличных от SharedMergeTree движков, доступных только в Cloud.
+
+## distributed_index_analysis_on_stateless_workers {#distributed_index_analysis_on_stateless_workers}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+
+Выполняет распределённый анализ индексов на воркерах без сохранения состояния в исходном запросе, который выполняется как распределённый план выполнения (`make_distributed_plan`) и удерживает воркеры или может взять их в аренду, независимо от `distributed_index_analysis`. Воркеры анализируют таблицы общей таблицы, размещённые в объектном хранилище. Пока что включение этой настройки отключает анализ индексов на репликах (`distributed_index_analysis`), поэтому чтения, которые воркеры не берут на себя, а также чтения других запросов анализируются локально. Воркерам нужны потоковые обмены: если обмены имеют вид `Persisted` (задан через `distributed_plan_force_exchange_kind` или из-за того, что потоковый прослушивающий обработчик не настроен), чтения анализируются локально. Также действуют настройки MergeTree `distributed_index_analysis_min_parts_to_activate` и `distributed_index_analysis_min_indexes_bytes_to_activate`.
 
 ## distributed_index_analysis_only_on_coordinator {#distributed_index_analysis_only_on_coordinator}
 

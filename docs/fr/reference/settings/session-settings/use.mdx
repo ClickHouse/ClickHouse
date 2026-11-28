@@ -172,9 +172,9 @@ prédicat déterministe pour le côté cible.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant d’élaguer les fichiers de données Iceberg, ainsi que les groupes de lignes et les pages Parquet, à l’aide des filtres JOIN à l’exécution."}]}]} />
 
-Ignore les fichiers de données Iceberg, ainsi que les groupes de lignes et les pages Parquet des fichiers lus, qui ne peuvent contenir aucune clé d’un filtre d’exécution de JOIN (voir [enable&#95;join&#95;runtime&#95;filters](/fr/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). Une fois le côté build de la jointure terminé, les clés du filtre (ou leur plage min/max, si le set est trop volumineux) sont comparées aux limites des colonnes figurant dans les manifestes, aux statistiques des groupes de lignes et à l’index des pages. Les fichiers de données demandés avant ce stade sont lus intégralement.
+Ignore les groupes de lignes et les pages Parquet de toute lecture depuis le stockage d’objet (`s3`, `azureBlobStorage`, `hdfs` et leurs moteurs de table, `Iceberg`, `DeltaLake`, `Hudi`), ainsi que les fichiers de données entiers d’une table Iceberg, qui ne peuvent contenir aucune clé d’un filtre d’exécution de JOIN (voir [enable&#95;join&#95;runtime&#95;filters](/fr/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). Une fois le côté build de la jointure terminé, les clés du filtre (ou leur plage min/max, si le set est trop volumineux) sont comparées aux limites des colonnes figurant dans les manifestes Iceberg, aux statistiques des groupes de lignes et à l’index des pages. Les fichiers demandés avant ce stade sont lus intégralement. Les groupes de lignes et les pages ne sont élagués qu’au moyen d’une clé que le fichier stocke sous le nom propre de la colonne, et donc pas au moyen d’une colonne de partitionnement Hive, d’une colonne virtuelle, d’une colonne Delta Lake stockée sous un autre nom ou d’une colonne dotée d’une expression par défaut.
 
-Nécessite [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/fr/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) et [use&#95;iceberg&#95;partition&#95;pruning](/fr/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). Pour les groupes de lignes, [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/fr/reference/settings/formats/input-format#input_format_parquet_filter_push_down) est également requis ; pour les pages, ce paramètre ainsi que [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/fr/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down) sont requis.
+Nécessite [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/fr/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis). Pour ignorer les fichiers de données Iceberg, [use&#95;iceberg&#95;partition&#95;pruning](/fr/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning) est également requis. Pour les groupes de lignes, [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/fr/reference/settings/formats/input-format#input_format_parquet_filter_push_down) est également requis ; pour les pages, ce paramètre ainsi que [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/fr/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down) sont requis.
 
 ## use_legacy_to_time {#use_legacy_to_time}
 
@@ -259,7 +259,9 @@ Expérimental. Achemine les lectures via le nouveau pipeline `ReaderExecutor` au
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
-Utiliser un bitmap roaring pour les suppressions positionnelles d’Iceberg.
+Détermine la manière dont les fichiers de suppression par position des tables Iceberg sont appliqués. S’il est activé, les positions des lignes supprimées d’un fichier de données sont chargées dans un bitmap roaring, qui sert ensuite à filtrer les lignes. S’il est désactivé, les fichiers de suppression sont lus en flux, parallèlement au fichier de données, sans charger au préalable toutes les positions supprimées en mémoire.
+
+Les vecteurs de suppression sont toujours appliqués sous forme de bitmaps, quelle que soit la valeur de ce paramètre.
 
 ## use_streaming_marks_compression {#use_streaming_marks_compression}
 

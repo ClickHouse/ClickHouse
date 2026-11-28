@@ -123,23 +123,21 @@ Les logs non structurés, bien qu’ils présentent eux aussi généralement une
 
 Nous recommandons aux utilisateurs d’adopter une journalisation structurée et, dans la mesure du possible, d’émettre les logs au format JSON (c.-à-d. ndjson). Cela simplifiera le traitement des logs par la suite, soit avant leur envoi vers ClickHouse avec les [processors du collector](https://opentelemetry.io/docs/collector/configuration/#processors), soit au moment de l’insert à l’aide de vues matérialisées. À terme, les logs structurés permettent d’économiser des ressources de traitement et de réduire le CPU nécessaire à votre solution ClickHouse.
 
-<div id="example">
-  ### Exemple {#example}
-</div>
+### Exemple {#example}
 
-À titre d’exemple, nous fournissons un jeu de données de logs structuré (JSON) et un jeu de données de logs non structuré, contenant chacun environ 10 M de lignes, disponibles aux liens suivants :
+À titre d’exemple, nous fournissons un jeu de données de logs structuré (JSON) et un jeu de données de logs non structuré, contenant chacun environ 10 M de lignes, disponibles aux liens suivants :
 
 * [Non structuré](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-unstructured.log.gz)
 * [Structuré](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz)
 
 Nous utilisons le jeu de données structuré pour l’exemple ci-dessous. Assurez-vous d’avoir téléchargé et extrait ce fichier pour reproduire les exemples suivants.
 
-Ce qui suit présente une configuration simple pour l’OTel Collector, qui lit ces fichiers sur le disque à l’aide du receiver filelog et écrit les messages obtenus dans stdout. Nous utilisons l’opérateur [`json_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/json_parser.md), puisque nos logs sont structurés. Modifiez le chemin vers le fichier access-structured.log.
+Ce qui suit présente une configuration simple pour le collecteur OTel, qui lit ces fichiers sur le disque à l’aide du récepteur filelog et écrit les messages obtenus dans stdout. Nous utilisons l’opérateur [`json_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/json_parser.md), puisque nos logs sont structurés. Modifiez le chemin vers le fichier access-structured.log.
 
 <Info>
-  **Envisagez ClickHouse pour le parsing**
+  **Envisagez ClickHouse pour l’analyse**
 
-  L’exemple ci-dessous extrait le timestamp du log. Cela nécessite l’utilisation de l’opérateur `json_parser`, qui convertit toute la ligne de log en chaîne JSON et place le résultat dans `LogAttributes`. Cette opération peut être coûteuse en calcul et [peut être effectuée plus efficacement dans ClickHouse](https://clickhouse.com/blog/worlds-fastest-json-querying-tool-clickhouse-local) - [Extraction de la structure avec SQL](/fr/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql). Un exemple non structuré équivalent, qui utilise le [`regex_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/regex_parser.md) pour obtenir le même résultat, est disponible [ici](https://pastila.nl/?01da7ee2/2ffd3ba8124a7d6e4ddf39422ad5b863#swBkiAXvGP7mRPgbuzzHFA==).
+  L’exemple ci-dessous extrait le timestamp du log. Cela nécessite l’utilisation de l’opérateur `json_parser`, qui convertit toute la ligne de log en chaîne JSON et place le résultat dans `LogAttributes`. Cette opération peut être coûteuse en calcul et [peut être effectuée plus efficacement dans ClickHouse](https://clickhouse.com/blog/worlds-fastest-json-querying-tool-clickhouse-local) - [Extraction de structure avec SQL](/fr/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql). Un exemple non structuré équivalent, qui utilise le [`regex_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/regex_parser.md) pour obtenir le même résultat, est disponible [ici](https://pastila.nl/?01da7ee2/2ffd3ba8124a7d6e4ddf39422ad5b863#swBkiAXvGP7mRPgbuzzHFA==).
 </Info>
 
 **[config-structured-logs.yaml](https://www.otelbin.io/#config=receivers%3A*N_filelog%3A*N___include%3A*N_____-_%2Fopt%2Fdata%2Flogs%2Faccess-structured.log*N___start*_at%3A_beginning*N___operators%3A*N_____-_type%3A_json*_parser*N_______timestamp%3A*N_________parse*_from%3A_attributes.time*_local*N_________layout%3A_*%22*.Y-*.m-*.d_*.H%3A*.M%3A*.S*%22*N*N*Nprocessors%3A*N__batch%3A*N____timeout%3A_5s*N____send*_batch*_size%3A_1*N*N*Nexporters%3A*N_logging%3A*N___loglevel%3A_debug*N*N*Nservice%3A*N_pipelines%3A*N___logs%3A*N_____receivers%3A_%5Bfilelog%5D*N_____processors%3A_%5Bbatch%5D*N_____exporters%3A_%5Blogging%5D%7E)**
@@ -170,15 +168,15 @@ service:
       exporters: [logging]
 ```
 
-Vous pouvez suivre les [instructions officielles](https://opentelemetry.io/docs/collector/installation/) pour installer le collector localement. Veillez toutefois à adapter ces instructions afin d’utiliser la [distribution contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib) (qui contient le receiver `filelog`) ; par exemple, au lieu de `otelcol_0.102.1_darwin_arm64.tar.gz`, les utilisateurs devront télécharger `otelcol-contrib_0.102.1_darwin_arm64.tar.gz`. Les releases sont disponibles [ici](https://github.com/open-telemetry/opentelemetry-collector-releases/releases).
+Vous pouvez suivre les [instructions officielles](https://opentelemetry.io/docs/collector/installation/) pour installer le collecteur localement. Veillez toutefois à adapter ces instructions afin d’utiliser la [distribution contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib) (qui contient le récepteur `filelog`) ; par exemple, au lieu de `otelcol_0.102.1_darwin_arm64.tar.gz`, les utilisateurs devront télécharger `otelcol-contrib_0.102.1_darwin_arm64.tar.gz`. Les releases sont disponibles [ici](https://github.com/open-telemetry/opentelemetry-collector-releases/releases).
 
-Une fois installé, l’OTel Collector peut être exécuté à l’aide des commandes suivantes :
+Une fois installé, le collecteur OTel peut être exécuté à l’aide des commandes suivantes :
 
 ```bash
-./otelcol-contrib --config config-logs.yaml
+./otelcol-contrib --config config-structured-logs.yaml
 ```
 
-En utilisant des logs structurés, les messages prendront la forme suivante en sortie :
+En utilisant des logs structurés, les messages prendront la forme suivante en sortie :
 
 ```response
 LogRecord #98

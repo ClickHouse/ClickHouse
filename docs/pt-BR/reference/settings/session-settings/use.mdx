@@ -172,9 +172,9 @@ predicado determinístico para o lado de destino.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nova configuração para eliminar arquivos de dados Iceberg, grupos de linhas e páginas Parquet por meio de filtros de JOIN em tempo de execução."}]}]} />
 
-Ignora arquivos de dados Iceberg, bem como os grupos de linhas e as páginas Parquet dos arquivos lidos, que não podem conter nenhuma chave de um filtro de JOIN em tempo de execução (consulte [enable&#95;join&#95;runtime&#95;filters](/pt-BR/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). Assim que o lado de construção da junção é concluído, as chaves do filtro (ou seu intervalo mín./máx., se o conjunto for grande demais) são comparadas com os limites das colunas nos arquivos de manifesto, com as estatísticas dos grupos de linhas e com o índice de páginas. Arquivos de dados solicitados antes disso são lidos integralmente.
+Ignora os grupos de linhas e as páginas Parquet de qualquer leitura do armazenamento de objetos (`s3`, `azureBlobStorage`, `hdfs` e seus motores de tabela, `Iceberg`, `DeltaLake`, `Hudi`), bem como arquivos de dados inteiros de uma tabela Iceberg, que não podem conter nenhuma chave de um filtro de JOIN em tempo de execução (consulte [enable&#95;join&#95;runtime&#95;filters](/pt-BR/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). Assim que o lado de construção da junção é concluído, as chaves do filtro (ou seu intervalo mín./máx., se o conjunto for grande demais) são comparadas com os limites das colunas nos arquivos de manifesto do Iceberg, com as estatísticas dos grupos de linhas e com o índice de páginas. Arquivos solicitados antes disso são lidos integralmente. Grupos de linhas e páginas só são eliminados por uma chave que o arquivo armazena sob o próprio nome da coluna; portanto, isso não ocorre com uma coluna de partição Hive, uma coluna virtual, uma coluna Delta Lake armazenada sob outro nome ou uma coluna com uma expressão padrão.
 
-Requer [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/pt-BR/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) e [use&#95;iceberg&#95;partition&#95;pruning](/pt-BR/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). Para grupos de linhas, também é necessário [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/pt-BR/reference/settings/formats/input-format#input_format_parquet_filter_push_down); para páginas, são necessárias essa configuração e [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/pt-BR/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
+Requer [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/pt-BR/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis). Ignorar arquivos de dados Iceberg também requer [use&#95;iceberg&#95;partition&#95;pruning](/pt-BR/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). Para grupos de linhas, também é necessário [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/pt-BR/reference/settings/formats/input-format#input_format_parquet_filter_push_down); para páginas, são necessárias essa configuração e [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/pt-BR/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
 
 ## use_legacy_to_time {#use_legacy_to_time}
 
@@ -259,7 +259,9 @@ Experimental. Direciona leituras pelo novo pipeline `ReaderExecutor` em vez da m
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
-Usa bitmap roaring para exclusões posicionais do Iceberg.
+Define como os arquivos de exclusão por posição das tabelas Iceberg são aplicados. Se habilitada, as posições das linhas excluídas de um arquivo de dados são carregadas em um bitmap roaring, que é então usado para filtrar as linhas. Se desabilitada, os arquivos de exclusão são lidos em modo streaming junto com o arquivo de dados, sem carregar previamente todas as posições excluídas na memória.
+
+Os vetores de exclusão são sempre aplicados como bitmaps, independentemente desta configuração.
 
 ## use_streaming_marks_compression {#use_streaming_marks_compression}
 

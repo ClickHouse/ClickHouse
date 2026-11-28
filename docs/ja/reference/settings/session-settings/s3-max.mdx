@@ -35,9 +35,11 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "10000"},{"label": "S3 のアップロードパートの最大パート番号"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "10000"},{"label": "S3 のアップロードパーツの最大パーツ番号"}]}]} />
 
-S3 のアップロードパーツの最大パーツ番号。
+S3 へのマルチパートアップロードまたはマルチパートコピーにおけるパーツ数の上限です。デフォルト値は AWS S3 の制限と一致しています。
+
+コピー時には、パーツ数がこの値を超えないようにパーツサイズが引き上げられます。書き込み時には、必要なパーツ数がこの値を超える場合に例外がスローされます。その場合は `s3_max_upload_part_size` または `s3_upload_part_size_multiply_factor` の値を増やしてください。サポートするパーツ数がより少ない S3 互換ストレージを使用する場合は、この値を小さくしてください。
 
 ## s3_max_put_burst {#s3_max_put_burst}
 

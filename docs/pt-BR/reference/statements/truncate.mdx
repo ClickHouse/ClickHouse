@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 A instrução `TRUNCATE` no ClickHouse é usada para remover rapidamente todos os dados de uma tabela ou banco de dados, preservando sua estrutura.
 
-## TRUNCATE TABLE
+## TRUNCATE TABLE {#truncate-table}
 
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
@@ -33,6 +33,11 @@ Você pode especificar por quanto tempo (em segundos) aguardar que réplicas ina
   Se `alter_sync` estiver definido como `2` e algumas réplicas permanecerem inativas por mais tempo do que o especificado na configuração `replication_wait_for_inactive_replica_timeout`, será lançada uma exceção `UNFINISHED`. Com `alter_sync = 3`, não se aguarda pelas réplicas inativas, portanto nenhuma exceção é lançada.
 </Note>
 
+<Note>
+  Para tabelas `MergeTree` non-replicated, as partes removidas permanecem no disco como partes inativas por `old_parts_lifetime` segundos. Use `SETTINGS truncate_removes_parts_immediately = 1` para removê-las imediatamente.
+  Para tabelas `ReplicatedMergeTree`, as partes removidas são excluídas imediatamente, porque `TRUNCATE` é executado em cada réplica como uma entrada de log `DROP_RANGE`, assim como `DROP PARTITION`.
+</Note>
+
 A consulta `TRUNCATE TABLE` **não tem suporte** para os seguintes motores de tabela:
 
 * [`View`](/pt-BR/reference/engines/table-engines/special/view)
@@ -41,7 +46,7 @@ A consulta `TRUNCATE TABLE` **não tem suporte** para os seguintes motores de ta
 * [`Buffer`](/pt-BR/reference/engines/table-engines/special/buffer)
 * [`Null`](/pt-BR/reference/engines/table-engines/special/null)
 
-## TRUNCATE DE TODAS AS TABELAS
+## TRUNCATE DE TODAS AS TABELAS {#truncate-all-tables}
 
 ```sql
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
@@ -59,7 +64,7 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 
 Remove todos os dados de todas as tabelas de um banco de dados.
 
-## TRUNCATE DATABASE
+## TRUNCATE DATABASE {#truncate-database}
 
 ```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]

@@ -147,7 +147,7 @@ Puede hacerlo con el segundo servicio y con cualquier servicio adicional que cre
 
 <Note>
   1. Actualmente, los servicios de solo lectura admiten operaciones de gestión de usuarios (CREATE, DROP, etc.).
-  2. Las [vistas materializadas actualizables](/es/concepts/features/materialized-views/refreshable-materialized-view) se ejecutan **solo** en servicios de lectura y escritura (RW) de un warehouse.
+  2. Las [vistas materializadas actualizables](/es/concepts/features/materialized-views/refreshable-materialized-view) con actualizaciones coordinadas (el comportamiento predeterminado) se ejecutan **solo** en servicios de lectura y escritura (RW) de un warehouse. Las vistas creadas con `APPEND` y `SETTINGS all_replicas = 1` no son coordinadas. Todos los servicios, incluidos los de solo lectura, intentan ejecutar cada actualización, y en un servicio de solo lectura cada intento falla con `QUERY_IS_PROHIBITED` (código 392), salvo que la vista escriba en almacenamiento externo.
   3. El tipo de un servicio (solo lectura o lectura y escritura) queda fijado en el momento de su creación y no puede cambiarse posteriormente desde la Cloud Console. Para alternar entre acceso de solo lectura y de lectura y escritura, cree un nuevo servicio en el warehouse con el tipo deseado.
 </Note>
 

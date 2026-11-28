@@ -1,0 +1,111 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-10-08
+title: 'デモデイズ - 2026-10-08'
+sidebarTitle: '2026-10-08'
+description: 'ClickStack デモデー（2026-10-08）'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-10-08"
+---
+
+## ヒートマップの系列モード、PromQL ヒートマップ、明示的な粒度指定 {#heatmap-series-mode-promql-heatmaps-and-explicit-granularity}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまでヒートマップで表示できるのは数値の分布のみでした。y 軸にはスパンの所要時間などをバケット化した値が並び、色は各バケット内のイベント数を表していました。今回新たに系列モードを追加しました。このモードでは、y 軸に group-by の値が表示され、色は時間バケットごとに選択した集約の結果を表します。複数系列の折れ線グラフとほぼ同じ仕組みで、値を高さではなく色で表現します。ビルダーと生成されるクエリも、時系列チャートと同じ方式です。
+
+デモでは、過去 1 日間のデータをサービス名でグループ化しています。エラー数のヒートマップでは、デモ環境に仕込まれたインシデントが、明らかに値の高い 2 つのセルとしてひと目でわかります。一方、エラー以外の集約を使った同じチャートを並べてみると、平坦に見えます。group-by が 50 を超える系列を返す場合は警告を表示し、上位 50 件をプロットします。この制限には、時系列チャートと同じクライアント側のロジックを使用しています。系列モードは外部ダッシュボード API と MCP からも利用できます。
+
+PromQL ソースでは、3 種類のヒートマップモードを利用できます。系列モードは上記と同様に動作し、マクロ、変数、凡例テンプレートに対応したレンジクエリを使用します。デモでは、エンドポイントごとの p95 レイテンシの表示に使用しています。
+
+ヒストグラムモードでは、Prometheus 側ですでにバケット化されたメトリクスを使用します。バケットの上限と下限は `le` ラベルから取得され、累積値は個々のバケットごとの値に変換されます。バケットの上限と下限が同じ系列をまとめるには、`sum by (le) (...)` を使用してください。
+
+分布モードは、ヒストグラム形式ではないデータで数値の分布を確認したい場合に使用します。各タイムスタンプで、返されたサンプルがクライアント側でバケット化されます。バケットは、チャートの設定で線形または対数間隔から選択できます。色は各バケット内のサンプル数を表します。デモでは、`sum by (system_cpu_logical_number) (system_cpu_utilization{system_cpu_state!="idle"})` を使って、14 個の CPU コアの使用率の推移を表示しています。ヒストグラムモードと分布モードのプルリクエストはまだオープン状態です。
+
+粒度の選択についても修正しました。これまでヒートマップは明示的な選択を無視し、常に auto (245 個の時間バケットを目安とする) を使用していました。現在は選択内容が反映されるため、ダッシュボード上の他のチャートと粒度を揃えられます。また、auto でもメトリクスソースの最小粒度が考慮されるようになりました。
+
+カウントと値の式の入力欄は、表示設定からチャートエディタへ移動しました。これはダッシュボードとチャートエクスプローラーの両方に適用されます。さらに、ヒートマップで数値フォーマットも使用できるようになりました。
+
+最後に、ホバー時のハイライトが右下にずれず、セルの中央に表示されるようになりました。セルの中心がカーソルのマージン内にあることを条件とするのではなく、境界がカーソルのマージン内に入っている最も近いセルが選択されます。また、カーソルをチャート上に置いたままデータが更新された場合も、ホバーステートが更新されるようになりました。
+
+**関連 プルリクエスト:** [#3273](https://github.com/hyperdxio/hyperdx/pull/3273) ヒートマップのホバーステートの位置合わせと信頼性を改善、[#3277](https://github.com/hyperdxio/hyperdx/pull/3277) ヒートマップの入力欄をエディタフォームへ移動、[#3291](https://github.com/hyperdxio/hyperdx/pull/3291) ビルダーのヒートマップで系列モードをサポート、[#3298](https://github.com/hyperdxio/hyperdx/pull/3298) API と MCP で系列モードのヒートマップをサポート、[#3305](https://github.com/hyperdxio/hyperdx/pull/3305) ヒートマップで明示的な粒度指定を反映、[#3313](https://github.com/hyperdxio/hyperdx/pull/3313) PromQL ヒートマップ (系列モード) をサポート、[#3326](https://github.com/hyperdxio/hyperdx/pull/3326) PromQL の値から算出する分布ヒートマップを追加 (オープン) 、[#3332](https://github.com/hyperdxio/hyperdx/pull/3332) Prometheus ヒストグラムでのヒートマップをサポート (オープン)
+
+## 単一選択のダッシュボード変数 {#single-select-dashboard-variables}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=208" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまで、ダッシュボード変数はすべて複数選択でした。今回から変数を単一選択に設定できるようになり、別の値を選ぶと現在の値が置き換えられます。URL に単一選択変数の値が複数含まれている場合は、最初の値が使用されます。
+
+この機能は PromQL で特に役立ちます。複数選択の変数は正規表現の選択 (alternation) に展開されるため、`=~` では機能しても `=` では機能しません。そのため、これまでは等値比較のマッチャーで変数を使う適切な方法がありませんでした。
+
+あわせて `promql` 変数フォーマットも追加しました。フォーマットが指定されていない場合、PromQL の式内の変数参照には `regex` に代わってこのフォーマットがデフォルトで適用されます。動作は `regex` と同じですが、単一選択の値は正規表現用にエスケープされません。そのため、単一選択変数では `field="$var"` と記述できます。複数選択の値は引き続き正規表現用にエスケープされるため、`field=~"$var"` を使用してください。
+
+**関連するプルリクエスト:** [#3295](https://github.com/hyperdxio/hyperdx/pull/3295) 単一選択のダッシュボードフィルタをサポート、[#3297](https://github.com/hyperdxio/hyperdx/pull/3297) 柔軟なエスケープ処理のための promql 変数フォーマットを追加
+
+## 積み上げ折れ線グラフ {#stacked-line-charts}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=271" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+時系列チャートの種類として、`stacked_bar` に加えて `stacked_line` を追加しました。Chart Explorer またはダッシュボード上で、折れ線グラフを積み上げ折れ線に切り替えられます。各系列が積み重ねて表示され、それぞれの下の領域が塗りつぶされるため、合計値と各系列の内訳を同時に把握できます。
+
+CLI では、これらは積み上げ棒グラフとしてレンダリングされます。どちらの表示も示す内容はほぼ同じで、端末上では積み上げや塗りつぶしは棒グラフのほうが読み取りやすいためです。
+
+**関連プルリクエスト:** [#3290](https://github.com/hyperdxio/hyperdx/pull/3290) Support 積み上げ折れ線グラフ
+
+## ClickHouse クエリを発行元のサーフェスに紐付ける {#attributing-clickhouse-queries-to-the-surface-that-issued-them}
+
+*デモ担当者: [@tommyzli](https://github.com/tommyzli)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=526" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ClickStack が ClickHouse に送信するすべての SQLクエリに、JSON 形式の `log_comment` と、`hdx-<surface>-<uuid>` という形式の `query_id` が付与されるようになりました。これにより、`system.query_log` の行から、そのクエリを発行したダッシュボードタイル、保存済み検索、アラート、または MCP ツールまでたどれます。さらに後続の変更で、これまでタグなしで送信されていた PromQL クエリにも同様のタグ付けが追加されました。
+
+デモでは、検索画面からクエリログを照会すると、`EXPLAIN` クエリやヒストグラムの棒グラフのクエリも含め、すべてのクエリに検索から発行されたことを示すラベルが付いていました。組み込みの ClickHouse ダッシュボードを開くと、そのクエリにはあらかじめ用意されたダッシュボードであることを示す `clickhouse` ラベルが付与されていました。ユーザーが作成したダッシュボードの場合は、各クエリにダッシュボード ID と、発行元のチャートのタイル ID が含まれていました。
+
+ClickStack が ClickHouse クラスターを他のワークロードと共有している場合、この機能により ClickStack のクエリを識別し、アプリのどの部分から発行されたかを把握し、サーフェスごとのクエリコストを追跡しやすくなります。社内では、使用状況を分析する際に、クエリログとダッシュボードの構成を紐付けるためにこの仕組みを活用できます。また、スロークエリを生成元のタイルと照合できるようになったため、クエリの自動最適化に向けた一歩にもなります。
+
+**関連 プルリクエスト:** [#3155](https://github.com/hyperdxio/hyperdx/pull/3155) ClickHouse クエリを発行元のサーフェスに紐付ける、[#3300](https://github.com/hyperdxio/hyperdx/pull/3300) PromQL クエリの発行元の紐付け
+
+## オブジェクトの名前付けに使うインライン名前入力 {#inline-name-inputs-for-naming-objects}
+
+*デモ担当者: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=296" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまで、名前の付け方はアプリ内の場所によって異なっていました。ダッシュボードと保存済み検索では、タイトルをクリックして編集する方式で、ホバー時に表示される鉛筆アイコンをクリックするかダブルクリックで編集し、その後 **Save Name** ボタンを押していました。その他の場所では枠線付きのテキストフィールドが使われていました。文書化されたパターンがなかったため、新しい画面ではそれぞれ独自の方式が追加されがちでした。現在は、オブジェクトに名前を付ける標準の方法として、共通の `InlineNameInput` コンポーネントを用意しています。
+
+このコンポーネントは通常はタイトルのように見え、ホバーすると薄い枠線が表示されます。クリックするとその場で編集できます。`Enter` を押すか、ほかの場所をクリックすると保存され、`Escape` を押すか名前を空にすると元に戻ります。鉛筆アイコンや個別の保存ボタンはありません。保存後は保存された値が表示されます。リネームに失敗した場合や、同時実行されたダッシュボードの保存によって上書きされた場合も、表示される名前は元に戻るため、未保存の名前が画面に残ることはありません。
+
+長い名前は切り詰めて表示されます。コンポーネントのサイズは `xs`、`sm`、`md` の 3 種類です。ページタイトルには `md` (18px) を使用しており、以前の約 22px より小さくなっています。スクリーンリーダーが認識できるよう、引き続き見出し要素内でレンダリングされます。
+
+ダッシュボードと保存済み検索のページではこのコンポーネントを使用するようになり、従来の `EditablePageName` コンポーネントは削除されました。また、周囲のフォームと一緒に保存される `InlineNameInputControlled` バリアントもあります。これはフルページのタイルエディタでの下書き用を想定したものですが、アプリではまだ使用されていません。チャートエディタについては、インライン版を組み込むにはレイアウトの調整が必要なため、当面は既存の **Chart Name** フィールドをそのまま使用します。
+
+このパターンは、`agent_docs/naming_objects.md`、`naming-objects` エージェントスキル、および Storybook の Guidelines と Components にドキュメント化されています。リポジトリで作業するコーディングエージェントが、名前を付ける箇所を新たに追加する際に、このコンポーネントを簡単に見つけて再利用できるようにすることが狙いです。
+
+**関連 プルリクエスト:** [#3278](https://github.com/hyperdxio/hyperdx/pull/3278) オブジェクトに名前を付ける唯一の方法として InlineNameInput を追加
+
+## 保存済み検索を検索の下にネストする {#nesting-saved-searches-under-search}
+
+*デモ担当者: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=389" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**これは探索的な取り組みであり、リリースを確約するものではありません。**
+
+現在、保存済み検索には検索とは別に、専用の一覧ページとサイドバー項目があります。検索を保存する場所と、それを探して管理する場所が分かれているのです。一覧から検索を複製したい場合も、まずその検索を開いてから複製する必要がありました。ダッシュボードであれば独立した一覧は理にかなっていますが、保存済み検索ではやや不自然です。
+
+このドラフトでは、保存済み検索を検索に統合します。トップレベルの **保存済み検索** サイドバー項目は廃止され、お気に入りに登録した検索は、ダッシュボードと同様に検索の下に表示されます。ツールバーの **保存済み検索** ボタンを押すと右側にドロワーが開き、検索、**All** と **Favorites** のタブ、タグによるフィルタリング、各行でのリネーム・複製・削除のアクションを利用できます。アプリのナビゲーションを覆わないよう、ドロワーは右側に開きます。既存の `/search/list` へのリンクからもドロワーが開きます。
+
+保存済み検索を選択すると、ボタンにその名前が表示されます。その横のバッジには **Unsaved**、**Saved**、**Edited** のいずれかが表示され、変更したクエリを実行すると **Edited** になります。比較には URL 内の検索設定が使われ、空の値と欠損値は同等として扱われるため、保存済み検索を読み込んだだけで編集済みと判定されることはありません。
+
+保存済み検索専用のヘッダーは、パンくずリスト、タイトル、作成日時/更新日時の行も含めて削除されます。お気に入り、タグ、Terraform、アクションメニューはツールバーに移動し、作成日時/更新日時の詳細はボタンのツールチップとして表示されます。これにより、保存済み検索と未保存の検索でレイアウトが統一されます。ヘッダーの削除に伴い、タイトルのダブルクリックによるリネームはできなくなりますが、ドロワーの行メニューまたは **Update** モーダルから引き続きリネームできます。更新にそもそもモーダルが必要かどうかは、まだ検討中です。理想としては、リネームを併せて提示せず、更新を単一のアクションで完結させたいと考えています。
+
+これはまだドラフトの段階であり、動作についてのフィードバックをお待ちしています。ドロワーのテストスイートでは 4 件のエンドツーエンドテストがまだ失敗しており、ドラフトから移行する前に修正が必要です。
+
+**関連 プルリクエスト:** [#3213](https://github.com/hyperdxio/hyperdx/pull/3213) 保存済み検索をドロワー内で検索の下にネスト(オープン)。(ドラフト)。これはリリース済みの機能ではなく、探索的な取り組みです。

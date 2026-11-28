@@ -21,7 +21,7 @@ doc_type: 'reference'
 <Warning>
   **Внедрение промпта**
 
-  Входной текст отправляется модели и может влиять на её вывод (внедрение промпта). Текст из внешних, непроверенных или неочищенных источников может содержать инструкции, из-за которых модель вернёт содержимое, контролируемое злоумышленником, проигнорирует требуемый формат или создаст вредоносную полезную нагрузку. Считайте вывод функции ИИ недоверенным: проверяйте или очищайте его перед использованием на последующих этапах, таких как построение SQL, команд оболочки, дальнейших запросов или принятие решений по контролю доступа.
+  Входной текст отправляется модели и может влиять на её вывод (внедрение промпта). Текст из внешних, непроверенных или неочищенных источников может содержать инструкции, из-за которых модель вернёт содержимое, контролируемое злоумышленником, проигнорирует требуемый формат или создаст вредоносную полезную нагрузку. Считайте вывод функции ИИ недоверенным: проверяйте или очищайте его перед использованием на последующих этапах, таких как построение SQL, команд оболочки, дальнейших запросов или принятие решений по управлению доступом.
 </Warning>
 
 Все функции используют общую инфраструктуру, которая обеспечивает:
@@ -29,6 +29,7 @@ doc_type: 'reference'
 * **Контроль квот**: лимиты на количество токенов в рамках одного запроса ([`ai_function_max_input_tokens_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) и вызовов API ([`ai_function_max_api_calls_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **Повторные попытки с задержкой**: при временных сбоях выполняются повторные попытки ([`ai_function_max_retries`](/ru/reference/settings/session-settings/ai-function#ai_function_max_retries)) с экспоненциально растущей задержкой ([`ai_function_retry_initial_delay_ms`](/ru/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 * **Параллельные запросы**: запросы отправляются по несколько одновременно из общего пула потоков сервера (управляется настройкой [`ai_function_max_concurrent_requests_per_thread`](/ru/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
+* **Удаление пробельных символов**: `aiClassify`, `aiExtract` и `aiFilter` запрашивают структурированный вывод и удаляют начальные и концевые пробельные символы из ответа модели, поэтому ответ вида `\n\nbug` превращается в `bug`.
 
 ## Конфигурация {#configuration}
 

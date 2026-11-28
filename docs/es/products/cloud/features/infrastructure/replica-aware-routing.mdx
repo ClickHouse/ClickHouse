@@ -13,7 +13,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePl
 
 <EnterprisePlanFeatureBadge feature="Enrutamiento con reconocimiento de réplicas" />
 
-El enrutamiento con reconocimiento de réplicas (también conocido como sesiones persistentes, enrutamiento con afinidad o afinidad de sesión) dirige las solicitudes relacionadas a la misma réplica de ClickHouse. Úselo cuando necesite que las [tablas temporales](/es/reference/statements/create/table/temporary-table) o el [estado de sesión con nombre](/es/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) sigan estando disponibles entre consultas, cuando quiera que las consultas relacionadas reutilicen las cachés locales de la misma réplica o cuando necesite [consistencia de lectura después de la escritura](#read-after-write-consistency) entre una escritura y las lecturas posteriores.
+El enrutamiento con reconocimiento de réplicas (también conocido como sesiones persistentes, enrutamiento con afinidad o afinidad de sesión) dirige las solicitudes relacionadas a la misma réplica de ClickHouse. Úselo cuando necesite que las [tablas temporales](/es/reference/statements/create/table/temporary-table) o el [estado de sesión con nombre](/es/concepts/features/connect-to-clickhouse/protocols/http#using-clickhouse-sessions-in-the-http-protocol) sigan estando disponibles entre consultas, cuando quiera que las consultas relacionadas reutilicen las cachés locales de la misma réplica o cuando necesite [consistencia de lectura después de la escritura](#read-after-write-consistency) entre una escritura y las lecturas posteriores.
 
 Funciona según el mejor esfuerzo y no garantiza el aislamiento. El proxy asigna cada routing value a una réplica. La asignación se mantiene estable mientras no cambie el número de réplicas; al escalar el servicio, el valor puede asignarse a una réplica diferente.
 
@@ -42,9 +42,9 @@ Los toggles se están desplegando progresivamente en los planes del tier Enterpr
 
 ## Enrutamiento basado en HTTP {#http-based-routing}
 
-Para asignar una carga de trabajo a una réplica concreta, envíe un encabezado `X-ClickHouse-Replica-Tag` a través de la [interfaz HTTPS](/es/concepts/features/interfaces/http). El proxy aplica hash consistente al valor del encabezado, por lo que las solicitudes que lo comparten se dirigen a la misma réplica mientras el número de réplicas no cambie. Un valor distinto se procesa como hash de forma independiente y puede asignarse a la misma réplica o a otra, pero no puede elegir *a qué* réplica se asigna un valor.
+Para asignar un workload a una réplica concreta, envíe un encabezado `X-ClickHouse-Replica-Tag` a través de la [interfaz HTTPS](/es/concepts/features/connect-to-clickhouse/protocols/http). El proxy aplica hash consistente al valor del encabezado, por lo que las solicitudes que lo comparten se dirigen a la misma réplica mientras el número de réplicas no cambie. Un valor distinto se procesa como hash de forma independiente y puede asignarse a la misma réplica o a otra, pero no puede elegir *a qué* réplica se asigna un valor.
 
-Use el nombre del host de su servicio existente. No se requieren nombres del host sticky especiales ni cambios en DNS. El valor del encabezado puede ser cualquier cadena que elija, como un nombre de aplicación, un ID de usuario o una etiqueta de carga de trabajo. Las solicitudes sin el encabezado mantienen el balanceo de carga normal.
+Use el nombre del host de su servicio existente. No se requieren nombres del host sticky especiales ni cambios en DNS. El valor del encabezado puede ser cualquier cadena que elija, como un nombre de aplicación, un ID de usuario o una etiqueta de workload. Las solicitudes sin el encabezado mantienen el balanceo de carga normal.
 
 Establezca el encabezado `X-ClickHouse-Replica-Tag` en cada solicitud:
 
@@ -62,9 +62,9 @@ Para clickhouse-go (v2), configure `Protocol: clickhouse.HTTP` y pase el encabez
   `X-ClickHouse-Replica-Tag` proporciona afinidad con una réplica sin crear una sesión HTTP de ClickHouse. Las solicitudes concurrentes pueden reutilizar la misma etiqueta sin encontrarse con `SESSION_IS_LOCKED`.
 </Info>
 
-## Routing mediante protocolo nativo {#native-protocol-routing}
+## Enrutamiento mediante el protocolo nativo {#native-protocol-routing}
 
-A través del [protocolo nativo](/es/interfaces/tcp), pase el routing value como nombre de servidor TLS con el formato `<routing-value>.sticky.<host>`. Conéctese al nombre del host habitual de su service como de costumbre. [ClickHouse Client](/es/interfaces/client) toma el routing value a través de `--tls-sni-override`:
+A través del [protocolo nativo](/es/concepts/features/connect-to-clickhouse/protocols/native-tcp), pase el routing value como nombre de servidor TLS con el formato `<routing-value>.sticky.<host>`. Conéctese al nombre del host habitual de su servicio como de costumbre. [ClickHouse Client](/es/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client) toma el routing value a través de `--tls-sni-override`:
 
 ```bash
 clickhouse client \
@@ -74,11 +74,11 @@ clickhouse client \
   --query 'SELECT hostName()'
 ```
 
-`--host` es el nombre del host habitual de su service, `--secure` activa TLS y `--tls-sni-override` transporta el routing value. TLS es obligatorio. No se necesita ningún certificate adicional ni entry de DNS.
+`--host` es el nombre del host habitual de su servicio, `--secure` activa TLS y `--tls-sni-override` transporta el routing value. TLS es obligatorio. No se necesita ningún certificado adicional ni registro DNS.
 
 ## Consistencia de lectura después de la escritura {#read-after-write-consistency}
 
-En un service con múltiples réplicas, una escritura realizada en una réplica puede no ser visible en las demás hasta que la replicación se ponga al día. Envíe la escritura con un routing value y reutilice ese mismo valor en las lecturas posteriores. El proxy dirige ambas operaciones a la misma réplica, de modo que lee su propia escritura incluso mientras las demás réplicas siguen rezagadas. Este patrón funciona para workloads que escriben y leen de inmediato los mismos datos, como aplicaciones interactivas o jobs de ETL que validan los inserts antes de continuar.
+En un servicio con múltiples réplicas, una escritura realizada en una réplica puede no ser visible en las demás hasta que la replicación se ponga al día. Envíe la escritura con un routing value y reutilice ese mismo valor en las lecturas posteriores. El proxy dirige ambas operaciones a la misma réplica, de modo que lee su propia escritura incluso mientras las demás réplicas siguen rezagadas. Este patrón funciona para workloads que escriben y leen de inmediato los mismos datos, como aplicaciones interactivas o jobs de ETL que validan los inserts antes de continuar.
 
 También resulta útil tras un cambio de schema que aún no se ha replicado, ya que reutilizar el routing value mantiene los inserts en una réplica que ya cuenta con el nuevo schema.
 
@@ -118,7 +118,7 @@ clickhouse client \
   --query 'SELECT count() FROM events'
 ```
 
-Para obtener garantías más amplias en todas las réplicas, también puede definir [`select_sequential_consistency`](/es/reference/settings/session-settings#select_sequential_consistency) con el valor `1` en ClickHouse Cloud.
+Para obtener garantías más amplias en todas las réplicas, también puede definir [`select_sequential_consistency`](/es/reference/settings/session-settings/other#select_sequential_consistency) con el valor `1` en ClickHouse Cloud.
 
 ## Compruebe qué réplica se ha utilizado {#check-which-replica}
 

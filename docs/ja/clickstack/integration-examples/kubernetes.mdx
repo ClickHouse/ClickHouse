@@ -39,217 +39,118 @@ kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_
 # e.g. kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
 ```
 
-### デーモンセット設定の作成 {#creating-the-daemonset-configuration}
+### デーモンセットの設定を作成する {#creating-the-daemonset-configuration}
 
-このデーモンセットは、クラスター内の各ノードからログとメトリクスを収集しますが、Kubernetes イベントやクラスター全体のメトリクスは収集しません。
+デーモンセットはクラスター内の各ノードからログとメトリクスを収集しますが、Kubernetes イベントやクラスター全体のメトリクスは収集しません。
 
-デーモンセットのマニフェストをダウンロードします:
+デーモンセットのマニフェストをダウンロードします。
 
 ```shell
 curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_daemonset.yaml
 ```
 
-<Tabs>
-  <Tab title="Managed ClickStack">
-    <Accordion title="k8s_daemonset.yaml">
-      ```yaml
-      # daemonset.yaml
-      mode: daemonset
+<Accordion title="k8s_daemonset.yaml">
+  ```yaml
+  # daemonset.yaml
+  mode: daemonset
 
-      # kubeletstats の CPU/メモリ使用率メトリクスを使用するために必要
-      clusterRole:
-        create: true
-        rules:
-          - apiGroups:
-              - ''
-            resources:
-              - nodes/proxy
-            verbs:
-              - get
+  # kubeletstats の CPU/メモリ使用率メトリクスを使用するために必要
+  clusterRole:
+    create: true
+    rules:
+      - apiGroups:
+          - ''
+        resources:
+          - nodes/proxy
+        verbs:
+          - get
 
-      presets:
-        logsCollection:
-          enabled: true
-        hostMetrics:
-          enabled: true
-        # Kubernetes Processor が Kubernetes メタデータを追加するように設定します。
-        # すべてのパイプラインに k8sattributes processor を追加し、ClusterRole に必要なルールも追加します。
-        # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
-        kubernetesAttributes:
-          enabled: true
-          # 有効にすると、processor は関連付けられたポッドのすべてのラベルを抽出し、resource 属性として追加します。
-          # ラベルの正確な名前がキーになります。
-          extractAllPodLabels: true
-          # 有効にすると、processor は関連付けられたポッドのすべての annotation を抽出し、resource 属性として追加します。
-          # annotation の正確な名前がキーになります。
-          extractAllPodAnnotations: true
-        # collector がキューブレット上の API サーバーからノード、ポッド、コンテナーのメトリクスを収集するように設定します。
-        # メトリクス パイプラインに kubeletstats receiver を追加し、ClusterRole に必要なルールも追加します。
-        # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
-        kubeletMetrics:
-          enabled: true
+  presets:
+    logsCollection:
+      enabled: true
+    hostMetrics:
+      enabled: true
+    # Kubernetes Processor が Kubernetes メタデータを追加するよう設定します。
+    # すべてのパイプラインに k8sattributes processor を追加し、クラスター ロールに必要なルールも追加します。
+    # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+    kubernetesAttributes:
+      enabled: true
+      # 有効にすると、processor は関連付けられたポッドのすべてのラベルを抽出し、resource attributes として追加します。
+      # ラベルの名前そのものがキーになります。
+      extractAllPodLabels: true
+      # 有効にすると、processor は関連付けられたポッドのすべての annotations を抽出し、resource attributes として追加します。
+      # annotation の名前そのものがキーになります。
+      extractAllPodAnnotations: true
+    # collector がキューブレット上の API サーバーからノード、ポッド、コンテナーのメトリクスを収集するよう設定します。
+    # メトリクス パイプラインに kubeletstats receiver を追加し、クラスター ロールに必要なルールも追加します。
+    # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+    kubeletMetrics:
+      enabled: true
 
-      extraEnvs:
-        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
-          valueFrom:
-            configMapKeyRef:
-              name: otel-config-vars
-              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+  extraEnvs:
+    - name: HYPERDX_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: hyperdx-secret
+          key: HYPERDX_API_KEY
+          optional: true
+    - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+      valueFrom:
+        configMapKeyRef:
+          name: otel-config-vars
+          key: YOUR_OTEL_COLLECTOR_ENDPOINT
 
-      config:
-        receivers:
-          # 追加の kubelet メトリクスを設定します
-          kubeletstats:
-            collection_interval: 20s
-            auth_type: 'serviceAccount'
-            endpoint: '${env:K8S_NODE_NAME}:10250'
-            insecure_skip_verify: true
-            metrics:
-              k8s.pod.cpu_limit_utilization:
-                enabled: true
-              k8s.pod.cpu_request_utilization:
-                enabled: true
-              k8s.pod.memory_limit_utilization:
-                enabled: true
-              k8s.pod.memory_request_utilization:
-                enabled: true
-              k8s.pod.uptime:
-                enabled: true
-              k8s.node.uptime:
-                enabled: true
-              k8s.container.cpu_limit_utilization:
-                enabled: true
-              k8s.container.cpu_request_utilization:
-                enabled: true
-              k8s.container.memory_limit_utilization:
-                enabled: true
-              k8s.container.memory_request_utilization:
-                enabled: true
-              container.uptime:
-                enabled: true
+  config:
+    receivers:
+      # 追加のキューブレット メトリクスを設定します
+      kubeletstats:
+        collection_interval: 20s
+        auth_type: 'serviceAccount'
+        endpoint: '${env:K8S_NODE_NAME}:10250'
+        insecure_skip_verify: true
+        metrics:
+          k8s.pod.cpu_limit_utilization:
+            enabled: true
+          k8s.pod.cpu_request_utilization:
+            enabled: true
+          k8s.pod.memory_limit_utilization:
+            enabled: true
+          k8s.pod.memory_request_utilization:
+            enabled: true
+          k8s.pod.uptime:
+            enabled: true
+          k8s.node.uptime:
+            enabled: true
+          k8s.container.cpu_limit_utilization:
+            enabled: true
+          k8s.container.cpu_request_utilization:
+            enabled: true
+          k8s.container.memory_limit_utilization:
+            enabled: true
+          k8s.container.memory_request_utilization:
+            enabled: true
+          container.uptime:
+            enabled: true
 
-        exporters:
-          otlphttp:
-            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
-            compression: gzip
+    exporters:
+      otlphttp:
+        endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+        headers:
+          authorization: "${env:HYPERDX_API_KEY}"
+        compression: gzip
 
-        service:
-          pipelines:
-            logs:
-              exporters:
-                - otlphttp
-            metrics:
-              exporters:
-                - otlphttp
-      ```
-    </Accordion>
-  </Tab>
+    service:
+      pipelines:
+        logs:
+          exporters:
+            - otlphttp
+        metrics:
+          exporters:
+            - otlphttp
+  ```
+</Accordion>
 
-  <Tab title="ClickStack Open Source">
-    <Accordion title="k8s_daemonset.yaml">
-      ```yaml
-      # daemonset.yaml
-      mode: daemonset
-
-      # kubeletstats の CPU/メモリ使用率メトリクスを使用するために必要
-      clusterRole:
-        create: true
-        rules:
-          - apiGroups:
-              - ''
-            resources:
-              - nodes/proxy
-            verbs:
-              - get
-
-      presets:
-        logsCollection:
-          enabled: true
-        hostMetrics:
-          enabled: true
-        # Kubernetes Processor が Kubernetes メタデータを追加するよう設定します。
-        # すべてのパイプラインに k8sattributes processor を追加し、クラスター ロールに必要なルールも追加します。
-        # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
-        kubernetesAttributes:
-          enabled: true
-          # 有効にすると、processor は関連付けられたポッドのすべてのラベルを抽出し、resource attributes として追加します。
-          # ラベルの名前そのものがキーになります。
-          extractAllPodLabels: true
-          # 有効にすると、processor は関連付けられたポッドのすべての annotations を抽出し、resource attributes として追加します。
-          # annotation の名前そのものがキーになります。
-          extractAllPodAnnotations: true
-        # collector がキューブレット上の API サーバーからノード、ポッド、コンテナーのメトリクスを収集するよう設定します。
-        # メトリクス パイプラインに kubeletstats receiver を追加し、クラスター ロールに必要なルールも追加します。
-        # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
-        kubeletMetrics:
-          enabled: true
-
-      extraEnvs:
-        - name: HYPERDX_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: hyperdx-secret
-              key: HYPERDX_API_KEY
-              optional: true
-        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
-          valueFrom:
-            configMapKeyRef:
-              name: otel-config-vars
-              key: YOUR_OTEL_COLLECTOR_ENDPOINT
-
-      config:
-        receivers:
-          # 追加のキューブレット メトリクスを設定します
-          kubeletstats:
-            collection_interval: 20s
-            auth_type: 'serviceAccount'
-            endpoint: '${env:K8S_NODE_NAME}:10250'
-            insecure_skip_verify: true
-            metrics:
-              k8s.pod.cpu_limit_utilization:
-                enabled: true
-              k8s.pod.cpu_request_utilization:
-                enabled: true
-              k8s.pod.memory_limit_utilization:
-                enabled: true
-              k8s.pod.memory_request_utilization:
-                enabled: true
-              k8s.pod.uptime:
-                enabled: true
-              k8s.node.uptime:
-                enabled: true
-              k8s.container.cpu_limit_utilization:
-                enabled: true
-              k8s.container.cpu_request_utilization:
-                enabled: true
-              k8s.container.memory_limit_utilization:
-                enabled: true
-              k8s.container.memory_request_utilization:
-                enabled: true
-              container.uptime:
-                enabled: true
-
-        exporters:
-          otlphttp:
-            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
-            headers:
-              authorization: "${env:HYPERDX_API_KEY}"
-            compression: gzip
-
-        service:
-          pipelines:
-            logs:
-              exporters:
-                - otlphttp
-            metrics:
-              exporters:
-                - otlphttp
-      ```
-    </Accordion>
-  </Tab>
-</Tabs>
-
-### デプロイメント構成の作成 {#creating-the-deployment-configuration}
+### デプロイメント設定の作成 {#creating-the-deployment-configuration}
 
 Kubernetes イベントとクラスター全体のメトリクスを収集するには、別途 OpenTelemetry collector をデプロイメントとしてデプロイする必要があります。
 
@@ -259,129 +160,68 @@ Kubernetes イベントとクラスター全体のメトリクスを収集する
 curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_deployment.yaml
 ```
 
-<Tabs>
-  <Tab title="Managed ClickStack">
-    <Accordion title="k8s_deployment.yaml">
-      ```yaml
-      # deployment.yaml
-      mode: deployment
+<Accordion title="k8s_deployment.yaml">
+  ```yaml
+  # deployment.yaml
+  mode: deployment
 
-      image:
-        repository: otel/opentelemetry-collector-contrib
-        tag: 0.123.0
-       
-      # collector は 1 つだけ必要です。これ以上あると重複データが生成されます
-      replicaCount: 1
-       
-      presets:
-        kubernetesAttributes:
-          enabled: true
-          # 有効にすると、この processor は関連付けられたポッドのすべてのラベルを抽出し、resource 属性として追加します。
-          # ラベルの正確な名前がキーになります。
-          extractAllPodLabels: true
-          # 有効にすると、この processor は関連付けられたポッドのすべての annotations を抽出し、resource 属性として追加します。
-          # annotation の正確な名前がキーになります。
-          extractAllPodAnnotations: true
-        # collector が Kubernetes イベントを収集するように設定します。
-        # logs パイプラインに k8sobject receiver を追加し、デフォルトで Kubernetes イベントを収集します。
-        # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
-        kubernetesEvents:
-          enabled: true
-        # Kubernetes Cluster Receiver がクラスター レベルのメトリクスを収集するように設定します。
-        # metrics パイプラインに k8s_cluster receiver を追加し、ClusterRole に必要なルールを追加します。
-        # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
-        clusterMetrics:
-          enabled: true
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: 0.123.0
 
-      extraEnvs:
-        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
-          valueFrom:
-            configMapKeyRef:
-              name: otel-config-vars
-              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+  # collector は 1 つだけ必要です。これ以上あると重複データが生成されます
+  replicaCount: 1
 
-      config:
-        exporters:
-          otlphttp:
-            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
-            compression: gzip
-        service:
-          pipelines:
-            logs:
-              exporters:
-                - otlphttp
-            metrics:
-              exporters:
-                - otlphttp
-      ```
-    </Accordion>
-  </Tab>
+  presets:
+    kubernetesAttributes:
+      enabled: true
+      # 有効にすると、この processor は関連付けられたポッドのすべてのラベルを抽出し、resource 属性として追加します。
+      # ラベルの正確な名前がキーになります。
+      extractAllPodLabels: true
+      # 有効にすると、この processor は関連付けられたポッドのすべての annotations を抽出し、resource 属性として追加します。
+      # annotation の正確な名前がキーになります。
+      extractAllPodAnnotations: true
+    # collector が Kubernetes イベントを収集するように設定します。
+    # logs パイプラインに k8sobject receiver を追加し、デフォルトで Kubernetes イベントを収集します。
+    # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+    kubernetesEvents:
+      enabled: true
+    # Kubernetes Cluster Receiver がクラスター レベルのメトリクスを収集するように設定します。
+    # metrics パイプラインに k8s_cluster receiver を追加し、ClusterRole に必要なルールを追加します。
+    # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+    clusterMetrics:
+      enabled: true
 
-  <Tab title="ClickStack Open Source">
-    <Accordion title="k8s_deployment.yaml">
-      ```yaml
-      # deployment.yaml
-      mode: deployment
+  extraEnvs:
+    - name: HYPERDX_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: hyperdx-secret
+          key: HYPERDX_API_KEY
+          optional: true
+    - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+      valueFrom:
+        configMapKeyRef:
+          name: otel-config-vars
+          key: YOUR_OTEL_COLLECTOR_ENDPOINT
 
-      image:
-        repository: otel/opentelemetry-collector-contrib
-        tag: 0.123.0
-       
-      # collector は 1 つだけ必要です。これ以上あると重複データが生成されます
-      replicaCount: 1
-       
-      presets:
-        kubernetesAttributes:
-          enabled: true
-          # 有効にすると、この processor は関連付けられたポッドのすべてのラベルを抽出し、resource 属性として追加します。
-          # ラベルの正確な名前がキーになります。
-          extractAllPodLabels: true
-          # 有効にすると、この processor は関連付けられたポッドのすべての annotations を抽出し、resource 属性として追加します。
-          # annotation の正確な名前がキーになります。
-          extractAllPodAnnotations: true
-        # collector が Kubernetes イベントを収集するように設定します。
-        # logs パイプラインに k8sobject receiver を追加し、デフォルトで Kubernetes イベントを収集します。
-        # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
-        kubernetesEvents:
-          enabled: true
-        # Kubernetes Cluster Receiver がクラスター レベルのメトリクスを収集するように設定します。
-        # metrics パイプラインに k8s_cluster receiver を追加し、ClusterRole に必要なルールを追加します。
-        # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
-        clusterMetrics:
-          enabled: true
-
-      extraEnvs:
-        - name: HYPERDX_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: hyperdx-secret
-              key: HYPERDX_API_KEY
-              optional: true
-        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
-          valueFrom:
-            configMapKeyRef:
-              name: otel-config-vars
-              key: YOUR_OTEL_COLLECTOR_ENDPOINT
-
-      config:
-        exporters:
-          otlphttp:
-            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
-            compression: gzip
-            headers:
-              authorization: "${env:HYPERDX_API_KEY}"
-        service:
-          pipelines:
-            logs:
-              exporters:
-                - otlphttp
-            metrics:
-              exporters:
-                - otlphttp
-      ```
-    </Accordion>
-  </Tab>
-</Tabs>
+  config:
+    exporters:
+      otlphttp:
+        endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+        compression: gzip
+        headers:
+          authorization: "${env:HYPERDX_API_KEY}"
+    service:
+      pipelines:
+        logs:
+          exporters:
+            - otlphttp
+        metrics:
+          exporters:
+            - otlphttp
+  ```
+</Accordion>
 
 ## OpenTelemetry collector のデプロイ {#deploying-the-otel-collector}
 

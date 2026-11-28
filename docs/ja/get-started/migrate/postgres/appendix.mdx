@@ -107,7 +107,7 @@ OSS でこの動作を実現する方法は、分片とレプリカのトポロ�
 ユーザーの観点では、これは通常、ClickHouse にデータを書き込んだあとに読み取る際、直近に挿入された行が必ず返されることを保証したい、という要件として現れます。
 これはいくつかの方法で実現できます (推奨順) :
 
-1. **同じノードに対して読み書きする** - ネイティブプロトコルを使用している場合、または [HTTP 経由で書き込み/読み取りを行うセッション](/ja/concepts/features/interfaces/http#default-database) を使用している場合は、同じレプリカに接続している必要があります。この場合、書き込み先のノードから直接読み取るため、読み取り結果は常に一貫します。
+1. **同じノードに対して読み書きする** - ネイティブプロトコルを使用している場合、または [HTTP 経由で書き込み/読み取りを行うセッション](/ja/concepts/features/connect-to-clickhouse/protocols/http#default-database) を使用している場合は、同じレプリカに接続している必要があります。この場合、書き込み先のノードから直接読み取るため、読み取り結果は常に一貫します。
 2. **レプリカを手動で同期する** - 1 つのレプリカに書き込み、別のレプリカから読み取る場合は、読み取り前に `SYSTEM SYNC REPLICA LIGHTWEIGHT` を実行できます。
 3. **逐次整合性を有効にする** - クエリ設定 [`select_sequential_consistency = 1`](/ja/reference/settings/session-settings/other#select_sequential_consistency) を使用します。OSS では、設定 `insert_quorum = 'auto'` も指定する必要があります。
 

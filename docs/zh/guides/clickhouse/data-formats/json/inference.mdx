@@ -104,7 +104,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **控制类型检测**
 
-  日期和日期时间的自动检测分别可通过设置 [`input_format_try_infer_dates`](/zh/reference/settings/formats/input-format#input_format_try_infer_dates) 和 [`input_format_try_infer_datetimes`](/zh/reference/settings/formats/input-format#input_format_try_infer_datetimes) 进行控制 (两者默认均启用) 。将对象推断为 Tuple 的行为由设置 [`input_format_json_try_infer_named_tuples_from_objects`](/zh/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects) 控制。其他控制 JSON schema 推断 的设置 (例如数值的自动检测) 可在[此处](/zh/concepts/features/interfaces/schema-inference#text-formats)查看。
+  日期和日期时间的自动检测分别可通过设置 [`input_format_try_infer_dates`](/zh/reference/settings/formats/input-format#input_format_try_infer_dates) 和 [`input_format_try_infer_datetimes`](/zh/reference/settings/formats/input-format#input_format_try_infer_datetimes) 进行控制 (两者默认均启用) 。将对象推断为 Tuple 的行为由设置 [`input_format_json_try_infer_named_tuples_from_objects`](/zh/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects) 控制。其他控制 JSON schema 推断 的设置 (例如数值的自动检测) 可在[此处](/zh/concepts/features/operations/insert/schema-inference#text-formats)查看。
 </Info>
 
 ## 查询 JSON {#querying-json}
@@ -421,4 +421,4 @@ SETTINGS describe_compact_output = 1
 
 ## 延伸阅读 {#further-reading}
 
-如需进一步了解数据类型推断，请参阅[此](/zh/concepts/features/interfaces/schema-inference)文档页面。
+如需进一步了解数据类型推断，请参阅[此](/zh/concepts/features/operations/insert/schema-inference)文档页面。

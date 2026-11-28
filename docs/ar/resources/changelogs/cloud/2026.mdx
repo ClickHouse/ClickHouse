@@ -10,6 +10,28 @@ rss: true
 
 بالإضافة إلى سجل تغييرات ClickHouse Cloud هذا، يُرجى الاطلاع على صفحة [توافق Cloud](/ar/products/cloud/guides/cloud-compatibility).
 
+<Update label="2026-11-23">
+  تعزّز إصدارات هذا الأسبوع الضمانات الخاصة بقواعد بيانات الإنتاج، وتحسّن التواصل بشأن الحوادث الأمنية، وتضيف خيارًا جديدًا لفوترة استخدام Claude.
+
+  ## ميزات جديدة {#2026-11-23-new-features}
+
+  ### الحماية من الحذف لـ Managed Postgres {#deletion-protection-for-managed-postgres}
+
+  يمكنك الآن تفعيل الحماية من الحذف لخدمة [ClickHouse Managed Postgres](/ar/cloud/managed-postgres) من صفحة **Settings** الخاصة بها أو عبر OpenAPI. وطالما كانت الحماية مفعّلة، تُرفض طلبات الحذف الواردة من وحدة التحكم أو واجهة برمجة التطبيقات بالرمز `409` إلى أن تُعطَّل الحماية، مما يساعد على منع الحذف غير المقصود لقواعد بيانات الإنتاج. لا تتوفر الحماية من الحذف بعدُ للنسخ المتماثلة للقراءة.
+
+  ## التكاملات {#2026-11-23-integrations}
+
+  ### الفوترة المرتبطة مع Claude Platform من Anthropic {#linked-billing-with-anthropics-claude-platform}
+
+  يمكن لمؤسسات ClickHouse Cloud الآن ربط مؤسستها في Claude Platform من خلال **Organization settings → Claude organization**. وبعد الربط، تُصدر Anthropic فواتير استخدام Claude في منتجات ClickHouse Cloud المدعومة، بما فيها [ClickHouse Agents](/ar/agents/index)، مباشرةً باسم تلك المؤسسة، وتُخصم من الالتزام القائم مع Anthropic. وتتم الموافقة على الربط من داخل Claude دون الحاجة إلى مشاركة مفتاح API، كما يمكنك تحديد حدٍّ شهري للإنفاق وتعديله لاحقًا في Claude Console، وإلغاء الربط من أي من الطرفين. ويمكن للمؤسسات المرتبطة استخدام نماذج Claude المتوفرة في كتالوج ClickHouse، بما في ذلك Opus 5.5 وHaiku 5.5. تتوفر هذه الميزة الاختيارية لجميع المؤسسات المؤهلة؛ راجع [الفوترة المرتبطة مع Claude Platform](/ar/products/cloud/features/ai-ml/linked-billing-claude-platform) لمزيد من التفاصيل.
+
+  ## الأمان {#2026-11-23-security}
+
+  ### تعيين جهات اتصال أمنية لمؤسستك {#designate-security-contacts-for-your-organization}
+
+  يمكن لمسؤولي المؤسسة الآن تعيين ما يصل إلى ثلاث جهات اتصال أمنية، حتى تعرف ClickHouse بدقة بمن تتواصل في مؤسستك في حال وقوع حادث أمني. هذه الميزة متاحة عمومًا.
+</Update>
+
 <Update label="2026-11-16">
   تضيف تحديثات هذا الأسبوع ضمانات لخدمات Cloud وجلسات الدعم، وتقدّم معاينة لإدارة أكثر أمانًا لبيانات الاعتماد. كما أصبح كلٌّ من ClickHouse Observability وClickHouse Managed Postgres متاحًا الآن.
 
@@ -37,7 +59,7 @@ rss: true
   * **المراقبة:** أصبح [ClickHouse Observability](https://clickhouse.com/blog/announcing-clickhouse-observability) في مرحلة بيتا عامة. أرسل بيانات OpenTelemetry إلى نقطة نهاية مُدارة، وافحص السجلات والمقاييس والتتبعات في ClickStack أو باستخدام الوكلاء. كما أصبح Observability Apps في مرحلة المعاينة الخاصة، ليقدّم تطبيقات قابلة للمشاركة تُنشأ عبر الموجّهات وتعمل على بيانات القياس عن بُعد الحية.
   * **التأمين:** أصبح ClickHouse Security في مرحلة المعاينة الخاصة، ويجمع بين تكاملات بيانات الأمان وعمليات الكشف المُدارة والتحقيقات المدعومة بالذكاء الاصطناعي، وهو مبني على [تقنية RunReveal](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion). ويمكن للمسؤولين أيضًا تهيئة وصول كل دور إلى لوحات معلومات المراقبة داخل وحدة التحكم.
   * **الاتصال:** أصبح موصل MongoDB CDC لـ [ClickPipes](/ar/integrations/clickpipes/mongodb) متاحًا عمومًا، مع إضافة إنشاء لقطات بالتوازي والإدخال المنظّم ومقاييس مراقبة جديدة. ويتيح دعم `remoteSecure` في مرحلة المعاينة الخاصة للخدمات الموجودة في المؤسسة والمنطقة والخلية نفسها أن تستعلم بعضها عن بعض عبر الشبكة الخاصة لـ ClickHouse Cloud. كما تتيح النطاقات المعتمدة وصفحة Previews الجديدة إتمام الإعداد الأولي وتجربة الميزات المؤهلة بالخدمة الذاتية.
-  * **البناء باستخدام الذكاء الاصطناعي:** أصبح Langfuse AI Gateway في مرحلة بيتا عامة لتتبّع استخدام النماذج وتكاليفها. كما يضيف Langfuse مهارات وكلاء بإصدارات متعددة؛ وبات بالإمكان الآن قصر مفاتيح API الخاصة بالمشاريع على أذونات الوصول الكامل أو العارض أو الإدخال أو إدخال الدرجات؛ وتقارن Experiments كل درجة في التشغيل المرشّح بخط الأساس، مع إبراز أوجه التحسّن والتراجع. اقرأ [إعلان المنصة](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion) لمزيد من التفاصيل.
+  * **البناء باستخدام الذكاء الاصطناعي:** أصبح Langfuse AI Gateway في مرحلة بيتا عامة لتتبّع استخدام النماذج وتكاليفها. كما يضيف Langfuse مهارات وكلاء بإصدارات متعددة؛ وبات بالإمكان الآن قصر مفاتيح API الخاصة بالمشاريع على صلاحيات الوصول الكامل أو العارض أو الإدخال أو إدخال الدرجات؛ وتقارن Experiments كل درجة في التشغيل المرشّح بخط الأساس، مع إبراز أوجه التحسّن والتراجع. اقرأ [إعلان المنصة](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion) لمزيد من التفاصيل.
 </Update>
 
 <Update label="19 أكتوبر 2026">
@@ -201,7 +223,7 @@ rss: true
 
   ### دعم PromQL في المعاينة الخاصة {#promql-support-in-private-preview}
 
-  يمكنك الآن تخزين مقاييس Prometheus في محرك الجداول `TimeSeries` والاستعلام عنها باستخدام PromQL مباشرةً على خدمة ClickHouse الخاصة بك—دون الحاجة إلى مُحوِّل أو وكيل، بحيث تستمر أدوات الجمع الحالية ولوحات معلومات Grafana وأدوات Prometheus في العمل دون أي تغيير. اكتب البيانات باستخدام Prometheus remote-write v1 واقرأها عبر واجهة برمجة تطبيقات HTTP لـ Prometheus، أو شغّل PromQL من جلسة SQL باستخدام دالتي الجدول `prometheusQuery` و`prometheusQueryRange`. وهذه الميزة متاحة لعملاء مختارين من ClickHouse Cloud وBYOC عبر [قائمة انتظار المعاينة الخاصة](https://clickhouse.com/cloud/promql-support-waitlist) على AWS وGCP وAzure. راجع [توثيق واجهة Prometheus](/ar/concepts/features/interfaces/prometheus) و[الإعلان](https://clickhouse.com/blog/introducing-promql).
+  يمكنك الآن تخزين مقاييس Prometheus في محرك الجداول `TimeSeries` والاستعلام عنها باستخدام PromQL مباشرةً على خدمة ClickHouse الخاصة بك—دون الحاجة إلى مُحوِّل أو وكيل، بحيث تستمر أدوات الجمع الحالية ولوحات معلومات Grafana وأدوات Prometheus في العمل دون أي تغيير. اكتب البيانات باستخدام Prometheus remote-write v1 واقرأها عبر واجهة برمجة تطبيقات HTTP لـ Prometheus، أو شغّل PromQL من جلسة SQL باستخدام دالتي الجدول `prometheusQuery` و`prometheusQueryRange`. وهذه الميزة متاحة لعملاء مختارين من ClickHouse Cloud وBYOC عبر [قائمة انتظار المعاينة الخاصة](https://clickhouse.com/cloud/promql-support-waitlist) على AWS وGCP وAzure. راجع [توثيق واجهة Prometheus](/ar/concepts/features/connect-to-clickhouse/prometheus) و[الإعلان](https://clickhouse.com/blog/introducing-promql).
 
   <a id="on-demand-compute-now-in-private-preview" />
 

@@ -15,9 +15,7 @@ Ce moteur permet d’intégrer ClickHouse à [RabbitMQ](https://www.rabbitmq.com
 * publier ou de vous abonner à des flux de données ;
 * traiter les flux dès qu’ils sont disponibles.
 
-<div id="creating-a-table">
-  ## Créer une table
-</div>
+## Créer une table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -48,44 +46,44 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_password = '',]
     [rabbitmq_commit_on_select = false,]
     [rabbitmq_max_rows_per_message = 1,]
+    [rabbitmq_max_idle_producer_connections = 0,]
     [rabbitmq_handle_error_mode = 'default']
 ```
 
-Paramètres requis :
+Paramètres requis :
 
 * `rabbitmq_host_port` – hôte:port (par exemple, `localhost:5672`).
 * `rabbitmq_exchange_name` – nom de l’exchange RabbitMQ.
 * `rabbitmq_format` – format du message. Utilise la même notation que la fonction SQL `FORMAT`, par exemple `JSONEachRow`. Pour plus d’informations, consultez la section [Formats](/fr/reference/formats/index).
 
-Paramètres facultatifs :
+Paramètres facultatifs :
 
-* `rabbitmq_exchange_type` – Le type d’exchange RabbitMQ : `direct`, `fanout`, `topic`, `headers`, `consistent_hash`. Par défaut : `fanout`.
+* `rabbitmq_exchange_type` – Le type d’exchange RabbitMQ : `direct`, `fanout`, `topic`, `headers`, `consistent_hash`. Par défaut : `fanout`.
 * `rabbitmq_routing_key_list` – Une liste de clés de routage séparées par des virgules.
 * `rabbitmq_schema` – Paramètre à utiliser si le format nécessite une définition de schéma. Par exemple, [Cap&#39;n Proto](https://capnproto.org/) nécessite le chemin du fichier de schéma ainsi que le nom de l’objet racine `schema.capnp:Message`.
-* `rabbitmq_num_consumers` – Le nombre de consommateurs par table. Spécifiez davantage de consommateurs si le débit d’un consommateur est insuffisant. Par défaut : `1`
-* `rabbitmq_num_queues` – Nombre total de files. Augmenter ce nombre peut améliorer considérablement les performances. Par défaut : `1`.
+* `rabbitmq_num_consumers` – Le nombre de consommateurs par table. Spécifiez davantage de consommateurs si le débit d’un consommateur est insuffisant. Par défaut : `1`
+* `rabbitmq_num_queues` – Nombre total de files. Augmenter ce nombre peut améliorer considérablement les performances. Par défaut : `1`.
 * `rabbitmq_queue_base` - Spécifie un préfixe pour les noms de file. Les cas d’utilisation de ce paramètre sont décrits ci-dessous.
-* `rabbitmq_persistent` - Si défini sur 1 (true), le mode de remise de la requête d’insertion sera défini sur 2 (marque les messages comme &#39;persistent&#39;). Par défaut : `0`.
-* `rabbitmq_skip_broken_messages` – Tolérance de l’analyseur de messages RabbitMQ aux messages incompatibles avec le schéma par bloc. Si `rabbitmq_skip_broken_messages = N`, le moteur ignore alors *N* messages RabbitMQ qui ne peuvent pas être analysés (un message équivaut à une ligne de données). Par défaut : `0`.
-* `rabbitmq_max_block_size` - Nombre de lignes collectées avant le vidage des données depuis RabbitMQ. Par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings/max-insert#max_insert_block_size).
-* `rabbitmq_flush_interval_ms` - Délai d’attente avant le vidage des données depuis RabbitMQ. Par défaut : [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings/stream#stream_flush_interval_ms).
-* `rabbitmq_queue_settings_list` - permet de définir les paramètres RabbitMQ lors de la création d’une file. Paramètres disponibles : `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. Le paramètre `durable` est activé automatiquement pour la file.
-* `rabbitmq_address` - Adresse de connexion : `amqp(s)://user:password@host:port/vhost`. Utilisez soit ce paramètre, soit `rabbitmq_host_port` ; si les deux sont définis, `rabbitmq_address` est utilisé. Son hôte et son port sont vérifiés par rapport à [remote&#95;url&#95;allow&#95;hosts](/fr/reference/settings/server-settings/settings/remote#remote_url_allow_hosts).
-* `rabbitmq_vhost` - vhost RabbitMQ. Par défaut : `'/'`.
-* `rabbitmq_queue_consume` - Utilise des files définies par l’utilisateur et n’effectue aucune configuration RabbitMQ : déclaration des exchanges, des files et des liaisons. Par défaut : `false`.
+* `rabbitmq_persistent` - Si défini sur 1 (true), le mode de remise de la requête d’insertion sera défini sur 2 (marque les messages comme &#39;persistent&#39;). Par défaut : `0`.
+* `rabbitmq_skip_broken_messages` – Tolérance de l’analyseur de messages RabbitMQ aux messages incompatibles avec le schéma par bloc. Si `rabbitmq_skip_broken_messages = N`, le moteur ignore alors *N* messages RabbitMQ qui ne peuvent pas être analysés (un message équivaut à une ligne de données). Par défaut : `0`.
+* `rabbitmq_max_block_size` - Nombre de lignes collectées avant le vidage des données depuis RabbitMQ. Par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings/max-insert#max_insert_block_size).
+* `rabbitmq_flush_interval_ms` - Délai d’attente avant le vidage des données depuis RabbitMQ. Par défaut : [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings/stream#stream_flush_interval_ms).
+* `rabbitmq_queue_settings_list` - permet de définir les paramètres RabbitMQ lors de la création d’une file. Paramètres disponibles : `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. Le paramètre `durable` est activé automatiquement pour la file.
+* `rabbitmq_address` - Adresse de connexion : `amqp(s)://user:password@host:port/vhost`. Utilisez soit ce paramètre, soit `rabbitmq_host_port` ; si les deux sont définis, `rabbitmq_address` est utilisé. Son hôte et son port sont vérifiés par rapport à [remote&#95;url&#95;allow&#95;hosts](/fr/reference/settings/server-settings/settings/remote#remote_url_allow_hosts).
+* `rabbitmq_vhost` - vhost RabbitMQ. Par défaut : `'/'`.
+* `rabbitmq_queue_consume` - Utilise des files définies par l’utilisateur et n’effectue aucune configuration RabbitMQ : déclaration des exchanges, des files et des liaisons. Par défaut : `false`.
 * `rabbitmq_username` - Nom d’utilisateur RabbitMQ.
 * `rabbitmq_password` - Mot de passe RabbitMQ.
 * `reject_unhandled_messages` - Rejette les messages (envoie un accusé de réception négatif RabbitMQ) en cas d’erreur. Ce paramètre est activé automatiquement si un `x-dead-letter-exchange` est défini dans `rabbitmq_queue_settings_list`.
-* `rabbitmq_commit_on_select` - Valide les messages lorsqu’une requête SELECT est effectuée. Par défaut : `false`.
-* `rabbitmq_max_rows_per_message` — Le nombre maximal de lignes écrites dans un message RabbitMQ pour les formats basés sur les lignes. Par défaut : `1`.
+* `rabbitmq_commit_on_select` - Valide les messages lorsqu’une requête SELECT est effectuée. Par défaut : `false`.
+* `rabbitmq_max_rows_per_message` — Le nombre maximal de lignes écrites dans un message RabbitMQ pour les formats basés sur les lignes. Par défaut : `1`.
+* `rabbitmq_max_idle_producer_connections` - Nombre maximal de connexions inactives, disposant chacune d’un canal ouvert, que la table conserve pour les requêtes `INSERT` suivantes. Leur réutilisation évite de devoir se connecter à RabbitMQ (et d’effectuer la négociation TLS) à chaque `INSERT`, par exemple lorsqu’une vue matérialisée écrit dans la table à chaque insertion dans sa table source. Les connexions inactives sont vérifiées à intervalles de quelques secondes : une connexion restée inactive pendant la moitié du délai de heartbeat négocié avec le serveur est fermée, puisque le serveur la fermera de toute façon une fois ce délai écoulé ; il en va de même pour une connexion perdue. `0` désactive la réutilisation : chaque `INSERT` ouvre et ferme sa propre connexion. Par défaut : `0`.
 * `rabbitmq_empty_queue_backoff_start_ms` — Point de départ du backoff pour replanifier la lecture si la file RabbitMQ est vide.
 * `rabbitmq_empty_queue_backoff_end_ms` — Point de fin du backoff pour replanifier la lecture si la file RabbitMQ est vide.
 * `rabbitmq_empty_queue_backoff_step_ms` — Pas du backoff pour replanifier la lecture si la file RabbitMQ est vide.
 * `rabbitmq_handle_error_mode` — Mode de gestion des erreurs du moteur RabbitMQ. Valeurs possibles : default (une exception sera levée si l’analyse d’un message échoue), stream (le message d’exception et le message brut seront enregistrés dans les colonnes virtuelles `_error` et `_raw_message`), dead&#95;letter&#95;queue (les données liées aux erreurs seront enregistrées dans `system.dead_letter_queue`).
 
-<div id="ssl-connection">
-  ### Connexion SSL
-</div>
+### Connexion SSL {#ssl-connection}
 
 Avec la forme `rabbitmq_host_port`, définissez `rabbitmq_secure = 1` pour utiliser TLS.
 Avec la forme `rabbitmq_address`, le transport est déterminé par le schéma URI ; utilisez donc `amqps` : `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`. `rabbitmq_secure` est ignoré pour cette forme d&#39;adresse, et `rabbitmq_secure = 1` associé à une adresse `amqp://` en texte brut est rejeté plutôt que d&#39;établir silencieusement une connexion en clair.
@@ -126,9 +124,7 @@ Configuration supplémentaire :
 </rabbitmq>
 ```
 
-<div id="description">
-  ## Description
-</div>
+## Description {#description}
 
 `SELECT` n’est pas particulièrement utile pour lire des messages (sauf pour le débogage), car chaque message ne peut être lu qu’une seule fois. Il est plus pratique de créer des flux en temps réel à l’aide de [vues matérialisées](/fr/reference/statements/create/view). Pour ce faire :
 
@@ -189,9 +185,7 @@ CREATE MATERIALIZED VIEW consumer TO daily
 SELECT key, value FROM daily ORDER BY key;
 ```
 
-<div id="virtual-columns">
-  ## Colonnes virtuelles
-</div>
+## Colonnes virtuelles {#virtual-columns}
 
 * `_exchange_name` - Nom de l’exchange RabbitMQ. Type de données : `String`.
 * `_channel_id` - ChannelID sur lequel le consommateur ayant reçu le message a été déclaré. Type de données : `String`.
@@ -207,15 +201,11 @@ Colonnes virtuelles supplémentaires lorsque `rabbitmq_handle_error_mode='stream
 
 Remarque : les colonnes virtuelles `_raw_message` et `_error` ne sont renseignées qu’en cas d’exception lors de l’analyse ; elles sont toujours `NULL` lorsque le message a été analysé correctement.
 
-<div id="caveats">
-  ## Mises en garde
-</div>
+## Mises en garde {#caveats}
 
 Même si vous pouvez spécifier des [expressions de colonne par défaut](/fr/reference/statements/create/table#default_values) (comme `DEFAULT`, `MATERIALIZED`, `ALIAS`) dans la définition de la table, elles seront ignorées. À la place, les colonnes seront renseignées avec les valeurs par défaut correspondant à leur type.
 
-<div id="data-formats-support">
-  ## Prise en charge des formats de données
-</div>
+## Prise en charge des formats de données {#data-formats-support}
 
 Le moteur RabbitMQ prend en charge tous les [formats](/fr/reference/formats/index) pris en charge par ClickHouse.
 Le nombre de lignes dans un message RabbitMQ dépend du fait que le format soit orienté lignes ou orienté blocs :
@@ -223,9 +213,7 @@ Le nombre de lignes dans un message RabbitMQ dépend du fait que le format soit 
 * Pour les formats orientés lignes, le nombre de lignes dans un message RabbitMQ peut être contrôlé en définissant `rabbitmq_max_rows_per_message`.
 * Pour les formats orientés blocs, il n’est pas possible de diviser un bloc en parties plus petites, mais le nombre de lignes dans un bloc peut être contrôlé par le paramètre général [max&#95;block&#95;size](/fr/reference/settings/session-settings/max#max_block_size).
 
-<div id="data-durability">
-  ## Durabilité des données en cas de coupure d’alimentation
-</div>
+## Durabilité des données en cas de coupure d’alimentation {#data-durability}
 
 Le moteur `RabbitMQ` peut perdre silencieusement des lignes déjà consommées si le cache de pages du système d’exploitation est perdu avant que les données insérées ne soient écrites sur le disque. Après l’envoi d’un lot vers les vues matérialisées dépendantes, le consommateur envoie `basic.ack` au broker, ce qui lui permet de supprimer ces messages. Toutefois, les lignes insérées ne deviennent durables qu’une fois la part cible synchronisée sur le disque, ce qui ne se produit pas de manière synchrone par défaut (`fsync_after_insert = 0`). Si le cache de pages est perdu après l’accusé de réception, mais avant la synchronisation sur le disque de la part cible, le broker a déjà supprimé les messages et le consommateur les ignore lors de la reconnexion : les lignes sont donc perdues sans erreur et `count()` est simplement inférieur. Un simple arrêt forcé du processus ne révèle pas ce problème, car le kernel conserve le cache de pages et finit par l’écrire sur le disque. En revanche, la perte du cache de pages le révèle ; par exemple, en cas de coupure d’alimentation au niveau du périphérique ou de réinitialisation non propre de l’hôte ou du kernel.
 

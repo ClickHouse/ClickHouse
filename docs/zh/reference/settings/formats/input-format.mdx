@@ -1066,6 +1066,23 @@ Parquet 读取器 输出的平均块字节数
 
 读取文本格式 (CSV、TSV) 时，用于记录错误的文件路径。
 
+## input_format_skip_duplicated_fields {#input_format_skip_duplicated_fields}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新增设置，用于跳过输入数据同一行中重复出现的字段，而不是抛出异常。"}]}]} />
+
+启用或禁用跳过输入数据同一行中重复出现的字段。
+
+启用后，如果某个字段在同一行中出现多次，将保留其第一个值并跳过其余匹配项，而不会抛出 `Duplicate field found` 异常。此时，schema 推断会根据该字段的第一个值推断其类型。
+
+支持的格式：
+
+* `JSONEachRow` 以及以相同方式读取 JSON 对象的格式 (`JSONStringsEachRow`、`JSONObjectEachRow`、`JSON` 中的行) ，包括通过 `input_format_import_nested_json` 读取的嵌套字段
+* `BSONEachRow`
+* `TSKV`
+* `Form`
+
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

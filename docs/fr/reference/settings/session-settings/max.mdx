@@ -64,13 +64,15 @@ La valeur `0` signifie qu&#39;il n&#39;y a pas de limite.
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
-La taille maximale des blocs de données non compressées avant leur compression pour l’écriture dans une table. Par défaut, 1 048 576 (1 MiB). Indiquer une taille de bloc plus petite entraîne généralement une légère baisse du taux de compression ; en revanche, la vitesse de compression et de décompression augmente légèrement grâce à une meilleure localité du cache, et la consommation de mémoire diminue.
+La taille maximale des blocs de données non compressées avant leur compression pour l’écriture dans une table. Par défaut, 1 048 576 (1 Mio). Indiquer une taille de bloc plus petite entraîne généralement une légère baisse du taux de compression ; en revanche, la vitesse de compression et de décompression augmente légèrement grâce à une meilleure localité du cache, et la consommation de mémoire diminue.
 
 <Note>
   Il s’agit d’un réglage réservé aux experts, et vous ne devriez pas le modifier si vous débutez avec ClickHouse.
 </Note>
 
 Ne confondez pas les blocs utilisés pour la compression (un segment de mémoire constitué d’octets) avec les blocs utilisés pour le traitement des requêtes (un ensemble de lignes d’une table).
+
+Un bloc compressé contient au maximum 256 Mio de données non compressées ; les valeurs supérieures à 256 Mio sont donc traitées comme 256 Mio. Le bloc est réduit davantage encore lorsque sa compression par le codec pourrait dépasser 512 Mio, ce qui ne se produit qu’avec une chaîne de codecs expansifs. Les données écrites dans des blocs plus grands par des versions antérieures ne peuvent pas être lues.
 
 ## max_consume_snapshots {#max_consume_snapshots}
 
@@ -118,6 +120,25 @@ Valeurs possibles :
 
 * Entier positif.
 * 0 ou 1 — Désactivé. Les requêtes `SELECT` sont exécutées sur un seul thread.
+
+## max_generic_compression_threads {#max_generic_compression_threads}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nouveau paramètre permettant de contrôler le nombre de fils d’exécution utilisés pour la compression gzip parallèle des flux de sortie."}]}]} />
+
+Nombre maximal de fils d’exécution utilisés pour compresser une sortie compressée par un algorithme de flux générique (actuellement `gzip`) lors de l’écriture vers des formats de sortie, des fichiers ou du stockage, ainsi que lors de la compression des réponses HTTP aux requêtes, que ce soit avec `Content-Encoding: gzip` ou avec le codec du corps de la réponse sélectionné par le paramètre `compression`.
+
+La sortie reste au format `gzip` standard et peut être lue par n’importe quel décompresseur ; seule l’écriture est parallélisée. Les blocs indépendants sont compressés en parallèle sur le pool de fils d’exécution d’E/S partagé. Le nom générique de ce paramètre permettra à d’autres méthodes de compression par flux de l’adopter à l’avenir.
+
+Valeurs possibles :
+
+* 0 ou 1 — compression single-threaded (par défaut).
+* Entier positif supérieur à 1 — compression sur ce nombre maximal de fils d’exécution.
+
+Des valeurs plus élevées entraînent une utilisation de la mémoire plus importante.
+
+Pour les réponses HTTP aux requêtes, le tampon de compression est configuré avant l’exécution de la requête, comme pour les autres paramètres de mise en forme des réponses HTTP (`enable_http_compression`, `http_zlib_compression_level`, `compression`). Dans ce cas, le paramètre doit être fourni via le paramètre d’URL HTTP ou un profil utilisateur ; une clause `SETTINGS` dans la requête n’a aucun effet sur la compression de la réponse HTTP elle-même (elle s’applique néanmoins aux fichiers et au stockage écrits par la requête, par exemple `INSERT INTO FUNCTION file(...)` ou `SELECT ... INTO OUTFILE`).
 
 ## max_http_get_redirects {#max_http_get_redirects}
 

@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Générations de capacité de calcul'
+slug: /cloud/features/compute-generations
+title: 'Générations de capacité de calcul de ClickHouse : Gen 2'
+description: 'Comparez les générations de capacité de calcul Gen 1 et Gen 2 dans ClickHouse Cloud.'
+keywords: ['générations de capacité de calcul', 'Gen 1', 'Gen 2', 'CPU', 'AWS']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+## Vue d’ensemble {#overview}
+
+La capacité de calcul de ClickHouse Cloud est désormais déclinée en générations. Gen 1 correspond à la capacité de calcul standard que vous utilisez actuellement. Gen 2 repose sur la dernière famille de CPU et offre de meilleures performances, à un prix plus élevé. Le passage à Gen 2 est facultatif et se configure pour chaque service. Les services existants restent sur Gen 1, à leur tarif actuel.
+
+<PrivatePreviewBadge />
+
+Gen 2 est disponible sur demande, derrière un feature flag. Les fonctionnalités, les régions, la tarification et les conditions sont susceptibles d’évoluer avant la disponibilité générale.
+
+Lorsqu’une génération sera retirée, les services qui l’utilisent migreront vers la génération plus récente à une date annoncée au préalable.
+
+## Gen 1 et Gen 2 {#gen-1-and-gen-2}
+
+Gen 2 offre des performances environ 30 à 50% supérieures à celles de Gen 1, à empreinte CPU et mémoire identique. Elle procure ainsi davantage de performance par dollar. Les résultats réels dépendent de votre configuration et de votre charge de travail ; effectuez donc des tests avec vos propres charges de travail pour mesurer l’effet sur les coûts, les performances, ou les deux.
+
+|                                                | Gen 1                                                                              | Gen 2                                                                                                               |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Matériel                                       | Matériel de capacité de calcul standard                                                        | Dernière famille de CPU                                                                                             |
+| Performance                                    | Valeur de référence                                                                | Jusqu’à environ 30 à 50% plus rapide                                                                                |
+| Prix                                           | Tarif de capacité de calcul standard                                                           | Supérieur à Gen 1                                                                                                   |
+| Ratio CPU/mémoire                              | 1:4                                                                                | 1:4, donc aucun redimensionnement nécessaire                                                                        |
+| Disponibilité                                  | Niveaux Basic, Scale et Enterprise, dans toutes les régions et sur tous les clouds | Niveaux Scale et Enterprise, dans certaines régions AWS                                                             |
+| Mise à l’échelle automatique et mise en veille | Prises en charge                                                                   | Bientôt disponibles. Les paramètres de mise à l’échelle manuelle et de mise à l’échelle planifiée sont disponibles. |
+
+## Disponibilité {#availability}
+
+Gen 2 est disponible sur les niveaux Scale et Enterprise pour les organisations sur AWS, dans les régions suivantes où la capacité est confirmée :
+
+* `us-east-1`
+* `us-east-2`
+* `us-west-2`
+* `eu-central-1`
+
+D&#39;autres régions, niveaux et clouds seront bientôt pris en charge. Contactez votre équipe chargée du compte chez ClickHouse pour confirmer votre éligibilité et faire activer le feature flag pour votre organisation.
+
+## Allocation du matériel {#hardware-allocation}
+
+Gen 2 s&#39;appuie sur une liste priorisée de types de machines, en commençant par la famille de CPU la plus récente, afin que votre service s&#39;exécute sur le meilleur matériel disponible.
+
+Si le matériel privilégié est indisponible, ClickHouse alloue chaque nœud à partir du type de machine suivant dans la liste, afin que votre service continue de fonctionner. Le service reste facturé au tarif Gen 2.
+
+Pour offrir le meilleur accès possible au matériel le plus récent, ClickHouse réserve de la capacité Gen 2 à l&#39;avance et ne propose Gen 2 que dans les régions où l&#39;approvisionnement est confirmé. La disponibilité varie selon la région et dans le temps.
+
+## Premiers pas {#get-started}
+
+<Steps>
+  <Step title="Demander l’accès" id="request-access">
+    Demandez à l’équipe chargée de votre compte d’activer Gen 2 pour votre organisation.
+  </Step>
+
+  <Step title="Créer un service" id="create-a-service">
+    Une fois Gen 2 activé, créez un service dans la Console ClickHouse Cloud et sélectionnez **Gen 2** dans le parcours de création du service. La mise à l’échelle automatique n’est pas prise en charge, mais vous pouvez utiliser la mise à l’échelle planifiée pour modifier la taille de votre service à des moments précis, en fonction des besoins de votre charge de travail.
+  </Step>
+
+  <Step title="Mettre à niveau un service existant" id="upgrade-an-existing-service">
+    Pour mettre à niveau un service Gen 1 existant vers Gen 2, modifiez les paramètres du service.
+  </Step>
+</Steps>
+
+Pour toute question ou tout commentaire pendant l’aperçu privé, contactez l’équipe chargée de votre compte ou [ClickHouse Support](https://clickhouse.com/support/program).

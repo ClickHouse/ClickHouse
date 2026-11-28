@@ -443,7 +443,7 @@ nullIf(x, y)
 
 **Возвращаемое значение**
 
-Возвращает `NULL`, если оба аргумента равны, иначе возвращает первый аргумент. [`NULL`](/ru/reference/syntax#null) или [`Nullable(x)`](/ru/reference/data-types/nullable)
+Возвращает `NULL`, если оба аргумента равны, иначе возвращает первый аргумент. Для типов `Variant` и `Dynamic`, которые хранят `NULL` внутри себя, результат сохраняет тип входных данных. [`NULL`](/ru/reference/syntax#null) или [`Nullable(x)`](/ru/reference/data-types/nullable) или [`Variant`](/ru/reference/data-types/variant) или [`Dynamic`](/ru/reference/data-types/dynamic)
 
 **Примеры**
 

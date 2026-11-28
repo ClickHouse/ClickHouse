@@ -195,18 +195,19 @@ ENGINE = MergeTree()
 
 <ExperimentalBadge />
 
-`Quantized(method, dimensions[, ...])` — 一种专用编解码器，支持对 `Array(Float32)`、`Array(Float64)` 或 `Array(BFloat16)` 类型的列进行近似向量搜索。
+`Quantized(method, dimensions[, ...])` — 一种专用编解码器，支持对 `Array(Float32)`、`Array(Float64)`、`Array(BFloat16)`、`Array(Int8)` 或 `Array(UInt8)` 类型的列进行近似向量搜索。
 它会存储原始的全精度向量，并为每个向量额外存储一个紧凑的*量化编码*。
 在 `MergeTree` 家族表中，启用设置 [`vector_search_use_quantized_codes`](/zh/reference/settings/session-settings/vector-search#vector_search_use_quantized_codes) 的向量搜索查询会扫描量化编码以生成候选列表，然后根据全精度向量对结果重新评分。
 与常规的全精度扫描相比，这种两阶段搜索读取的字节数更少，但召回率会有所降低。
 `dimensions` 表示向量长度；支持的 `method` 值包括 `rabitq`、`turboquant`、`int8`、`prefix` 和 `product`，它们在大小、准确性和距离函数之间各有不同的权衡。
+对于 `Array(Int8)` 和 `Array(UInt8)` 列，不支持 `int8` 方法，也不支持格式为 `int8` 的 `prefix` 方法。
 
 该编解码器只能在 `CREATE TABLE` 中设置，不能通过 `ALTER TABLE` 添加、移除或更改，包括使用 `ADD COLUMN ... CODEC(Quantized(...))`。
 它不能与任何其他编解码器链式组合 (即使是 `AES_128_GCM_SIV` 等加密编解码器也不例外) 。
 有关更多信息，请参阅[使用量化编解码器进行向量搜索](/zh/reference/engines/table-engines/mergetree-family/annindexes#vector-search-with-quantized-codecs)。
 
 <Note>
-  此编解码器处于 Experimental 状态，需设置 `SET enable_quantized_codec = 1` 才能使用。
+  此编解码器处于实验性状态，需设置 `SET enable_quantized_codec = 1` 才能使用。
 </Note>
 
 ```sql

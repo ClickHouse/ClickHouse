@@ -30,23 +30,25 @@ doc_type: 'reference'
 * الاستعلامات التي تعدّل سياق الجلسة فقط (مثل `USE`).
 
 وعند ضبطه على 2، يسمح بما سبق إضافة إلى `SET` و`CREATE TEMPORARY TABLE` و`RESTORE`. وبما أن `RESTORE` يمكنه إنشاء جدول وتحميل البيانات إليه، فإن `readonly = 2` لا يمنع بحد ذاته الجلسة من
-الكتابة، بينما يرفضها `readonly = 1`.
+الكتابة، بينما يرفضها `readonly = 1`. أما الجدول المؤقت الذي يحتوي على عبارة `ENGINE` غير `Memory`، مثل
+`File` أو `URL`، فيحتاج إلى امتياز `CREATE ARBITRARY TEMPORARY TABLE` ويُرفض عند أي قيمة
+أكبر من 0.
 
 أما `BACKUP` فلا يقيّده `readonly` عند أي قيمة: فالجلسة التي تملك امتيازات النسخ الاحتياطي لجدول ما يمكنها كتابة نسخة احتياطية حتى عند `readonly = 1`. لذا لا تعتمد على `readonly` لمنع النسخ الاحتياطي.
 
 تحتاج معظم دوال الجداول إلى امتياز `CREATE TEMPORARY TABLE`، لذا يُرفض استعلام `SELECT` الذي يقرأ من إحداها عند `readonly = 1` دون `readonly = 2`. وبعضها، مثل `numbers`، مسموح به في وضع
-القراءة فقط.
+القراءة فقط. ويُرفض `INSERT INTO FUNCTION` عند أي قيمة أكبر من 0، لأنه يكتب إلى مصدر الدالة
+وليس إلى جدول مؤقت.
 
 عند أي قيمة أكبر من 0، لا يُسمح بأي مما يلي على جدول دائم: استعلامات كتابة البيانات
 (`INSERT` و`OPTIMIZE` و`DELETE` و`UPDATE` و`ALTER TABLE ... DELETE` و`ALTER TABLE ... UPDATE`) أو استعلامات DDL
-(`CREATE` و`ALTER TABLE` و`ALTER VIEW` و`RENAME` و`EXCHANGE` و`ATTACH` و`DETACH` و`DROP`
-و`TRUNCATE TABLE`). كما لا يُسمح بعبارات `SYSTEM` التي تتطلب امتيازًا من مجموعة `SYSTEM`، ولا بعمليات `CREATE` و`ALTER`
-و`DROP` للمستخدمين والأدوار وسياسات الصفوف وسياسات الإخفاء والحصص وملفات تعريف الإعدادات. وتُستثنى من ذلك إدارة المجموعات المسماة، إذ لا يقيّد `readonly`
-`CREATE NAMED COLLECTION` ولا `ALTER NAMED COLLECTION` ولا `DROP NAMED COLLECTION`.
+(`CREATE` و`ALTER TABLE` و`ALTER VIEW` و`ALTER DATABASE` و`RENAME` و`EXCHANGE` و`ATTACH` و`DETACH`
+و`DROP` و`TRUNCATE TABLE`). كما لا يُسمح بعبارات `SYSTEM` التي تتطلب امتيازًا من مجموعة `SYSTEM`، ولا بعمليات `CREATE` و`ALTER`
+و`DROP` للمستخدمين والأدوار وسياسات الصفوف وسياسات الإخفاء والحصص وملفات تعريف الإعدادات. ويُرفض كذلك `KILL TRANSACTION` وإدارة المجموعات المسماة (`CREATE NAMED COLLECTION`
+و`ALTER NAMED COLLECTION` و`DROP NAMED COLLECTION`).
 
-كذلك يُرفض منح امتياز باستخدام `GRANT`، لكن لا ينطبق ذلك على كل عبارات إدارة الوصول: فعبارتا `REVOKE` المحلية و`GRANT CURRENT GRANTS` غير خاضعتين لـ `readonly`، لذا يمكن لجلسة للقراءة فقط أن تسحب
-امتيازًا تملكها مع خيار المنح وأن تنقل صلاحياتها إلى مستخدم آخر.
-أما سحب امتياز باستخدام `ON CLUSTER` فيُرفض.
+كذلك يُرفض تغيير الأذونات، محليًا وباستخدام `ON CLUSTER`: أي منح امتياز أو دور باستخدام `GRANT`،
+ومنح الامتيازات باستخدام `GRANT CURRENT GRANTS`، وسحب امتياز أو دور باستخدام `REVOKE`.
 
 الجداول المؤقتة مستثناة من كلا الإعدادين: فالجلسة التي يمكنها إنشاء جدول مؤقت يمكنها أيضًا تنفيذ `ALTER` عليه،
 والإدراج فيه وحذفه.
@@ -76,10 +78,12 @@ doc_type: 'reference'
 القيم الممكنة:
 
 * 0 — يُحظر تنفيذ أي استعلام على كائن دائم يحتاج إلى أي من الامتيازات التالية:
-  `CREATE DATABASE`، `DROP DATABASE`، `CREATE TABLE`، `CREATE VIEW`، `ALTER TABLE`،
-  `ALTER VIEW`، `DROP TABLE`، `DROP VIEW`، `TRUNCATE`، `CREATE DICTIONARY`، `DROP DICTIONARY`،
-  `CREATE FUNCTION`، `DROP FUNCTION`، `CREATE WORKLOAD`، `DROP WORKLOAD`، `CREATE RESOURCE`،
-  `DROP RESOURCE`، `CREATE HANDLER`، `ALTER HANDLER`، `DROP HANDLER`. وتحتاج `RENAME` و`EXCHANGE`
+  `CREATE DATABASE`، `ALTER DATABASE`، `DROP DATABASE`، `CREATE TABLE`، `CREATE VIEW`،
+  `ALTER TABLE`، `ALTER VIEW`، `DROP TABLE`، `DROP VIEW`، `TRUNCATE`، `UNDROP TABLE`،
+  `CREATE DICTIONARY`، `DROP DICTIONARY`، `CREATE FUNCTION`، `DROP FUNCTION`، `CREATE WORKLOAD`،
+  `DROP WORKLOAD`، `CREATE RESOURCE`، `DROP RESOURCE`، `CREATE NAMED COLLECTION`،
+  `ALTER NAMED COLLECTION`، `DROP NAMED COLLECTION`، `CREATE HANDLER`، `ALTER HANDLER`،
+  `DROP HANDLER`. وتحتاج `RENAME` و`EXCHANGE`
   و`ATTACH` و`DETACH` إلى هذه الامتيازات أيضًا، لذا فهي محظورة كذلك، باستثناء
   `ALTER TABLE ... ATTACH PARTITION` و`ATTACH PART` اللتين تحتاجان إلى `INSERT` فقط ولا يحظرهما
   هذا الإعداد، وإن كان `readonly` يحظرهما على الجدول الدائم.
@@ -94,11 +98,9 @@ doc_type: 'reference'
 
   لا يقيّد `allow_ddl` استعلامات إدارة الوصول: فـ `GRANT` و`REVOKE` و`CREATE` و`ALTER` و`DROP`
   للمستخدمين والأدوار وسياسات الصفوف وسياسات الإخفاء والحصص وملفات تعريف الإعدادات لا تتأثر
-  به. كما لا تتأثر `CREATE TEMPORARY TABLE` وإدارة المجموعات المسمّاة، وكذلك
-  `ALTER DATABASE ... MODIFY SETTING` و`ALTER DATABASE ... MODIFY COMMENT` و`UNDROP TABLE`، وهي
-  غير مقيّدة بـ `readonly` أيضًا. وداخل `CREATE` أو `ALTER` لمستخدم أو دور أو ملف تعريف إعدادات،
-  تُرفض جملة `SETTINGS allow_ddl = 1` ما دامت الجلسة الحالية لديها `allow_ddl = 0`،
-  بينما تُقبل جملة `SETTINGS allow_ddl = 0`. ويجري التحقق من الإعداد المضمّن وفق قيود إعدادات
+  به. كما لا تتأثر `CREATE TEMPORARY TABLE` به. وداخل `CREATE` أو `ALTER` لمستخدم أو دور أو ملف تعريف إعدادات،
+  تُرفض عبارة `SETTINGS allow_ddl = 1` ما دامت الجلسة الحالية لديها `allow_ddl = 0`،
+  بينما تُقبل عبارة `SETTINGS allow_ddl = 0`. ويجري التحقق من الإعداد المضمّن وفق قيود إعدادات
   الجلسة نفسها، وهذا أيضًا سبب رفض `SET allow_ddl = 1`.
 </Note>
 
@@ -109,7 +111,8 @@ doc_type: 'reference'
   من `readonly` و`allow_ddl`، لكنه يتطلب `SELECT` على `system.processes`، باستثناء
   `KILL QUERY WHERE query_id = '<id>'`، الذي يلغي استعلامك الخاص الذي يحمل هذا المعرّف دون قراءة ذلك
   الجدول. أما إنهاء استعلام يخص مستخدمًا آخر، وأي `KILL QUERY ... ON CLUSTER`، فيتطلب
-  امتياز `KILL QUERY`، وهو ما يرفضه `readonly = 1` و`readonly = 2`.
+  امتياز `KILL QUERY`، وهو ما يرفضه `readonly = 1` و`readonly = 2`. ويتطلب `KILL TRANSACTION` دائمًا
+  امتياز `KILL TRANSACTION`، وهو ما يرفضه `readonly = 1` و`readonly = 2`.
 </Info>
 
 ## إعدادات أخرى ذات صلة {#other-relevant-settings}

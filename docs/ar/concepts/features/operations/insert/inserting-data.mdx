@@ -99,9 +99,9 @@ doc_type: 'guide'
 </div>
 
 يوفّر ClickHouse عملاءً لأكثر لغات البرمجة شيوعًا.
-وقد جرى تحسين هذه العملاء لضمان تنفيذ عمليات الإدراج بشكل صحيح، كما أنها تدعم الإدراجات غير المتزامنة دعمًا أصيلًا، إما مباشرةً كما في [Go client](/ar/integrations/language-clients/go/clickhouse-api#async-insert)، أو بصورة غير مباشرة عند تمكينها في إعدادات مستوى الاستعلام أو المستخدم أو الاتصال.
+وقد جرى تحسين هذه العملاء لضمان تنفيذ عمليات الإدراج بشكل صحيح، كما أنها تدعم عمليات الإدراج غير المتزامنة دعمًا أصيلًا، إما مباشرةً كما في [Go client](/ar/integrations/language-clients/go/clickhouse-api#async-insert)، أو بصورة غير مباشرة عند تمكينها في إعدادات مستوى الاستعلام أو المستخدم أو الاتصال.
 
-راجع [العملاء والواجهات الأصلية](/ar/concepts/features/interfaces/native-clients-interfaces-index) للاطلاع على القائمة الكاملة لعملاء ClickHouse وبرامج التشغيل المتاحة.
+راجع [الاتصال بـ ClickHouse](/ar/concepts/features/connect-to-clickhouse) للاطلاع على القائمة الكاملة لعملاء ClickHouse وبرامج التشغيل المتاحة.
 
 <div id="prefer-the-native-format">
   ### فضّل تنسيق Native {#prefer-the-native-format}
@@ -124,13 +124,13 @@ doc_type: 'guide'
 </div>
 
 على عكس كثير من قواعد البيانات التقليدية، يدعم ClickHouse واجهة HTTP.
-يمكنك استخدامها لكلٍّ من إدراج البيانات والاستعلام عنها، بأيٍّ من التنسيقات المذكورة أعلاه.
+يمكنك استخدامها لكلٍّ من إدراج البيانات والاستعلام عنها، بأيٍّ من التنسيقات المذكورة أعلاه.
 وغالبًا ما يكون هذا الخيار أفضل من البروتوكول الأصلي لـ ClickHouse، لأنه يسهّل تحويل حركة المرور باستخدام موازنات التحميل.
 ونتوقع وجود فروق طفيفة في أداء الإدراج مع البروتوكول الأصلي، لأنه يضيف عبئًا إضافيًا أقل قليلًا.
-تستخدم البرامج العميلة الحالية أحد هذين البروتوكولين (وفي بعض الحالات كليهما، مثل Go client).
+تستخدم العملاء الحالية أحد هذين البروتوكولين (وفي بعض الحالات كليهما، مثل Go client).
 كما يتيح البروتوكول الأصلي تتبّع تقدّم الاستعلام بسهولة.
 
-راجع [واجهة HTTP](/ar/concepts/features/interfaces/http) لمزيد من التفاصيل.
+راجع [واجهة HTTP](/ar/concepts/features/connect-to-clickhouse/protocols/http) لمزيد من التفاصيل.
 
 <div id="basic-example">
   ## مثال بسيط {#basic-example}
@@ -190,7 +190,7 @@ user_id message                                             timestamp           
 * `clickhouse-server` قيد التشغيل
 * لديك إمكانية الوصول إلى طرفية تتوفر فيها الأدوات `wget` و `zcat` و `curl`
 
-في هذا المثال، سترى كيفية إدراج ملف CSV في ClickHouse من سطر الأوامر باستخدام clickhouse-client في الوضع الدفعي. لمزيد من المعلومات والأمثلة حول إدراج البيانات عبر سطر الأوامر باستخدام clickhouse-client في الوضع الدفعي، راجع [&quot;Batch mode&quot;](/ar/concepts/features/interfaces/client#batch-mode).
+في هذا المثال، سترى كيفية إدراج ملف CSV في ClickHouse من سطر الأوامر باستخدام clickhouse-client في وضع الدُفعات. لمزيد من المعلومات والأمثلة حول إدراج البيانات عبر سطر الأوامر باستخدام clickhouse-client في وضع الدُفعات، راجع [&quot;وضع الدُفعات&quot;](/ar/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client#batch-mode).
 
 سنستخدم [Hacker News dataset](/ar/get-started/sample-datasets/hacker-news) في هذا المثال، والتي تحتوي على 28 مليون صف من بيانات Hacker News.
 

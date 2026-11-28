@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## enable_software_prefetch_in_aggregation
+## enable_software_prefetch_in_aggregation {#enable_software_prefetch_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-集約処理でのソフトウェアプリフェッチの使用を有効にします
+`GROUP BY` の実行時に、ハッシュテーブルのセルに対するソフトウェアプリフェッチを有効にします。プリフェッチは、集約用のハッシュテーブルが CPU キャッシュに収まらない場合にメモリアクセスの低減を隠蔽するためのものです。そのため、ハッシュテーブルが L2 キャッシュのサイズを超えて大きくなった時点でのみ使用されます。
 
-## enable_software_prefetch_in_join
+## enable_software_prefetch_in_join {#enable_software_prefetch_in_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

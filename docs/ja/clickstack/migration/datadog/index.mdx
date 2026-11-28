@@ -261,8 +261,10 @@ Open Source ClickStack では、スタック のデプロイ時に生成され�
   ## 現在移行できるもの {#what-you-can-migrate-today}
 </div>
 
-Datadog receiver は OpenTelemetry Collector Contrib の alpha コンポーネントであり、ClickStack collector ディストリビューションでは Experimental とされているため、有効にするにはフィーチャーフラグが必要です。
+Datadog receiver は OpenTelemetry Collector Contrib の alpha コンポーネントであり、ClickStack コレクター ディストリビューションでは Experimental とされているため、有効にするにはフィーチャーフラグが必要です。
 
-この receiver は **ログとトレース** のワークロードで広範にテストされており、これらのシグナルで ClickStack を評価する際に推奨されます。**メトリクス** も動作しますが、さらなるテストと開発が必要です。現在、この receiver は Datadog の v1 および v2 のメトリクス取り込み endpoint をサポートしており、新しい protocol version を使用する Datadog エージェントは、サポート対象の endpoint 経由でメトリクスを送信するよう明示的に設定する必要があります。
+この receiver は **ログとトレース** のワークロードで広範にテストされており、これらのシグナルで ClickStack を評価する際に推奨されます。**メトリクス** も動作しますが、さらなるテストと開発が必要です。現在、この receiver は Datadog の v1 および v2 のメトリクス取り込み エンドポイント をサポートしており、新しい protocol version を使用する Datadog エージェントは、サポート対象の エンドポイント 経由でメトリクスを送信するよう明示的に設定する必要があります。
 
 現時点では、この receiver により、アプリケーションがすでに Datadog SDKs を使用している場合や、インフラストラクチャで Datadog エージェントが稼働している場合に、ClickStack を手早く評価できます。両方のパイプラインを並列に実行し、データが ClickStack でどのように表現され、どのようにクエリできるかを検証したうえで、より広範な移行に進むかどうかを判断してください。評価の結果、明確なメリットが確認できた場合は、同じアーキテクチャで段階的に移行することも可能です。既存の Datadog インストルメンテーションはそのまま維持しつつ、各サービスを時間をかけて OpenTelemetry へ移行できます。
+
+アプリケーションは DogStatsD のカスタムメトリクスを ClickStack コレクターへ直接送信することもでき、collector は受信したトレースからリクエスト、エラー、所要時間のメトリクスを導出できます。詳しくは [StatsD メトリクスの受信](/ja/clickstack/ingesting-data/collector#statsd-receiver) および [スパンからのメトリクスの導出](/ja/clickstack/ingesting-data/collector#span-metrics) を参照してください。

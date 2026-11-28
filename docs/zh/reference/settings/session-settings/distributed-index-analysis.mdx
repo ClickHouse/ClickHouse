@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHistory.jsx";
+import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
@@ -39,6 +40,16 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "新增设置"}]}]} />
 
 即使是非 SharedMergeTree (仅 Cloud 提供的引擎) ，也启用分布式索引分析。
+
+## distributed_index_analysis_on_stateless_workers {#distributed_index_analysis_on_stateless_workers}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+对于以分布式查询计划 (`make_distributed_plan`) 运行、且持有或可以租用工作线程的初始查询，在无状态工作线程上执行分布式索引分析。该设置独立于 `distributed_index_analysis` 生效。工作线程负责分析共享表位于对象存储上的表。目前，启用此设置会关闭副本上的索引分析 (`distributed_index_analysis`) ，因此未由工作线程承担的读取以及其他查询的读取，均在本地进行分析。工作线程依赖流式数据交换：若使用 `Persisted` 类型的交换 (由 `distributed_plan_force_exchange_kind` 指定，或未配置流式监听器) ，读取将在本地进行分析。MergeTree 设置 `distributed_index_analysis_min_parts_to_activate` 和 `distributed_index_analysis_min_indexes_bytes_to_activate` 同样适用。
 
 ## distributed_index_analysis_only_on_coordinator {#distributed_index_analysis_only_on_coordinator}
 

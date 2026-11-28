@@ -90,7 +90,7 @@ Valores possíveis:
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
-No caso de ORDER BY com LIMIT, quando o uso de memória for maior que o limite especificado, execute etapas adicionais de mesclagem de blocos antes da mesclagem final para manter apenas as primeiras LIMIT linhas.
+No caso de `ORDER BY` com `LIMIT`, quando a memória usada pelos blocos acumulados desde a etapa anterior desse tipo for maior que o limiar especificado, execute etapas adicionais de mesclagem de blocos antes da mesclagem final para manter apenas as primeiras `LIMIT` linhas. Antes do descarregamento em disco devido a `max_bytes_before_external_sort`, todos os blocos acumulados são contabilizados.
 
 ## max_bytes_for_external_set_bloom_filter {#max_bytes_for_external_set_bloom_filter}
 
@@ -207,27 +207,25 @@ O número máximo de bytes (de dados não comprimidos) usados por um conjunto cr
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "Nova configuração para habilitar o spill de `DISTINCT` para disco quando o uso de memória exceder a razão informada da memória disponível. Se 0, apenas `max_bytes_before_external_distinct` se aplica."}]}]} />
 
-Fração da memória disponível do servidor ou do usuário usada para calcular o limiar do `DISTINCT` externo no
-início da execução. Por exemplo, `0.5` usa metade da memória disponível.
+Fração da memória disponível considerando o `max_memory_usage` da consulta e os limites de memória do servidor ou do usuário,
+usada para calcular o limiar do `DISTINCT` externo no início da execução. Por exemplo, `0.5` usa metade
+da memória disponível. A porção do cache de páginas em espaço de usuário que excede `page_cache_min_size` é considerada memória disponível.
 
 Os valores devem ser no mínimo `0` e menores que `1`. `0` desabilita esse limiar. Sem um limite de memória
-aplicável de servidor ou de usuário, a razão não tem efeito.
-
-`max_memory_usage` não afeta esse cálculo. Para configurar o spill em relação a esse limite,
-use `max_bytes_before_external_distinct`, deixando espaço para uso adicional de memória.
+aplicável de consulta, de servidor ou de usuário, a razão não tem efeito.
 
 ## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "Ativar o spill automático para disco por padrão."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "Nova configuração."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "Habilitar o descarregamento automático para disco por padrão."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "Nova configuração."}]}]} />
 
 A razão da memória disponível que pode ser usada pelo `GROUP BY`. Ao atingir esse limite,
 a memória externa é usada para agregação.
 
 Por exemplo, se definido como `0.6`, o `GROUP BY` permitirá usar 60% da memória disponível
-(para servidor/usuário/merges) no início da execução; depois disso,
-começará a usar agregação externa.
+(dentro do `max_memory_usage` da consulta e dos limites de servidor/usuário/mesclagens) no início da execução; depois disso,
+começará a usar agregação externa. O cache de páginas em espaço de usuário acima de `page_cache_min_size` é contabilizado como memória disponível.
 
 ## max_bytes_ratio_before_external_join {#max_bytes_ratio_before_external_join}
 
@@ -237,7 +235,7 @@ começará a usar agregação externa.
 
 A razão da memória disponível que pode ser usada pelo `JOIN`. Quando esse limite é atingido, o hash join realiza spill dos dados do lado direito. Isso só acontece quando o `GraceHashJoin` consegue executar a junção (um único disjunto de igualdade, com tipo e rigor compatíveis). Condições `ON` com múltiplos disjuntos (`OR`) permanecem em `hash` e podem atingir o limite de memória sem fazer spill. Após o spill, a junção continua como junção hash Grace ou, quando o plano de consulta precisa preservar a ordem das linhas do stream da esquerda, como junção por mesclagem parcial (veja `max_bytes_before_external_join`).
 
-Por exemplo, se definido como `0.6`, o `JOIN` permitirá usar `60%` da memória disponível (para servidor/usuário/merges) para a tabela hash do lado direito no início da execução; depois disso, começará o descarregamento em disco.
+Por exemplo, se definido como `0.6`, o `JOIN` permitirá usar `60%` da memória disponível (dentro do `max_memory_usage` da consulta e dos limites de servidor/usuário/mesclagens) para a tabela hash do lado direito no início da execução; depois disso, começará o descarregamento em disco. O cache de páginas em espaço de usuário acima de `page_cache_min_size` é contabilizado como memória disponível.
 
 Se `max_bytes_before_external_join` e `max_bytes_ratio_before_external_join` estiverem ambos definidos, será usado o menor limiar resultante. Se a razão for `0`, somente a configuração absoluta se aplica.
 
@@ -249,24 +247,23 @@ Tem efeito para todo `join_algorithm` baseado em hash, incluindo `grace_hash`, d
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "A alteração do valor padrão para 0.5 recebeu backport para a 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0.5"},{"label": "Nova configuração para habilitar o spill para o disco do conjunto de `IN` com uma subconsulta quando o uso de memória exceder a razão especificada da memória disponível. Se for 0, apenas `max_bytes_before_external_set` se aplica."}]}]} />
 
-Fração da memória disponível do servidor ou do usuário usada para calcular, no início da execução, o limiar de spill para o disco do conjunto de `IN`
-com uma subconsulta. Por exemplo, `0.5` usa metade da memória disponível.
+Fração da memória disponível dentro do limite definido por `max_memory_usage` da consulta e dos limites de memória do servidor ou do usuário,
+usada para calcular, no início da execução, o limiar de spill para o disco do conjunto de `IN`
+com uma subconsulta. Por exemplo, `0.5` usa metade da memória disponível. A parte do cache de páginas em espaço de usuário que excede
+`page_cache_min_size` é contabilizada como memória disponível.
 
 Os valores devem ser maiores ou iguais a `0` e menores que `1`. `0` desativa esse limiar. Se não houver um limite de memória
-aplicável do servidor ou do usuário, a razão não tem efeito.
-
-`max_memory_usage` não afeta esse cálculo. Para configurar o spill em relação a esse limite,
-use `max_bytes_before_external_set`, deixando margem para uso adicional de memória.
+aplicável à consulta, ao servidor ou ao usuário, a razão não tem efeito.
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "Habilita o spill automático em disco por padrão."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "Nova configuração."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "Habilitar o descarregamento automático para disco por padrão."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "Nova configuração."}]}]} />
 
 A razão da memória disponível que pode ser usada pelo `ORDER BY`. Quando esse limite é atingido, a ordenação externa é usada.
 
-Por exemplo, se definido como `0.6`, o `ORDER BY` permitirá usar `60%` da memória disponível (para servidor/usuário/merges) no início da execução; depois disso, começará a usar ordenação externa.
+Por exemplo, se definido como `0.6`, o `ORDER BY` permitirá usar `60%` da memória disponível (respeitando o `max_memory_usage` da consulta e os limites de servidor/usuário/mesclagens) no início da execução; depois disso, começará a usar ordenação externa. O cache de páginas em espaço de usuário acima de `page_cache_min_size` é contabilizado como memória disponível.
 
 Observe que `max_bytes_before_external_sort` continua sendo respeitado; o spill em disco será feito apenas se o bloco de ordenação for maior que `max_bytes_before_external_sort`.
 

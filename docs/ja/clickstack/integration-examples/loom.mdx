@@ -1,0 +1,48 @@
+---
+title: 'Loom のテレメトリーを ClickStack に送信する'
+sidebarTitle: 'Loom'
+slug: /use-cases/observability/clickstack/integrations/loom
+description: 'OpenTelemetry 経由で Loom のリクエストトレースとメトリクスを ClickStack Open Source に送信します。'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Loom', 'OpenTelemetry', 'OTLP']
+---
+
+[Loom](https://github.com/ClickHouse/loom) は、AIエージェント向けのメモリおよびコード検索サーバーです。ClickStack を使用すると、Loom のリクエストトレースとメトリクスを確認できます。
+
+## 前提条件 {#before-you-begin}
+
+* 稼働中の Loom サーバー
+* Loom サーバーから接続可能な OTLP HTTP レシーバーを備えた [ClickStack Open Source のデプロイ環境](/ja/clickstack/deployment/oss)
+
+## 仕組み {#how-it-works}
+
+Loom は、OTLP HTTP 経由でテレメトリーを ClickStack OpenTelemetryコレクターにエクスポートします。collector がテレメトリーを ClickHouse に書き込むことで、ClickStack からテレメトリーを利用できるようになります。
+
+## Loom エクスポーターを設定する {#configure-loom-exporter}
+
+ClickStack のインジェスト API key は **チーム設定 → APIキー** で確認できます。Loom サーバーで次の環境変数を設定し、サンプルの URL とキーを実際の値に置き換えてから、Loom を再起動します。
+
+```bash
+export LOOM_OTEL_EXPORTER=otlp
+export LOOM_OTEL_EXPORTER_OTLP_ENDPOINT='http://clickstack-collector:4318'
+export LOOM_OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
+
+Loom から接続可能な collector のベースURLを指定してください。Loom はこのURLに `/v1/traces` と `/v1/metrics` を追記します。Loom が中継用の collector に送信する場合は、その receiver が求めるヘッダーをカンマ区切りの `key=value` ペアで指定してください。receiver がヘッダーを必要としない場合は、ヘッダーの設定を省略してください。
+
+## ClickStack でテレメトリーを確認する {#verify-telemetry}
+
+Loom の解決済みエクスポーター設定を確認します。サーバーが別のホストまたはポートで稼働している場合は、例に示した Loom の URL を適宜置き換えてください。
+
+```bash
+curl -sS 'http://localhost:7777/v1/health?include=otel'
+```
+
+`otel.mode` が `otlp` に、`otel.endpoint` が設定済みの collector の URL になっていることを確認します。
+
+メモリ検索などの Loom リクエストを実行して、トレースを生成します。ClickStack で **検索** を開き、**トレース** ログソースを選択して、サービス名 `loom` (OpenTelemetry では `service.name`) でフィルタします。`LOOM_OTEL_SERVICE_NAME` を設定している場合は、その値でフィルタしてください。
+
+## 次のステップ {#next-steps}
+
+* [OpenTelemetry データを ClickStack に送信する](/ja/clickstack/ingesting-data/opentelemetry)
+* [Loom のテレメトリー設定とメトリクス](https://github.com/ClickHouse/loom/blob/v1.3.0/docs/features/observability/telemetry.md)

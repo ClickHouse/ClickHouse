@@ -1,0 +1,84 @@
+---
+sidebarTitle: 'OLake Go'
+slug: /integrations/olake
+description: 'Replica bases de datos, S3 y Kafka en tablas de Apache Iceberg que ClickHouse lee de forma nativa'
+title: 'OLake Go y ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://olake.io/'
+keywords: ['olake', 'olake go', 'ingesta de datos', 'iceberg', 'parquet', 'cdc', 'replicación', 'integración de datos']
+---
+
+import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[OLake Go](https://olake.io/) es una plataforma EL (extracción–carga) de código abierto y alto rendimiento que conecta las bases de datos operacionales con el almacenamiento lakehouse abierto mediante la escritura de tablas Apache Iceberg o archivos Parquet en Amazon S3. OLake Go admite la sincronización incremental, la captura de cambios de datos (CDC) y las sincronizaciones con estado que pueden reanudarse.
+
+ClickHouse lee tablas Iceberg de forma nativa mediante su función de tabla [`iceberg`](/es/reference/functions/table-functions/iceberg) y su motor de tabla [`Iceberg`](/es/reference/engines/table-engines/integrations/iceberg), y se conecta a catálogos Iceberg a través de [`DataLakeCatalog`](/es/reference/engines/database-engines/datalake). Esta página explica cómo usar OLake Go para poblar tablas Iceberg que luego se consultan desde ClickHouse.
+
+## Requisitos previos {#prerequisites}
+
+* OLake Go autoalojado mediante Docker Compose, Kubernetes (Helm) o un contenedor Docker independiente
+* Un sistema fuente compatible con OLake Go: PostgreSQL, MySQL, MongoDB, Oracle, MSSQL, DB2, Kafka o Amazon S3
+* ClickHouse Cloud o ClickHouse autoalojado con soporte para leer datos de Iceberg
+* Un catálogo Iceberg en el que OLake Go escriba y al que ClickHouse pueda conectarse; por ejemplo, AWS Glue, Hive Metastore, REST, Unity Catalog, Polaris o BigLake (consulte la [matriz de compatibilidad de catálogos de OLake Go](https://olake.io/docs/understanding/compatibility-catalogs/) y los [tipos de catálogos de `DataLakeCatalog`](/es/reference/engines/database-engines/datalake) de ClickHouse)
+
+## Configuración {#setup}
+
+1. Despliegue OLake Go siguiendo la [guía de inicio rápido de OLake Go](https://olake.io/docs/getting-started/quickstart/).
+2. Configure una fuente (por ejemplo, PostgreSQL o MySQL) y un destino Iceberg en S3 o en un almacenamiento S3-compatible.
+3. Elija un catálogo Iceberg compatible. El catálogo debe ser compatible tanto con OLake Go como con `DataLakeCatalog` de ClickHouse (tipos de catálogo: `glue`, `rest`, `hive`, `unity`, `onelake`, `horizon`).
+4. Ejecute una sincronización para escribir tablas Iceberg.
+5. En ClickHouse, consulte los datos en formato Iceberg mediante la función de tabla `iceberg` o el motor de tablas `Iceberg`, o conecte el catálogo mediante [`DataLakeCatalog`](/es/reference/engines/database-engines/datalake).
+
+## Ejemplo: de PostgreSQL a Iceberg, con consultas en ClickHouse {#example}
+
+1. En OLake Go, cree una fuente de PostgreSQL y un destino de Iceberg en Amazon S3 que utilice el Catálogo de AWS Glue.
+2. Ejecute una sincronización de actualización completa o de CDC para replicar las tablas en formato Iceberg.
+3. En ClickHouse, cree una tabla sobre los datos de Iceberg:
+
+```sql
+CREATE TABLE my_iceberg_table
+ENGINE = IcebergS3(
+  's3://my-bucket/warehouse/my_database/my_table/',
+  'aws_access_key',
+  'aws_secret_key'
+)
+```
+
+4. Consulte los datos replicados:
+
+```sql
+SELECT * FROM my_iceberg_table LIMIT 10;
+```
+
+Como alternativa, conecte el Catálogo de AWS Glue a ClickHouse mediante `DataLakeCatalog` y consulte directamente las tablas del catálogo.
+
+## Limitaciones conocidas {#known-limitations}
+
+* OLake Go escribe tablas Iceberg y ClickHouse las lee. ClickHouse también admite modificar tablas Iceberg (a partir de la versión 25.7), pero se trata de una capacidad independiente de ClickHouse que OLake Go no proporciona.
+* Las eliminaciones por igualdad son compatibles a partir de la versión 25.8 de ClickHouse. Es posible que las versiones anteriores no puedan leer todos los formatos de eliminación que OLake Go es capaz de escribir. Consulte la [documentación de Iceberg de ClickHouse](/es/reference/functions/table-functions/iceberg) para conocer el estado actual de la compatibilidad con los formatos de eliminación.
+* No todos los catálogos compatibles con OLake Go están disponibles como tipos de catálogo `DataLakeCatalog` en ClickHouse. Antes de elegir un catálogo, consulte tanto la [matriz de compatibilidad de catálogos de OLake Go](https://olake.io/docs/understanding/compatibility-catalogs/) como la [documentación de `DataLakeCatalog`](/es/reference/engines/database-engines/datalake).
+
+## Resolución de problemas {#troubleshooting}
+
+### Las tablas no aparecen en ClickHouse {#tables-not-visible}
+
+Compruebe que el catálogo Iceberg en el que escribe OLake Go sea uno al que ClickHouse pueda conectarse y que los parámetros de conexión y las credenciales del catálogo sean correctos. Consulte [`DataLakeCatalog`](/es/reference/engines/database-engines/datalake) para ver los tipos de catálogo compatibles.
+
+### Las filas eliminadas siguen siendo visibles {#deleted-rows-visible}
+
+Confirme que la versión de ClickHouse admite el formato de eliminación que escribió OLake Go (por igualdad, posicional o mediante vectores de eliminación). Las eliminaciones por igualdad requieren ClickHouse 25.8 o una versión posterior. Consulte la [documentación de la Función de Tabla Iceberg](/es/reference/functions/table-functions/iceberg) para obtener más información.
+
+## Lecturas adicionales {#further-reading}
+
+* [Documentación de OLake Go](https://olake.io/docs/)
+* [Compatibilidad del motor de consultas de OLake Go con ClickHouse](https://olake.io/docs/understanding/compatibility-engines/)
+* [Compatibilidad de OLake Go con catálogos Iceberg](https://olake.io/docs/understanding/compatibility-catalogs/)
+* [Función de tabla `iceberg` de ClickHouse](/es/reference/functions/table-functions/iceberg)
+* [Motor de tablas `Iceberg` de ClickHouse](/es/reference/engines/table-engines/integrations/iceberg)
+* [`DataLakeCatalog` de ClickHouse](/es/reference/engines/database-engines/datalake)
+* [Catálogos de datos de ClickHouse](/es/integrations/data-catalogs)

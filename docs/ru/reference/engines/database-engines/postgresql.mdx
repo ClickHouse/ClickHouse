@@ -14,9 +14,7 @@ doc_type: 'guide'
 
 Поддерживает изменение структуры таблиц (`ALTER TABLE ... ADD|DROP COLUMN`). Если параметр `use_table_cache` (см. раздел «Параметры движка» ниже) установлен в `1`, структура таблиц кэшируется и не проверяется на изменения, но может быть обновлена запросами `DETACH` и `ATTACH`.
 
-<div id="creating-a-database">
-  ## Создание базы данных
-</div>
+## Создание базы данных {#creating-a-database}
 
 ```sql
 CREATE DATABASE test_database
@@ -32,13 +30,11 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 * `schema` — Схема PostgreSQL.
 * `use_table_cache` — Определяет, кэшируется ли структура таблицы базы данных. Необязательный параметр. Значение по умолчанию: `0`.
 
-Параметры TLS/SSL передаются в `libpq` и могут быть заданы через [именованную коллекцию](/ru/concepts/features/configuration/server-config/named-collections) или в качестве завершающих аргументов ключ-значение: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` или `verify-full`), а также сертификаты и ключ в одном из двух вариантов. `sslrootcert` (CA‑сертификат), `sslcert` (клиентский сертификат) и `sslkey` (закрытый ключ клиента) — это пути к локальным файлам сервера; они принимаются только из именованной коллекции, определённой в файле конфигурации сервера. Вместо этого параметры `sslrootcert_pem`, `sslcert_pem` и `sslkey_pem` принимают литеральное содержимое соответствующих файлов; их можно указывать в SQL (например, `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`), а в журналах и запросах `SHOW` они маскируются так же, как пароль. Если они не заданы, применяются значения `libpq` по умолчанию (`sslmode=prefer`).
+Параметры TLS/SSL передаются в `libpq` и могут быть заданы через [именованную коллекцию](/ru/concepts/features/configuration/server-config/named-collections) или в качестве завершающих аргументов ключ-значение: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` или `verify-full`), а также сертификаты и ключ в одном из двух вариантов. `sslrootcert` (CA‑сертификат), `sslcert` (клиентский сертификат) и `sslkey` (закрытый ключ клиента) — это пути к локальным файлам сервера; они принимаются только из именованной коллекции, определённой в файле конфигурации сервера. Вместо этого параметры `sslrootcert_pem`, `sslcert_pem` и `sslkey_pem` принимают литеральное содержимое соответствующих файлов; их можно указывать в SQL (например, `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`), а в журналах и запросах `SHOW` они маскируются так же, как пароль. Если они не заданы, применяются значения `libpq` по умолчанию (`sslmode=prefer`). Если не настроены одновременно клиентский сертификат (`sslcert` или `sslcert_pem`) и клиентский ключ (`sslkey` или `sslkey_pem`), ClickHouse передаёт `sslcertmode=disable`, поэтому `libpq` не выполняет аутентификацию с использованием получаемых из окружения сертификата или ключа служебной учётной записи по умолчанию (`~/.postgresql/postgresql.{crt,key}`).
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## Поддержка типов данных
-</div>
+## Поддержка типов данных {#data-types-support}
 
 | PostgreSQL       | ClickHouse                                                     |
 | ---------------- | -------------------------------------------------------------- |
@@ -60,9 +56,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
   В PostgreSQL `numeric(p, 0)` с precision `p` больше 76 (максимального значения, поддерживаемого `Decimal256`) — например, `numeric(78, 0)`, который обычно используется для хранения 256-битных целых чисел, — сопоставляется с [`Int256`](/ru/reference/data-types/int-uint), а не с `Decimal`. Значения, которые не помещаются в диапазон `Int256`, отклоняются с ошибкой.
 </Note>
 
-<div id="examples-of-use">
-  ## Примеры использования
-</div>
+## Примеры использования {#examples-of-use}
 
 База данных в ClickHouse, которая обменивается данными с сервером PostgreSQL:
 
@@ -154,9 +148,7 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
-<div id="related-content">
-  ## Связанные материалы
-</div>
+## Связанные материалы {#related-content}
 
 * Блог: [ClickHouse и PostgreSQL — идеальное сочетание в мире данных — часть 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 * Блог: [ClickHouse и PostgreSQL — идеальное сочетание в мире данных — часть 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

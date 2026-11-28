@@ -59,13 +59,21 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 | تسمية          | `label_replace`, `label_join`                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | النوع          | `scalar`, `vector`                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | مُدرَّج تكراري | `histogram_quantile`                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| الفرز          | `sort`, `sort_desc`, `sort_by_label`, `sort_by_label_desc`                                                                                                                                                                                                                                                                                                                                                                                        |
 | أخرى           | `time`, `step`, `range`, `pi`, `absent`, `timestamp`                                                                                                                                                                                                                                                                                                                                                                                              |
 
 **ملاحظة**: تستخدم `histogram_quantile` الاستيفاء الخطي على حاويات المُدرَّج التكراري التقليدي (التي يحدّدها تسمية `le`). لا يتم دعم المُدرَّجات التكرارية الأصلية. يجب أن تكون قيمة وسيطة `phi` (مستوى quantile) `scalar` ثابتًا. وتُرفض التعبيرات التي تتغيّر في كل خطوة، مثل `histogram_quantile(time() / 1000, ...)`، مع استثناء `NOT_IMPLEMENTED`.
 
 **ملاحظة**: تُرجع `min_of(a, b)` و`max_of(a, b)` القيمة الأصغر والأكبر، على الترتيب، من بين قيمتين من النوع `scalar`. ويجب أن تكون كلتا الوسيطتين من النوع `scalar`.
 
-**ملاحظة**: تُعدّ `step` و`range` و`min_of` و`max_of` و`ts_of_min_over_time` و`ts_of_max_over_time` و`ts_of_last_over_time` و`ts_of_first_over_time` و`mad_over_time` دوال تجريبية في Prometheus (تُفعّل فيه باستخدام `--enable-feature=promql-experimental-functions`)؛ ويقيّمها ClickHouse دون اشتراط تلك العلامة.
+**ملاحظة**: لا ترتّب دوال الفرز النتيجة إلا عندما تكون الدالة الأبعد في الاستعلام. وفي أي موضع آخر لا يكون لدالة الفرز أي تأثير، بينما يحتفظ Prometheus بترتيب دالة الفرز المتداخلة، كما في `abs(sort_desc(x))`.
+
+* ترتّب `sort` و`sort_desc` النتيجة حسب قيمة العينة، مع وضع `NaN` في النهاية. وتُرتَّب سلاسل البيانات ذات القيم المتساوية حسب تسمياتها.
+* ترتّب `sort_by_label` و`sort_by_label_desc` النتيجة حسب قيم التسميات المحددة، مع مقارنتها بالترتيب الطبيعي (`host2` قبل `host10`). وتُرتَّب سلسلة البيانات التي لا تحتوي على تسمية محددة كما لو كانت التسمية فارغة. وتُرتَّب سلاسل البيانات ذات القيم المتساوية لهذه التسميات حسب جميع تسمياتها.
+
+يختلف هذا الترتيب عن Prometheus في ثلاث حالات: الأرقام التي لا تختلف إلا في الأصفار البادئة (`7` و`007`) تُعدّ متساوية، والأرقام بأي طول تُقارَن كأرقام (يقارن Prometheus الرقم الذي يتجاوز نطاق `Int64` كنص)، وسلسلة البيانات التي لا تحتوي على تسمية محددة تأتي دائمًا قبل سلاسل البيانات التي تحتويها (في Prometheus يعتمد موضعها على ترتيب الإدخال).
+
+**ملاحظة**: تُعدّ `step` و`range` و`min_of` و`max_of` و`ts_of_min_over_time` و`ts_of_max_over_time` و`ts_of_last_over_time` و`ts_of_first_over_time` و`mad_over_time` و`sort_by_label` و`sort_by_label_desc` دوال تجريبية في Prometheus (تُفعّل فيه باستخدام `--enable-feature=promql-experimental-functions`)؛ ويقيّمها ClickHouse دون اشتراط تلك العلامة.
 
 ### العوامل {#operators}
 

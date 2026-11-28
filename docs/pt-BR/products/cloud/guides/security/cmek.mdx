@@ -46,10 +46,10 @@ A TDE deve ser habilitada ao criar o serviço. Serviços existentes não podem s
 </div>
 
 <Warning>
-  Excluir uma chave do KMS usada para criptografar um serviço do ClickHouse Cloud fará com que o serviço seja interrompido e os dados se tornem irrecuperáveis, juntamente com os backups existentes. Para evitar perda acidental de dados durante a rotação de chaves, convém manter as chaves antigas do KMS por algum tempo antes de excluí-las.
+  Excluir permanentemente uma chave KMS usada para criptografar um serviço do ClickHouse Cloud torna irrecuperáveis os dados do serviço e seus backups existentes. A exclusão de uma chave primeiro interrompe o serviço, e a maioria dos provedores de KMS mantém a chave excluída recuperável durante um período de espera antes de destruí-la (consulte [verificação periódica da chave KMS](#kms-key-poller)). Para evitar perda acidental de dados durante a rotação de chaves, mantenha as chaves KMS antigas por algum tempo antes de excluí-las.
 </Warning>
 
-Depois que um serviço é criptografado com TDE, os clientes podem atualizar a chave para habilitar o CMEK. O serviço será reiniciado automaticamente após a atualização da configuração de TDE. Durante esse processo, a chave antiga do KMS descriptografa a chave de criptografia de dados (DEK), e a nova chave do KMS criptografa novamente a DEK. Isso garante que, após a reinicialização, o serviço passe a usar a nova chave do KMS nas operações de criptografia. Esse processo pode levar vários minutos.
+Depois que um serviço é criptografado com TDE, os clientes podem atualizar a chave para habilitar o CMEK. O serviço será reiniciado automaticamente após a atualização da configuração de TDE. Durante esse processo, a chave KMS antiga descriptografa a chave de criptografia de dados (DEK), e a nova chave KMS criptografa novamente a DEK. Isso garante que, após a reinicialização, o serviço passe a usar a nova chave KMS nas operações de criptografia. Esse processo pode levar vários minutos.
 
 <Accordion title="Habilitar CMEK com AWS KMS">
   1. No ClickHouse Cloud, selecione o serviço criptografado
@@ -60,7 +60,7 @@ Depois que um serviço é criptografado com TDE, os clientes podem atualizar a c
 
   4. Copie o Encryption role ID (AWS) ou Encryption Service Account (GCP) - você precisará disso em uma etapa futura
 
-  5. [Crie uma chave do KMS para AWS](https://docs.aws.amazon.com/kms/latest/developerguide/create-keys.html)
+  5. [Crie uma chave KMS para AWS](https://docs.aws.amazon.com/kms/latest/developerguide/create-keys.html)
 
   6. Clique na chave
 
@@ -87,7 +87,7 @@ Depois que um serviço é criptografado com TDE, os clientes podem atualizar a c
 
   9. Copie a Key ARN
 
-  10. Volte para o ClickHouse Cloud e cole a Key ARN na seção Transparent Data Encryption em Service Settings
+  10. Volte para o ClickHouse Cloud e cole a Key ARN na seção Criptografia Transparente de Dados em Service Settings
 
   11. Salve a alteração
 </Accordion>
@@ -97,14 +97,14 @@ Depois que um serviço é criptografado com TDE, os clientes podem atualizar a c
   2. Clique em Settings à esquerda
   3. Na parte inferior da tela, expanda Network security information
   4. Copie a Encryption Service Account (GCP) - você precisará disso em uma etapa futura
-  5. [Crie uma chave do KMS para GCP](https://cloud.google.com/kms/docs/create-key)
+  5. [Crie uma chave KMS para GCP](https://cloud.google.com/kms/docs/create-key)
   6. Clique na chave
   7. Conceda as permissões a seguir à GCP Encryption Service Account copiada na etapa 4 acima.
      * Cloud KMS CryptoKey Encrypter/Decrypter
      * Cloud KMS Viewer
   8. Salve a permissão da chave
   9. Copie o Key Resource Path
-  10. Volte para o ClickHouse Cloud e cole o Key Resource Path na seção Transparent Data Encryption em Service Settings
+  10. Volte para o ClickHouse Cloud e cole o Key Resource Path na seção Criptografia Transparente de Dados em Service Settings
   11. Salve a alteração
 </Accordion>
 
@@ -142,11 +142,19 @@ Depois que um serviço é criptografado com TDE, os clientes podem atualizar a c
 
 Depois de configurar o CMEK, faça a rotação da chave seguindo os procedimentos acima para criar uma nova chave do KMS e conceder as permissões necessárias. Volte às configurações do serviço, cole o novo ARN (AWS), o Key Resource Path (GCP) ou o Key Name (Azure) e salve as configurações. O serviço será reiniciado para aplicar a nova chave.
 
-<div id="kms-key-poller">
-  #### Verificação periódica da chave KMS {#kms-key-poller}
-</div>
+#### Verificação periódica da chave KMS {#kms-key-poller}
 
-Ao usar CMEK, a validade da chave KMS fornecida é verificada a cada 10 minutos. Se o acesso à chave KMS se tornar inválido, o serviço do ClickHouse será interrompido. Para retomar o serviço, restaure o acesso à chave KMS seguindo as etapas deste guia e, em seguida, reinicie o serviço.
+Ao usar CMEK, a validade da Chave KMS fornecida é verificada a cada 10 minutos. Se o acesso à Chave KMS for inválido, o Serviço do ClickHouse será interrompido. Para retomar o serviço, restaure o acesso à Chave KMS seguindo as etapas deste guia e, em seguida, reinicie o serviço.
+
+Um serviço interrompido pela verificação periódica da chave não é excluído, e não há prazo para recuperá-lo. Se a chave tiver sido revogada ou desabilitada, restaure o acesso a ela e reinicie o serviço, que voltará a funcionar com seus dados.
+
+A exclusão da chave é um caso diferente. Depois que uma chave é excluída permanentemente, os dados do serviço e seus backups não podem mais ser descriptografados (consulte o aviso em [Chaves de Criptografia Gerenciadas pelo Cliente](#customer-managed-encryption-keys-cmek)). Cada provedor de KMS mantém a chave excluída recuperável durante um período de espera antes de destruí-la:
+
+* AWS KMS: de 7 a 30 dias (30 por padrão). [Cancele a exclusão da chave](https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys-cancelling-key-deletion.html) e, em seguida, habilite a chave.
+* GCP Cloud KMS: de 24 horas a 120 dias (30 dias por padrão). O período é definido na criação da chave e não pode ser alterado depois; portanto, uma chave criada com um período curto pode ser destruída apenas 24 horas após o agendamento de sua destruição. Verifique o horário agendado para a destruição da versão da chave em vez de contar com o valor padrão. [Restaure a versão da chave](https://docs.cloud.google.com/kms/docs/destroy-restore) e, em seguida, habilite-a.
+* Azure Key Vault: de 7 a 90 dias, se a exclusão reversível (soft-delete) estiver habilitada no cofre e a chave não tiver sido expurgada. Sem a proteção contra limpeza (purge protection), uma chave excluída pode ser expurgada permanentemente antes do fim desse período. Habilite a proteção contra limpeza para evitar a exclusão permanente antecipada. [Recupere a chave excluída](https://learn.microsoft.com/en-us/azure/key-vault/general/key-vault-recovery).
+
+Assim que a chave voltar a ser utilizável, reinicie o serviço.
 
 <div id="backup-and-restore">
   ### Backup e restauração {#backup-and-restore}

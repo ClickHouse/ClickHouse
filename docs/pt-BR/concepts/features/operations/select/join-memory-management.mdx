@@ -25,14 +25,14 @@ Duas configurações alteram esse comportamento:
 
 Os limites funcionam de forma diferente em outros algoritmos:
 
-* No [`ie_join`](/pt-BR/concepts/features/operations/select/join-algorithms#ie-join), os limites se aplicam à entrada acumulada dos dois lados em conjunto.
+* No [`inequality`](/pt-BR/concepts/features/operations/select/join-algorithms#inequality), os limites se aplicam à entrada acumulada dos dois lados em conjunto.
 * No [fallback de block nested loop](/pt-BR/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback), os limites se aplicam ao lado direito materializado, incluindo os blocos gravados em disco.
 * No [`partial_merge`](/pt-BR/concepts/features/operations/select/join-algorithms#partial-merge), atingir um limite altera a estratégia de execução em vez de interromper a consulta: o JOIN passa a gravar em disco seus blocos ordenados do lado direito.
 
 ## Limiares de spill {#spill-thresholds}
 
 * [`max_bytes_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) define um limiar de spill absoluto, em bytes, para o lado direito de um JOIN baseado em hash.
-* [`max_bytes_ratio_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) define o limiar de spill como uma razão da memória que ainda resta dentro dos limites de memória do usuário e do servidor. Se nenhum limite de memória estiver configurado, a razão não tem efeito.
+* [`max_bytes_ratio_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) define o limiar de spill como uma razão da memória que ainda resta dentro do `max_memory_usage` da consulta e dos limites de memória do usuário e do servidor. Se nenhum limite de memória estiver configurado, a razão não tem efeito.
 
 Se as duas configurações estiverem definidas, prevalece o menor limiar resultante. Os limiares se aplicam a `hash`, `parallel_hash`, `grace_hash`, ao valor `auto` e ao fallback de block nested loop. Eles exigem que um caminho de dados temporários esteja configurado.
 
@@ -46,7 +46,7 @@ Cada algoritmo capaz de fazer spill grava uma parte diferente do seu estado em a
 * **`partial_merge`.** Os blocos ordenados do lado direito e seus índices min-max são gravados em arquivos temporários depois que o lado direito atinge um limite rígido.
 * **Fallback de block nested loop.** Os blocos do lado direito são comprimidos em memória e, em seguida, gravados em arquivos temporários quando o limiar de spill é atingido.
 
-Os algoritmos [`direct`](/pt-BR/concepts/features/operations/select/join-algorithms#direct) e [`ie_join`](/pt-BR/concepts/features/operations/select/join-algorithms#ie-join) não fazem spill para o disco.
+Os algoritmos [`direct`](/pt-BR/concepts/features/operations/select/join-algorithms#direct) e [`inequality`](/pt-BR/concepts/features/operations/select/join-algorithms#inequality) não fazem spill para o disco.
 
 Os arquivos temporários são gravados no armazenamento definido pela configuração do servidor [`tmp_path`](/pt-BR/reference/settings/server-settings/settings/tmp#tmp_path), [`tmp_policy`](/pt-BR/reference/settings/server-settings/settings/tmp#tmp_policy) ou [`temporary_data_in_cache`](/pt-BR/reference/settings/server-settings/settings/temporary-data#temporary_data_in_cache). A leitura e a gravação de arquivos temporários geram E/S de disco adicional; por isso, um JOIN com spill é mais lento do que o mesmo JOIN executado em memória.
 

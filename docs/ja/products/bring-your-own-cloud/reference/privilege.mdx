@@ -1,76 +1,67 @@
 ---
 title: 'BYOC の権限'
 slug: /cloud/reference/byoc/reference/privilege
-sidebarTitle: '権限'
+sidebarTitle: '概要'
 keywords: ['BYOC', 'クラウド', 'Bring Your Own Cloud', '権限']
 description: '自社のクラウドインフラストラクチャにClickHouseをデプロイ'
 doc_type: 'reference'
 ---
 
+このページでは、ClickHouse BYOC がお客様のクラウドアカウント内で使用するアイデンティティの概要を説明します。各アイデンティティのアクセス許可、スコープ、用途については、ご利用のクラウドに対応するページを参照してください。
+
+* [AWS における BYOC の権限](/ja/products/bring-your-own-cloud/reference/privilege-aws)
+* [GCP における BYOC の権限](/ja/products/bring-your-own-cloud/reference/privilege-gcp)
+
 ## AWS IAMロール {#aws-iam-roles}
 
 ### Bootstrap IAM ロール {#bootstrap-iam-role}
 
-Bootstrap IAM ロールには、次の権限があります。
+Bootstrap IAM ロール `ClickHouseManagementRole` には、次のアクセス許可があります。
 
 * **EC2 および VPC の操作**: VPC と EKS クラスターのセットアップに必要です。
 * **S3 の操作 (例: `s3:CreateBucket`)&#x20;**: ClickHouse BYOC ストレージ用のバケットを作成するために必要です。
 * **IAM の操作 (例: `iam:CreatePolicy`)&#x20;**: コントローラーが追加のロールを作成するために必要です (詳細は次のセクションを参照してください) 。
-* **EKS の操作**: 名前が `clickhouse-cloud` プレフィックスで始まるリソースに限定されます。
+* **EKS の操作**: 書き込み操作は、名前が `clickhouse-cloud` プレフィックスで始まるリソースに限定されます。
 
-### コントローラーによって追加で作成される IAM ロール {#additional-iam-roles-created-by-the-controller}
+### コントローラーによって作成される追加のIAMロール {#additional-iam-roles-created-by-the-controller}
 
-CloudFormation で作成される `ClickHouseManagementRole` に加えて、コントローラーはいくつかの追加のロールも作成します。
+コントローラーは、`ClickHouseManagementRole` に加えて、BYOC インフラストラクチャごとに以下の追加ロールを作成します。
 
-これらのロールは、お客様の EKS クラスター内で実行されるアプリケーションが引き受けることを想定しています。
+* **データプレーン管理**: ClickHouse の管理サービスが、お客様の外部 ID を使用してこのロールを引き受け、ClickHouse サービスの日常的な管理を行います。
+* **EKSクラスターおよびノードのロール**: EKS、システムノード、および Karpenter ノードが使用します。
+* **クラスターコントローラー**: Karpenter、Cluster Autoscaler、AWS Load Balancer Controller、および EBS CSI ドライバー用のロールです。
+* **ClickHouseサーバーのアイデンティティ**: BYOC バケット内のテーブルデータとバックアップの読み取りおよび書き込みを行います。
+* **監視ストレージ (Thanos)**: BYOC の監視用バケット内のメトリクスの読み取りおよび書き込みを行います。
+* **テレメトリーロール**: インフラストラクチャのヘルス情報、請求用の使用量データ、およびオートスケーリング用の Kubernetes メトリクスを ClickHouse に送信します。それ以外のアクセス許可は付与されていません。
 
-* **State Exporter Role**
-  * サービスの正常性情報を ClickHouse Cloud に報告する ClickHouse コンポーネントです。
-  * ClickHouse Cloud が所有する SQS キューへの書き込み権限が必要です。
-* **Load-Balancer Controller**
-  * 標準的な AWS ロードバランサーコントローラーです。
-  * ClickHouse サービスのボリュームを管理する EBS CSI コントローラーです。
-* **External-DNS**
-  * DNS 設定を Route 53 に反映します。
-* **Cert-Manager**
-  * BYOC サービスのドメイン向けに TLS 証明書を発行します。
-* **Cluster Autoscaler**
-  * 必要に応じてノードグループのサイズを調整します。
-* **監視用ストレージ (Thanos)**
-  * クラスター内の Prometheus および Thanos のワークロードが引き受けます。
-  * 長期メトリクス保持の書き込みと読み取りを行い、対象はお客様自身のアカウント内の監視用バケットに限定されます。
-
-**K8s-control-plane** と **k8s-worker** のロールは、AWS EKS サービスが引き受けることを想定しています。
-
-最後に、**`data-plane-mgmt`** は、`ClickHouseCluster` や Istio の Virtual Service/Gateway など、必要なカスタムリソースを ClickHouse Cloud のコントロールプレーンコンポーネントがリコンサイルできるようにします。
+各ポリシーおよびロールのアクセス許可とスコープについては、[AWS における BYOC の権限](/ja/products/bring-your-own-cloud/reference/privilege-aws)を参照してください。
 
 ## GCP のサービスアカウント {#gcp-service-accounts}
 
 ### Bootstrap サービス アカウント {#bootstrap-service-account}
 
-Bootstrap サービス アカウントには、プロジェクト スコープのカスタム ロールとして、次の権限が付与されます。
+Bootstrap サービス アカウント `clickhouse-management` には、プロジェクト スコープのカスタム ロールとして、次のアクセス許可が付与されます。
 
-* **Common**: 基本的な閲覧権限と ID 関連の権限。
+* **Common**: 基本的な閲覧アクセス許可と アイデンティティ 関連のアクセス許可。
 * **VPC**: BYOC インフラストラクチャを支える VPC、サブネット、ルーティング、および Private Service Connect アタッチメントを管理します。
-* **Cluster**: GKE クラスターとクラスター内のリソースを管理します。
-* **Storage**: ClickHouse のバックアップ、共有状態、監視データに使用される Cloud ストレージ バケットの管理に使用されます。
+* **クラスター**: GKE クラスターとクラスター内のリソースを管理します。
+* **ストレージ**: ClickHouse のバックアップ、共有状態、監視データに使用される Cloud ストレージ バケットの管理に使用されます。
 * **IAM Role**: プロジェクト内のサービス アカウントとカスタム ロールを管理します。このロールでは、サービス アカウント キーの作成、組織ポリシーのバインド、または他のプロジェクト内のリソースの操作は許可されません。
 
 ### コントローラーによって追加で作成されるサービスアカウント {#additional-service-accounts-created-by-the-controller}
 
-オンボーディングの一環として Terraform 経由で作成される `clickhouse-management` サービスアカウントに加え、最初の BYOC サービスをプロビジョニングすると、ClickHouse のコントロールプレーン (`clickhouse-management` として認証) が、クラスター内の特定のワークロード向けにプロジェクト内へ追加のサービスアカウントを作成します。これらはそれぞれ、単一の用途に限定された最小限の権限セットで作成されます。
+`clickhouse-management` サービスアカウントに加え、コントローラーは BYOC インフラストラクチャごとに複数のサービスアカウントを追加で作成します。これらはそれぞれ、単一の用途に限定された最小限のアクセス許可セットを持ちます。
 
-* **GKE ノード runtime identity**
-  * BYOC クラスター内のすべての GKE ノード仮想マシンにアタッチされます。
-  * キューブレット、ノードローカル agent、Cloud Operations collector が logs とメトリクスを送信するために使用されるほか、イメージ取得サブシステムがコンテナー イメージをダウンロードする際にも使用されます。
-* **Billing scraper identity**
-  * standalone scraper ワークロードが billing テレメトリーを収集するために使用されます。
-* **監視 identity**
-  * クラスター内で稼働する monitoring stack の対象 identity です。このデプロイメント専用の GCS bucket にある長期メトリクス ストレージの読み書きに使用されます。
-* **ClickHouse runtime management identity**
-  * ClickHouse の runtime データプレーン管理コントローラーが使用します。これは、Private Service Connect endpoint の管理、bucket ライフサイクルの調整、サービスアカウントのローテーションなどの day-2 operations を処理します。
+* **データプレーン管理 アイデンティティ**: ClickHouse の管理サービスがこれを借用し、バケット、サーバーPod のアクセス、Private Service Connect など、ClickHouse サービスの日常的な管理を行います。
+* **GKE ノード アイデンティティ**: すべての GKE ノードにアタッチされます。ログとメトリクスを書き込み、コンテナイメージを取得します。
+* **ClickHouseサーバー アイデンティティ**: 各 ClickHouse サービスのバケット内にあるテーブルデータとバックアップの読み取りと書き込みを行います。
+* **監視 アイデンティティ**: BYOC 監視バケット内のメトリクスの読み取りと書き込みを行います。
+* **テレメトリー アイデンティティ**: 請求用の使用量データと、オートスケーリング用の Kubernetes メトリクスを ClickHouse に送信します。お客様のプロジェクト内では一切のアクセス許可を持ちません。
+* **TDE delegate** (TDE が有効な場合のみ): お客様の KMS キーを使用して TDE データキーの暗号化と復号を行います。
 
-サービスおよびバックアップの status イベントを ClickHouse Cloud にパブリッシュする state exporter は、意図的にこのリストに含まれていません。GCP では、そのパブリッシュ用 identity は ClickHouse 所有のプロジェクト内にある ClickHouse 所有のサービスアカウントであり、お客様のプロジェクト内に作成されるものではありません。お客様のプロジェクト内に作成されるのは、クラスター内の `state-exporter` サービスアカウントがそれを借用 (impersonate) できるようにする Workload Identity の binding です。鍵情報は一切関与せず、Pub/Sub にパブリッシュする identity はお客様のプロジェクト内で一切の権限を持ちません。
+各ロールおよびサービスアカウントのアクセス許可とスコープについては、[GCP における BYOC の権限](/ja/products/bring-your-own-cloud/reference/privilege-gcp)を参照してください。
+
+サービスおよびバックアップの status イベントを ClickHouse Cloud にパブリッシュする state exporter は、意図的にこのリストに含まれていません。GCP では、そのパブリッシュ用 アイデンティティ は ClickHouse 所有のプロジェクト内にある ClickHouse 所有のサービスアカウントであり、お客様のプロジェクト内に作成されるものではありません。お客様のプロジェクト内に作成されるのは、クラスター内の `state-exporter` サービスアカウントがそれを借用 (impersonate) できるようにする Workload Identity の binding です。鍵情報は一切関与せず、Pub/Sub にパブリッシュする アイデンティティ はお客様のプロジェクト内で一切のアクセス許可を持ちません。
 
 ## Azure のロールと ID {#azure-roles-and-identities}
 

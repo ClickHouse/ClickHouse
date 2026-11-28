@@ -122,13 +122,15 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 
 Сбрасывает все данные в столбце для указанной партиции. Подробнее о том, как задать имя партиции, см. в разделе [Как задать выражение партиционирования](/ru/reference/statements/alter/partition#how-to-set-partition-expression).
 
-Если указано условие IF EXISTS, запрос не вернёт ошибку, если столбец не существует.
+Если указано предложение `IF EXISTS`, запрос не вернёт ошибку, если столбец не существует.
 
 Пример:
 
 ```sql
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
+
+Для таблиц семейства `MergeTree` команда `CLEAR COLUMN` также принимает виртуальные столбцы [`_block_number` и `_block_offset`](/ru/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns). При указании любого из этих имён очищаются оба столбца, после чего часть данных возвращает свой минимальный номер блока в качестве `_block_number` и `_part_offset` в качестве `_block_offset`.
 
 ## COMMENT COLUMN {#comment-column}
 

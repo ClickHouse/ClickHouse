@@ -13,7 +13,7 @@ A CLI do ClickHouse (`clickhousectl`, alias `chctl`) permite gerenciar o ClickHo
 
 Os comandos `clickhousectl cloud` abrangem:
 
-* **Serviços:** crie, escale, inicie e interrompa serviços do ClickHouse Cloud e execute SQL neles por meio da API de consultas.
+* **Serviços:** crie, escale, inicie e interrompa serviços do ClickHouse Cloud, proteja-os contra exclusão, grave suas configurações de conexão em um arquivo `.env` e execute SQL neles por meio da API de consultas ou em uma sessão interativa do `clickhouse client`.
 * **[Managed Postgres](/pt-BR/products/managed-postgres/overview):** crie serviços Postgres, réplicas de leitura e restaurações para um ponto no tempo, além de alterar suas configurações.
 * **[ClickPipes](/pt-BR/integrations/clickpipes/home):** faça a ingestão de dados a partir de armazenamento de objetos, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB e BigQuery.
 * **[ClickStack](/pt-BR/clickstack/overview):** gerencie fontes de dados, dashboards, alertas, webhooks, pesquisas salvas e funções em um serviço [Self-managed ClickHouse Observability](/pt-BR/clickstack/self-configured/deployment/managed).
@@ -21,7 +21,7 @@ Os comandos `clickhousectl cloud` abrangem:
 * **Backups:** liste backups, altere o agendamento de backups e restaure um backup em um novo serviço.
 * **Acesso à organização:** organizações, membros, convites, chaves de API e registro de atividades.
 
-Execute `clickhousectl cloud <command> --help` para ver as flags de qualquer comando e as permissões de chave de API que ele exige.
+Os comandos de serviço ficam em `clickhousectl cloud clickhouse`, ou `cloud ch` na forma abreviada. Execute `clickhousectl cloud <command> --help` para ver as flags de qualquer comando e as permissões de chave de API que ele exige.
 
 ## Instalação {#installation}
 
@@ -53,20 +53,25 @@ O login verifica as credenciais e exibe a identidade. Você pode confirmá-la a 
 ### Criar e consultar um serviço {#create-and-query-a-service}
 
 ```bash
-# Create a service. Save the initial password; it is printed only once.
+# Create a service. The initial password is shown only once, so --dotenv
+# writes it and the connection settings to .env.local.
 # Omitting --ip-allow allows all addresses (0.0.0.0/0).
-clickhousectl cloud service create --name analytics \
+clickhousectl cloud clickhouse create --name analytics \
   --provider aws --region us-east-1 \
-  --ip-allow '203.0.113.10/32=Office'
+  --ip-allow '203.0.113.10/32=Office' \
+  --dotenv .env.local
 
 # Look up the service ID, then run SQL over the Query API
-CH_ID=$(clickhousectl cloud service get --name analytics --json | jq -r .id)
-clickhousectl cloud service query "$CH_ID" --query "SELECT version()"
+CH_ID=$(clickhousectl cloud clickhouse get --name analytics --json | jq -r .id)
+clickhousectl cloud clickhouse query "$CH_ID" --query "SELECT version()"
+
+# Open an interactive clickhouse client session
+clickhousectl cloud clickhouse client "$CH_ID"
 ```
 
-A criação retorna antes de o serviço entrar em execução. Execute `clickhousectl cloud service get "$CH_ID"` periodicamente até que `state` seja `running`.
+A criação retorna antes de o serviço estar em execução. Consulte `clickhousectl cloud clickhouse get "$CH_ID"` periodicamente até que `state` seja `running`. Para um serviço existente, `clickhousectl cloud clickhouse dotenv "$CH_ID" --local` grava as mesmas configurações em `.env.local`, sem a senha. Para proteger um serviço de produção, ative a proteção contra exclusão com `clickhouse update "$CH_ID" --deletion-protection true`; a partir daí, `clickhouse delete` recusa a exclusão até que você defina `--deletion-protection false`.
 
-Na primeira consulta feita com chave de API, o clickhousectl adiciona sua chave de API ao Endpoint da API de Consultas do serviço, criando o endpoint, se necessário; nenhuma chave nova é criada. Para que a operação falhe nesse caso, passe `--no-auto-enable`. Com OAuth, `service query` executa apenas instruções `SELECT` read-only. A API de consultas expira após cerca de 30 segundos; portanto, use o `clickhouse client` para consultas longas e cargas em massa.
+Com uma chave de API, `clickhouse query` adiciona sua chave ao Endpoint da API de Consultas do serviço, caso ela ainda não esteja vinculada, e cria o endpoint se necessário; nenhuma chave nova é criada. Passe `--no-auto-enable` para que o comando falhe nesse caso. Uma chave read-only não consegue vincular a si mesma, portanto faça a vinculação uma única vez com uma chave que tenha acesso de gravação. Com OAuth, `clickhouse query` executa instruções `SELECT` read-only. A API de consultas atinge o tempo limite após cerca de 30 segundos e executa uma instrução por requisição; por isso, use `cloud clickhouse client` para consultas longas, scripts e cargas em massa. Esse comando abre o `clickhouse client` via TLS nativo e faz sua autenticação pelo navegador como seu usuário do Cloud, sem precisar da senha do serviço. É necessário ter o ClickHouse 25.12 ou mais recente instalado localmente (`clickhousectl local install latest`) e alguém disponível para interagir com o navegador.
 
 ### Criar um serviço gerenciado de Postgres {#create-a-managed-postgres-service}
 
@@ -101,7 +106,7 @@ Teste a função primeiro em um servidor local com `clickhousectl local udf depl
 
 ## Saída JSON e agentes de programação {#json-output}
 
-Os comandos do Cloud aceitam `--json`, e a CLI seleciona JSON automaticamente ao detectar um agente de programação. Nesse caso, `cloud service query` passa a usar `JSONEachRow` por padrão; por isso, scripts que interpretam a saída desse comando devem informar `--format`, por exemplo `--format TabSeparated`. Consulte [Saída JSON](/pt-BR/concepts/features/interfaces/cli#json-output) e [Códigos de saída](/pt-BR/concepts/features/interfaces/cli#exit-codes). Instale as ClickHouse Agent Skills com `clickhousectl skills`.
+Os comandos do Cloud aceitam `--json`, e a CLI seleciona JSON automaticamente ao detectar um agente de programação. Nesse caso, `cloud clickhouse query` passa a usar `JSONEachRow` por padrão; por isso, scripts que interpretam a saída desse comando devem informar `--format`, por exemplo `--format TabSeparated`. Consulte [Saída JSON](/pt-BR/concepts/features/interfaces/cli#json-output) e [Códigos de saída](/pt-BR/concepts/features/interfaces/cli#exit-codes). Instale as ClickHouse Agent Skills com `clickhousectl skills`.
 
 ## Saiba mais {#learn-more}
 

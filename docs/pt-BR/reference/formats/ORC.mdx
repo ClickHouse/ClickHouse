@@ -49,6 +49,7 @@ A tabela abaixo compara os tipos de dados ORC suportados e os correspondentes [t
 * Outros tipos não são suportados.
 
 - Uma coluna ORC `Union` é lida como um [Variant](/pt-BR/reference/data-types/variant) sobre os tipos de ramificação da união, e uma coluna `Variant` é gravada como uma `Union` ORC sobre seus tipos de ramificação. Observe que `Variant` ordena seus tipos de ramificação, portanto, a ordem das ramificações pode diferir do arquivo ORC. Uniões com tipos de ramificação duplicados (por exemplo, `uniontype<int,int>`) não são suportadas.
+- Um `Struct` ORC com dois campos `Binary` chamados `metadata` e `value`, que é a forma como o Iceberg v3 armazena um `variant`, é lido em uma coluna [Dynamic](/pt-BR/reference/data-types/dynamic) ou [JSON](/pt-BR/reference/data-types/newjson) com a [codificação binária de variant](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md), da mesma forma que uma coluna variant do formato `Parquet`.
 
 * Arrays podem ser aninhados e podem ter um valor do tipo `Nullable` como argumento. Os tipos `Tuple` e `Map` também podem ser aninhados.
 * Os tipos de dados das colunas da tabela do ClickHouse não precisam corresponder aos campos de dados ORC correspondentes. Ao inserir dados, o ClickHouse interpreta os tipos de dados de acordo com a tabela acima e então [converte](/pt-BR/reference/functions/regular-functions/type-conversion-functions#CAST) os dados para o tipo de dado definido para a coluna da tabela do ClickHouse.

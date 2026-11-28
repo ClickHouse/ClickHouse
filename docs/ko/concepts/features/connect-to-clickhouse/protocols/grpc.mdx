@@ -1,0 +1,99 @@
+---
+description: 'ClickHouse의 gRPC 인터페이스에 대한 문서'
+sidebarTitle: 'gRPC 인터페이스'
+slug: /concepts/features/connect-to-clickhouse/protocols/grpc
+title: 'gRPC 인터페이스'
+doc_type: 'reference'
+---
+
+## 소개 {#grpc-interface-introduction}
+
+ClickHouse는 [gRPC](https://grpc.io/) 인터페이스를 지원합니다. gRPC는 HTTP/2와 [Protocol Buffers](https://en.wikipedia.org/wiki/Protocol_Buffers)를 사용하는 오픈 소스 원격 프로시저 호출(Remote Procedure Call) 시스템입니다. ClickHouse의 gRPC 구현은 다음 기능을 지원합니다.
+
+* SSL
+* 인증
+* 세션(Sessions)
+* 압축
+* 동일한 채널을 통한 병렬 쿼리
+* 쿼리 취소
+* 진행 상황 및 로그 조회
+* 외부 테이블(external tables)
+
+인터페이스 명세는 [clickhouse&#95;grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto)에 정의되어 있습니다.
+
+## gRPC 구성 {#grpc-interface-configuration}
+
+gRPC 인터페이스를 사용하려면 기본 [서버 구성](/ko/concepts/features/configuration/server-config/configuration-files)에서 `grpc_port`를 설정하십시오. 그 밖의 구성 옵션은 다음 예시를 참조하십시오.
+
+```xml
+<grpc_port>9100</grpc_port>
+    <grpc>
+        <enable_ssl>false</enable_ssl>
+
+        <!-- The following two files are used only if SSL is enabled -->
+        <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
+        <ssl_key_file>/path/to/ssl_key_file</ssl_key_file>
+
+        <!-- Whether server requests client for a certificate -->
+        <ssl_require_client_auth>false</ssl_require_client_auth>
+
+        <!-- The following file is used only if ssl_require_client_auth=true -->
+        <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
+
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm, see result_compression in QueryInfo).
+             Supported algorithms: none, deflate, gzip, stream_gzip -->
+        <compression>deflate</compression>
+
+        <!-- Default compression level (applied if client doesn't specify another level, see result_compression in QueryInfo).
+             Supported levels: none, low, medium, high -->
+        <compression_level>medium</compression_level>
+
+        <!-- Send/receive message size limits in bytes. -1 means unlimited -->
+        <max_send_message_size>-1</max_send_message_size>
+        <max_receive_message_size>-1</max_receive_message_size>
+    </grpc>
+```
+
+## 인증 {#grpc-authentication}
+
+쿼리는 `QueryInfo`의 `user_name` 및 `password` 필드로 인증됩니다(`quota` 필드는 할당량 키(quota key)를 설정합니다). `user_name` 필드는 선택 사항입니다. 이 필드가 비어 있으면 쿼리는 `default_session_user` [서버 설정](/ko/reference/settings/server-settings/settings)에 지정된 사용자(별도로 구성하지 않으면 `default`)로 인증되며, 이때 제공된 비밀번호(비어 있을 수 있음)가 사용됩니다. 이는 `user` 매개변수가 없는 HTTP 요청과 정확히 동일한 방식입니다. 빈 사용자 이름은 해당 사용자의 별칭일 뿐이므로 해당 사용자의 비밀번호, `networks` 및 기타 액세스 검사가 그대로 적용됩니다. 따라서 자격 증명이 없는 쿼리를 허용할지 여부는 해당 사용자의 구성에 따라 결정됩니다. `default_session_user`가 빈 문자열로 설정되어 있으면 `user_name`이 없는 쿼리는 거부됩니다. 또한 서버 구성에서 `session_log` 섹션이 활성화되어 있으면 이 거부 내역이 [`system.session_log`](/ko/reference/system-tables/session_log)에 `user`가 비어 있는 `LoginFailure` 이벤트로 기록됩니다.
+
+## 내장 클라이언트 {#grpc-client}
+
+제공된 [명세](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto)를 사용하면 gRPC가 지원하는 모든 프로그래밍 언어로 클라이언트를 작성할 수 있습니다.
+또는 내장 Python 클라이언트를 사용할 수도 있습니다. 이 클라이언트는 리포지토리의 [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py)에 있습니다. 내장 클라이언트를 사용하려면 [grpcio 및 grpcio-tools](https://grpc.io/docs/languages/python/quickstart) Python 모듈이 필요합니다.
+
+클라이언트는 다음 인수를 지원합니다.
+
+* `--help` – 도움말 메시지를 표시하고 종료합니다.
+* `--host HOST, -h HOST` – 서버 이름입니다. 기본값: `localhost`. IPv4 또는 IPv6 주소도 사용할 수 있습니다.
+* `--port PORT` – 연결할 포트입니다. 이 포트는 ClickHouse 서버 구성에서 활성화되어 있어야 합니다(`grpc_port` 참조). 기본값: `9100`.
+* `--user USER_NAME, -u USER_NAME` – 사용자 이름입니다. 기본값: `default`.
+* `--password PASSWORD` – 비밀번호입니다. 기본값: 빈 문자열.
+* `--query QUERY, -q QUERY` – 비대화형 모드에서 처리할 쿼리입니다.
+* `--database DATABASE, -d DATABASE` – 기본 데이터베이스(Default Database)입니다. 지정하지 않으면 서버 설정(server settings)에 지정된 현재 데이터베이스(current database)가 사용됩니다(기본값은 `default`).
+* `--format OUTPUT_FORMAT, -f OUTPUT_FORMAT` – 결과(result) 출력 [포맷](/ko/reference/formats/index)입니다. interactive mode의 기본값: `PrettyCompact`.
+* `--debug` – 디버그 정보를 표시합니다.
+
+클라이언트를 interactive mode로 실행하려면 `--query` 인수 없이 호출하십시오.
+
+배치 모드에서는 `stdin`을 통해 쿼리 데이터를 전달할 수 있습니다.
+
+**클라이언트 사용 예시**
+
+다음 예시에서는 테이블을 생성하고 CSV 파일의 데이터를 로드한 다음, 테이블의 내용을 쿼리합니다.
+
+```bash title="Query"
+./clickhouse-grpc-client.py -q "CREATE TABLE grpc_example_table (id UInt32, text String) ENGINE = MergeTree() ORDER BY id;"
+echo -e "0,Input data for\n1,gRPC protocol example" > a.csv
+cat a.csv | ./clickhouse-grpc-client.py -q "INSERT INTO grpc_example_table FORMAT CSV"
+
+./clickhouse-grpc-client.py --format PrettyCompact -q "SELECT * FROM grpc_example_table;"
+```
+
+```text title="Response"
+┌─id─┬─text──────────────────┐
+│  0 │ Input data for        │
+│  1 │ gRPC protocol example │
+└────┴───────────────────────┘
+```

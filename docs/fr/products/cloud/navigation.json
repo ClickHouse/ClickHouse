@@ -49,6 +49,7 @@
           "pages": [
             "fr/products/cloud/features/infrastructure/on-demand-compute",
             "fr/products/cloud/features/large-single-replica-services",
+            "fr/products/cloud/features/compute-generations",
             "fr/products/cloud/features/infrastructure/parallel-replicas",
             "fr/products/cloud/features/infrastructure/replica-aware-routing",
             "fr/products/cloud/features/infrastructure/shared-catalog",
@@ -222,6 +223,7 @@
           "pages": [
             "fr/products/cloud/features/monitoring/overview",
             "fr/products/cloud/features/monitoring/cloud-console",
+            "fr/products/cloud/features/monitoring/recommendations",
             "fr/products/cloud/features/monitoring/advanced-dashboard",
             "fr/products/cloud/features/monitoring/notifications",
             "fr/products/cloud/features/monitoring/prometheus",
@@ -260,6 +262,7 @@
       "group": "AI tools and agents",
       "pages": [
         "fr/products/cloud/features/ai-ml/index",
+        "fr/products/cloud/features/ai-ml/schema-advisor",
         "fr/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,

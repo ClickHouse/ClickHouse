@@ -2,13 +2,11 @@
 title: 設定の拡張
 ---
 
-<div id="extending-collector-config">
-  ### collector の設定を拡張する
-</div>
+### コレクター設定を拡張する {#extending-collector-config}
 
 ClickStack 版の OTel collector では、カスタム設定ファイルをマウントし、環境変数を設定することで、ベース設定を拡張できます。
 
-カスタムの receiver、プロセッサ、またはパイプラインを追加するには、次の手順に従います。
+カスタムの レシーバー、プロセッサ、またはパイプラインを追加するには、次の手順に従います。
 
 1. 追加設定を含むカスタム設定ファイルを作成します
 2. ファイルを `/etc/otelcol-contrib/custom.config.yaml` にマウントします
@@ -18,7 +16,7 @@ ClickStack 版の OTel collector では、カスタム設定ファイルをマ�
 
 ```yaml
 receivers:
-  # ローカルファイルからログを収集する
+  # Collect logs from local files
   filelog:
     include:
       - /var/log/**/*.log
@@ -26,7 +24,7 @@ receivers:
       - /var/log/messages
     start_at: beginning
 
-  # ホストシステムのメトリクスを収集する
+  # Collect host system metrics
   hostmetrics:
     collection_interval: 30s
     scrapers:
@@ -47,7 +45,7 @@ receivers:
 
 service:
   pipelines:
-    # ログパイプライン
+    # Logs pipeline
     logs/host:
       receivers: [filelog]
       processors:
@@ -57,7 +55,7 @@ service:
       exporters:
         - clickhouse
     
-    # メトリクスパイプライン
+    # Metrics pipeline
     metrics/hostmetrics:
       receivers: [hostmetrics]
       processors:
@@ -72,7 +70,6 @@ service:
 ```bash
 docker run -d \
   -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
-  # -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} \
   -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
   -e CLICKHOUSE_USER=default \
   -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
@@ -81,14 +78,79 @@ docker run -d \
   clickhouse/clickstack-otel-collector:latest
 ```
 
+collector を OpAMP 経由で管理する場合は、`-e OPAMP_SERVER_URL=${OPAMP_SERVER_URL}` も指定してください。
+
 <Note>
-  カスタム設定では、新しい receiver、プロセッサ、パイプラインのみを定義します。ベースのプロセッサ (`memory_limiter`、`batch`) と exporter (`clickhouse`) はすでに定義されているため、名前を指定して参照してください。カスタム設定はベース設定にマージされるため、既存のコンポーネントを上書きすることはできません。
+  カスタム設定では、新しい レシーバー、コネクタ、プロセッサ、パイプラインのみを定義します。ベースのプロセッサ (`memory_limiter`、`batch`) と エクスポーター (`clickhouse`) はすでに定義されているため、名前を指定して参照してください。カスタム設定はベース設定にマージされるため、既存のコンポーネントを上書きすることはできません。
+
+  カスタム設定では、デフォルトパイプラインの `processors` リストを置き換えることができます。バージョン 2.44.0 以降では、デフォルトのトレースおよびログパイプラインの processors リストに `transform/session_id` を必ず残してください。残さないと、古いブラウザー SDK から送信されたイベントに `session.id` が付与されません。
+
+  OpAMP 管理下 (オールインワンイメージ、または `OPAMP_SERVER_URL` が設定された collector) では、デフォルトパイプラインに追加したレシーバー、エクスポーター、コネクタは、エラーが出ないまま削除されます。以下の例のように、独自の名前を付けたパイプラインに追加してください。
 </Note>
 
-より複雑な設定については、[デフォルトの ClickStack collector 設定](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml)および[ClickHouse exporter のドキュメント](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options)を参照してください。
+より複雑な設定については、[デフォルトの ClickStack コレクター設定](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml)および[ClickHouse エクスポーター のドキュメント](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options)を参照してください。
 
-<div id="configuration-structure">
-  #### 設定構造
-</div>
+#### StatsD メトリクスの受信 {#statsd-receiver}
+
+バージョン 2.40.0 以降、ClickStack コレクターには [StatsD receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/statsdreceiver) が組み込まれているため、StatsD または DogStatsD 形式のメトリクスを出力するアプリケーションから collector にメトリクスを送信できます。`|#env:prod,team:payments` のような DogStatsD の `key:value` タグは、メトリクスの属性に変換されます。
+
+この receiver はデフォルトでは無効になっています。カスタム設定で、独自の名前を付けたパイプラインに追加してください。
+
+```yaml
+receivers:
+  statsd:
+    endpoint: 0.0.0.0:8125
+
+service:
+  pipelines:
+    metrics/statsd:
+      receivers: [statsd]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+collector コンテナで UDP ポート `8125` を公開してください (例: `-p 8125:8125/udp`) 。StatsD のメトリクスには `service.name` が付与されないため、サービスでフィルタしても表示されません。receiver は collector プロセス内でメトリクスを集約するため、各メトリクスは単一の collector インスタンスに送信してください。そうしないと、値が複数のレプリカに分散してしまいます。
+
+#### スパンからメトリクスを導出する {#span-metrics}
+
+バージョン 2.39.0 以降、ClickStack コレクターには [span metrics connector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/spanmetricsconnector) が含まれています。このコネクタは、collector が受信したスパンから呼び出し回数と所要時間のヒストグラムを生成します。そのため、メトリクス用のインストルメンテーションを別途行わなくても、サービスごとにリクエスト、エラー、所要時間のメトリクスを取得できます。
+
+このコネクタはデフォルトでは無効です。カスタム設定で追加してください。トレースパイプラインはスパンをコネクタにエクスポートし、メトリクスパイプラインはコネクタが生成したメトリクスを受け取ります。両方のパイプラインには、それぞれ固有の名前を付けてください。
+
+```yaml
+connectors:
+  span_metrics:
+    namespace: traces.span.metrics
+    aggregation_temporality: AGGREGATION_TEMPORALITY_DELTA
+    histogram:
+      exponential:
+        max_size: 160
+    aggregation_cardinality_limit: 10000
+    series_expiration: 5m
+
+service:
+  pipelines:
+    traces/spanmetrics:
+      receivers: [otlp/hyperdx]
+      processors:
+        - memory_limiter
+      exporters: [span_metrics]
+    metrics/spanmetrics:
+      receivers: [span_metrics]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+collector は呼び出し回数を `traces.span.metrics.calls` に、所要時間を `traces.span.metrics.duration` に書き込みます。`aggregation_temporality`、`aggregation_cardinality_limit`、`series_expiration` は削除しないでください。これらの設定は、`memory_limiter` では保護されないコネクタのメモリ使用量を制限するとともに、古くなった系列が追い出された場合でも出現回数を正しく保ちます。
+
+Datadog エージェントからのトレースも対象に含めるには、`traces/spanmetrics` の `receivers` に `datadog` を追加します。`datadog` receiver が定義されていないと、collector は設定を受け付けません。OpAMP を使用する場合は、コレクター設定を生成する ClickStack UI に `ENABLE_DATADOG_RECEIVER=true` 環境変数を設定してください。OpAMP を使用しない場合は、カスタム設定で `datadog` receiver を定義してください。
+
+#### 設定構造 {#configuration-structure}
 
 [`receivers`](https://opentelemetry.io/docs/collector/transforming-telemetry/)、[`operators`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md)、[`processors`](https://opentelemetry.io/docs/collector/configuration/#processors) など、OTel collector の設定方法の詳細については、[OpenTelemetry collector の公式ドキュメント](https://opentelemetry.io/docs/collector/configuration)を参照することを推奨します。

@@ -102,11 +102,11 @@ models:
 }}
 
 select
-  -- event_type may be inferred as a String but we may prefer LowCardinality(String):
+  -- event_type may be infered as a String but we may prefer LowCardinality(String):
   CAST(event_type, 'LowCardinality(String)') as event_type,
-  -- countState() may be inferred as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
+  -- countState() may be infered as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
   CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count,
-  -- maxSimpleState() may be inferred as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
+  -- maxSimpleState() may be infered as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
   CAST(maxSimpleState(event_type), 'SimpleAggregateFunction(max, LowCardinality(String))') as max_event_type
 from {{ ref('user_events') }}
 group by event_type
@@ -232,9 +232,9 @@ models:
 | 26.1+            | `ADD PROJECTION proj_by_age INDEX age TYPE basic`               |
 | 25.8 – 26.0      | `ADD PROJECTION proj_by_age (SELECT _part_offset ORDER BY age)` |
 
-## التجسيد: incremental {#materialization-incremental}
+## التجسيد: تزايدي {#materialization-incremental}
 
-ستُعاد إعادة إنشاء نموذج الجدول عند كل تنفيذ لـ dbt. وقد يكون ذلك غير عملي ومكلفًا للغاية عند التعامل مع مجموعات نتائج كبيرة أو تحويلات معقدة. ولمعالجة هذا التحدي وتقليل وقت البناء، يمكن إنشاء نموذج dbt كجدول ClickHouse من نوع incremental، ويُضبط باستخدام البنية التالية:
+ستُعاد إعادة إنشاء نموذج الجدول عند كل تنفيذ لـ dbt. وقد يكون ذلك غير عملي ومكلفًا للغاية عند التعامل مع مجموعات نتائج كبيرة أو تحويلات معقدة. ولمعالجة هذا التحدي وتقليل وقت البناء، يمكن إنشاء نموذج dbt كجدول ClickHouse من نوع تزايدي، ويُضبط باستخدام البنية التالية:
 
 تعريف النموذج في `dbt_project.yml`:
 
@@ -246,7 +246,6 @@ models:
     +engine: <engine-type>
     +partition_by: [ <column-name>, ... ]
     +unique_key: [ <column-name>, ... ]
-    +inserts_only: [ True|False ]
 ```
 
 أو كتلة config داخل `models/<model_name>.sql`:
@@ -258,7 +257,6 @@ models:
     order_by = [ "<column-name>", ... ],
     partition_by = [ "<column-name>", ... ],
     unique_key = [ "<column-name>", ... ],
-    inserts_only = [ True|False ],
       ...
     ]
 ) }}
@@ -268,12 +266,12 @@ models:
 
 التهيئة الخاصة بهذا النوع من التجسيد مُدرجة أدناه:
 
-| الخيار                   | الوصف                                                                                                                                                                                                                                                          | مطلوب؟                                                                       |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `unique_key`             | مجموعة من أسماء الأعمدة التي تُعرّف الصفوف بشكل فريد. لمزيد من التفاصيل حول قيود التفرد، راجع [هنا](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                     | مطلوب. إذا لم يتم توفيره، فستُضاف الصفوف المعدّلة مرتين إلى الجدول التزايدي. |
-| `inserts_only`           | تم إهماله لصالح `strategy` التزايدية `append`، التي تعمل بالطريقة نفسها. إذا تم ضبطه على True لنموذج `incremental`، فستُدرَج التحديثات التزايدية مباشرةً في الجدول الهدف دون إنشاء جدول وسيط. إذا تم تعيين `inserts_only`، فسيتم تجاهل `incremental_strategy`. | اختياري (الافتراضي: `False`)                                                 |
-| `incremental_strategy`   | الاستراتيجية المستخدمة للتجسيد التزايدي.  الاستراتيجيات المدعومة هي `delete+insert` و`append` و`insert_overwrite` و`microbatch`.  لمزيد من التفاصيل حول الاستراتيجيات، راجع [هنا](#incremental-model-strategies)                                          | اختياري (الافتراضي: &#39;default&#39;)                                       |
-| `incremental_predicates` | شروط إضافية تُطبَّق على التجسيد التزايدي (تُطبَّق فقط على استراتيجية `delete+insert`)                                                                                                                                                                     | اختياري                                                                      |
+| الخيار                   | الوصف                                                                                                                                                                                                                                                                                                                                                          | مطلوب؟                                                                                                                            |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `unique_key`             | مجموعة من أسماء الأعمدة التي تُعرّف الصفوف بشكل فريد. لمزيد من التفاصيل حول قيود التفرد، راجع [هنا](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                                                                                                                     | مطلوب في استراتيجيات `legacy` و`delete+insert` و`microbatch`. وبدونه تكون الاستراتيجية الافتراضية `append`.                       |
+| `inserts_only`           | تم إهماله لصالح `strategy` التزايدية `append`، التي تعمل بالطريقة نفسها. إذا تم ضبطه على True لنموذج `incremental`، فستُدرَج التحديثات التزايدية مباشرةً في الجدول الهدف دون إنشاء جدول وسيط. إذا تم تعيين `inserts_only`، فسيتم تجاهل `incremental_strategy`. ويؤدي تعيينه إلى تسجيل تحذير بشأن الإهمال، مما يتسبب في فشل التشغيل عند استخدام `--warn-error`. | اختياري (الافتراضي: `False`)                                                                                                      |
+| `incremental_strategy`   | الاستراتيجية المستخدمة للتجسيد التزايدي.  الاستراتيجيات المدعومة هي `delete+insert` و`append` و`insert_overwrite` و`microbatch`.  لمزيد من التفاصيل حول الاستراتيجيات، راجع [هنا](#incremental-model-strategies)                                                                                                                                               | اختياري (الافتراضي: `append` في حال عدم وجود `unique_key`، وإلا فـ`delete+insert` إذا تم تعيين `use_lw_deletes`، وإلا فـ`legacy`) |
+| `incremental_predicates` | شروط إضافية تُطبَّق على التجسيد التزايدي. مدعومة فقط في استراتيجيتي `delete+insert` و`microbatch`؛ أما أي استراتيجية أخرى فتفشل عند تعيينه، بما في ذلك الاستراتيجية الافتراضية `append` للنماذج التي لا تحتوي على `unique_key`.                                                                                                                                | اختياري                                                                                                                           |
 
 ### استراتيجيات النماذج التزايدية {#incremental-model-strategies}
 
@@ -281,10 +279,11 @@ models:
 
 #### الاستراتيجية الافتراضية (القديمة) {#default-legacy-strategy}
 
+هذه هي الاستراتيجية الافتراضية للنماذج التي تحتوي على `unique_key` (راجع [`incremental_strategy`](#incremental-configurations)).
 تاريخيًا، لم يكن لدى ClickHouse سوى دعم محدود للتحديثات وعمليات الحذف، وذلك على شكل &quot;mutations&quot; غير متزامنة.
 ولمحاكاة سلوك dbt المتوقع،
-ينشئ dbt-clickhouse افتراضيًا جدولًا مؤقتًا جديدًا يحتوي على جميع السجلات &quot;القديمة&quot; غير المتأثرة (غير المحذوفة وغير المعدَّلة)،
-بالإضافة إلى أي سجلات جديدة أو محدَّثة،
+ينشئ dbt-clickhouse جدولًا مؤقتًا جديدًا يحتوي على جميع السجلات &quot;القديمة&quot; غير المتأثرة (غير المحذوفة وغير المعدَّلة)،
+بالإضافة إلى أي سجلات جديدة أو محدَّثة،
 ثم يستبدل هذا الجدول المؤقت أو يُجري له EXCHANGE مع علاقة النموذج التزايدي الحالية. وهذه هي الاستراتيجية الوحيدة
 التي تحافظ على العلاقة الأصلية إذا حدث
 خطأ ما قبل اكتمال العملية؛ ولكن نظرًا لأنها تتضمن نسخًا كاملًا للجدول الأصلي، فقد تكون
@@ -292,7 +291,7 @@ models:
 
 #### استراتيجية Delete+Insert {#delete-insert-strategy}
 
-تستخدم استراتيجية `delete+insert` [عمليات الحذف خفيفة الوزن](/ar/concepts/features/operations/delete/lightweight-delete) لإزالة الصفوف المتأثرة، ثم تُدرج الصفوف الجديدة. ولأنها لا تنسخ الجدول بأكمله، فإن أداءها أفضل بكثير من استراتيجية &quot;legacy&quot;. يؤدي تعيين `use_lw_deletes: true` في ملف التعريف إلى جعل `delete+insert` استراتيجية التزايدية الافتراضية.
+تستخدم استراتيجية `delete+insert` [عمليات الحذف خفيفة الوزن](/ar/concepts/features/operations/delete/lightweight-delete) لإزالة الصفوف المتأثرة، ثم تُدرج الصفوف الجديدة. ولأنها لا تنسخ الجدول بأكمله، فإن أداءها أفضل بكثير من استراتيجية &quot;legacy&quot;. يؤدي تعيين `use_lw_deletes: true` في ملف التعريف إلى جعل `delete+insert` استراتيجية التزايدية الافتراضية للنماذج التي تحتوي على `unique_key`.
 
 هناك بعض التحذيرات المهمة عند استخدام هذه الاستراتيجية:
 
@@ -304,8 +303,8 @@ models:
   legacy، بينما تفشل النماذج التي تعيّن `delete+insert` أو `microbatch` صراحةً في وقت التشغيل، ويفشل `use_lw_deletes: true` في
   ملف التعريف عند الاتصال.
 * في بعض الحالات النادرة جدًا، قد يؤدي استخدام `incremental_predicates` غير الحتمية إلى حدوث حالة سباق للعناصر
-  المحدَّثة أو المحذوفة. ولضمان نتائج متسقة، ينبغي أن تقتصر المسندات التزايدية على الاستعلامات الفرعية التي تتعامل مع
-  بيانات لن تُعدَّل أثناء التجسيد التزايدي.
+  المحدَّثة أو المحذوفة. ولضمان نتائج متسقة، ينبغي أن تقتصر المسندات التزايدية على الاستعلامات الفرعية التي تتعامل مع
+  بيانات لن تُعدَّل أثناء التجسيد التزايدي.
 
 #### استراتيجية Microbatch (تتطلب dbt-core &gt;= 1.9) {#microbatch-strategy}
 
@@ -319,6 +318,8 @@ models:
 * الاستغناء عن الحاجة إلى منطق شرطي معقد في [الاستدراك اللاحق للبيانات التاريخية](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills).
 
 للاطلاع على استخدام microbatch بالتفصيل، راجع [الوثائق الرسمية](https://docs.getdbt.com/docs/build/incremental-microbatch).
+
+تُحدَّد حدود الدفعات بتوقيت UTC، بغض النظر عن المنطقة الزمنية للخادم أو لعمود `event_time`.
 
 ##### إعدادات Microbatch المتاحة {#available-microbatch-configurations}
 
@@ -569,6 +570,93 @@ select * from {{ ref('<model-name>') }}
 ```
 
 للاطلاع على مثال تطبيقي على Jaffle Shop، راجع [قسم snapshot في الأدلة](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/guides#snapshot). وللاطلاع على جميع الخيارات، راجع الصفحة المرجعية [snapshot configs](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs).
+
+## الدوال (UDFs) {#functions}
+
+أُضيفت [الدوال](https://docs.getdbt.com/docs/build/udfs) إلى dbt بدءًا من `dbt-core v1.11+`، وهي تتيح للمستخدمين تعريف UDFs والإشارة إليها مباشرةً داخل dbt.
+يدعم مهايئ ClickHouse تعريف SQL UDFs من النوعين `scalar` و`aggregate` (راجع [مواصفة النوع](https://docs.getdbt.com/reference/resource-configs/type?version=1))، وإن كان ClickHouse يعالج كلا النوعين داخليًا بالطريقة نفسها.
+
+فيما يلي مثالان على إنشاء دوال من النوع `scalar` أو `aggregate` والإشارة إليها:
+
+```yaml
+# functions/schema.yml
+functions:
+  - name: price_for_xlarge
+    description: Doubles the price of a standard item
+    arguments:
+      - name: price
+        data_type: Float64  # required by dbt, not enforced by ClickHouse
+    returns:
+      data_type: Float64
+  - name: sum_squared
+    description: Sums all values, then squares the result
+    config:
+      type: aggregate
+    arguments:
+      - name: value
+        data_type: Float64
+    returns:
+      data_type: Float64
+```
+
+جسم الدالة تعبير واحد يستخدم الوسيطات، وليس عبارة `SELECT`:
+
+```sql
+-- functions/price_for_xlarge.sql
+price * 2
+```
+
+```sql
+-- functions/sum_squared.sql
+pow(sum(value), 2)
+```
+
+تُنشئها dbt بالصيغة `CREATE OR REPLACE FUNCTION price_for_xlarge AS (price) -> price * 2`، وتستدعيها النماذج باستخدام
+`function()`:
+
+```sql
+select
+    category,
+    {{ function('sum_squared') }}({{ function('price_for_xlarge') }}(price)) as xlarge_total_squared
+from {{ ref('items') }}
+group by category
+```
+
+يُدرج ClickHouse دوال UDFs بشكل مضمّن داخل الاستعلام الذي يستدعيها، لذا لا يمكن تطبيق مُعدِّلات دوال التجميع (مثل `-If` أو `-State`) ولا عبارات النافذة (`OVER (...)`) على دوال UDFs التجميعية.
+
+راجع [وثائق خصائص الدوال](https://docs.getdbt.com/reference/function-properties?version=1) للاطلاع على القائمة الكاملة لخيارات التهيئة.
+وتجدر الإشارة إلى أن بعض خيارات التهيئة قد لا تنطبق أو قد تتسبب في أعطال عند استخدام مهايئ ClickHouse (راجع [قسم خيارات تهيئة الدوال غير المدعومة](#unsupported-function-configurations)).
+
+### نطاق الدوال {#functions-scope}
+
+لا تنتمي UDFs إلى قاعدة بيانات بعينها، بل يكون اسم الدالة مشتركًا بين جميع قواعد البيانات الموجودة على خدمة ClickHouse نفسها أو العنقود نفسه. وإذا احتجت إلى التمييز بين بيئات تتشارك خدمة أو عنقودًا واحدًا، فاستخدم `alias`، على النحو التالي:
+
+```yaml
+functions:
+  - name: price_for_xlarge
+    config:
+      alias: "price_for_xlarge_{{ target.name }}"
+```
+
+بعد ذلك، يُحَلّ `{{ function('price_for_xlarge') }}` إلى `price_for_xlarge_dev` و`price_for_xlarge_prod` وغيرها.
+
+### UDFs بلغتَي بايثون وJavaScript {#python-and-javascript-udfs}
+
+لا يدعم مهايئ ClickHouse حاليًا UDFs المكتوبة بلغتَي بايثون وJavaScript.
+
+### تهيئات الدوال غير المدعومة {#unsupported-function-configurations}
+
+خصائص الدوال التالية غير مدعومة في ClickHouse:
+
+* `overloads`: لا يمكن أن يكون للـ UDF سوى توقيع دالة واحد. ويؤدي تعيين `overloads` إلى فشل الإصدار.
+* الوسيطة `default_value`: لا يمكن تعيينها في UDFs الخاصة بـ ClickHouse. ويؤدي تعيين `default_value` إلى فشل الإصدار.
+* `volatility`: لا يمكن تعيينها في UDFs الخاصة بـ ClickHouse، ويجري تجاهلها مع إظهار تحذير.
+* `data_type` الخاصة بالوسيطة وبالقيمة المُعادة: يتطلبها dbt، لكن UDFs في ClickHouse غير محددة النوع، لذا لا يُفرض تطبيقها. استخدم CAST داخل جسم الدالة إذا كنت تحتاج إلى نوع ثابت.
+
+علاوة على ذلك، فإن تهيئات النموذج التالية غير مدعومة في ClickHouse:
+
+* `grants`: لا توجد أذونات لاستخدام UDF في ClickHouse، إذ يمكن لأي مستخدم استدعاء UDFs. ويؤدي تعيين `grants` إلى فشل الإصدار.
+* `persist_docs`: لا يمكن حفظ الأوصاف بشكل دائم في UDFs، ويجري تجاهلها دون أي إشعار، لكنها تظل تظهر في وثائق dbt.
 
 ## العقود والقيود {#contracts-and-constraints}
 

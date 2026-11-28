@@ -98,9 +98,9 @@ merge 時に `allow_sparse` に設定されている場合にのみ作成され�
 
 単純なクエリ `SELECT ... FROM table GROUP BY key_expr LIMIT n` (`HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/ウィンドウ句を含まず、`GROUP BY` 修飾子も使用しないもの) に対し、集約を `n + offset` 個の異なるキーで打ち切る最適化を有効または無効にします。
 
-射影に集約関数が含まれない場合、この上限は `max_rows_to_group_by = n + offset` と `group_by_overflow_mode = 'any'` を設定することで適用されます (この形式は分散クエリの各分片にも適用されます) 。射影に集約関数が含まれる場合、上限はサーバーが集約全体をローカルで実行する場合にのみ適用されます。いずれかの集約スレッドが上限を超えると、すべてのスレッドは保持対象となる `n + offset` 個のキーからなる単一の共有セットに制限されます。そのため、返されるキーの集約値は正確に保たれます。
+射影に集約関数が含まれない場合、このようなクエリ (同じ形のサブクエリや、分散クエリの各分片も含む) の集約は、`max_rows_to_group_by = n + offset` と `group_by_overflow_mode = 'any'` を設定した場合と同様に動作します。ただし設定自体は変更されないため、クエリが読み取るビューやサブクエリ内の集約は、それ自体がこの形でない限り影響を受けません。射影に集約関数が含まれる場合、上限はサーバーが集約全体をローカルで実行する場合にのみ適用されます。いずれかの集約スレッドが上限を超えると、すべてのスレッドは保持対象となる `n + offset` 個のキーからなる単一の共有セットに制限されます。そのため、返されるキーの集約値は正確に保たれます。
 
-この最適化は、次の場合には適用されません。ユーザーが `group_by_overflow_mode` を `any` 以外の値に明示的に設定している場合 (明示的に指定された `throw`/`break` の動作を維持するため) 、ユーザーがすでにより小さい `max_rows_to_group_by` を設定している場合、および [exact&#95;rows&#95;before&#95;limit](/ja/reference/settings/session-settings/other#exact_rows_before_limit) が有効な場合 (上限により `rows_before_limit_at_least` が報告する値が最大でも `n + offset` になってしまうため) です。
+この最適化は、次の場合には適用されません。ユーザーが `group_by_overflow_mode` を `any` 以外の値に明示的に設定している場合 (明示的に指定された `throw`/`break` の動作を維持するため) 、ユーザーがすでにより小さい `max_rows_to_group_by` を設定している場合、相関サブクエリ内および射影に相関サブクエリを含むクエリの場合、[make&#95;distributed&#95;plan](/ja/reference/settings/session-settings/other#make_distributed_plan) が有効な場合 (外側のクエリでのみ有効化されている場合も含む) 、および [exact&#95;rows&#95;before&#95;limit](/ja/reference/settings/session-settings/other#exact_rows_before_limit) が有効な場合 (上限により `rows_before_limit_at_least` が報告する値が最大でも `n + offset` になってしまうため) です。
 
 集約関数を含む形式は、同じクエリにおいて [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ja/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) による `GROUP BY` トップKヒープとは併用されません。ヒープの方が高速であるため、この打ち切りはヒープが適用されない場合にのみ使用されます。具体的には、ヒープが無効な場合、`n + offset` が [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/ja/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization) を超える場合、`max_rows_to_group_by` が設定されている場合、またはクエリプランがシリアル化される場合です。
 

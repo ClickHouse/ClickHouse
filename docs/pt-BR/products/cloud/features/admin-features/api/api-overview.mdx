@@ -30,9 +30,18 @@ em https://api.clickhouse.cloud/v1. Você também pode acessar a documentação 
 
 ## Limites de taxa {#rate-limits}
 
-Os desenvolvedores podem ter até 100 API keys por organização. Cada API key tem um
-limite de 10 solicitações por intervalo de 10 segundos. Se você quiser aumentar o
-número de API keys ou de solicitações por intervalo de 10 segundos para a sua organização,
+Os desenvolvedores podem ter até 100 API keys por organização. Cada API key tem os seguintes
+limites por intervalo de 10 segundos:
+
+* 40 requisições de leitura (`GET`)
+* 20 requisições de gravação (todos os outros métodos, por exemplo `POST`, `PATCH` e `DELETE`)
+
+Quando uma requisição ultrapassa um limite, a API retorna o status `429 Too Many Requests`
+com um cabeçalho `Retry-After`. O valor do cabeçalho indica quantos segundos aguardar
+antes de enviar a requisição novamente.
+
+Se você quiser aumentar o
+número de API keys ou de requisições por intervalo de 10 segundos para a sua organização,
 entre em contato com o suporte em support@clickhouse.com
 
 ## Terraform provider {#terraform-provider}

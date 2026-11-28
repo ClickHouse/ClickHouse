@@ -13,26 +13,20 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="use_adaptive_write_buffer_for_dynamic_subcolumns">
-  ## use_adaptive_write_buffer_for_dynamic_subcolumns
-</div>
+## use_adaptive_write_buffer_for_dynamic_subcolumns {#use_adaptive_write_buffer_for_dynamic_subcolumns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 السماح باستخدام مخازن الكتابة المؤقتة التكيفية أثناء كتابة الأعمدة الفرعية الديناميكية
 لتقليل استخدام الذاكرة
 
-<div id="use_async_block_ids_cache">
-  ## use_async_block_ids_cache
-</div>
+## use_async_block_ids_cache {#use_async_block_ids_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 إعداد متقادم، بلا تأثير.
 
-<div id="use_compact_variant_discriminators_serialization">
-  ## use_compact_variant_discriminators_serialization
-</div>
+## use_compact_variant_discriminators_serialization {#use_compact_variant_discriminators_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,9 +35,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 يتيح هذا الوضع استخدام قدر أقل بكثير من الذاكرة لتخزين المميِّزات
 في الأجزاء عندما يكون هناك غالبًا متغير واحد فقط أو الكثير من قيم NULL.
 
-<div id="use_const_adaptive_granularity">
-  ## use_const_adaptive_granularity
-</div>
+## use_const_adaptive_granularity {#use_const_adaptive_granularity}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -68,17 +60,25 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 [ALTER TABLE ... REWRITE PARTS](/ar/reference/statements/alter/partition#rewrite-parts)
 لتطبيقه على الأجزاء الحالية. تستخدم أجزاء `Compact` دائمًا الحبيبية التكيفية.
 
-<div id="use_metadata_cache">
-  ## use_metadata_cache
-</div>
+## use_metadata_cache {#use_metadata_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 إعداد متقادم، بلا تأثير.
 
-<div id="use_primary_key_cache">
-  ## use_primary_key_cache
-</div>
+## use_object_shared_data_serialization_version_for_small_parts_on_insert {#use_object_shared_data_serialization_version_for_small_parts_on_insert}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
+
+يكتب البيانات المشتركة ضمن نوع JSON في أجزاء البيانات التي تُنشئها عمليات الإدراج، بما في ذلك الإسقاطات التابعة لها، باستخدام
+[object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts)
+بصرف النظر عن حجمها، وذلك للحفاظ على سرعة عمليات الإدراج. عند تعطيل هذا الإعداد، يُحدَّد إصدار أجزاء البيانات المُدرجة وفقًا لـ
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/ar/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version)،
+كما هو الحال مع أجزاء البيانات المدمجة.
+
+## use_primary_key_cache {#use_primary_key_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -13,9 +13,7 @@ import NYCTaxiExampleDataset from '/snippets/ja/_nyc_taxi_example_dataset.mdx';
 
 [クエリログ](/ja/reference/system-tables/query_log)、比較検証、[クエリプラン](/ja/reference/statements/explain)に基づき、特定したボトルネックの解消に向けた最適化アプローチを評価します。
 
-<div id="before-you-begin">
-  ## 始める前に
-</div>
+## 始める前に {#before-you-begin}
 
 再現可能なベースラインを定め、ボトルネックについて仮説を立てます。まだボトルネックを特定していない場合は、まず[低速クエリを診断する](/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)と[クエリのボトルネックを切り分ける](/ja/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks)を参照してください。
 
@@ -25,9 +23,7 @@ import NYCTaxiExampleDataset from '/snippets/ja/_nyc_taxi_example_dataset.mdx';
   <NYCTaxiExampleDataset />
 </Accordion>
 
-<div id="choose-an-approach">
-  ## アプローチを選ぶ
-</div>
+## アプローチを選ぶ {#choose-an-approach}
 
 収集した証拠に基づいて、どこから着手するかを決めます。問題に対処できる変更のうち、最も特化度の低いものを優先してください。
 
@@ -39,19 +35,15 @@ import NYCTaxiExampleDataset from '/snippets/ja/_nyc_taxi_example_dataset.mdx';
 
 証拠がこれらのカテゴリのいずれにも当てはまらない場合は、クエリを無理にいずれかのアプローチに当てはめるのではなく、クエリプランに戻ってください。
 
-<div id="reduce-the-data-read">
-  ## 読み取るデータを減らす
-</div>
+## 読み取るデータを減らす {#reduce-the-data-read}
 
-* **使用する場合:** クエリがwide パーツのカラムや不要なカラムを読み取っている場合。
+* **使用する場合:** クエリがwide カラムや不要なカラムを読み取っている場合。
 * **変更:** クエリが読み取るカラムのサイズまたは数を減らします。
-* **検証:** 同じ条件で`read_bytes`、メモリ使用量、実行時間を比較します。
+* **検証:** 同じ条件で`read_bytes`、メモリ使用量、所要時間を比較します。
 
-ClickHouseはクエリに必要なカラムだけを読み取りますが、選択したデータは依然として読み取り、圧縮解除、処理する必要があります。選択したカラムとその型の両方を確認してください。[スキーマ推論](/ja/concepts/features/interfaces/schema-inference)は実用的な始点となりますが、推論された型は、本番データに必要なものよりも広範だったり、制約が緩かったりする場合があります。
+ClickHouseはクエリに必要なカラムだけを読み取りますが、選択したデータは依然として読み取り、圧縮解除、処理する必要があります。選択したカラムとその型の両方を確認してください。[スキーマ推論](/ja/concepts/features/operations/insert/schema-inference)は実用的な始点となりますが、推論された型は、本番データに必要なものよりも広範だったり、制約が緩かったりする場合があります。
 
-<div id="review-column-types">
-  ### カラム型を見直す
-</div>
+### カラム型を見直す {#review-column-types}
 
 <span id="choose-precise-types" />
 
@@ -75,9 +67,7 @@ ClickHouseはクエリに必要なカラムだけを読み取りますが、選�
 
 より詳しいガイダンスについては、[データ型の選択](/ja/best-practices/select-data-types)を参照してください。
 
-<div id="read-only-the-required-columns">
-  ### 必要なカラムだけを読み取る
-</div>
+### 必要なカラムだけを読み取る {#read-only-the-required-columns}
 
 ClickHouse はカラム単位でデータを保存するため、選択するカラムを減らすほど、読み取るデータ量を直接削減できます。特に列数の多いテーブルや、各行のごく一部だけを返すクエリでは、`SELECT *` ではなく必要なカラムを明示的に指定してください。
 
@@ -98,17 +88,13 @@ LIMIT 1000;
 
 同じフィルターと上限を指定した `SELECT *` とこのクエリを比較してください。返される行数は変わりませんが、`read_bytes` には読み取るカラム数が少ないことが反映されるはずです。
 
-<div id="align-the-data-layout-with-the-query">
-  ## データレイアウトをクエリに合わせる
-</div>
+## データレイアウトをクエリに合わせる {#align-the-data-layout-with-the-query}
 
 * **使用する場面:** 選択性の高いフィルターでも多数のパーツまたはグラニュールが読み取られる場合。
 * **変更:** 繰り返し実行されるクエリで使用するフィルターに合わせて、物理レイアウトを調整します。
 * **検証:** [`EXPLAIN indexes = 1`](/ja/reference/statements/explain) で選択されるパーツとグラニュールを比較し、`read_rows`、`read_bytes`、実行時間を確認します。
 
-<div id="start-with-the-ordering-key">
-  ### ソートキーから始める
-</div>
+### ソートキーから始める {#start-with-the-ordering-key}
 
 [`MergeTree` ファミリーのテーブル](/ja/reference/engines/table-engines/mergetree-family/)では、ソートキーによって行のディスク上での配置が決まります。デフォルトでは、ソートキーは[スパースプライマリインデックス](/ja/primary-indexes)を定義する主キーも兼ねます。OLTP データベースの主キーとは異なり、ClickHouse の主キーは一意性を保証しません。ClickHouse は、クエリのフィルター条件を満たし得ないグラニュールをスキップできるため、パフォーマンスが向上します。
 
@@ -142,9 +128,7 @@ SETTINGS
   [`PREWHERE`](/ja/optimize/prewhere) を使用すると、処理される行数を変えずに読み取るカラム値を削減できます。デフォルトで有効な `optimize_move_to_prewhere` により、ClickHouse は対象となる条件を `WHERE` から `PREWHERE` へ自動的に移動します。手動で `PREWHERE` を追加する前にプランを確認し、その効果を測定する際は `read_rows` に加えて `read_bytes` も使用してください。
 </Tip>
 
-<div id="evaluate-additional-indexing-and-data-layout-options">
-  ### 追加の索引とデータレイアウトの選択肢を評価する
-</div>
+### 追加の索引とデータレイアウトの選択肢を評価する {#evaluate-additional-indexing-and-data-layout-options}
 
 順序キーで重要なアクセスパターンを効率的にサポートできない場合は、以下のより特化した選択肢を検討してください。
 
@@ -194,9 +178,7 @@ MATERIALIZE PROJECTION trips_by_payment_type;
 
 projection をマテリアライズすると、既存データに対してもデータが投入され、以降の insert では自動的に維持されます。元のテーブルに対して代表的なクエリを再実行し、`EXPLAIN projections = 1` を使用して、ClickHouse が projection を選択し、読み取り行数またはバイト数が減るかを確認します。このパターンを広く適用する前に、insert 時のオーバーヘッドとストレージオーバーヘッドも測定してください。
 
-<div id="precompute-repeatable-work">
-  ## 繰り返し実行する処理を事前計算する
-</div>
+## 繰り返し実行する処理を事前計算する {#precompute-repeatable-work}
 
 * **使用する場面:** 同じ変換や集計がクエリ時間の大部分を繰り返し占める場合。
 * **変更:** 繰り返し実行する計算を、インジェスト時、定期的なリフレッシュ、または用途に特化したデータレイアウトに移します。
@@ -212,9 +194,7 @@ projection をマテリアライズすると、既存データに対してもデ
 
 各セクションでは、基本的な実装方法、主な運用上のトレードオフ、結果の検証方法を説明します。
 
-<div id="incremental-materialized-view">
-  ### インクリメンタルmaterialized view
-</div>
+### インクリメンタルmaterialized view {#incremental-materialized-view}
 
 繰り返し行うフィルター、変換、集約を、データの到着に合わせて最新の状態に保つ必要がある場合は、[インクリメンタルmaterialized view](/ja/materialized-view/incremental-materialized-view) を使用します。新たに挿入される各ブロックを処理し、変換結果をターゲットテーブルに書き込みます。その代わり、追加のインジェスト処理が必要になり、ターゲットテーブルを明示的に指定する必要があります。
 
@@ -241,9 +221,7 @@ GROUP BY pickup_date;
 
 ターゲットテーブルに対し、`pickup_date` でグループ化した `sum(trip_count)` をクエリして、バックグラウンドマージ待ちの行をクエリ時に結合します。ビューは新規挿入のみを処理するため、既存のソースデータは別途バックフィルしてください。実行時間と読み取り行数を元の集約と比較して変更を検証し、追加の挿入処理が許容範囲内であることを確認します。
 
-<div id="refreshable-materialized-view">
-  ### リフレッシャブルmaterialized view
-</div>
+### リフレッシャブルmaterialized view {#refreshable-materialized-view}
 
 結果が多少古くても許容でき、実用的な間隔で結果全体を再計算できる場合は、[リフレッシャブルmaterialized view](/ja/materialized-view/refreshable-materialized-view)を使用します。スケジュールに従ってクエリを再実行します。トレードオフは、結果の鮮度と各更新にかかるコストです。
 
@@ -271,9 +249,7 @@ GROUP BY payment_type;
 
 レポートは事前計算済みのターゲットを読み取り、ClickHouse はスケジュールに従って完全な結果を更新します。元の集約とのクエリ実行時間の比較により変更を検証し、[`system.view_refreshes`](/ja/reference/system-tables/view_refreshes) を確認して、更新の所要時間、ステータス、頻度がワークロードに適していることを確認します。
 
-<div id="purpose-built-table">
-  ### 用途別テーブル
-</div>
+### 用途別テーブル {#purpose-built-table}
 
 別のワークロードで大きく異なるスキーマ、順序キー、またはライフサイクルが必要な場合は、用途別テーブルを使用します。これにより物理設計を明示的に制御でき、多数のプロジェクションを維持するよりも明確になる場合があります。トレードオフとして、追加のストレージとパイプライン管理が必要になります。ソースデータと鮮度要件の点で実用的な場合は、繰り返し行う結合や変換をインジェストパイプラインに移すこともできます。詳細な設計ガイダンスについては、[materialized view の使用](/ja/best-practices/use-materialized-views)および[データの非正規化](/ja/data-modeling/denormalization)を参照してください。
 
@@ -295,9 +271,7 @@ WHERE source.payment_type IS NOT NULL
 
 この例では、順序キーが NULL の値を除外し、対象となる 2 つのカラムから `Nullable` を削除します。この方法がワークロードのデータ要件に適していることを確認してください。ダッシュボードではこのテーブルを明示的にクエリする必要があり、インジェストパイプラインで最新の状態に維持する必要があります。ソーステーブルへのクエリと、読み取り行数・バイト数、メモリ使用量、所要時間を比較して、変更を検証してください。追加で必要となるストレージとパイプラインの保守も、判断材料に含めてください。
 
-<div id="next-steps">
-  ## 次のステップ
-</div>
+## 次のステップ {#next-steps}
 
 変更を評価する際は、同等の条件下で元の測定を繰り返します。ボトルネックを別の箇所に移すことなく、意図した処理量が削減されていることを確認してください。
 

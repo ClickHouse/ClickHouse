@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="query_cache.max_entries">
-  ## query_cache.max_entries
-</div>
+## query_cache.max_entries {#query_cache.max_entries}
 
-<SettingsInfoBlock type="UInt64" default_value="1024" changeable_without_restart="No" />Le nombre maximal de résultats de requêtes SELECT stockés dans le cache.
+<SettingsInfoBlock type="UInt64" default_value="1024" changeable_without_restart="Yes" />Le nombre maximal de résultats de requêtes SELECT stockés dans le cache.
 
-<div id="query_cache.max_entry_size_in_bytes">
-  ## query_cache.max_entry_size_in_bytes
-</div>
+## query_cache.max_entry_size_in_bytes {#query_cache.max_entry_size_in_bytes}
 
-<SettingsInfoBlock type="UInt64" default_value="1048576" changeable_without_restart="No" />La taille maximale, en octets, que peuvent avoir les résultats des requêtes SELECT pour être enregistrés dans le cache.
+<SettingsInfoBlock type="UInt64" default_value="1048576" changeable_without_restart="Yes" />La taille maximale, en octets, que peuvent avoir les résultats des requêtes SELECT pour être enregistrés dans le cache.
 
-<div id="query_cache.max_entry_size_in_rows">
-  ## query_cache.max_entry_size_in_rows
-</div>
+## query_cache.max_entry_size_in_rows {#query_cache.max_entry_size_in_rows}
 
 <SettingsInfoBlock type="UInt64" default_value="30000000" changeable_without_restart="No" />Nombre maximal de lignes que peuvent contenir les résultats d’une requête SELECT pour être enregistrés dans le cache.
 
-<div id="query_cache.max_size_in_bytes">
-  ## query_cache.max_size_in_bytes
-</div>
+## query_cache.max_size_in_bytes {#query_cache.max_size_in_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Oui" />Taille maximale du cache en octets. 0 signifie que le cache de requêtes est désactivé.
 

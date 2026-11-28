@@ -52,12 +52,12 @@ ClickHouse Cloud でのみ利用できます。マージ時に cache をプリ�
 
 ソート済みストリームをマージする際に、行ごとのキュー処理のオーバーヘッドを削減するため、バッチソートキューを使用します。
 
-行を変更しないマージ、すなわち通常の `MergeTree`
-(`Ordinary` マージモード) にのみ適用されます。`ReplacingMergeTree`、`CollapsingMergeTree`、
-`SummingMergeTree`、`AggregatingMergeTree`、`CoalescingMergeTree`、
-`GraphiteMergeTree`、`VersionedCollapsingMergeTree` など、マージ時の
-セマンティクスを持つエンジンには影響しません。これらのエンジンでは、この設定にかかわらず、
-引き続きデフォルトのキューが使用されます。
+`Ordinary` マージモードのマージにのみ適用されます。対象となるのは、通常の `MergeTree` パーツのマージ (行を削除または書き換えるマージ、つまり論理削除、
+有効期限 (TTL) による削除、軽量更新のパッチパーツ、`OPTIMIZE ... DEDUPLICATE` を含む) と、通常のプロジェクションパーツのマージです。
+`ReplacingMergeTree`、`CollapsingMergeTree`、
+`SummingMergeTree`、`AggregatingMergeTree`、`CoalescingMergeTree`、`GraphiteMergeTree`、
+`VersionedCollapsingMergeTree` など、マージ時のセマンティクスを持つエンジンのマージアルゴリズムや、集約プロジェクションパーツのマージアルゴリズムは、独自のソートキューを選択するため、
+この設定の影響を受けません。
 
 ## merge_workload {#merge_workload}
 

@@ -28,12 +28,12 @@ La fonction d’agrégation [stochasticLogisticRegression](/fr/reference/functio
 
 ## assignCentroid {#assignCentroid}
 
-Introduite dans : v26.8.0
+Introduite dans : v26.8.0
 
-Renvoie l’identifiant du centroïde (L2) le plus proche d’un vecteur. Les centroïdes sont fournis sous la forme d’un tableau constant de tableaux de nombres à virgule flottante, l’identifiant correspondant à la position d’indice 0 dans ce tableau, ou sous la forme du nom d’un `Dictionary` contenant les attributs `cid` et `vec`, auquel cas l’identifiant est `cid`.
+Renvoie l’identifiant du centroïde (L2) le plus proche d’un vecteur. Les centroïdes sont fournis sous la forme d’un tableau constant de tableaux, l’identifiant correspondant à la position d’indice 0 dans ce tableau, ou sous la forme du nom d’un `Dictionary` contenant les attributs `cid` et `vec`, auquel cas l’identifiant est `cid`.
 
 <Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -44,8 +44,8 @@ assignCentroid(vec, centroids | dict_name)
 
 **Arguments**
 
-* `vec` — Vecteur à affecter. Sa dimension doit correspondre à celle des centroïdes. Les types autres que `Float32` sont convertis en `Float32`, utilisé par le kernel de calcul des scores. [`Array(Float32)`](/fr/reference/data-types/array) ou [`Array(Float64)`](/fr/reference/data-types/array) ou [`Array(BFloat16)`](/fr/reference/data-types/array)
-* `centroids` — Centroïdes par rapport auxquels calculer les scores, qui doivent être constants. Ils peuvent être fournis sous forme d’un tableau de tableaux de flottants non vides et de même taille, l’identifiant étant alors la position à partir de 0 dans ce tableau, ou sous forme du nom d’un `Dictionary` avec un attribut `cid` de type entier non signé compatible avec `UInt32` et un attribut `vec` de type `Array(Float32)`, l’identifiant étant alors `cid`. Le dictionnaire est lu une fois et mis en cache jusqu’à son rechargement. [`Array(Array(Float32))`](/fr/reference/data-types/array) ou [`Array(Array(Float64))`](/fr/reference/data-types/array) ou [`Array(Array(BFloat16))`](/fr/reference/data-types/array) ou [`String`](/fr/reference/data-types/string)
+* `vec` — Vecteur à affecter. Sa dimension doit correspondre à celle des centroïdes. Les types d’élément autres que `Float32` sont convertis en `Float32`, utilisé par le kernel de calcul des scores. [`Array(Float32)`](/fr/reference/data-types/array) ou [`Array(Float64)`](/fr/reference/data-types/array) ou [`Array(BFloat16)`](/fr/reference/data-types/array) ou [`Array(Int8)`](/fr/reference/data-types/array) ou [`Array(UInt8)`](/fr/reference/data-types/array)
+* `centroids` — Centroïdes par rapport auxquels calculer les scores, qui doivent être constants. Ils peuvent être fournis sous forme d’un tableau de tableaux non vides et de même taille, dont le type d’élément peut être n’importe lequel des types acceptés pour `vec` (pas nécessairement le même), l’identifiant étant alors la position à partir de 0 dans ce tableau, ou sous forme du nom d’un `Dictionary` avec un attribut `cid` de type entier non signé compatible avec `UInt32` et un attribut `vec` de type `Array(Float32)`, l’identifiant étant alors `cid`. Le dictionnaire est lu une fois et mis en cache jusqu’à son rechargement. [`Array(Array(Float32))`](/fr/reference/data-types/array) ou [`Array(Array(Float64))`](/fr/reference/data-types/array) ou [`Array(Array(BFloat16))`](/fr/reference/data-types/array) ou [`Array(Array(Int8))`](/fr/reference/data-types/array) ou [`Array(Array(UInt8))`](/fr/reference/data-types/array) ou [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 

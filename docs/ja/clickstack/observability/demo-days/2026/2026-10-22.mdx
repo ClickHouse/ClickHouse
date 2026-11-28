@@ -1,0 +1,139 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-10-22
+title: 'デモデイズ - 2026-10-22'
+sidebarTitle: '2026-10-22'
+description: '2026-10-22 の ClickStack デモデー'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-10-22"
+---
+
+## アドホックなダッシュボードフィルタで、テーブルと時系列チャートからクリックでフィルタ {#click-to-filter-tables-time-charts}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+アドホックなダッシュボードフィルタで、テーブルタイルと時系列チャートからのクリックによるフィルタがサポートされました。これまでは検索タイルからしか利用できませんでした。今後は、クエリがビルダー、生のSQL、PromQL のいずれを使用していても、テーブル、折れ線グラフ、積み上げ棒グラフ、積み上げ折れ線グラフの値をクリックしてフィルター条件を追加できます。
+
+テーブルでは、検索テーブルと同様に、フィルタ可能なセルにカーソルを合わせて include または exclude を選択します。グループ化列はフィルタ可能ですが、集計されたカラムは、他のタイルで同じ集計が使われる可能性が低いため、フィルタできません。また、条件には別名ではなく元の式が使われるため、複数のタイルにまたがって適用できます。
+
+グループ化列の識別方法はクエリによって異なります。
+
+* ビルダーのテーブルでは、ClickHouse が別名のない式を正規化するため、結果メタデータ内の各カラムの位置を使用します。
+* 生のSQL クエリでは、マクロと変数を置換した後、`node-sql-parser` でパースします。`GROUP BY` が別名、名前、正規化された式、または `GROUP BY 2` のような位置でカラムを参照している場合、そのカラムはフィルタ可能です。
+* PromQL のテーブルでは、時刻カラムを除き、数値以外のカラムをラベルとして扱います。
+
+なお、クリックによるフィルタは `DateTime`、`Map`、`Array` カラムにはまだ対応していません。これらには専用のロジックが必要です。
+
+生のSQL チャートには、まだ改善の余地がいくつかあります。`node-sql-parser` は、パラメトリック関数、`ARRAY JOIN`、一部の結合構文など、ClickHouse の方言を完全にはサポートしていません。解析に失敗した場合や、クエリに `GROUP BY` がない、`GROUP BY ALL` を使用している、`SELECT *` を含んでいる場合は、フォールバックとして `String` カラムをフィルタ可能として扱います。
+
+このフォールバックは完全ではありません。クリックできないカラムがあったり、他のタイルに存在しないフィルタキーが追加されたりする場合があります。CTE 由来のカラムも、他のタイルでは定義されていない可能性があるため、同じ問題が起こり得ます。その場合は条件を削除してください。今後、完全な ClickHouse SQL パーサーを導入して改善したいと考えています。
+
+時系列チャートでは、系列のツールチップから、その系列のすべてのラベルでワンクリックでフィルタできるようになりました。たとえばチャートがサービス名と重大度でグループ化されている場合、系列をクリックすると両方の条件が追加されます。**Exclude** はラベルが 1 つの場合にのみ利用できます。たとえば `service = 'checkout'` と `severity = 'error'` を個別に除外すると、checkout のエラーだけでなく、checkout のすべてのログと、全サービスのすべてのエラーが非表示になってしまうためです。PromQL の折れ線グラフでは、Prometheus から返されたラベルのうち `__name__` 以外を使用します。
+
+**関連 プルリクエスト:** [#3389](https://github.com/hyperdxio/hyperdx/pull/3389) テーブルチャートにクリックによるアドホックフィルタを追加、[#3405](https://github.com/hyperdxio/hyperdx/pull/3405) 時系列チャートの系列をアドホックなダッシュボードフィルタに反映
+
+## 線の補間方法の表示設定 {#line-interpolation-display-setting}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=149" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+表示設定の補間オプション **Smooth**、**Linear**、**Step** で、折れ線グラフの点の結び方を選択できるようになりました。これまでは、通常の折れ線グラフでは常に滑らかな曲線が、積み上げ折れ線グラフでは直線が使用されていました。これらは引き続きデフォルトですが、データに合わせて変更したり、チャート間で表示をそろえたりできるようになりました。
+
+この設定は、チャートエディタ、外部 API、MCP で利用できます。また、エディタで積み上げ棒グラフまたは積み上げ折れ線に切り替えても、保存済みタイルの表示形式が更新されないバグを修正しました。
+
+**関連 プルリクエスト:** [#3393](https://github.com/hyperdxio/hyperdx/pull/3393) 線の補間方法の表示設定 (smooth、linear、step) を追加
+
+## 検索ページのヒストグラムでのグループ化 {#search-page-histogram-group-by}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=194" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+検索ヒストグラムを任意のフィールドでグループ化できるようになりました。これまでは、ログソースに応じて常に重大度またはステータスコードで分割されていました。[@elizabetdev](https://github.com/elizabetdev) のデザインに基づく新しい **Group by** コントロールでは、フィルタサイドバーと同じリストから複数のフィールドや Map のキーを選択できます。
+
+フィールドを選択して適用するとヒストグラムが再グループ化され、各グループを示す凡例が表示されます。ログソースのデフォルトに戻すことも、グループ化を解除して単純なイベント件数を表示することもできます。目的のフィールドがリストにない場合や、計算値でグループ化したい場合は、SQL を直接入力できます。
+
+ソースを切り替えても、互換性のある group-by は選択されたまま維持されます。例えば、両方のソースで利用可能な `ServiceName` フィールドや Map のキーはそのまま引き継がれます。互換性がない場合、ヒストグラムは新しいソースのデフォルトにリセットされます。この動作は、ソース切り替え時に互換性のあるフィルタを保持する仕組みと同じロジックに基づいています。
+
+[@elizabetdev](https://github.com/elizabetdev) によるフォローアップの変更で、このコントロールは共通の分割ボタンに移行し、ラベルと選択中の値が横並びで表示されるようになりました。
+
+**関連 プルリクエスト:** [#3407](https://github.com/hyperdxio/hyperdx/pull/3407) 検索ページのヒストグラムに group-by を追加、[#3430](https://github.com/hyperdxio/hyperdx/pull/3430) Group by 分割ボタンを共通化
+
+## ダッシュボードのタイルの説明 {#descriptions-on-dashboard-tiles}
+
+*デモ担当者: [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=318" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ダッシュボードのタイルに説明を付けられるようになりました。チャートが何を示しているのか、どう読み取ればよいのかを補足するのに便利です。説明は、タイル名の横にある情報アイコンにカーソルを合わせると表示されます。説明のないタイルの見た目はこれまでと変わりません。
+
+外部ダッシュボード API で説明を扱えるようにしてくれた [@felipe-carvalho12](https://github.com/felipe-carvalho12) に感謝します。これにより、ダッシュボードをコードとして管理する場合でも説明を設定できます。また、タイルエディターの **Chart Name** の横に **Description** 入力欄を追加しました。説明は最大 1,024 文字です。
+
+続く変更では、説明をタイルのチャート設定に移し、`name` と並べて保持するようにしたため、エディターが他の設定とまとめて説明を保存するようになりました。あわせて、外部 API 経由で `series` を指定して送信したタイルの説明が失われるバグも修正しました。
+
+**関連 プルリクエスト:** [#3352](https://github.com/hyperdxio/hyperdx/pull/3352) タイルの説明 (任意) をツールチップとして表示、[#3403](https://github.com/hyperdxio/hyperdx/pull/3403) タイルエディターに説明フィールドを追加
+
+## ユーザー設定でのタイムゾーン選択 {#time-zone-selection}
+
+*デモ担当者: [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=358" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ClickStack でタイムゾーンを選択できるようになりました。これまでは、ユーザー設定の **Use UTC time** スイッチで UTC かブラウザのローカルタイムゾーンのどちらかしか選べませんでした。現在は検索可能なセレクターになり、**Local** と **UTC** が上部に固定され、その下にブラウザがサポートするすべてのタイムゾーンが並びます。各タイムゾーンには現在のオフセットが表示され、検索も可能です。たとえば「los angeles」と入力すると `America/Los_Angeles` が見つかります。
+
+選択したタイムゾーンは検索ページとダッシュボードに適用されます。サイドバーのバッジとタイムスタンプの列ヘッダーには、`PDT` のような短縮名が表示されます。米国式の略称がないタイムゾーンの場合は、`UTC+9` のような UTC オフセットが表示されます。ClickStack は IANA 名を保存し、ブラウザがその名前を認識できない場合はローカル時刻にフォールバックします。
+
+1 回の調査のためだけにユーザー設定からタイムゾーンを切り替えるのは、まだ少し手間がかかります。今回の変更は、検索単位およびダッシュボード単位のオーバーライドに向けた基盤となるものです。これが実現すれば、自分のデフォルトはローカルまたは UTC のまま、顧客のデータを顧客のタイムゾーンで確認できるようになります。なお、これらのオーバーライドはまだ実装されていません。
+
+**関連するプルリクエスト:** [#3445](https://github.com/hyperdxio/hyperdx/pull/3445) 時刻ピッカーの範囲を表示用タイムゾーンで読み取る、[#3447](https://github.com/hyperdxio/hyperdx/pull/3447) 時刻表示設定をタイムゾーンとして保存する、[#3449](https://github.com/hyperdxio/hyperdx/pull/3449) ユーザー設定にタイムゾーンセレクターを追加する
+
+## MCP サービスヘルスツール {#mcp-service-health-tool}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=463" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+MCPサーバーに `clickstack_service_health` ツールが追加されました。エージェントが記述する生のSQLの多くがサービスのヘルスチェック用であることがわかったため、この用途に特化したツールを構築しました。これまでエージェントは、複数の `clickstack_table` や `clickstack_timeseries` の呼び出し結果を組み合わせ、そのうえでどの変化に対応が必要かを判断しなければなりませんでした。
+
+このツールは、トレースソース内の各サービスについて、スループット、エラー率、p50/p95/p99 レイテンシ、上位のエラーグループを、過去のウィンドウと比較して返します。デフォルトの比較対象は前日の同じ時間帯ですが、エージェントは直前の 15 分間や前週の同じ時間帯など、別のウィンドウを選択することもできます。対応の必要性が高いサービスから順に表示され、`critical`、`degraded`、`healthy` のいずれかのステータスと、その理由を示す `error_rate_up`、`latency_up`、`traffic_drop` などのフラグが付与されます。固定のしきい値を用いるため、通常の変動がリグレッションとして誤検知されることはありません。
+
+新規または増加中のエラーグループが先頭に表示され、初回および最終検出時刻から、継続中のイシューなのか、すでに収束したバーストなのかを見分けやすくなっています。比較ウィンドウにトラフィックがない操作はロールアウトの可能性が高いものとしてマークされ、そのエラーは新規としてカウントされません。デフォルトではサーバースパンのみをカウントしますが、`spanKind: "all"` を指定するとすべてのスパンが対象になります。保持期間外であるなどの理由で比較ウィンドウにデータがない場合は、さらに前の期間を試し、それでもデータがなければ比較なしのレポートにフォールバックします。
+
+**関連 プルリクエスト:** [#3411](https://github.com/hyperdxio/hyperdx/pull/3411) clickstack&#95;service&#95;health ツールを追加
+
+## MCP 品質スコアの改善 {#mcp-quality-score-improvements}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=537" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ClickStack の MCPサーバーのチェックには、[Manufact](https://manufact.com) の MCP Quality Score を利用しています。MCPサーバーを運用している方には、ぜひ試してみることをお勧めします。3 つの変更により、スコアは 80 から 94 に向上しました。
+
+サーバーの `serverInfo` に、既存の `name` と `version` に加えて、タイトル、説明、Web サイトの URL、アイコンが含まれるようになりました。アイコンにはアプリのロゴ SVG を使用しています。アイコンの URL は絶対 URL である必要があるため、`FRONTEND_URL` が設定されていない場合は省略されます。
+
+すべてのツールで、4 つの動作ヒント `readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint` をすべて宣言するようになりました。これまでは、各ツールで 1 つしか宣言されていませんでした。プリセットは、読み取り専用ツール、upsert ツール、そして `delete_*` や `patch_dashboard` などの冪等な破壊的ツール向けの 3 種類を用意しています。upsert は `id` を指定せずに呼び出すと毎回新しいオブジェクトが作成されるため、冪等ではありません。ツールがアクセスするのはチーム自身のメタデータと ClickHouse のデータのみであるため、`openWorldHint` はすべて `false` としています。また、登録時の型で 4 つのヒントすべてが必須になったため、1 つでも欠けているとコンパイルエラーになります。
+
+ツールの説明も整理しました。すべての入力に説明を付け、Claude Code の 2048 バイトの切り詰め上限を超えていた 4 つのツールの説明を短縮しました。たとえば、`clickstack_event_deltas` は 3318 バイトから 1796 バイトになりました。スキーマの制約を繰り返しているだけの記述を削除し、ID フィールドにはその ID を取得できるツールを明記し、保存系ツールの副作用もドキュメント化しました。たとえば、新しい設定でタイルのアラートをサポートできない場合に、`patch_dashboard` がそのアラートを削除することもここに記載しています。
+
+残りの 6 ポイントは `outputSchema` に関するものです。現在、ツールは JSON を `structuredContent` ではなくテキストとして返しているため、この対応は今後の課題とします。
+
+**関連 プルリクエスト:** [#3394](https://github.com/hyperdxio/hyperdx/pull/3394) サーバーのタイトル、説明、Web サイト、アイコンを公開、[#3395](https://github.com/hyperdxio/hyperdx/pull/3395) すべてのツールで 4 つの動作ヒントをすべて宣言、[#3396](https://github.com/hyperdxio/hyperdx/pull/3396) ツールと入力の説明を簡潔化
+
+## MCPサーバーでのSQLクエリのバッチ実行 {#mcp-batch-sql-queries}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=588" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+エージェントが生のSQLを必要とする場合、`clickstack_sql` で、クエリごとに個別のラウンドトリップを発生させることなく、1回の呼び出しで複数のクエリを実行できるようになりました。従来どおり単一の `sql` クエリを渡すことも、最大10個のエントリを含む `queries` 配列を渡すこともできます。各エントリは独自の `sql` と、任意の `id`、`connectionId`、`sourceId` を持ちます。`startTime` と `endTime` はすべてのクエリで共通です。
+
+クエリは5件ずつ実行され、バッチ全体に60秒のデッドラインが適用されます。時間切れの時点でキューに残っているクエリは、ClickHouse に送信されません。結果は入力順に、`ok`、`error`、`timeout` のいずれかのステータス付きで返されるため、1つのクエリが失敗してもバッチ全体が失敗することはありません。`isError` が設定されるのは、すべてのクエリが失敗した場合のみです。応答サイズはバッチ全体で100k文字までとなり、既存の単一クエリの上限に合わせて、クエリごとに50k文字が上限となります。
+
+呼び出しには `sql` または `queries` のいずれか一方のみを含める必要があり、両方を同時に指定することはできません。`sql` が常に必須ではなくなったため、この検証はツールの必須項目リストではなくハンドラーで行います。
+
+MCPのタスクも検討しましたが、現時点では採用を見送っています。SDKのAPIは実験的な段階にあり、さらに `2026-07-28` の spec ではタスクが別の拡張機能に移されましたが、サーバーSDKはまだこれに対応していないためです。この変更はまだマージされていません。
+
+**関連プルリクエスト:** [#3421](https://github.com/hyperdxio/hyperdx/pull/3421) 複数の clickstack&#95;sql クエリを並列に実行 (open)

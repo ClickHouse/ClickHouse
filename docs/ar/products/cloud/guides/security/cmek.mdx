@@ -42,21 +42,21 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 5. انقر على Create service
 
 <div id="customer-managed-encryption-keys-cmek">
-  ### مفتاح التشفير المُدار من العميل (CMEK) {#customer-managed-encryption-keys-cmek}
+  ### مفاتيح تشفير يديرها العميل (CMEK) {#customer-managed-encryption-keys-cmek}
 </div>
 
 <Warning>
-  سيؤدي حذف مفتاح KMS المستخدم لتشفير خدمة ClickHouse Cloud إلى إيقاف خدمة ClickHouse لديك، وستصبح بياناتها غير قابلة للاسترداد، وكذلك النسخ الاحتياطية الحالية. ولتجنّب فقدان البيانات عن طريق الخطأ عند تدوير المفاتيح، قد ترغب في الاحتفاظ بمفاتيح KMS القديمة لفترة من الوقت قبل حذفها.
+  يؤدي الحذف النهائي لمفتاح KMS المستخدم لتشفير خدمة ClickHouse Cloud إلى تعذّر استرداد بيانات الخدمة ونسخها الاحتياطية الحالية. ويؤدي حذف المفتاح أولًا إلى إيقاف الخدمة، ويُبقي معظم مزوّدي KMS المفتاحَ المحذوف قابلًا للاسترداد خلال فترة انتظار قبل إتلافه نهائيًا (راجع [أداة الاستقصاء الدوري لمفتاح KMS](#kms-key-poller)). ولتجنّب فقدان البيانات عن طريق الخطأ عند تدوير المفاتيح، احتفظ بمفاتيح KMS القديمة لفترة من الوقت قبل حذفها.
 </Warning>
 
 بمجرد تشفير الخدمة باستخدام TDE، يمكن للعملاء تحديث المفتاح لتمكين CMEK. ستُعاد تشغيل الخدمة تلقائيًا بعد تحديث إعداد TDE. أثناء هذه العملية، يفك مفتاح KMS القديم تشفير مفتاح تشفير البيانات (DEK)، ثم يعيد مفتاح KMS الجديد تشفير DEK. ويضمن ذلك أن تستخدم الخدمة، بعد إعادة التشغيل، مفتاح KMS الجديد في عمليات التشفير مستقبلًا. وقد تستغرق هذه العملية عدة دقائق.
 
 <Accordion title="تمكين CMEK باستخدام AWS KMS">
-  1. في ClickHouse Cloud، حدِّد الخدمة المشفّرة
+  1. في ClickHouse Cloud، حدِّد الخدمة المشفّرة
 
   2. انقر على Settings في الجهة اليسرى
 
-  3. في أسفل الشاشة، وسِّع قسم Network security information
+  3. في أسفل الشاشة، وسِّع قسم Network security information
 
   4. انسخ Encryption role ID (AWS) أو Encryption Service Account (GCP) — ستحتاج إليه في خطوة لاحقة
 
@@ -64,7 +64,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 
   6. انقر على المفتاح
 
-  7. حدِّث Key Policy في AWS كما يلي:
+  7. حدِّث Key Policy في AWS كما يلي:
 
      ```json
      {
@@ -87,15 +87,15 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 
   9. انسخ Key ARN
 
-  10. ارجع إلى ClickHouse Cloud والصق Key ARN في قسم التشفير الشفاف للبيانات ضمن Service Settings
+  10. ارجع إلى ClickHouse Cloud والصق Key ARN في قسم التشفير الشفاف للبيانات ضمن إعدادات الخدمة
 
   11. احفظ التغيير
 </Accordion>
 
 <Accordion title="تمكين CMEK باستخدام GCP KMS">
-  1. في ClickHouse Cloud، حدِّد الخدمة المشفّرة
+  1. في ClickHouse Cloud، حدِّد الخدمة المشفّرة
   2. انقر على Settings في الجهة اليسرى
-  3. في أسفل الشاشة، وسِّع قسم Network security information
+  3. في أسفل الشاشة، وسِّع قسم Network security information
   4. انسخ Encryption Service Account (GCP) — ستحتاج إليه في خطوة لاحقة
   5. [أنشئ مفتاح KMS لـ GCP](https://cloud.google.com/kms/docs/create-key)
   6. انقر على المفتاح
@@ -104,7 +104,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
      * Cloud KMS Viewer
   8. احفظ إذن المفتاح
   9. انسخ Key Resource Path
-  10. ارجع إلى ClickHouse Cloud والصق Key Resource Path في قسم التشفير الشفاف للبيانات ضمن Service Settings
+  10. ارجع إلى ClickHouse Cloud والصق Key Resource Path في قسم التشفير الشفاف للبيانات ضمن إعدادات الخدمة
   11. احفظ التغيير
 </Accordion>
 
@@ -142,11 +142,19 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 
 بمجرد إعداد CMEK، قم بتدوير المفتاح باتباع الإجراءات الواردة أعلاه لإنشاء مفتاح KMS جديد ومنح الأذونات. ارجع إلى إعدادات الخدمة للصق ARN الجديد (AWS) أو Key Resource Path ‏(GCP) أو Key Name ‏(Azure)، ثم احفظ الإعدادات. ستُعاد تشغيل الخدمة لتطبيق المفتاح الجديد.
 
-<div id="kms-key-poller">
-  #### أداة التحقق الدوري من مفتاح KMS {#kms-key-poller}
-</div>
+#### أداة الاستقصاء الدوري لمفتاح KMS {#kms-key-poller}
 
-عند استخدام CMEK، يتم التحقق من صلاحية مفتاح KMS المحدد كل 10 دقائق. وإذا لم يعد الوصول إلى مفتاح KMS صالحًا، فستتوقف خدمة ClickHouse. ولاستئناف الخدمة، أعِد الوصول إلى مفتاح KMS باتباع الخطوات الواردة في هذا الدليل، ثم أعد تشغيل الخدمة.
+عند استخدام CMEK، يجري التحقق من صلاحية مفتاح KMS المُقدَّم كل 10 دقائق. وإذا تعذّر الوصول إلى مفتاح KMS، فستتوقف خدمة ClickHouse. ولاستئناف الخدمة، استعد الوصول إلى مفتاح KMS باتباع الخطوات الواردة في هذا الدليل، ثم أعد تشغيل الخدمة.
+
+لا تُحذف الخدمة التي أوقفتها أداة الاستقصاء الدوري للمفتاح، ولا توجد مهلة زمنية لاستردادها. فإذا سُحب المفتاح أو عُطّل، فاستعد الوصول إليه وأعد تشغيل الخدمة، وستعود الخدمة بكامل بياناتها.
+
+أما حذف المفتاح فأمر مختلف؛ إذ بمجرد حذف المفتاح نهائيًا، يتعذّر فك تشفير بيانات الخدمة ونسخها الاحتياطية (راجع التحذير في [مفاتيح تشفير يديرها العميل](#customer-managed-encryption-keys-cmek)). ويُبقي كل مزوّد KMS المفتاح المحذوف قابلًا للاسترداد طوال فترة انتظار قبل إتلافه:
+
+* AWS KMS: من 7 إلى 30 يومًا (30 يومًا افتراضيًا). [ألغِ حذف المفتاح](https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys-cancelling-key-deletion.html)، ثم فعّل المفتاح.
+* GCP Cloud KMS: من 24 ساعة إلى 120 يومًا (30 يومًا افتراضيًا). تُحدَّد هذه الفترة عند إنشاء المفتاح ولا يمكن تغييرها لاحقًا، لذا قد يُتلف المفتاح الذي أُنشئ بفترة قصيرة بعد 24 ساعة فقط من جدولة إتلافه. تحقّق من موعد الإتلاف المجدول لإصدار المفتاح بدلًا من الاعتماد على القيمة الافتراضية. [استعد إصدار المفتاح](https://docs.cloud.google.com/kms/docs/destroy-restore)، ثم فعّله.
+* Azure Key Vault: من 7 إلى 90 يومًا، إذا كان الحذف المرن مفعّلًا على الخزنة ولم يُطهَّر المفتاح. ومن دون حماية التطهير، قد يُطهَّر المفتاح المحذوف نهائيًا قبل انتهاء هذه الفترة. فعّل حماية التطهير لمنع الحذف النهائي المبكر. [استرد المفتاح المحذوف](https://learn.microsoft.com/en-us/azure/key-vault/general/key-vault-recovery).
+
+وبمجرد أن يصبح المفتاح قابلًا للاستخدام مجددًا، أعد تشغيل الخدمة.
 
 <div id="backup-and-restore">
   ### النسخ الاحتياطي والاستعادة {#backup-and-restore}

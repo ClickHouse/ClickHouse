@@ -24,9 +24,11 @@ Pour créer une visualisation basée sur SQL, ouvrez l&#39;éditeur d&#39;une tu
 Ensuite :
 
 1. Sélectionnez la **Connexion** sur laquelle exécuter la requête.
-2. Sélectionnez éventuellement une **Source** : cela permet d&#39;appliquer à votre graphique les filtres au niveau du tableau de bord via la macro `$__filters`.
+2. Sélectionnez éventuellement une **Source** : cela permet d&#39;appliquer à votre graphique les filtres au niveau du tableau de bord via la macro `$__filters`, et permet à la requête d&#39;utiliser `$__sourceTable`.
 3. Rédigez votre requête SQL dans l&#39;éditeur en utilisant des paramètres de requête et des macros pour tenir compte de l&#39;intervalle de temps, des filtres et des variables du tableau de bord.
 4. Cliquez sur **Exécuter** pour prévisualiser les résultats, puis sur **Enregistrer** pour enregistrer la visualisation.
+
+La connexion et la source peuvent également être définies par une [variable de connexion ou une variable de source de données](/fr/clickstack/observability/features/dashboards/overview#source-connection-variables) : c&#39;est alors l&#39;utilisateur qui consulte le tableau de bord qui choisit la connexion ou la source interrogée par la tuile.
 
 ## Paramètres de requête {#query-parameters}
 
@@ -104,17 +106,18 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 
 ### Macro de filtre de tableau de bord {#dashboard-filter-macro}
 
-| Macro        | Description                                                                                                                    |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `$__filters` | Remplacée par les conditions de filtrage définies au niveau du tableau de bord (nécessite qu&#39;une source soit sélectionnée) |
+| Macro            | Description                                                                                                                                                                                                                                                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$__filters`     | Remplacée par les conditions de filtrage définies au niveau du tableau de bord (nécessite qu&#39;une source soit sélectionnée)                                                                                                                                                                                                               |
+| `$__sourceTable` | Remplacée par la table de la source sélectionnée, sous sa forme entièrement qualifiée, par exemple `default.otel_logs`. Pour les sources de métriques, utilisez `$__sourceTable(<metric type>)`, où le type de métrique est `gauge`, `histogram`, `sum`, `summary` ou `exponential histogram`. Nécessite qu&#39;une source soit sélectionnée |
 
 Lorsqu&#39;une **Source** est sélectionnée pour le graphique et que des filtres de tableau de bord sont actifs, `$__filters` est développée en conditions SQL `WHERE` correspondantes. Lorsqu&#39;aucune source n&#39;est sélectionnée ou qu&#39;aucun filtre n&#39;est appliqué, elle est développée en `(1=1)` : on peut donc toujours l&#39;inclure sans risque dans une clause `WHERE`.
 
-Seuls les filtres pour lesquels l&#39;option **Broadcast filter condition** est activée sont appliqués par `$__filters`. Les filtres exposés sous forme de variables doivent être référencés explicitement, comme décrit ci-dessous.
+`$__filters` applique les valeurs sélectionnées dans les filtres de valeurs d&#39;expression SQL pour lesquels l&#39;option **Broadcast filter condition** est activée, ainsi que les conditions des [filtres ad hoc](/fr/clickstack/observability/features/dashboards/overview#adhoc-filters) qui s&#39;appliquent à la source de la tuile. Les filtres exposés sous forme de variables doivent être référencés explicitement, comme décrit ci-dessous.
 
 ### Macros de variables de tableau de bord {#dashboard-variables}
 
-Lorsqu’un filtre de tableau de bord est [disponible en tant que variable](/fr/clickstack/observability/features/dashboards/overview#dashboard-variables), ses valeurs sélectionnées peuvent être référencées n’importe où dans la requête. Ces macros ne sont disponibles que dans les tuiles d’un tableau de bord qui déclare au moins une variable.
+Lorsqu’un filtre de tableau de bord est [disponible en tant que variable](/fr/clickstack/observability/features/dashboards/overview#dashboard-variables) — un filtre de valeurs d’expression SQL avec l’option **Available as variable** activée, ou tout filtre de valeurs statiques, de valeurs de requête SQL ou de valeurs d’étiquette PromQL —, ses valeurs sélectionnées peuvent être référencées n’importe où dans la requête. Ces macros ne sont disponibles que dans les tuiles d’un tableau de bord qui déclare au moins une variable.
 
 | Macro                                         | Description                                                                                                                                  |
 | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |

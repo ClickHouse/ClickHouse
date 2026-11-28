@@ -443,7 +443,7 @@ nullIf(x, y)
 
 **返回值**
 
-如果两个参数相等，则返回 `NULL`；否则返回第一个参数。[`NULL`](/zh/reference/syntax#null) 或 [`Nullable(x)`](/zh/reference/data-types/nullable)
+如果两个参数相等，则返回 `NULL`；否则返回第一个参数。对于 `Variant` 和 `Dynamic` 这类在内部存储 `NULL` 的类型，结果保持输入类型不变。[`NULL`](/zh/reference/syntax#null) 或 [`Nullable(x)`](/zh/reference/data-types/nullable) 或 [`Variant`](/zh/reference/data-types/variant) 或 [`Dynamic`](/zh/reference/data-types/dynamic)
 
 **示例**
 

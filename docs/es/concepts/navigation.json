@@ -87,6 +87,7 @@
               "group": "Insert",
               "pages": [
                 "es/concepts/features/operations/insert/inserting-data",
+                "es/concepts/features/operations/insert/schema-inference",
                 "es/concepts/features/operations/insert/asyncinserts",
                 "es/concepts/features/operations/insert/async-insert-select",
                 "es/concepts/features/operations/insert/bulkinserts",
@@ -218,45 +219,67 @@
           ]
         },
         {
-          "group": "Interfaces",
+          "group": "Connect to ClickHouse",
           "pages": [
-            "es/concepts/features/interfaces/native-clients-interfaces-index",
-            "es/concepts/features/interfaces/cli",
-            "es/concepts/features/interfaces/client",
-            "es/concepts/features/interfaces/mcp",
+            "es/concepts/features/connect-to-clickhouse/index",
             {
-              "group": "Drivers and interfaces",
+              "group": "Native tools",
               "pages": [
-                "es/concepts/features/interfaces/overview",
-                "es/concepts/features/interfaces/http",
-                "es/concepts/features/interfaces/framing-formats",
-                "es/concepts/features/interfaces/tcp",
-                "es/concepts/features/interfaces/adbc",
-                "es/concepts/features/interfaces/mysql",
-                {
-                  "$ref": "features/interfaces/odbc/navigation.json"
-                },
-                "es/concepts/features/interfaces/postgresql",
-                "es/concepts/features/interfaces/prometheus",
-                "es/concepts/features/interfaces/prometheus-metrics",
-                "es/concepts/features/interfaces/ssh",
-                "es/concepts/features/interfaces/grpc",
-                "es/concepts/features/interfaces/arrowflight"
+                "es/concepts/features/connect-to-clickhouse/native-tools/clickhousectl",
+                "es/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client",
+                "es/concepts/features/connect-to-clickhouse/native-tools/web-terminal",
+                "es/concepts/features/connect-to-clickhouse/native-tools/mcp"
               ]
             },
-            "es/concepts/features/interfaces/schema-inference",
-            "es/concepts/features/interfaces/documentation-search",
-            "es/concepts/features/interfaces/web-sql",
-            "es/concepts/features/interfaces/sql-console",
-            "es/concepts/features/interfaces/web-ui-color-coding",
-            "es/concepts/features/interfaces/web-ui-pinned-columns",
-            "es/concepts/features/interfaces/web-ui-notebook",
-            "es/concepts/features/interfaces/web-ui-result-shaping",
-            "es/concepts/features/interfaces/web-terminal",
             {
-              "group": "Third-party clients",
+              "group": "Drivers and language clients",
               "pages": [
-                "es/concepts/features/interfaces/third-party/index"
+                "es/concepts/features/connect-to-clickhouse/drivers/adbc",
+                {
+                  "$ref": "features/connect-to-clickhouse/drivers/odbc/navigation.json"
+                }
+              ]
+            },
+            {
+              "group": "Protocols",
+              "pages": [
+                "es/concepts/features/connect-to-clickhouse/protocols/http/index",
+                "es/concepts/features/connect-to-clickhouse/protocols/http/framing-formats",
+                "es/concepts/features/connect-to-clickhouse/protocols/native-tcp",
+                "es/concepts/features/connect-to-clickhouse/protocols/grpc",
+                "es/concepts/features/connect-to-clickhouse/protocols/arrow-flight",
+                {
+                  "group": "Compatibility protocols",
+                  "pages": [
+                    "es/concepts/features/connect-to-clickhouse/protocols/compatibility/mysql",
+                    "es/concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql"
+                  ]
+                },
+                "es/concepts/features/connect-to-clickhouse/protocols/ssh"
+              ]
+            },
+            {
+              "group": "Prometheus",
+              "pages": [
+                "es/concepts/features/connect-to-clickhouse/prometheus/index",
+                "es/concepts/features/connect-to-clickhouse/prometheus/metrics"
+              ]
+            },
+            {
+              "group": "Built-in web interfaces",
+              "pages": [
+                "es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search",
+                {
+                  "group": "Web SQL UI (Play)",
+                  "pages": [
+                    "es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/index",
+                    "es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook",
+                    "es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding",
+                    "es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/pinned-columns",
+                    "es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/result-shaping"
+                  ]
+                },
+                "es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/sql-console"
               ]
             }
           ]

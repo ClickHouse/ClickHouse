@@ -42,7 +42,7 @@ your_profile_name:
       connect_timeout: [10] # Timeout in seconds to establish a connection to ClickHouse
       send_receive_timeout: [300] # Timeout in seconds to receive data from the ClickHouse server
       cluster_mode: [False] # Use specific settings designed to improve operation on Replicated databases (recommended for ClickHouse Cloud)
-      use_lw_deletes: [False] # Use the strategy `delete+insert` as the default incremental strategy.
+      use_lw_deletes: [False] # Use the strategy `delete+insert` as the default incremental strategy for models with a `unique_key`.
       check_exchange: [True] # Validate that clickhouse support the atomic EXCHANGE TABLES command.  (Not needed for most ClickHouse versions)
       local_suffix: [_local] # Table suffix of local tables on shards for distributed materializations.
       local_db_prefix: [<empty string>] # Database prefix of local tables on shards for distributed materializations. If empty, it uses the same database as the distributed table.
@@ -50,7 +50,7 @@ your_profile_name:
       tcp_keepalive: [False] # Native client only, specify TCP keepalive configuration. Specify custom keepalive settings as [idle_time_sec, interval_sec, probes].
       reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection. Note: disabling connection reuse adds a new TCP/TLS handshake per model, which increases total `dbt run` wall time (typically ~200-500 ms per model). Combine with `threads > 1` for the best balance between distribution and throughput.
       custom_settings: [{}] # A dictionary/mapping of custom ClickHouse settings for the connection - default is empty.
-      database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic).
+      database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic). Set it to `Shared` on ClickHouse Cloud, see the [read-after-write consistency](#read-after-write-consistency) section.
       threads: [1] # Number of threads to use when running queries. Before setting it to a number higher than 1, make sure to read the [read-after-write consistency](#read-after-write-consistency) section.
 
       # Native (clickhouse-driver) connection settings
@@ -89,18 +89,22 @@ Al usar un clúster de ClickHouse, debes tener en cuenta dos aspectos:
 * Configurar el parámetro `cluster`.
 * Garantizar la consistencia de lectura después de la escritura, especialmente si `threads` es mayor que 1.
 
-#### Configuración de clúster {#cluster-setting}
+#### Parámetro de configuración cluster {#cluster-setting}
 
-La configuración `cluster` del perfil permite que dbt-clickhouse se ejecute en un clúster de ClickHouse. Si `cluster` está definida en el perfil, **todos los modelos se crearán con la cláusula `ON CLUSTER`** de forma predeterminada, excepto los que usan un motor **Replicated**. Esto incluye:
+El parámetro de configuración `cluster` del perfil permite que dbt-clickhouse se ejecute en un clúster de ClickHouse.
+Si `cluster` está definido en el perfil, el DDL se ejecuta de forma predeterminada con la cláusula `ON CLUSTER`.
+Esto incluye:
 
 * Creación de bases de datos
-* Materializaciones de vistas
+* Materializaciones como vista
 * Materializaciones de tablas e incrementales
-* Materializaciones Distributed
+* Materializaciones distribuidas
+* Funciones (UDFs)
 
-Los motores Replicated **no** incluirán la cláusula `ON CLUSTER`, ya que están diseñados para gestionar la replicación internamente.
+En una base de datos Replicated (`database_engine: Replicated`), el DDL de tablas y vistas se ejecuta **sin** la cláusula `ON CLUSTER`, ya que el propio motor de base de datos se encarga de replicarlo en todas las réplicas.
+La creación de bases de datos y las funciones siguen usando `ON CLUSTER`, puesto que el motor de base de datos no replica ninguna de las dos.
 
-Para **desactivar** la creación basada en clúster para un modelo específico, agrega la configuración `disable_on_cluster`:
+Para **excluir** un modelo concreto de la creación en el clúster, añada la configuración `disable_on_cluster`:
 
 ```sql
 {{ config(
@@ -112,19 +116,16 @@ Para **desactivar** la creación basada en clúster para un modelo específico, 
 
 ```
 
-las materializaciones de tabla e incrementales con motor no replicado no se verán afectadas por la configuración de `cluster` (el modelo
-se creará únicamente en el nodo conectado).
-
 **Compatibilidad**
 
-Si un modelo se ha creado sin una configuración de `cluster`, dbt-clickhouse detectará esta situación y ejecutará todo el DDL/DML
-sin la cláusula `on cluster` para ese modelo.
+Si un modelo se ha creado sin el parámetro de configuración `cluster`, dbt-clickhouse detectará esta situación y ejecutará todas las sentencias DDL/DML
+sin la cláusula `on cluster` para dicho modelo.
 
 #### Consistencia de lectura después de la escritura {#read-after-write-consistency}
 
 dbt se basa en un modelo de consistencia de lectura después de la inserción. Esto no es compatible con clústeres de ClickHouse que tienen más de una réplica si no puedes garantizar que todas las operaciones se dirijan a la misma réplica. Puede que no tengas problemas en el uso diario de dbt, pero hay algunas estrategias, según tu clúster, para contar con esa garantía:
 
-* Si usas un clúster de ClickHouse Cloud, solo necesitas establecer `select_sequential_consistency: 1` en la propiedad `custom_settings` de tu perfil. Puedes encontrar más información sobre esta configuración [aquí](/es/reference/settings/session-settings/other#select_sequential_consistency).
+* Si usas un clúster de ClickHouse Cloud, establece `database_engine: Shared` en tu perfil (el valor distingue entre mayúsculas y minúsculas). Así, dbt-clickhouse envía [`select_sequential_consistency: 1`](/es/reference/settings/session-settings/other#select_sequential_consistency) en cada conexión, incluidas otras consultas internas a las que `custom_settings` no llega.
 * Si usas un clúster autohospedado, asegúrate de que todas las solicitudes de dbt se envíen a la misma réplica de ClickHouse. Si tienes un balanceador de carga delante, intenta usar algún mecanismo de `replica aware routing`/`sticky sessions` para poder llegar siempre a la misma réplica. [No se recomienda](/es/reference/settings/session-settings/other#select_sequential_consistency) añadir la configuración `select_sequential_consistency = 1` en clústeres fuera de ClickHouse Cloud.
 
 ## Macros adicionales de ClickHouse {#additional-clickhouse-macros}

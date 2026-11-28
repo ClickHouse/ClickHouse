@@ -13,8 +13,15 @@ doc_type: 'reference'
 ## 创建表 {#create-table}
 
 ```sql
+-- Account key
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
-    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, extra_credentials(client_id=, tenant_id=)])
+    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+
+-- Workload identity (mutually exclusive with account_name / account_key)
+CREATE TABLE azure_blob_storage_table (name String, value UInt32)
+    ENGINE = AzureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, partition_columns_in_data_file])
     [PARTITION BY expr]
     [SETTINGS ...]
 ```
@@ -28,11 +35,11 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 * `blobpath` - 文件路径。在 readonly 模式下支持以下通配符：`*`、`**`、`?`、`{abc,def}` 和 `{N..M}`，其中 `N`、`M` 表示数字，`'abc'`、`'def'` 表示字符串。
 * `account_name` - 如果使用了 storage&#95;account&#95;url，则可在此指定 account name
 * `account_key` - 如果使用了 storage&#95;account&#95;url，则可在此指定 account key
-* `format` — 文件的 [format](/zh/reference/formats/index)。
+* `format` — 文件的 [格式](/zh/reference/formats/index)。
 * `compression` — 支持的值：`none`、`gzip/gz`、`deflate`、`brotli/br`、`xz/LZMA`、`zstd/zst`、`lz4`、`bz2`、`snappy`。默认会根据文件扩展名自动检测压缩方式。 (等同于设置为 `auto`) 。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置决定 (默认为 `basic`) 。
 * `partition_strategy` – 可选值：`wildcard` 或 `hive`。`wildcard` 要求路径中包含 `{_partition_id}`，其会被替换为分区键。`hive` 不允许使用通配符，假定该路径为表根目录，并生成 Hive 风格的分区目录，以 Snowflake ID 作为文件名、文件格式作为扩展名。未显式指定策略时，包含 `{_partition_id}` 的路径使用 `wildcard`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不含 glob 的路径会在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。
 * `partition_columns_in_data_file` - 仅在 `hive` 分区策略下使用。用于告知 ClickHouse 是否应预期分区列会写入数据文件中。默认为 `false`。
-* `extra_credentials` - 使用 `client_id` 和 `tenant_id` 进行身份验证。如果提供了 extra&#95;credentials，则其优先级高于 `account_name` 和 `account_key`。
+* `extra_credentials` - 使用 `client_id` 和 `tenant_id` 进行 Azure 工作负载标识身份验证。不能与 `account_name` / `account_key` 同时使用，且必须配合 `storage_account_url` 使用 (而非 `connection_string`) 。
 
 **示例**
 

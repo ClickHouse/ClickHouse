@@ -8,6 +8,10 @@ keywords: ['安装', '自管理', 'linux', 'macos', 'windows', 'docker']
 
 在您所使用的平台上安装 ClickHouse。
 
+<Note>
+  适用于 `amd64` 和 `aarch64` 的 Linux 二进制文件静态链接了 `musl` C 库。主机名仅通过 `/etc/hosts` 和 `/etc/resolv.conf` 中列出的 DNS 服务器进行解析：系统不会使用名称服务切换 (Name Service Switch，`/etc/nsswitch.conf`) ，因此仅由 `sss`、`mdns` 或 `ldap` 等 NSS 模块提供的主机名将无法解析。
+</Note>
+
 ## 本地开发 {#local-development}
 
 在本机上运行 ClickHouse，用于构建、测试和实验。

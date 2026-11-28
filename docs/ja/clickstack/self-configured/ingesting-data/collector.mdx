@@ -248,7 +248,7 @@ GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hy
 
 ## 処理 - フィルタリング、変換、情報の付加 {#processing-filtering-transforming-enriching-self-configured}
 
-ほとんどの場合、ユーザーはインジェスト時にイベントメッセージのフィルタリング、変換、情報の付加を行う必要があります。ClickStack コネクタの設定は変更できないため、より高度なイベントフィルタリングや処理が必要な場合は、次のいずれかの方法を推奨します。
+ほとんどの場合、ユーザーはインジェスト時にイベントメッセージのフィルタリング、変換、情報の付加を行う必要があります。[カスタム設定](#extending-collector-config)を使用すると、ClickStack コレクターにプロセッサやパイプラインを追加できます。この処理を ClickStack コレクターの外部で行う場合は、次のいずれかの方法を推奨します。
 
 * フィルタリングと処理を行う独自の OTel collector をデプロイし、OTLP 経由で ClickStack コレクターにイベントを送信して ClickHouse に取り込む。
 * 独自の OTel collector をデプロイし、ClickHouse exporter を使用してイベントを ClickHouse に直接送信する。
@@ -257,7 +257,7 @@ OTel collector で処理を行う場合は、変換をゲートウェイイン�
 
 OpenTelemetry では、以下の処理およびフィルタリング機能を利用できます。
 
-* **プロセッサ** - プロセッサは、[receiver が収集したデータを変更または変換](https://opentelemetry.io/docs/collector/transforming-telemetry/)してから、エクスポーターに送信します。プロセッサは、コレクター設定の `processors` セクションに記述された順序で適用されます。プロセッサは必須ではありませんが、最小限のセットを使用することが[一般的に推奨されています](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor#recommended-processors)。ClickHouse で OTel collector を使用する場合は、プロセッサを以下に限定することを推奨します。
+* **プロセッサ** - プロセッサは、[レシーバー が収集したデータを変更または変換](https://opentelemetry.io/docs/collector/transforming-telemetry/)してから、エクスポーターに送信します。プロセッサは、コレクター設定の `processors` セクションに記述された順序で適用されます。プロセッサは必須ではありませんが、最小限のセットを使用することが[一般的に推奨されています](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor#recommended-processors)。ClickHouse で OTel collector を使用する場合は、プロセッサを以下に限定することを推奨します。
 
 * [memory&#95;limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md) は、collector でのメモリ不足を防ぐために使用されます。推奨事項については [リソースの見積もり](#estimating-resources-self-configured) を参照してください。
 
@@ -269,7 +269,7 @@ OpenTelemetry では、以下の処理およびフィルタリング機能を利
 
 * [バッチ処理](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - ClickHouse を使用する場合、データを確実にバッチで送信するために不可欠です。[「挿入処理の最適化」](#optimizing-inserts-self-configured)を参照してください。
 
-* **演算子** - [演算子](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) は、receiver で利用できる最も基本的な処理単位です。基本的なパースに対応しており、Severity や Timestamp などのフィールドを設定できます。JSON や正規表現によるパースのほか、イベントのフィルタリングや基本的な変換もサポートされています。イベントのフィルタリングはここで行うことを推奨します。
+* **演算子** - [演算子](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) は、レシーバー で利用できる最も基本的な処理単位です。基本的なパースに対応しており、Severity や Timestamp などのフィールドを設定できます。JSON や正規表現によるパースのほか、イベントのフィルタリングや基本的な変換もサポートされています。イベントのフィルタリングはここで行うことを推奨します。
 
 演算子や [transform processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md) による過度なイベント処理は避けることを推奨します。これらは、特に JSON のパースにおいて、メモリと CPU に大きなオーバーヘッドが生じる可能性があります。一部の例外、具体的にはコンテキストを考慮したエンリッチメント (例: k8s メタデータの追加) を除き、すべての処理はマテリアライズドビューとカラムを使用して ClickHouse への挿入時に行うことができます。詳細については、[SQL による構造の抽出](/ja/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql) を参照してください。
 

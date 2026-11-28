@@ -35,27 +35,27 @@ ClickHouse의 쿼리는 여러 유형으로 나눌 수 있습니다:
 
 2로 설정하면 위 항목에 더해 `SET`, `CREATE TEMPORARY TABLE`, `RESTORE`가 허용됩니다. `RESTORE`는 테이블을
 생성하고 데이터를 적재할 수 있으므로, `readonly = 2`만으로는 세션의 쓰기 작업을 막을 수 없습니다.
-`readonly = 1`에서는 이를 거부합니다.
+`readonly = 1`에서는 이를 거부합니다. `File`이나 `URL`처럼 `Memory`가 아닌 `ENGINE` 절을 사용하는
+임시 테이블은 `CREATE ARBITRARY TEMPORARY TABLE` 권한이 필요하며, 0보다 큰 모든 값에서 거부됩니다.
 
 `BACKUP`은 값에 관계없이 `readonly`의 제한을 받지 않습니다. 테이블을 백업할 권한이 있는 세션은
 `readonly = 1`에서도 백업을 기록할 수 있습니다. 백업을 막는 수단으로 `readonly`에 의존하지 마십시오.
 
 대부분의 테이블 함수는 `CREATE TEMPORARY TABLE` 권한이 필요하므로, 테이블 함수에서 읽는 `SELECT`는
 `readonly = 1`에서는 거부되지만 `readonly = 2`에서는 거부되지 않습니다. `numbers`와 같은 일부 함수는
-읽기 전용 모드에서도 허용됩니다.
+읽기 전용 모드에서도 허용됩니다. `INSERT INTO FUNCTION`은 임시 테이블이 아니라 함수의 소스에 쓰기 때문에
+0보다 큰 모든 값에서 거부됩니다.
 
 0보다 큰 값에서는 영속 테이블에 대해 다음 작업이 모두 허용되지 않습니다. 데이터 쓰기 쿼리
 (`INSERT`, `OPTIMIZE`, `DELETE`, `UPDATE`, `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`) 및 DDL
-쿼리(`CREATE`, `ALTER TABLE`, `ALTER VIEW`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`,
-`TRUNCATE TABLE`). `SYSTEM` 그룹의 권한이 필요한 `SYSTEM` SQL 문과 사용자, 역할, ROW POLICY,
-masking policies, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP` 역시 허용되지 않습니다.
-단, 명명된 컬렉션 관리는 예외입니다. `readonly`는 `CREATE NAMED COLLECTION`, `ALTER NAMED COLLECTION`,
-`DROP NAMED COLLECTION`을 제한하지 않습니다.
+쿼리(`CREATE`, `ALTER TABLE`, `ALTER VIEW`, `ALTER DATABASE`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`,
+`DROP`, `TRUNCATE TABLE`). `SYSTEM` 그룹의 권한이 필요한 `SYSTEM` SQL 문과 사용자, 역할, row policy,
+masking policy, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP` 역시 허용되지 않습니다.
+`KILL TRANSACTION`과 명명된 컬렉션 관리(`CREATE NAMED COLLECTION`,
+`ALTER NAMED COLLECTION`, `DROP NAMED COLLECTION`)도 거부됩니다.
 
-`GRANT`로 권한을 부여하는 것도 거부되지만, 모든 접근 관리 SQL 문이 그런 것은 아닙니다. 로컬 `REVOKE`와
-`GRANT CURRENT GRANTS`는 `readonly`의 게이트를 받지 않으므로, 읽기 전용 세션도 grant option과 함께 보유한
-권한을 회수하거나 자신의 권한 부여를 다른 사용자에게 전파할 수 있습니다.
-`ON CLUSTER`로 권한을 회수하는 것은 거부됩니다.
+권한 부여를 변경하는 작업도 로컬과 `ON CLUSTER` 모두에서 거부됩니다. 여기에는 `GRANT`로 권한이나 역할을 부여하는 것,
+`GRANT CURRENT GRANTS`로 권한을 부여하는 것, `REVOKE`로 권한이나 역할에 대한 권한 회수를 수행하는 것이 포함됩니다.
 
 임시 테이블은 두 설정 모두에서 예외입니다. 임시 테이블을 생성할 수 있는 세션은 해당 테이블을 `ALTER`하고,
 데이터를 삽입하고, 삭제할 수도 있습니다.
@@ -64,7 +64,7 @@ masking policies, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP` �
   [HTTP 인터페이스](/ko/concepts/features/interfaces/http)에서는 메서드가 `POST`가 아닌 요청은 유효 값이
   원래 0이었다면 `readonly = 2`로 실행됩니다. 사용자 설정이나 설정 프로필을 통해 이미 더 엄격한 값이
   지정되어 있다면 그 값이 유지됩니다. `PUT`과 `DELETE`는 이를 허용하는 SQL로 정의된
-  [handler](/ko/reference/statements/create/handler)에 도달할 때 예외이므로, 유효 `readonly` 값이 0일 때
+  [핸들러](/ko/reference/statements/create/handler)에 도달할 때 예외이므로, 유효 `readonly` 값이 0일 때
   이러한 요청으로 데이터를 수정할 수 있습니다. 그 외에는 데이터를 수정할 때 `POST` 메서드를 사용하십시오.
 
   이렇게 값이 상향된 요청에서는 쿼리 문자열의 `readonly` 매개변수가 이미 해당 요청에 적용된 값과 동일하지 않은 한
@@ -80,19 +80,21 @@ masking policies, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP` �
 
 ## allow_ddl {#allow_ddl}
 
-데이터베이스, 테이블, 뷰, 딕셔너리, 사용자 정의 함수, workload, resource 및 SQL-defined handler에 대한 [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 쿼리를 허용하거나 거부합니다.
+데이터베이스, 테이블, 뷰, 딕셔너리, 사용자 정의 함수, workload, resource 및 SQL로 정의된 핸들러에 대한 [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 쿼리를 허용하거나 거부합니다.
 
 가능한 값:
 
-* 0 — 다음 권한 중 하나라도 필요한 영속 객체에 대한 쿼리 실행이 차단됩니다: `CREATE DATABASE`, `DROP DATABASE`, `CREATE TABLE`, `CREATE VIEW`, `ALTER TABLE`,
-  `ALTER VIEW`, `DROP TABLE`, `DROP VIEW`, `TRUNCATE`, `CREATE DICTIONARY`, `DROP DICTIONARY`,
-  `CREATE FUNCTION`, `DROP FUNCTION`, `CREATE WORKLOAD`, `DROP WORKLOAD`, `CREATE RESOURCE`,
-  `DROP RESOURCE`, `CREATE HANDLER`, `ALTER HANDLER`, `DROP HANDLER`. `RENAME`, `EXCHANGE`,
+* 0 — 다음 권한 중 하나라도 필요한 영속 객체에 대한 쿼리 실행이 차단됩니다: `CREATE DATABASE`, `ALTER DATABASE`, `DROP DATABASE`, `CREATE TABLE`, `CREATE VIEW`,
+  `ALTER TABLE`, `ALTER VIEW`, `DROP TABLE`, `DROP VIEW`, `TRUNCATE`, `UNDROP TABLE`,
+  `CREATE DICTIONARY`, `DROP DICTIONARY`, `CREATE FUNCTION`, `DROP FUNCTION`, `CREATE WORKLOAD`,
+  `DROP WORKLOAD`, `CREATE RESOURCE`, `DROP RESOURCE`, `CREATE NAMED COLLECTION`,
+  `ALTER NAMED COLLECTION`, `DROP NAMED COLLECTION`, `CREATE HANDLER`, `ALTER HANDLER`,
+  `DROP HANDLER`. `RENAME`, `EXCHANGE`,
   `ATTACH`, `DETACH` 역시 이러한 권한을 요구하므로 함께 차단됩니다. 다만
   `ALTER TABLE ... ATTACH PARTITION`과 `ATTACH PART`는 `INSERT`만 필요하므로 이 설정으로는
   차단되지 않으며, 대신 `readonly`가 영속 테이블에서 이를 차단합니다.
   `ATTACH PARTITION ... FROM`은 `ALTER DELETE`도 필요하므로 차단됩니다. 이러한 권한의
-  grant 및 revoke는 차단되지 않습니다.
+  권한 부여 및 권한 회수는 차단되지 않습니다.
 * 1 — 이 설정으로 차단되는 것이 없습니다.
 
 기본값: 1
@@ -102,11 +104,9 @@ masking policies, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP` �
 
   `allow_ddl`은 접근 관리 쿼리를 제한하지 않습니다. `GRANT`, `REVOKE`와 사용자, 역할,
   row policy, masking policy, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP`은 이 설정의
-  영향을 받지 않습니다. `CREATE TEMPORARY TABLE`과 명명된 컬렉션 관리도 영향을 받지 않으며,
-  `readonly` 역시 제한하지 않는 `ALTER DATABASE ... MODIFY SETTING`, `ALTER DATABASE ... MODIFY COMMENT`,
-  `UNDROP TABLE`도 마찬가지입니다. 사용자, 역할 또는 설정 프로필의 `CREATE`나 `ALTER` 구문 안에서는
+  영향을 받지 않습니다. `CREATE TEMPORARY TABLE`도 영향을 받지 않습니다. 사용자, 역할 또는 설정 프로필의 `CREATE`나 `ALTER` 구문 안에서는
   현재 세션이 `allow_ddl = 0`인 동안 `SETTINGS allow_ddl = 1` 절이 거부되고,
-  `SETTINGS allow_ddl = 0` 절은 허용됩니다. 내장 설정은 세션 자체의 설정 constraint를 기준으로 검사되며,
+  `SETTINGS allow_ddl = 0` 절은 허용됩니다. 내장 설정은 세션 자체의 설정 제약 조건을 기준으로 검사되며,
   `SET allow_ddl = 1`이 거부되는 것도 같은 이유입니다.
 </Note>
 
@@ -117,7 +117,8 @@ masking policies, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP` �
   어떤 조합에서도 동작합니다. 단, `system.processes`에 대한 `SELECT`는 필요합니다. 다만
   `KILL QUERY WHERE query_id = '<id>'`는 해당 테이블을 읽지 않고 해당 id를 가진 자신의 쿼리를 취소하므로 예외입니다. 다른 사용자의 쿼리를
   kill하거나 `KILL QUERY ... ON CLUSTER`를 실행하려면 `KILL QUERY` 권한가 필요하며,
-  `readonly = 1`과 `readonly = 2`는 이를 거부합니다.
+  `readonly = 1`과 `readonly = 2`는 이를 거부합니다. `KILL TRANSACTION`은 항상
+  `KILL TRANSACTION` 권한이 필요하며, `readonly = 1`과 `readonly = 2`는 이를 거부합니다.
 </Info>
 
 ## 그 밖의 관련 설정 {#other-relevant-settings}

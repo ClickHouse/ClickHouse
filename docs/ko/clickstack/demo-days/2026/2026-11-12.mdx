@@ -1,0 +1,76 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-11-12
+title: '데모 데이 - 2026-11-12'
+sidebarTitle: '2026-11-12'
+description: '2026-11-12 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+## 텍스트 인덱스 블록 크기와 더 빠른 필터 조회 {#text-index-block-size-and-faster-filter-lookups}
+
+*데모 진행자 [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ClickStack의 필터 패널은 로딩이 느릴 수 있었고, 일치하는 값이 있는데도 필드가 비어 있는 경우가 있었습니다. 보고된 데모에서는 537M개의 로그 행이 있는 테이블에서 100개 키 중 22개 키에 대한 제안만 반환하는 데 약 30초가 걸렸습니다. 이번 변경으로 동일한 패널이 100개 키 전체에 대한 제안을 반환하며, 로딩 속도도 빨라졌습니다.
+
+이 패널은 텍스트 인덱스를 사용하여 Map 키와 해당 값을 찾아냅니다. 예를 들어 `service` 키를 찾아 `checkout`, `billing` 같은 값을 제안할 수 있습니다. 이 방식은 원시 로그를 스캔하지 않아도 되지만, 인덱스를 여는 작업 자체의 비용은 여전히 컸습니다.
+
+각 텍스트 인덱스에는 토큰을 정렬한 딕셔너리(dictionary)가 있으며, 이 딕셔너리는 여러 블록(blocks)으로 나뉩니다. 헤더에는 각 블록의 시작 위치가 기록되어 있어 ClickHouse가 해당 블록으로 바로 이동할 수 있습니다. 블록이 클수록 헤더의 항목 수가 줄어들고, 조회를 시작하기 전에 로드해야 하는 정보도 줄어듭니다. Aaron이 동영상에서 이를 시각적으로 설명합니다.
+
+이제 스키마는 `otel_logs`, `otel_traces`, `hyperdx_sessions`에 `text_index_dictionary_block_size = 8192`를 설정합니다. 이는 이전 기본값인 512보다 큰 값입니다. 로컬 벤치마크에서는 이 설정으로 파트당 헤더 크기가 17.7 KB에서 1.3 KB로 줄었습니다. 이 마이그레이션은 기존 설치를 포함해 ClickHouse 26.6 이상에 적용되며, 명시적으로 지정한 테이블 설정은 그대로 유지됩니다. 새 파트는 더 큰 블록을 사용하고, 기존 파트는 병합될 때까지 기존 레이아웃을 유지합니다.
+
+헤더가 작아지면서 키마다 개별적으로 조회하는 방식이 현실적으로 가능해졌습니다. 이전에는 모든 키가 하나의 쿼리를 공유했으며, 이 쿼리의 기본 제한은 인덱스 레코드 300만 개였습니다. 요청 ID처럼 고유 값이 수백만 개인 키가 이 제한을 모두 소진하면 뒤에 오는 키에는 제안이 표시되지 않을 수 있었습니다. 게다가 이렇게 불완전한 결과가 캐시될 수도 있었습니다.
+
+더 큰 블록으로 구성된 인덱스에서는 이제 키마다 인덱스 레코드 20,000개라는 개별 제한이 적용됩니다. 조회는 10개 키 단위의 배치로 병렬 실행되므로, 값이 많은 키가 다른 키의 할당량을 사용할 수 없습니다. `topKWeighted`는 읽은 레코드 중 가장 흔한 값을 근사적으로 선택하며, 알파벳 순으로 앞선 값을 선택하던 기존 방식을 대체합니다. 더 작은 블록으로 구성된 인덱스는 각 배치 내에서 기존 조회 방식을 그대로 사용합니다.
+
+초기 키 및 값 조회에서 읽는 파트 수도 줄었습니다. 기본적으로 크기 순위의 중간에 있는 파트를 최대 20개까지 검사합니다. **Map key index parts**는 검사할 파트 수를 제어하고, **Map key index part size**는 중간 크기, 가장 작은, 가장 큰 파트 중 무엇을 선택할지 지정합니다. 이를 통해 인덱스 읽기가 줄어들며, 특히 오브젝트 스토리지에서 데이터를 가져와야 할 때 효과가 큽니다. 다만 선택된 파트 밖에 있는 키나 값은 제안에서 누락될 수 있으며, 빈도 추정치에는 검사한 레코드만 반영됩니다. 개별 키에서 Load more를 실행하면 관련된 모든 파트를 읽습니다.
+
+별도의 수정으로, 실행 중인 `getMapKeys` 쿼리 하나를 일치하는 동시 호출자 간에 공유하도록 했습니다. 이전에는 검색 페이지를 열면 동일한 읽기가 두 번 실행될 수 있었습니다. 예시 테이블에서는 이렇게 중복된 쿼리가 합계 약 47 GiB의 쿼리 메모리를 사용했습니다. 이제 각 읽기는 한 번만 실행됩니다.
+
+보고된 벤치마크에서는 더 큰 블록 덕분에 텍스트 인덱스 검색 성능도 향상되어, 동일한 파트 수에서 일부 쿼리가 약 60% 빨라졌습니다. 아직 진행 중인 추가 변경은 모든 고유 키를 그룹화하지 않고 `topKWeighted`를 사용해 흔한 Map 키를 찾아냅니다. 파트당 고유 키가 약 5.5M개인 테이블에서, 보고된 벤치마크 결과 쿼리 시간은 9.1초에서 2.6초로, 메모리 사용량은 14 GiB에서 78 MiB로 줄었습니다.
+
+**관련 PR:** [#3611](https://github.com/ClickHouse/clickstack/pull/3611) 동시 호출자 간에 Map 키 읽기 하나를 공유, [#3635](https://github.com/ClickHouse/clickstack/pull/3635) 텍스트 인덱스 키 및 값 조회 시 구성 가능한 파트 집합 읽기, [#3617](https://github.com/ClickHouse/clickstack/pull/3617) 10개 키 단위 배치로 가장 빈번한 텍스트 인덱스 값 표시, [#3614](https://github.com/ClickHouse/clickstack/pull/3614) topKWeighted로 가장 빈번한 Map 키 찾기(진행 중)
+
+## 사용자 정의 헤더 없이 MCP 서버에 연결 {#mcp-server-connections-without-custom-headers}
+
+*데모 진행자: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=396" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 ClickHouse Cloud의 ClickStack MCP 서버에 에이전트를 연결하려면 서비스 ID를 사용자 정의 HTTP 헤더로 전달해야 했습니다. 하지만 대부분의 MCP 클라이언트는 사용자 정의 헤더를 설정하기가 번거롭고, 일부는 아예 지원하지 않아 에이전트마다 구성을 직접 수정해야 했습니다.
+
+이제 서비스 ID는 기본적으로 MCP URL의 쿼리 매개변수(query parameter)로 전달됩니다. 이는 ClickHouse AI 팀이 같은 제약을 우회하기 위해 이미 사용하던 방식입니다. 이 방식을 지원하는 클라이언트에서는 명령 하나로 에이전트를 설정할 수 있으며(예를 들어 Codex는 이전에 TOML 구성에 블록을 직접 붙여 넣어야 했습니다), 명령을 실행할 수 없는 클라이언트에서는 URL을 그대로 사용하면 됩니다.
+
+이 변경 사항이 머지된 직후 Claude Code가 MCP 구성에서 사용자 정의 헤더 지원을 제거하면서 헤더 기반 설정은 운영 환경에서 더 이상 작동하지 않게 되었습니다. 반면 쿼리 매개변수를 사용하는 연결은 영향을 받지 않았습니다.
+
+이 내용은 Cloud MCP 엔드포인트에 해당합니다. 오픈 소스 MCP 서버는 bearer 토큰으로 인증하므로 전달할 서비스 ID가 없습니다. 이 경우 `npx @hyperdx/cli mcp install`을 실행하면 개인 또는 조직 API Key를 입력 내용이 표시되지 않는 방식으로 입력받아 검사한 뒤, Claude Code, Codex, Cursor, VS Code 구성에 서버를 자동으로 추가합니다.
+
+## 시작하기 화면의 Datadog 에이전트 설정 {#datadog-agent-setup-in-getting-started}
+
+*데모 진행자: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=469" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 시작하기 흐름에서 다른 SDK 및 collector와 함께 Datadog 에이전트도 표시되므로, 온보딩 페이지를 벗어나지 않고도 기존 Datadog 에이전트가 ClickStack으로 데이터를 보내도록 설정할 수 있습니다.
+
+이 화면에 표시되는 Datadog 수집 엔드포인트는 ClickHouse Cloud 데이터 플레인(data plane)에서 제공됩니다. 데이터 플레인은 이제 다른 엔드포인트와 함께 이 URL도 프런트엔드로 전달합니다. 설정 지침은 다른 모든 SDK와 마찬가지로 공개 문서에서 가져오므로, 페이지 내용이 항상 [Datadog 마이그레이션(migration) 가이드](https://clickhouse.com/docs/clickstack/migration/datadog)와 동일하게 유지됩니다.
+
+수신기는 ClickStack 수집기 내부에서 Datadog 로그, 트레이스, 메트릭 페이로드를 OpenTelemetry 데이터 모델로 변환하므로, 기존 에이전트와 SDK를 수정 없이 그대로 사용할 수 있습니다. 오픈 소스 ClickStack에서는 8126 포트에서 수신 대기하며, `ENABLE_DATADOG_RECEIVER=true`로 활성화합니다.
+
+## 조직 API 키 {#organization-api-keys}
+
+*데모 진행자 [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=497" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 외부 API와 MCP 서버에 사용할 수 있는 bearer 인증 정보가 개인 액세스 키뿐이었습니다. 이 키는 소유자가 팀에서 제거되면 더 이상 작동하지 않으므로 이 키로 설정한 Terraform, CI 및 기타 자동화가 중단되었고, 팀에서는 봇 사용자를 만들어 이 문제를 우회해 왔습니다.
+
+이제 **팀 설정** &gt; **API &amp; Agents**에서 팀 소유의 API 키를 생성할 수 있습니다. 각 키에는 설명과 만료 기간(30일, 1년 또는 무기한)을 지정합니다. 전체 키는 생성 시 한 번만 표시되며 SHA-256 해시로 저장됩니다. 목록에는 각 키의 생성자, 마지막 사용 시점, 만료 시점이 표시되므로 거의 사용되지 않거나 곧 만료될 키를 쉽게 찾아 같은 화면에서 철회할 수 있습니다. 키를 철회하거나 키가 만료되면 다음 요청부터 바로 적용됩니다.
+
+각 키는 다른 사용자와 동일한 권한을 가진 독립된 서비스 계정입니다. 키로 생성한 모든 항목(알림, 대시보드, 저장된 검색)은 키를 만든 사람이 아니라 서비스 계정에 귀속되며, 이후 팀에서 제거된 사람이 만든 키는 &quot;Deleted user&quot;로 표시된 채 계속 작동합니다. 서비스 계정은 로그인할 수 없으며 **구성원** 목록에도 표시되지 않습니다. 키로는 다른 사람을 초대할 수 없으며, 다른 키를 생성하거나 철회할 수도 없습니다.
+
+조직 키는 외부 API v2, MCP 서버, `npx @hyperdx/cli mcp install` 등 개인 키를 사용하는 모든 곳에서 사용할 수 있습니다. Terraform 프로바이더에서는 키를 팀 ID와 함께 전달합니다. 이 기능은 자체 호스팅 배포를 위한 것으로, RBAC가 적용되지 않습니다. 오픈 소스 ClickStack에는 역할 개념이 없으므로 모든 팀 멤버가 조직 키를 관리할 수 있으며, 키로는 사용자가 할 수 있는 모든 작업을 수행할 수 있습니다.
+
+**관련 PR:** [#3435](https://github.com/ClickHouse/clickstack/pull/3435) 팀 소유 API 키

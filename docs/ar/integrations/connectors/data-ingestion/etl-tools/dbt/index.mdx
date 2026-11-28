@@ -48,6 +48,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 * [x] التجسيد تزايدية
 * [x] التجسيد تزايدية من نوع Microbatch
 * [x] التجسيدات من نوع عرض مُجسَّد (تستخدم صيغة `TO` الخاصة بـ MATERIALIZED VIEW، وهي تجريبية)
+* [x] الدوال المعرّفة من قِبل المستخدم (SQL)
 * [x] Seeds
 * [x] Sources
 * [x] إنشاء الوثائق
@@ -55,9 +56,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 * [x] Snapshots
 * [x] معظم وحدات الماكرو في dbt-utils (وهي الآن مضمنة في dbt-core)
 * [x] التجسيد مؤقتة
-* [x] التجسيد للجدول الموزع (تجريبية)
-* [x] التجسيد تزايدية موزعة (تجريبية)
-* [x] تجسيد Dictionary (تجريبية)
+* [x] تجسيد الجدول الموزع (تجريبي)
+* [x] التجسيد التزايدي الموزع (تجريبي)
+* [x] تجسيد القاموس (تجريبي)
 * [x] العقود
 * [x] إعدادات الأعمدة الخاصة بـ ClickHouse (Codec، TTL...)
 * [x] إعدادات الجداول الخاصة بـ ClickHouse (indexes، projections...)
@@ -170,14 +171,18 @@ profile: 'clickhouse-service'
 
 #### استنساخ النماذج باستخدام `dbt clone` {#dbt-clone}
 
-بدءًا من الإصدار 1.10.1 من dbt-clickhouse، يستخدم الأمر [`dbt clone`](https://docs.getdbt.com/reference/commands/clone) تعليمة النسخ الصفري في ClickHouse، `CREATE OR REPLACE TABLE ... CLONE AS ...`، لاستنساخ النماذج المُجسَّدة كجداول تستخدم محركًا من عائلة MergeTree. ينشئ ذلك نسخة من الجدول دون تكرار data parts الأساسية، مما يجعله طريقة سريعة ومنخفضة التكلفة لمزامنة البيئات، مثل إعداد بيئة تطوير أو [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) استنادًا إلى حالة production.
+بدءًا من الإصدار 1.10.1 من dbt-clickhouse، يستخدم الأمر [`dbt clone`](https://docs.getdbt.com/reference/commands/clone) تعليمة النسخ الصفري في ClickHouse، `CREATE OR REPLACE TABLE ... CLONE AS ...`، لاستنساخ النماذج المُجسَّدة كجداول تستخدم محركًا من عائلة MergeTree. ينشئ ذلك نسخة من الجدول دون تكرار أجزاء البيانات الأساسية، مما يجعله طريقة سريعة ومنخفضة التكلفة لمزامنة البيئات، مثل إعداد بيئة تطوير أو [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) استنادًا إلى حالة بيئة الإنتاج.
+
+لا يمكن تشغيل `CLONE AS` مع `ON CLUSTER` أو داخل قاعدة بيانات `Replicated`.
+لذا تُنشأ هذه الجداول بدلًا من ذلك باستخدام `CREATE OR REPLACE TABLE ... AS ...` وتُملأ باستخدام `ALTER TABLE ... ATTACH PARTITION ALL FROM ...`، وهي طريقة تتشارك أجزاء البيانات أيضًا، لكنها ليست atomic.
+في قاعدة بيانات `Replicated`، لا تصل البيانات إلى النسخ المتماثلة الأخرى إلا في جداول `Replicated*MergeTree`.
 
 تعود النماذج التي لا يمكن استنساخها بهذه الطريقة إلى سلوك dbt الافتراضي، وهو إنشاء عرض يشير إلى relation المصدر:
 
 * الجداول التي تستخدم محركات غير MergeTree
-* Distributed materializations
+* التجسيدات الموزّعة
 
-بالنسبة إلى نماذج عرض مُجسَّد، لا يُستنسخ سوى target جدول؛ أما عرض مُجسَّد نفسها فتُنشأ فوق الجدول المستنسخ.
+بالنسبة إلى نماذج عرض مُجسَّد، لا يُستنسخ سوى target جدول؛ أما عرض مُجسَّد نفسها فتُنشأ فوق الجدول المستنسخ.
 
 ## استكشاف المشكلات الشائعة وإصلاحها {#troubleshooting-common-issues}
 
@@ -213,11 +218,11 @@ WHERE query_id = '<query_id from run_results.json>'
 
 يحتوي مهايئ ClickHouse الحالي لـ dbt على عدة قيود ينبغي أن تكون على دراية بها:
 
-* تستخدم الإضافة صياغة تتطلب ClickHouse بالإصدار 25.3 أو أحدث. نحن لا نختبر الإصدارات الأقدم من ClickHouse. كما أننا لا نختبر حاليًا الجداول Replicated.
+* تُختبَر الإضافة على إصدارات ClickHouse التي تحظى [بدعم أمني نشط](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md)، وهي حاليًا 26.3 أو أحدث. لا تُختبَر الإصدارات الأقدم وقد لا تعمل. كما أننا لا نختبر حاليًا الجداول Replicated.
 * قد تتعارض عمليات تشغيل مختلفة لـ `dbt-adapter` إذا جرى تشغيلها في الوقت نفسه، لأنها قد تستخدم داخليًا أسماء الجداول نفسها للعمليات نفسها. لمزيد من المعلومات، راجع issue [#420](https://github.com/ClickHouse/dbt-clickhouse/issues/420).
 * يقوم المهايئ حاليًا بتمثيل النماذج كجداول باستخدام [INSERT INTO SELECT](/ar/reference/statements/insert-into#inserting-the-results-of-select). وهذا يعني فعليًا تكرار البيانات إذا أُعيد تنفيذ التشغيل. وقد تؤدي مجموعات البيانات الكبيرة جدًا (PB) إلى أوقات تشغيل طويلة للغاية، مما يجعل بعض النماذج غير عملية. لتحسين الأداء، استخدم ClickHouse عروض مُجسَّدة من خلال تنفيذ العرض بالشكل `materialized: materialization_view`. بالإضافة إلى ذلك، احرص على تقليل عدد الصفوف التي يعيدها أي استعلام باستخدام `GROUP BY` حيثما أمكن. ويُفضَّل استخدام النماذج التي تلخّص البيانات على تلك التي تكتفي بتحويلها مع الحفاظ على عدد الصفوف نفسه الموجود في المصدر.
-* لاستخدام جداول موزعة لتمثيل نموذج، يجب إنشاء الجداول replicated الأساسية على كل عقدة يدويًا. ويمكن بعد ذلك إنشاء جدول موزع فوقها. لا يدير المهايئ إنشاء عنقود.
-* عندما ينشئ dbt relation ‏(table/view) في database، فإنه ينشئه عادةً بالشكل: `{{ database }}.{{ schema }}.{{ table/view id }}`. لا يوجد في ClickHouse مفهوم schemas. لذلك يستخدم المهايئ الصيغة `{{schema}}.{{ table/view id }}`، حيث يكون `schema` هو ClickHouse database.
+* لا يدير المهايئ إنشاء العنقود. ويجب أن يكون العنقود الذي تستخدمه التجسيدات الموزّعة معرَّفًا مسبقًا على الخادم.
+* عندما ينشئ dbt relation ‏(table/view) في قاعدة بيانات، فإنه ينشئه عادةً بالشكل: `{{ database }}.{{ schema }}.{{ table/view id }}`. لا يوجد في ClickHouse مفهوم schemas. لذلك يستخدم المهايئ الصيغة `{{schema}}.{{ table/view id }}`، حيث يكون `schema` هو قاعدة بيانات ClickHouse.
 
 ## Fivetran {#fivetran}
 

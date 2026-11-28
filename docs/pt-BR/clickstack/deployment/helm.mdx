@@ -192,14 +192,15 @@ O chart oferece suporte às práticas recomendadas padrão do Kubernetes, inclui
         MONGODB_PASSWORD: "your-mongodb-password"
     ```
 
-    Para o gerenciamento externo de segredos (por exemplo, usando um operador de secrets), você pode fazer referência a um Secret do Kubernetes já existente:
+    Para carregar as conexões e fontes de dados padrão a partir de um Secret do Kubernetes já existente, por exemplo, um gerenciado por um operador de secrets:
 
     ```yaml
     hyperdx:
-      useExistingConfigSecret: true
-      existingConfigSecret: "my-external-secret"
-      existingConfigConnectionsKey: "connections.json"
-      existingConfigSourcesKey: "sources.json"
+      deployment:
+        useExistingConfigSecret: true
+        existingConfigSecret: "my-external-secret"
+        existingConfigConnectionsKey: "connections.json"
+        existingConfigSourcesKey: "sources.json"
     ```
 
     <Tip>
@@ -210,9 +211,7 @@ O chart oferece suporte às práticas recomendadas padrão do Kubernetes, inclui
   </Step>
 </Steps>
 
-<div id="using-clickhouse-cloud">
-  ## Usando ClickHouse Cloud {#using-clickhouse-cloud}
-</div>
+## Usando ClickHouse Cloud {#using-clickhouse-cloud}
 
 Se estiver usando ClickHouse Cloud, desative a instância incorporada do ClickHouse e forneça suas credenciais da Cloud:
 
@@ -222,35 +221,41 @@ clickhouse:
   enabled: false
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-cloud-instance.clickhouse.cloud:9440?secure=true"
+    CLICKHOUSE_USER: "default"
   secrets:
     CLICKHOUSE_PASSWORD: "your-cloud-password"
     CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
 
-  useExistingConfigSecret: true
-  existingConfigSecret: "clickhouse-cloud-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "clickhouse-cloud-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
-Crie o Secret de conexão separadamente:
+Crie o Secret de conexão separadamente. Tanto `connections.json` quanto `sources.json` são obrigatórios. Este exemplo usa uma lista vazia de fontes de dados; configure as fontes de dados na UI após a instalação ou forneça as definições de fontes de dados conforme mostrado em [ClickHouse externo](/pt-BR/clickstack/deployment/helm-deployment-options#external-clickhouse-secret):
 
 ```bash
 cat <<EOF > connections.json
 [
   {
     "name": "ClickHouse Cloud",
-    "host": "https://your-cloud-instance.clickhouse.cloud",
-    "port": 8443,
+    "host": "https://your-cloud-instance.clickhouse.cloud:8443",
     "username": "default",
     "password": "your-cloud-password"
   }
 ]
 EOF
 
-kubectl create secret generic clickhouse-cloud-config \
-  --from-file=connections.json=connections.json
+echo '[]' > sources.json
 
-rm connections.json
+kubectl create secret generic clickhouse-cloud-config \
+  --from-file=connections.json=connections.json \
+  --from-file=sources.json=sources.json
+
+rm connections.json sources.json
 ```
 
 ```shell

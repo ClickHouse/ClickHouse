@@ -201,32 +201,31 @@ python -m ci.praktika run "<BUILD_JOB_NAME>"
 
 لا يلزم أي تبعيات أخرى سوى بايثون 3 وDocker.
 
-#### مهام البناء المتاحة {#available-build-jobs}
+#### مهام الإصدار المتاحة {#available-build-jobs}
 
-أسماء مهام البناء هي نفسها تمامًا كما تظهر في تقرير CI:
+أسماء مهام الإصدار هي نفسها تمامًا كما تظهر في تقرير CI:
 
-**عمليات بناء AMD64:**
+**عمليات إصدار AMD64:**
 
-* `Build (amd_debug)` - بنية Debug مع الرموز
-* `Build (amd_release)` - بنية إصدار محسّنة
-* `Build (amd_asan)` - بنية Address Sanitizer
-* `Build (amd_tsan)` - بنية Thread Sanitizer
-* `Build (amd_msan)` - بنية Memory Sanitizer
-* `Build (amd_ubsan)` - بنية Undefined Behavior Sanitizer
-* `Build (amd_binary)` - بنية إصدار سريعة بدون Thin LTO
-* `Build (amd_compat)` - بنية توافق للأنظمة الأقدم
-* `Build (amd_musl)` - بنية باستخدام musl libc
-* `Build (amd_darwin)` - بنية macOS
-* `Build (amd_freebsd)` - بنية FreeBSD
+* `Build (amd_debug)` - إصدار Debug مع الرموز
+* `Build (amd_release)` - إصدار محسّن
+* `Build (amd_asan)` - إصدار Address Sanitizer
+* `Build (amd_tsan)` - إصدار Thread Sanitizer
+* `Build (amd_msan)` - إصدار Memory Sanitizer
+* `Build (amd_ubsan)` - إصدار Undefined Behavior Sanitizer
+* `Build (amd_binary)` - إصدار سريع بدون Thin LTO
+* `Build (amd_compat)` - إصدار توافق للأنظمة الأقدم
+* `Build (amd_darwin)` - إصدار macOS
+* `Build (amd_freebsd)` - إصدار FreeBSD
 
-**عمليات بناء ARM64:**
+**عمليات إصدار ARM64:**
 
-* `Build (arm_release)` - بنية إصدار ARM64 محسّنة
-* `Build (arm_asan)` - بنية ARM64 لـ Address Sanitizer
-* `Build (arm_coverage)` - بنية ARM64 مع تضمين أدوات قياس التغطية
-* `Build (arm_binary)` - بنية إصدار ARM64 سريعة بدون Thin LTO
-* `Build (arm_darwin)` - بنية macOS لـ ARM64
-* `Build (arm_v80compat)` - بنية توافق ARMv8.0
+* `Build (arm_release)` - إصدار ARM64 محسّن
+* `Build (arm_asan)` - إصدار ARM64 لـ Address Sanitizer
+* `Build (arm_coverage)` - إصدار ARM64 مع إضافة أدوات الرصد للتغطية
+* `Build (arm_binary)` - إصدار ARM64 سريع بدون Thin LTO
+* `Build (arm_darwin)` - إصدار macOS لـ ARM64
+* `Build (arm_v80compat)` - إصدار توافق ARMv8.0
 
 **معماريات أخرى:**
 
@@ -234,11 +233,11 @@ python -m ci.praktika run "<BUILD_JOB_NAME>"
 * `Build (riscv64)` - RISC-V ‏64-بت
 * `Build (s390x)` - IBM System/390 ‏64-بت
 * `Build (loongarch64)` - LoongArch ‏64-بت
-* `Build (wasm64)` - WebAssembly ‏64-بت، عبر Emscripten. تجريبي: يبني الملف التنفيذي `clickhouse` ويتحقق من أن `clickhouse local` ينفذ الاستعلامات ضمن Node.js ≥ 24 (تعمل الوحدة أيضًا في المتصفحات، لكن CI لا يتحقق من ذلك بعد)
+* `Build (wasm64)` - WebAssembly ‏64-بت، عبر Emscripten. تجريبي: يُصدر الملف التنفيذي `clickhouse` ويتحقق من أن `clickhouse local` ينفذ الاستعلامات ضمن Node.js ≥ 24 (تعمل الوحدة أيضًا في المتصفحات، لكن CI لا يتحقق من ذلك بعد)
 
-إذا نجحت المهمة، فستتوفر نتائج البناء في الدليل `<repo_root>/ci/tmp/build`.
+إذا نجحت المهمة، فستتوفر نتائج الإصدار في الدليل `<repo_root>/ci/tmp/build`.
 
-**ملاحظة:** بالنسبة إلى عمليات البناء التي لا تندرج ضمن فئة &quot;معماريات أخرى&quot; (والتي تستخدم التجميع المتقاطع)، يجب أن تتطابق معمارية جهازك المحلي مع نوع البناء لإنتاج البنية المطلوبة بواسطة `BUILD_JOB_NAME`.
+**ملاحظة:** بالنسبة إلى عمليات الإصدار التي لا تندرج ضمن فئة &quot;معماريات أخرى&quot; (والتي تستخدم التجميع المتقاطع)، يجب أن تتطابق معمارية جهازك المحلي مع نوع الإصدار لإنتاج الإصدار المطلوب بواسطة `BUILD_JOB_NAME`.
 
 #### مثال {#example-run-local}
 
@@ -302,8 +301,8 @@ clang-tidy -p ci/tmp/build src/Common/StringUtils.cpp
 
 عند كل تثبيت (commit) في الفرع الرئيسي (master)، تُشغَّل اختبارات عديمة الحالة واختبارات التكامل واختبارات الوحدات على إصدار مُزوَّد بإضافة أدوات الرصد للتغطية من LLVM، ثم يُنشر تقرير التغطية.
 أما طلبات السحب (pull requests)، فلا تُشغِّل هذه المهام إلا إذا أُضيف إليها الوسم `ci-coverage` (أو إذا عدّلت الشيفرة المسؤولة عن جمع التغطية وإعداد تقاريرها)؛ لذا أضِفه للحصول على تقرير التغطية الخاص بطلب السحب وتغطية الأسطر المُعدَّلة.
-وفي غياب هذا الوسم، تُشغِّل طلبات السحب تهيئات اختبارات عديمة الحالة واختبارات التكامل نفسها على الإصدار `arm_binary` بدلًا من ذلك، في حين تعمل اختبارات الوحدات في كل طلب سحب على الإصدار `amd_debug` وعلى إصدارات البناء المزوَّدة بأدوات اكتشاف الأخطاء.
-وحدات اختبارات التكامل التي تتخطى نفسها على ARM تُشغَّل ضمن مهام أدوات اكتشاف الأخطاء المخصَّصة لها عندما يمسّ التغيير الشيفرة التي تغطيها.
+وفي غياب هذا الوسم، تُشغِّل طلبات السحب إعدادات اختبارات عديمة الحالة واختبارات التكامل نفسها على الإصدار `arm_binary` بدلًا من ذلك، في حين تعمل اختبارات الوحدات في كل طلب سحب على إصدارات البناء `arm_debug` و`arm_asan_ubsan` و`arm_tsan` و`amd_msan`.
+وحدات اختبارات التكامل التي تتخطى نفسها على ARM تُشغَّل ضمن مهام sanitizer المخصَّصة لها عندما يمسّ التغيير الشيفرة التي تغطيها.
 أما طلب السحب الذي يقتصر على إضافة اختبارات عديمة الحالة ويحتاج إلى تقرير التغطية، فيمكنه استخدام الوسم `ci-llvm-coverage` بدلًا من ذلك؛ إذ يُشغِّل هذا الوسم مهام التغطية، ومهام الاختبارات المستثناة من التغطية، وفحوص عدم الاستقرار للاختبارات عديمة الحالة المُعدَّلة، وفحص أسلوب كتابة الشيفرة، ومراجعة الشيفرة بالذكاء الاصطناعي، ويتخطى جميع المهام الأخرى. ويمكن دمج طلب السحب هذا وهو يحمل الوسم، بخلاف طلب السحب الذي يُعدِّل أي شيء آخر، إذ لا يمكن دمجه.
 
 ## فحص التحقق من إصلاح الأخطاء {#bugfix-validate-check}

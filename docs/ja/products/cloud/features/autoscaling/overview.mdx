@@ -14,6 +14,10 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 <ScalePlanFeatureBadge feature="自動垂直スケーリング" />
 
 <Note>
+  [Gen 2 コンピュート](/ja/products/cloud/features/compute-generations) はプライベートプレビュー段階のため、オートスケーリングおよびアイドル化には対応していません。手動スケーリングとスケジュールに基づくスケーリングの設定は利用できます。
+</Note>
+
+<Note>
   Scale ティアと Enterprise ティアは、単一レプリカと複数レプリカの両方のサービスをサポートしています。単一レプリカの Scale サービスおよび標準の `1:4` プロファイルを持つ Enterprise サービスでは、セルフサービスで垂直オートスケーリングを行えます。カスタムプロファイルを持つ Enterprise サービスでは、サポートによる垂直リサイズが必要です。Scale サービスと Enterprise サービスは、複数のレプリカに水平スケーリングできます。Basic ティアのサービスは単一レプリカでサイズが固定されており、垂直スケーリングおよび水平スケーリングはできません。詳細については、[大規模な単一レプリカサービス](/ja/products/cloud/features/large-single-replica-services) を参照してください。
 </Note>
 
@@ -41,6 +45,14 @@ Enterprise ティア サービスのスケーリングは、次のとおりで�
 * **垂直スケーリング**:
   * 標準の `1:4` プロファイルでは、垂直オートスケーリングをサポートしています。
   * カスタムプロファイル (`highMemory` と `highCPU`) では、垂直オートスケーリングと手動の垂直スケーリングはサポートされていません。ただし、これらのサービスはサポートに連絡することで垂直スケーリングが可能です。
+
+[BYOC (Bring Your Own Cloud)](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview) サービスのスケーリングは、次のとおりです。
+
+* **水平スケーリング**: 水平スケーリングでは手動スケーリングをサポートしています。自動の水平スケーリングは、オートスケーリングが有効化された BYOC デプロイメントでのみ利用できます。各レプリカのサイズは固定したまま、設定された制限の範囲内でレプリカ数を調整します。ご利用のデプロイメントで利用可能かどうかは、サポートに問い合わせてご確認ください。
+* **垂直スケーリング**: 垂直オートスケーリングは、組織で有効化されている場合にのみ利用できます。利用可能かどうかは、サポートに問い合わせてご確認ください。垂直スケーリングでは、BYOC インフラストラクチャのノードサイズに対応した離散的なサイズを使用します。
+  * BYOC では、各サーバーがそれぞれ専用のノード上で稼働します。ClickHouse は各サーバーがノード全体を使用するようにサイズを決定するため、ノードのキャパシティが無駄になることはありません。
+  * ClickHouse Cloud では、複数のサーバーが 1 つのノードを共有するため、サーバーは連続的にスケーリングされます。
+  * BYOC サービスの最小サイズと最大サイズを設定する際は、連続的な範囲からではなく、離散的なサイズの一覧から選択します。
 
 <Note>
   ClickHouse Cloud のスケーリングは、[&quot;Make Before Break&quot; (MBB)](/ja/products/cloud/features/autoscaling/make-before-break) と呼ばれる方式で行われます。

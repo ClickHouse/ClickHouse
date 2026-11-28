@@ -1,0 +1,269 @@
+---
+sidebarTitle: "WorkOS"
+keywords:
+  [
+    "workos",
+    "sync engine",
+    "authkit",
+    "sso",
+    "directory sync",
+    "identity",
+    "sign-in events",
+    "data ingestion",
+    "integrate",
+  ]
+slug: /integrations/workos
+description: "借助开源的 WorkOS Sync Engine，将 WorkOS 用户、组织和登录事件同步到 ClickHouse"
+title: "将 WorkOS 连接到 ClickHouse"
+doc_type: "guide"
+integration:
+  - support_level: "partner"
+  - category: "data_ingestion"
+  - website: "https://workos.com/"
+---
+
+import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+import ConnectionDetails from "/snippets/zh/_gather_your_details_http.mdx";
+
+<PartnerBadge />
+
+[WorkOS](https://workos.com/) 为 B2B 应用提供身份验证与身份管理 API，涵盖用户管理与登录、单点登录、目录同步 (SCIM) 以及角色和权限。
+基于 WorkOS 构建的应用会将其用户、组织、成员关系和登录活动存储在 WorkOS 中，并通过 WorkOS API 读取这些数据。
+
+[WorkOS Sync Engine](https://github.com/workos/sync-engine) 是由 WorkOS 维护的开源工具，可将上述数据复制到您自行运行的数据库中，并持续保持同步。其 ClickHouse 目标端 [`@workos/sync-clickhouse`](https://www.npmjs.com/package/@workos/sync-clickhouse) 解决了两个问题：
+
+* **登录历史记录不再受 WorkOS 保留期限的约束。** WorkOS 仅保留 90 天内的事件，且 `authentication.*` 事件 (涵盖每一次登录，无论成功或失败) 没有提供列表端点。该引擎会持续拉取 Events API 的数据，并写入仅追加的 ClickHouse 表中，因此只要您愿意，这些历史记录就可以一直由您保存。
+* **与其他分析数据进行连接。** 用户、组织、成员关系、目录、SSO 连接和角色会以镜像形式与事件表存放在一起，因此像“每个组织每小时的登录失败次数”这样的问题，只需一条查询即可解答，无需多次调用分页 API。
+
+本页介绍如何将该引擎连接到 ClickHouse Cloud 和自托管 ClickHouse、身份验证方式、一个端到端示例，以及需要提前考虑的各项限制。
+
+## 工作原理 {#how-it-works}
+
+该引擎以 Node.js 命令或 Docker 容器的形式运行在您的基础设施中，并通过官方 [JavaScript 客户端](/zh/integrations/language-clients/js/index) 经由 HTTP 接口连接到 ClickHouse。它负责以下三项工作：
+
+1. **Backfill (历史数据回填)&#x20;**：从 WorkOS REST 列表端点加载当前状态。
+2. **Tail (追踪)&#x20;**：从持久化游标处开始轮询 WorkOS Events API，并逐个应用事件。
+3. **Reconcile (对账)&#x20;**：将 id 与 API 进行比对，并修复 tail 遗漏的所有内容。
+
+它会创建一个 `workos` 数据库，其中包含：
+
+| 表                                                                | 引擎                                                                                                      | 内容                                     |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `auth_attempts`、`events`                                         | 以事件 id 为键的 [`ReplacingMergeTree`](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) | 仅追加。每次登录尝试对应一行，并原样保存每个 WorkOS 事件。      |
+| `users`、`organizations`、`organization_memberships` 以及其他 mirror 表 | 按 source 时间戳进行版本化的 `ReplacingMergeTree`                                                                 | 每个对象的当前状态。已删除的记录以删除标记的形式保留。            |
+| `<table>_live` 视图                                                | 视图                                                                                                      | 使用 `FINAL` 读取 mirror 表并隐藏删除标记。请查询这些视图。 |
+| 簿记表                                                              | [`KeeperMap`](/zh/reference/engines/table-engines/special/keepermap)                                       | tail 游标、单写入器租用以及每个 stream 的写锁。         |
+
+该引擎只写入一个 `String` 列 `_raw`，用于存放 JSON 载荷。其余所有列均为基于 `_raw` 的 `DEFAULT` 表达式，因此对于 WorkOS 日后新增的字段，无需变更 schema，即可通过 `JSONExtractString(_raw, 'field')` 进行查询。
+
+## 前置条件 {#prerequisites}
+
+* 一个 WorkOS 账户，以及待同步环境的 API key。
+* Node.js 22 或更高版本，或 Docker。该引擎以 npm 软件包 `@workos/sync-clickhouse` 和容器镜像 `ghcr.io/workos/sync-clickhouse` 的形式发布。
+* ClickHouse Cloud，或 23.11 及更高版本的自托管 ClickHouse。
+* 如使用自托管 ClickHouse，需要一个服务器可访问的 ClickHouse Keeper 或 ZooKeeper，并已设置 `keeper_map_path_prefix`。请参阅[连接到自托管 ClickHouse](#connect-to-self-hosted-clickhouse)。ClickHouse Cloud 已具备这两项条件。
+* 运行该引擎的主机需能够通过网络访问 ClickHouse HTTP 接口 (Cloud 上为端口 8443；自托管环境为端口 8123，启用 TLS 时为 8443) 。
+
+## 设置 {#setup}
+
+### 连接到 ClickHouse Cloud {#connect-to-clickhouse-cloud}
+
+<ConnectionDetails />
+
+获取上述信息后：
+
+1. 将该引擎发起连接时所用的地址添加到服务的 [IP 访问列表](/zh/products/cloud/guides/security/connectivity/setting-ip-filters)中。地址被拒绝时，表现为连接超时，而非身份验证错误。
+
+2. 在 HTTPS 端点前加上凭证，组成连接字符串，然后将其与您的 WorkOS API key 一起导出：
+
+   ```bash
+   export DATABASE_URL='https://default:PASSWORD@HOST.clickhouse.cloud:8443'
+   export WORKOS_API_KEY='sk_...'
+   ```
+
+   如果密码中包含 URL 预留字符，请对其进行百分号编码。URL 中的路径会被忽略：mirror 位于 `workos` 数据库中，或位于 `WORKOS_SYNC_SCHEMA` 指定的数据库中。
+
+3. 创建 schema、加载当前状态，然后开始 tail：
+
+   ```bash
+   npx @workos/sync-clickhouse init       # 创建数据库、表和视图
+   npx @workos/sync-clickhouse backfill   # 从 WorkOS API 加载当前状态
+   npx @workos/sync-clickhouse listen     # 持续跟踪 Events API，直到手动停止
+   ```
+
+服务端无需启用任何功能。`init` 创建 `KeeperMap` 表的方式与创建其他表并无二致。
+
+### 连接到自托管 ClickHouse {#connect-to-self-hosted-clickhouse}
+
+1. 启用 `KeeperMap`。该引擎将游标和租用信息保存在 `KeeperMap` 表中，而这些表依赖 Keeper，并需要在服务器配置中设置路径前缀。如果集群已在使用 [ClickHouse Keeper](/zh/guides/oss/deployment-and-scaling/keeper/index) 或 ZooKeeper，只需添加该前缀：
+
+   ```xml title="/etc/clickhouse-server/config.d/keeper_map.xml"
+   <clickhouse>
+       <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+   </clickhouse>
+   ```
+
+   如果是未配置 Keeper 的单节点，还需启用嵌入式 Keeper：
+
+   ```xml title="/etc/clickhouse-server/config.d/keeper_map.xml"
+   <clickhouse>
+       <keeper_server>
+           <tcp_port>9181</tcp_port>
+           <server_id>1</server_id>
+           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+           <raft_configuration>
+               <server>
+                   <id>1</id>
+                   <hostname>localhost</hostname>
+                   <port>9234</port>
+               </server>
+           </raft_configuration>
+       </keeper_server>
+       <zookeeper>
+           <node>
+               <host>localhost</host>
+               <port>9181</port>
+           </node>
+       </zookeeper>
+       <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+   </clickhouse>
+   ```
+
+   添加该文件后，重启服务器。
+
+2. 将连接字符串指向 HTTP 接口：不使用 TLS 时使用端口 8123，使用 TLS 时使用端口 8443。
+
+   ```bash
+   export DATABASE_URL='http://USER:PASSWORD@HOST:8123'
+   export WORKOS_API_KEY='sk_...'
+   ```
+
+3. 依次运行与 Cloud 相同的三个命令：`init`、`backfill` 和 `listen`。
+
+### 以容器方式运行 {#run-it-as-a-container}
+
+该容器镜像支持相同的环境变量和命令：
+
+```bash
+docker run --rm -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse init
+docker run --rm -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse backfill
+docker run -d   -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse listen
+```
+
+可将 `listen` 作为常驻进程运行，也可以由调度器定期运行 `tick` (执行一次轮询后即退出) 。`status` 会报告游标、距上次成功轮询的时长以及每个 stream 的行数。<a href="https://github.com/workos/sync-engine/tree/main/packages/sync-clickhouse#command-line" target="_blank">软件包 README</a> 列出了所有命令、命令行选项和环境变量。
+
+## 身份验证 {#authentication}
+
+| 模式                     | 是否支持 | 配置方法                                                                                         |
+| ---------------------- | ---- | -------------------------------------------------------------------------------------------- |
+| 通过 TLS 使用用户名和密码        | ✅    | 使用包含凭证的 `https://` 连接字符串。服务器证书将通过系统信任库进行验证。                                                  |
+| 用户名和密码，私有 CA           | ✅    | 将 `WORKOS_SYNC_CLICKHOUSE_TLS_CA` 设置为 CA 证书，格式为 PEM 或经 base64 编码的 PEM。需要使用 `https://` 连接字符串。 |
+| 不使用 TLS 的用户名和密码        | ✅    | 使用 `http://` 连接字符串。仅适用于自托管部署，请在受信任的网络中使用。                                                    |
+| mTLS 或 SSL 客户端证书       | ❌    | 不支持。                                                                                         |
+| 原生协议 (端口 9000 和 9440)  | ❌    | 不支持。该引擎仅使用 HTTP 接口。                                                                          |
+
+引擎所使用的连接用户在首次运行时需要 `CREATE DATABASE` 权限 (或者一个已存在且允许其在其中建表的数据库) ，此外还需要在该数据库上拥有 `CREATE TABLE`、`CREATE VIEW`、`DROP TABLE`、`ALTER`、`INSERT` 和 `SELECT` 权限。`redact` 命令执行的轻量级 `DELETE` 由 `ALTER` 权限涵盖。仅用于评估时，使用 `default` 用户即可。在生产环境中，请创建一个具有上述授权的专用用户，详见[云访问管理](/zh/products/cloud/guides/security/cloud-access-management/index)。
+
+在 WorkOS 端，引擎在每个环境中使用一个 API key 进行身份验证。建议为同步单独分配一个 key，以便将其请求与您应用程序的请求区分开来。
+
+每个连接的 `User-Agent` 头均以 `workos-sync-engine` 开头，因此可以在 [`system.query_log`](/zh/reference/system-tables/query_log) 中按 `http_user_agent` 查找该引擎执行的语句。
+
+## 示例：按组织统计登录失败次数 {#example-failed-sign-ins}
+
+该引擎的输入是您自己的 WorkOS 环境，而不是文件，因此本示例使用该环境中的数据，而非样本数据集。任何包含少量用户和登录记录的 WorkOS 环境均可使用，包括预生产环境。
+
+1. 创建 schema 并加载当前状态：
+
+   ```bash
+   npx @workos/sync-clickhouse init
+   npx @workos/sync-clickhouse backfill
+   ```
+
+2. 启动 tail 并保持其持续运行。登录历史记录从此刻开始采集：由于没有可列出过往登录记录的端点，`backfill` 无法恢复这些记录。
+
+   ```bash
+   npx @workos/sync-clickhouse listen
+   ```
+
+3. 多次登录您的应用程序，其中至少包含一次失败的登录尝试。
+
+4. 通过 Cloud SQL 控制台或 `clickhouse client` 确认 mirror 中已有数据行：
+
+   ```sql
+   SELECT _env, email
+   FROM workos.users_live
+   LIMIT 10;
+   ```
+
+5. 将登录日志与 mirror 表进行连接：
+
+   ```sql
+   SELECT
+       o.name AS organization,
+       toStartOfHour(a.created_at) AS hour,
+       count() AS failures
+   FROM workos.auth_attempts AS a
+   INNER JOIN workos.users_live AS u ON u.id = a.user_id AND u._env = a._env
+   INNER JOIN workos.organization_memberships_live AS m ON m.user_id = u.id AND m._env = u._env
+   INNER JOIN workos.organizations_live AS o ON o.id = m.organization_id AND o._env = m._env
+   WHERE a.status = 'failed' AND a.created_at > now() - INTERVAL 7 DAY
+   GROUP BY organization, hour
+   ORDER BY failures DESC;
+   ```
+
+每一行都带有 `_env` 列，其值默认为 `production`，除非通过 `WORKOS_ENVIRONMENT_NAME` 另行指定，因此多个 WorkOS 环境可以共享同一个数据库。请如上例所示，在连接时加入该列作为条件。
+
+## 已知限制 {#known-limits}
+
+* **mirror 是只读模型。** 它是最终一致的 (通常在数秒内达成一致) ，并且是单向的。写入操作和授权决策仍应通过 WorkOS API 完成。
+* **登录历史记录从 tail 启动时开始记录。** WorkOS 会保留 90 天内的事件。停止时间不足 90 天的 tail 会从其游标处继续。停止时间更长的 tail 则需要运行 `backfill` 和 `reconcile --repair` 来恢复当前状态，且中断期间的登录记录将会丢失。
+* **每个环境只能有一个写入器。** 第二个 `listen` 会等待第一个释放租用。当有监听器持有租用时，`tick` 会以退出码 3 退出。
+* **`listen` 会让云服务一直保持唤醒状态。** 它默认每 5 秒轮询一次，因此服务永远不会进入[空闲](/zh/products/cloud/features/autoscaling/idling)状态。若按调度计划运行 `tick`，服务可在两次运行之间进入空闲状态，代价是每次运行都需要唤醒一次服务。
+* **默认使用小批量插入。** 每次轮询最多应用 100 个事件，以若干次[异步插入](/zh/concepts/features/operations/insert/asyncinserts)的方式写入，并由引擎等待其完成。在繁忙的环境中，可调大 `WORKOS_SYNC_MAX_EVENTS_PER_TICK`，使每次轮询产生次数更少、批量更大的插入操作。
+* **`_live` 视图使用 `FINAL` 读取。** 它们适用于分析型查询。如果应用程序需要按键读取单行数据，Postgres 或 MySQL 目标端更为合适。
+* **mirror 表仅保留每一行的最新版本。** 旧版本会一直保留到下一次合并。历史记录保存在 `workos.events` 中。
+* **列是从 JSON 投影而来的。** 如果某个值无法转换为显式指定类型的列的类型，则该列中的值为 `NULL`，但原值仍保留在 `_raw` 中。
+* **不支持 `ON CLUSTER` DDL。** `init` 已在 ClickHouse Cloud 和单节点开源版本上验证过。自管理的多节点集群不在测试矩阵范围内。
+
+## 故障排查 {#troubleshooting}
+
+### 首条命令超时 {#trouble-timeout}
+
+在 ClickHouse Cloud 上，可能是运行引擎的地址不在 IP 访问列表中，或者网络阻止了 8443 端口的出站流量。请在同一主机上检查该端口：
+
+```bash
+curl https://HOST.clickhouse.cloud:8443/ping
+```
+
+`Ok.` 表示从该主机可以访问该服务。如果服务处于空闲状态，对其执行的命令在最初几秒内还需要等待服务唤醒。引擎为每个请求预留两分钟，因此这并不算失败。
+
+### `KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined` {#trouble-keepermap}
+
+在未配置 `keeper_map_path_prefix` 的自托管服务器上运行了 `init`。请按照[连接到自托管 ClickHouse](#connect-to-self-hosted-clickhouse)中的说明添加该配置，然后重启服务器。
+
+### `unsupported ClickHouse URL scheme` {#trouble-scheme}
+
+连接字符串必须以 `http://` 或 `https://` 开头，并指向 HTTP 接口。不接受 `clickhouse://` 形式的 URL，也不接受原生协议的端口。
+
+### `init --print-sql` 输出的语句报错 `Could not find table` {#trouble-print-sql}
+
+`init --print-sql` 只会打印 DDL，而不会执行。如果在包含多个副本的服务上手动执行这些 DDL，且每个请求只发送一条语句，那么 `CREATE VIEW` 可能会先于其所查询的表的 `CREATE TABLE` 到达某个副本。此时只需重新运行该脚本即可：脚本中的每条语句都是幂等的。引擎自身执行的 `init` 不受此问题影响。
+
+## 相关资源 {#related-resources}
+
+* <a href="https://workos.com/docs/events/data-syncing/database/clickhouse-cloud" target="_blank">
+    WorkOS 文档中的 ClickHouse Cloud 指南
+  </a>
+* <a href="https://github.com/workos/sync-engine" target="_blank">
+    GitHub 上的 WorkOS Sync Engine
+  </a>
+  ：源代码、议题，以及运维和一致性指南
+* <a href="https://github.com/workos/sync-engine/tree/main/packages/sync-clickhouse" target="_blank">
+    `@workos/sync-clickhouse` 参考文档
+  </a>
+  ：命令、环境变量、schema，以及如何将该引擎作为
+  库嵌入
+* <a href="https://workos.com/docs/events" target="_blank">
+    WorkOS Events API
+  </a>

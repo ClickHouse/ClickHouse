@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 ClickHouse 中的 `TRUNCATE` 语句用于在保留表或数据库结构的同时，快速删除其中的所有数据。
 
-## TRUNCATE TABLE
+## TRUNCATE TABLE {#truncate-table}
 
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
@@ -33,6 +33,11 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
   如果 `alter_sync` 设置为 `2`，且某些副本的非活动状态持续时间超过 `replication_wait_for_inactive_replica_timeout` 设置指定的时间，则会抛出 `UNFINISHED` 异常。当 `alter_sync = 3` 时，不会等待非活动副本，因此不会抛出异常。
 </Note>
 
+<Note>
+  对于非复制表形式的 `MergeTree` 表，被移除的 parts 会作为非活跃数据分片在磁盘上保留 `old_parts_lifetime` 秒。如需立即删除，可使用 `SETTINGS truncate_removes_parts_immediately = 1`。
+  对于 `ReplicatedMergeTree` 表，被移除的 parts 会立即删除，因为 `TRUNCATE` 会与 `DROP PARTITION` 一样，以 `DROP_RANGE` 日志条目的形式在每个副本上执行。
+</Note>
+
 以下表引擎**不支持** `TRUNCATE TABLE` 查询：
 
 * [`View`](/zh/reference/engines/table-engines/special/view)
@@ -41,7 +46,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 * [`Buffer`](/zh/reference/engines/table-engines/special/buffer)
 * [`Null`](/zh/reference/engines/table-engines/special/null)
 
-## TRUNCATE 所有表
+## TRUNCATE 所有表 {#truncate-all-tables}
 
 ```sql
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
@@ -59,7 +64,7 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 
 删除数据库中所有表的数据。
 
-## TRUNCATE DATABASE
+## TRUNCATE DATABASE {#truncate-database}
 
 ```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]

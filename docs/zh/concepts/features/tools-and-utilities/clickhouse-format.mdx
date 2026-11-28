@@ -14,6 +14,7 @@ doc_type: 'reference'
 * `--hilite` or `--highlight` — 使用 ANSI 终端转义序列添加语法高亮。
 * `--oneline` — 格式化为单行。
 * `--max_line_length` — 将长度小于指定值的查询格式化为单行。
+* `--wrap_width` — 按指定的显示宽度对多行查询进行换行。默认禁用换行 (`0`) 。通过 `--oneline` 或 `--max_line_length` 格式化为单行的查询不会换行。
 * `--comments` — 在输出中保留注释。
 * `--quiet` or `-q` — 仅检查语法，成功时不输出内容。
 * `--multiquery` or `-n` — 允许在同一文件中包含多个查询。
@@ -22,9 +23,9 @@ doc_type: 'reference'
 * `--backslash` — 在格式化后的查询每行末尾添加反斜杠。从网页或其他地方复制多行查询后，如果想在命令行中执行，这会很有用。
 * `--semicolons_inline` — 在多查询模式下，将分号写在查询最后一行的末尾，而不是单独占一行。
 
-<div id="examples">
-  ## 示例
-</div>
+如果函数调用、数组或元组、`AND`/`OR` 链、窗口定义或 `INSERT` 的列列表超出宽度，其元素会另起一行并增加缩进。属于普通值 (列名和字面量) 的函数参数和数组元素会采用打包式排列，每行放置多个。若格式化后的各行已在宽度范围内，则查询保持不变。该宽度是软限制：字符串、标识符及其他不可分割的片段可能超出该宽度。计算宽度时会考虑 Unicode 字符的显示宽度。通过 `--comments` 保留的注释以及 `INSERT ... VALUES` 之后的数据不会换行。
+
+## 示例 {#examples}
 
 1. 格式化查询：
 
@@ -102,4 +103,19 @@ FROM  \
     UNION DISTINCT \
     SELECT 3 \
 )
+```
+
+6. 长表达式换行：
+
+```bash title="Query"
+$ clickhouse-format --wrap_width 40 --query "SELECT concat(first_name, ' ', middle_name, ' ', last_name) FROM people"
+```
+
+```sql title="Response"
+SELECT
+    concat(
+        first_name, ' ', middle_name,
+        ' ', last_name
+    )
+FROM people
 ```

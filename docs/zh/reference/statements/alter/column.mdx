@@ -130,6 +130,8 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
+对于 `MergeTree` 系列的表，`CLEAR COLUMN` 也可用于虚拟列 [`_block_number` 和 `_block_offset`](/zh/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns)。指定其中任一列名都会同时清空这两列，此后数据分片将以其最小块编号作为 `_block_number` 返回，并以 `_part_offset` 作为 `_block_offset` 返回。
+
 ## COMMENT COLUMN {#comment-column}
 
 ```sql

@@ -90,7 +90,7 @@ Cloud でのデフォルト値: レプリカあたりのメモリ量の半分。
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
-ORDER BY と LIMIT を使用する場合、メモリ使用量が指定したしきい値を超えると、最終マージの前にブロックの追加マージを行い、上位 LIMIT 行のみを保持します。
+`ORDER BY` と `LIMIT` を使用する場合、前回の同様のステップ以降に蓄積されたブロックが使用するメモリ量が指定したしきい値を超えると、最終マージの前にブロックの追加マージを行い、上位 `LIMIT` 行のみを保持します。`max_bytes_before_external_sort` によってディスクへの退避が行われる前に、蓄積されたすべてのブロックがカウントされます。
 
 ## max_bytes_for_external_set_bloom_filter {#max_bytes_for_external_set_bloom_filter}
 
@@ -204,14 +204,11 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "利用可能なメモリの指定した比率を超えた場合に、`DISTINCT` の中間データをディスクにスピルできるようにする新しい設定。`0` の場合は、`max_bytes_before_external_distinct` のみが適用されます。"}]}]} />
 
-実行開始時に外部 `DISTINCT` のしきい値を計算するために使用する、利用可能なサーバーまたはユーザーのメモリの割合です。
-たとえば、`0.5` は利用可能なメモリの半分を使用します。
+実行開始時に外部 `DISTINCT` のしきい値を計算するために使用する、クエリの `max_memory_usage` およびサーバーまたはユーザーのメモリ制限の範囲内で利用可能なメモリの割合です。
+たとえば、`0.5` は利用可能なメモリの半分を使用します。ユーザー空間のページキャッシュのうち `page_cache_min_size` を超える分は、利用可能なメモリとして扱われます。
 
 値は `0` 以上かつ `1` 未満である必要があります。`0` を指定すると、このしきい値は無効になります。適用可能な
-サーバーまたはユーザーのメモリ制限がない場合、この比率は効果を持ちません。
-
-`max_memory_usage` はこの計算に影響しません。その制限に対するスピルを設定するには、
-追加のメモリ使用量の余地を残して `max_bytes_before_external_distinct` を使用します。
+クエリ、サーバー、またはユーザーのメモリ制限がない場合、この比率は効果を持ちません。
 
 ## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
 
@@ -223,18 +220,18 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 集約には外部メモリが使用されます。
 
 たとえば `0.6` に設定すると、`GROUP BY` は実行開始時点で利用可能メモリ
-(server/user/merges に割り当てられたメモリ) の 60% まで使用でき、
-それ以降は外部集約を使用し始めます。
+(クエリの `max_memory_usage` および server/user/merges の制限の範囲内) の 60% まで使用でき、
+それ以降は外部集約を使用し始めます。`page_cache_min_size` を超えるユーザー空間のページキャッシュも、利用可能メモリとして扱われます。
 
 ## max_bytes_ratio_before_external_join {#max_bytes_ratio_before_external_join}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "新しい設定: ハッシュ結合で、利用可能なメモリのうちディスクへのスピルを開始するしきい値として使用する比率です。既定では `0.5` で有効になっており、`max_bytes_ratio_before_external_group_by` および `max_bytes_ratio_before_external_sort` に対応しています。絶対値の `max_bytes_before_external_join` と組み合わせて使用され、2 つのうち小さい方が適用されます。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "新しい設定: ハッシュ結合で、利用可能なメモリのうちディスクへの退避を開始するしきい値として使用する比率です。既定では `0.5` で有効になっており、`max_bytes_ratio_before_external_group_by` および `max_bytes_ratio_before_external_sort` に対応しています。絶対値の `max_bytes_before_external_join` と組み合わせて使用され、2 つのうち小さい方が適用されます。"}]}]} />
 
-`JOIN` に使用できる利用可能メモリの比率です。この値に達すると、ハッシュ結合は右側のデータをディスクにスピルします。ただし、これは `GraceHashJoin` でその結合を実行できる場合 (等値比較の選言が 1 つだけで、種類と strictness がサポートされている場合) に限られます。複数の選言を含む `ON` 条件 (`OR`) は `hash` のまま実行されるため、スピルされずにメモリ制限に達する可能性があります。スピル後、結合は Grace Hash Join として継続されます。ただし、クエリプランで左側ストリームの行順序が必要な場合は、部分マージ結合として継続されます (`max_bytes_before_external_join` を参照)。
+`JOIN` に使用できる利用可能メモリの比率です。この値に達すると、ハッシュ結合は右側のデータをディスクに退避します。ただし、これは `GraceHashJoin` でその結合を実行できる場合 (等値比較の選言が 1 つだけで、種類と strictness がサポートされている場合) に限られます。複数の選言を含む `ON` 条件 (`OR`) は `hash` のまま実行されるため、スピルされずにメモリ制限に達する可能性があります。スピル後、結合は Grace Hash Join として継続されます。ただし、クエリプランで左側ストリームの行順序が必要な場合は、部分マージ結合として継続されます (`max_bytes_before_external_join` を参照)。
 
-たとえば `0.6` に設定すると、`JOIN` は実行開始時に、右側のハッシュテーブルに対して利用可能メモリ (server/user/merges 用) の `60%` まで使用できます。その後はディスクへのスピルが開始されます。
+たとえば `0.6` に設定すると、`JOIN` は実行開始時に、右側のハッシュテーブルに対して利用可能メモリ (クエリの `max_memory_usage` および server/user/merges の制限の範囲内) の `60%` まで使用できます。その後はディスクへの退避が開始されます。`page_cache_min_size` を超えるユーザー空間のページキャッシュは、利用可能メモリとして扱われます。
 
 `max_bytes_before_external_join` と `max_bytes_ratio_before_external_join` の両方が設定されている場合は、結果として小さい方のしきい値が使用されます。比率が `0` の場合は、絶対値の設定のみが適用されます。
 
@@ -246,23 +243,21 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "デフォルト値を 0.5 に変更した内容は 26.10 にバックポートされました。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0.5"},{"label": "メモリ使用量が利用可能なメモリに対して指定の比率を超えた場合に、サブクエリを伴う `IN` の集合をディスクへスピルできるようにする新しい設定です。0 の場合は `max_bytes_before_external_set` のみが適用されます。"}]}]} />
 
-サブクエリを伴う `IN` の集合をディスクへスピルするしきい値を実行開始時に算出する際に用いる、サーバーまたはユーザーの利用可能なメモリに対する割合です。たとえば `0.5` を指定すると、利用可能なメモリの半分がしきい値になります。
+サブクエリを伴う `IN` の集合をディスクへスピルするしきい値を実行開始時に算出する際に用いる、クエリの `max_memory_usage` およびサーバーまたはユーザーのメモリ制限のもとで利用可能なメモリに対する割合です。たとえば `0.5` を指定すると、利用可能なメモリの半分がしきい値になります。`page_cache_min_size` を超える分のユーザー空間のページキャッシュは、利用可能なメモリとして扱われます。
 
-値は `0` 以上 `1` 未満である必要があります。`0` を指定すると、このしきい値は無効になります。適用されるサーバーまたはユーザーのメモリ制限が存在しない場合、この比率は効果を持ちません。
-
-`max_memory_usage` はこの計算に影響しません。その制限を基準にスピルを設定する場合は、追加のメモリ使用量を見込んだ余裕を残したうえで `max_bytes_before_external_set` を使用してください。
+値は `0` 以上 `1` 未満である必要があります。`0` を指定すると、このしきい値は無効になります。適用されるクエリ、サーバーまたはユーザーのメモリ制限が存在しない場合、この比率は効果を持ちません。
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "デフォルトでディスクへの自動スピルを有効化。"}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "デフォルトでディスクへの自動退避を有効化。"}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 `ORDER BY` に使用できる利用可能メモリの比率です。この値に達すると、外部ソートが使用されます。
 
-たとえば `0.6` に設定すると、`ORDER BY` は実行開始時に利用可能メモリ (server/user/merges) の `60%` まで使用できます。それを超えると、外部ソートの使用が開始されます。
+たとえば `0.6` に設定すると、`ORDER BY` は実行開始時に利用可能メモリ (クエリの `max_memory_usage` および server/user/merges の制限の範囲内) の `60%` まで使用できます。それを超えると、外部ソートの使用が開始されます。`page_cache_min_size` を超える分のユーザー空間のページキャッシュも、利用可能メモリとして扱われます。
 
-なお、`max_bytes_before_external_sort` は引き続き適用されるため、ディスクへのスピルが行われるのは、ソート対象のブロックが `max_bytes_before_external_sort` より大きい場合だけです。
+なお、`max_bytes_before_external_sort` は引き続き適用されるため、ディスクへの退避が行われるのは、ソート対象のブロックが `max_bytes_before_external_sort` より大きい場合だけです。
 
 ## max_bytes_to_read {#max_bytes_to_read}
 

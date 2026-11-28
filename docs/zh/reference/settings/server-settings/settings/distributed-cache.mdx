@@ -20,6 +20,30 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="否" />分布式缓存会尽量保持的空闲活动连接数量的软限制。当空闲连接数低于 distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections 时，将关闭活动时间最早的连接，直到该数量重新高于此限制。
 
+## distributed_cache_max_request_processing_time_ms {#distributed_cache_max_request_processing_time_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="60000" changeable_without_restart="No" />Distributed Cache 服务器处理某个请求时，若自该请求最近一次 `StartRequest` 或 `ContinueRequest` 起的处理时长达到此毫秒数 (不计等待客户端的时间) ，则会结束该请求；每个新的读取范围都会重新开始计时。服务器一旦能够上报，就会立即结束该请求；若请求始终未能到达可上报的阶段，则其连接会在 `distributed_cache_stuck_request_scan_interval_ms` 之后被关闭。值为 0 表示不设上限。
+
+## distributed_cache_slow_down_min_stuck_requests {#distributed_cache_slow_down_min_stuck_requests}
+
+<SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />仅当某个客户端卡住的请求数至少达到该值时，Distributed Cache 服务器才会要求该客户端降速，以免只有少量请求处于处理中的客户端因单个请求卡住就被要求降速。取值为 0 或 1 时，仅由 `distributed_cache_slow_down_stuck_requests_ratio` 决定是否降速。
+
+## distributed_cache_slow_down_stuck_requests_ratio {#distributed_cache_slow_down_stuck_requests_ratio}
+
+<SettingsInfoBlock type="Double" default_value="0.2" changeable_without_restart="No" />当处理中请求里卡住的请求所占比例达到或超过该值时，Distributed Cache 服务器会要求客户端降速；空闲连接不计入其中。值为 0 时，服务器从不发出降速要求。
+
+## distributed_cache_slow_down_window_ms {#distributed_cache_slow_down_window_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />当Distributed Cache 服务器上卡住的请求过多时，该服务器要求客户端暂停访问的时长，单位为毫秒。该值必须不小于 `distributed_cache_stuck_request_scan_interval_ms` 的两倍，以确保只有在扫描未对窗口续期时，窗口才会失效；不允许设置为 0。
+
+## distributed_cache_stuck_request_no_progress_timeout_ms {#distributed_cache_stuck_request_no_progress_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />如果某个连接上的请求在此设置指定的毫秒数内未交换任何数据 (不计等待客户端的时间) ，Distributed Cache 服务器将关闭该连接。设为 0 表示禁用此限制；仅当 `distributed_cache_max_request_processing_time_ms` 也为 0 时，才会停止对卡住请求的扫描。
+
+## distributed_cache_stuck_request_scan_interval_ms {#distributed_cache_stuck_request_scan_interval_ms}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="5000" changeable_without_restart="No" />Distributed Cache 服务器扫描卡住请求的时间间隔 (毫秒) 。
+
 ## distributed_cache_temporary_data_background_retry_delay_milliseconds {#distributed_cache_temporary_data_background_retry_delay_milliseconds}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="30000" changeable_without_restart="No" />在后台重试已提交的临时数据之前的延迟时间 (单位：毫秒) 。
@@ -75,6 +99,10 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 ## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />仅在 ClickHouse Cloud 中生效。对于未配置本地文件系统缓存的磁盘，缓存预热器在队列中最多保留的范围数量；超出此上限时，最旧的范围会被丢弃 (若配置了本地缓存，预热器则改用该缓存的 `max_elements`) 。设为 0 表示不限制。
+
+## distributed_cache_warmer_skip_parts_produced_in_current_availability_zone {#distributed_cache_warmer_skip_parts_produced_in_current_availability_zone}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />仅在 ClickHouse Cloud 中生效。当缓存预热器仅预热分布式缓存时 (即该 分片 所在磁盘没有本地文件系统缓存，或读取时已禁用缓存) ，跳过由当前可用区内副本生成的 分片：这些 分片 是通过分布式缓存写入的，因此已存在于该可用区的缓存中。来源未知的 分片 始终会被预热。
 
 ## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
 

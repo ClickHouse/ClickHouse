@@ -20,21 +20,21 @@ En los algoritmos hash-based, incluidos los que realizan volcado a disco, alcanz
 
 Dos ajustes modifican este comportamiento:
 
-* [`enable_adaptive_memory_spill_scheduler`](/es/reference/settings/session-settings/enable#enable_adaptive_memory_spill_scheduler) vuelca a disco los procesadores aptos cuando la consulta sufre presión de memoria. En el caso de los JOIN, solo se aplica a aquellos que ya pueden volcarse a disco: un JOIN `hash`, `parallel_hash` o `auto` con un [umbral de volcado a disco](#spill-thresholds) distinto de cero, un JOIN `grace_hash` o la alternativa de respaldo block nested loop cuando hay almacenamiento temporal configurado. En ese caso, el JOIN puede volcarse a disco antes de alcanzar el umbral de volcado a disco o un límite estricto.
+* [`enable_adaptive_memory_spill_scheduler`](/es/reference/settings/session-settings/enable#enable_adaptive_memory_spill_scheduler) vuelca a disco los procesadores aptos cuando la consulta sufre presión de memoria. En el caso de los JOIN, solo se aplica a aquellos que ya pueden volcarse a disco: un JOIN `hash`, `parallel_hash` o `auto` con un [umbral de volcado a disco](#spill-thresholds) distinto de cero, un JOIN `grace_hash` o el método alternativo de bucle anidado por bloques cuando hay almacenamiento temporal configurado. En ese caso, el JOIN puede volcarse a disco antes de alcanzar el umbral de volcado a disco o un límite estricto.
 * [`legacy_join_size_limits_trigger_spilling`](/es/reference/settings/session-settings/other#legacy_join_size_limits_trigger_spilling) restaura el comportamiento de las versiones anteriores a la 26.10, en las que los límites estrictos hacen que la parte de un JOIN que ya se ejecuta en disco siga volcándose a disco en lugar de detener la consulta. Con este parámetro de configuración, `grace_hash` realiza el volcado a disco basándose únicamente en los límites estrictos e ignora los umbrales de volcado a disco. `hash` y `parallel_hash` siguen iniciando el volcado a disco al alcanzar el umbral correspondiente y continúan tratando los límites estrictos como topes durante su fase in-memory.
 
 Los límites se comportan de forma distinta en otros algoritmos:
 
-* En [`ie_join`](/es/concepts/features/operations/select/join-algorithms#ie-join), los límites se aplican a la entrada acumulada de ambos lados en conjunto.
-* En la [alternativa de respaldo block nested loop](/es/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback), los límites se aplican al lado derecho materializado, incluidos los bloques volcados a disco.
+* En [`inequality`](/es/concepts/features/operations/select/join-algorithms#inequality), los límites se aplican a la entrada acumulada de ambos lados en conjunto.
+* En el [método alternativo de bucle anidado por bloques](/es/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback), los límites se aplican al lado derecho materializado, incluidos los bloques volcados a disco.
 * En [`partial_merge`](/es/concepts/features/operations/select/join-algorithms#partial-merge), alcanzar un límite cambia la estrategia de ejecución en lugar de detener la consulta: el JOIN empieza a escribir en disco sus bloques ordenados del lado derecho.
 
 ## Umbrales de volcado a disco {#spill-thresholds}
 
 * [`max_bytes_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) establece un umbral de volcado a disco absoluto, en bytes, para el lado derecho de un JOIN hash-based.
-* [`max_bytes_ratio_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) establece el umbral de volcado a disco como una proporción de la memoria que queda disponible dentro de los límites de memoria del usuario y del servidor. Si no hay ningún límite de memoria configurado, la proporción no tiene efecto.
+* [`max_bytes_ratio_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) establece el umbral de volcado a disco como una proporción de la memoria que queda disponible dentro del `max_memory_usage` de la consulta y de los límites de memoria del usuario y del servidor. Si no hay ningún límite de memoria configurado, la proporción no tiene efecto.
 
-Si se establecen ambos ajustes, se aplica el umbral resultante más bajo. Los umbrales se aplican a `hash`, `parallel_hash`, `grace_hash`, al valor `auto` y a la alternativa de respaldo block nested loop. Requieren tener configurada una ruta de datos temporales.
+Si se establecen ambos ajustes, se aplica el umbral resultante más bajo. Los umbrales se aplican a `hash`, `parallel_hash`, `grace_hash`, al valor `auto` y al método alternativo de bucle anidado por bloques. Requieren tener configurada una ruta de datos temporales.
 
 ## Cómo funciona el volcado a disco {#how-spilling-works}
 
@@ -44,9 +44,9 @@ Cada algoritmo que admite volcado a disco escribe una parte distinta de su estad
 * **`grace_hash`.** El JOIN sigue el mismo procedimiento desde el primer bloque. Si la tabla hash de una cubeta supera el umbral, el número de cubetas se duplica, hasta un máximo de `grace_hash_join_max_buckets`. Si se supera este máximo, la consulta falla con un error.
 * **`full_sorting_merge`.** La ordenación de cada entrada escribe bloques ordenados en archivos temporales cuando supera `max_bytes_before_external_sort` o `max_bytes_ratio_before_external_sort`. A continuación, se fusionan los archivos ordenados.
 * **`partial_merge`.** Los bloques ordenados del lado derecho y sus índices min-max se escriben en archivos temporales cuando el lado derecho alcanza un límite estricto.
-* **Alternativa de respaldo de block nested loop.** Los bloques del lado derecho se comprimen en memoria y, una vez alcanzado el umbral de volcado a disco, se escriben en archivos temporales.
+* **Método alternativo de bucle anidado por bloques.** Los bloques del lado derecho se comprimen en memoria y, una vez alcanzado el umbral de volcado a disco, se escriben en archivos temporales.
 
-Los algoritmos [`direct`](/es/concepts/features/operations/select/join-algorithms#direct) e [`ie_join`](/es/concepts/features/operations/select/join-algorithms#ie-join) no realizan volcado a disco.
+Los algoritmos [`direct`](/es/concepts/features/operations/select/join-algorithms#direct) e [`inequality`](/es/concepts/features/operations/select/join-algorithms#inequality) no realizan volcado a disco.
 
 Los archivos temporales se escriben en el almacenamiento definido por el ajuste del servidor [`tmp_path`](/es/reference/settings/server-settings/settings/tmp#tmp_path), [`tmp_policy`](/es/reference/settings/server-settings/settings/tmp#tmp_policy) o [`temporary_data_in_cache`](/es/reference/settings/server-settings/settings/temporary-data#temporary_data_in_cache). La lectura y escritura de archivos temporales añade E/S de disco, por lo que un JOIN con volcado a disco es más lento que el mismo JOIN ejecutado en memoria.
 

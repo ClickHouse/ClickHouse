@@ -43,19 +43,20 @@ dbt는 [ClickHouse에서 지원하는 어댑터](https://github.com/ClickHouse/d
 
 지원되는 기능 목록:
 
-* [x] table 머티리얼라이즈
+* [x] 테이블 머티리얼라이즈
 * [x] view 머티리얼라이즈
 * [x] 증분 머티리얼라이즈
 * [x] Microbatch 증분 머티리얼라이즈
 * [x] Materialized View 머티리얼라이즈 (`TO` 형식의 MATERIALIZED VIEW 사용, Experimental)
-* [x] 시드
+* [x] 사용자 정의 함수(SQL)
+* [x] seed
 * [x] 소스
 * [x] 문서 생성
 * [x] 테스트
 * [x] 스냅샷
 * [x] 대부분의 dbt-utils 매크로(이제 dbt-core에 포함됨)
-* [x] 임시 머티리얼라이즈
-* [x] 분산 table 머티리얼라이즈(Experimental)
+* [x] 일시적 머티리얼라이즈
+* [x] 분산 테이블(Distributed table) 구체화(Experimental)
 * [x] 분산 증분 머티리얼라이즈(Experimental)
 * [x] 딕셔너리 머티리얼라이즈(Experimental)
 * [x] Contracts
@@ -172,10 +173,14 @@ CI 테스트에 전용 환경을 사용하면 프로덕션 환경에 영향을 �
 
 dbt-clickhouse 1.10.1부터 [`dbt clone`](https://docs.getdbt.com/reference/commands/clone) 명령어는 MergeTree 계열 엔진을 사용하는 테이블로 머티리얼라이즈된 모델을 복제할 때 ClickHouse의 zero-copy `CREATE OR REPLACE TABLE ... CLONE AS ...` 문을 사용합니다. 기본 데이터 파트를 중복하지 않고 테이블 사본을 생성하므로, 프로덕션 상태를 기반으로 개발 또는 [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) 환경을 구성하는 등 환경을 빠르고 저렴하게 동기화할 수 있습니다.
 
+`CLONE AS`는 `ON CLUSTER`로 실행하거나 `Replicated` 데이터베이스에서 실행할 수 없습니다.
+이러한 테이블은 대신 `CREATE OR REPLACE TABLE ... AS ...`로 생성한 뒤 `ALTER TABLE ... ATTACH PARTITION ALL FROM ...`으로 데이터를 채웁니다. 이 방식도 데이터 파트를 공유하지만 원자적(atomic)으로 수행되지는 않습니다.
+`Replicated` 데이터베이스에서는 `Replicated*MergeTree` 테이블에 한해서만 데이터가 다른 레플리카에 전달됩니다.
+
 이 방식으로 복제할 수 없는 모델은 소스 릴레이션을 가리키는 뷰를 생성하는 dbt의 기본 동작으로 폴백됩니다.
 
 * MergeTree 이외의 엔진을 사용하는 테이블
-* 분산 머티리얼라이즈
+* 분산 구체화(Distributed materializations)
 
 materialized view 모델은 대상 테이블만 복제되며, materialized view 자체는 복제된 테이블을 기반으로 생성됩니다.
 
@@ -213,10 +218,10 @@ WHERE query_id = '<query_id from run_results.json>'
 
 현재 dbt용 ClickHouse 어댑터에는 알아두어야 할 몇 가지 제한 사항이 있습니다:
 
-* 이 플러그인은 ClickHouse 25.3 이상에서만 지원되는 구문을 사용합니다. 이전 버전의 ClickHouse는 테스트하지 않습니다. 또한 현재는 복제된 테이블(Replicated Table)도 테스트하지 않습니다.
+* 이 플러그인은 [보안 지원이 제공되는](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md) ClickHouse 버전(현재 26.3 이상)을 대상으로 테스트됩니다. 이전 버전은 테스트하지 않으며 정상적으로 동작하지 않을 수 있습니다. 또한 현재는 복제된 테이블(Replicated Table)도 테스트하지 않습니다.
 * `dbt-adapter`를 동시에 실행하면 충돌이 발생할 수 있습니다. 내부적으로 동일한 작업에 같은 테이블 이름을 사용할 수 있기 때문입니다. 자세한 내용은 이슈 [#420](https://github.com/ClickHouse/dbt-clickhouse/issues/420)을 확인하십시오.
 * 현재 어댑터는 [INSERT INTO SELECT](/ko/reference/statements/insert-into#inserting-the-results-of-select)를 사용하여 모델을 테이블로 머티리얼라이즈합니다. 즉, 실행을 다시 수행하면 데이터가 중복될 수 있습니다. 매우 큰 데이터셋(PB)의 경우 실행 시간이 매우 길어져 일부 모델은 사실상 사용하기 어려울 수 있습니다. 성능을 개선하려면 뷰를 `materialized: materialization_view`로 구현하여 ClickHouse Materialized Views를 사용하십시오. 또한 가능하면 `GROUP BY`를 활용해 각 쿼리가 반환하는 행 수를 최소화하십시오. 소스의 행 수를 그대로 유지한 채 단순 변환만 수행하는 모델보다, 데이터를 요약하는 모델을 우선하는 것이 좋습니다.
-* 모델을 나타내기 위해 분산 테이블을 사용하려면 각 노드에 기반이 되는 복제된 테이블을 수동으로 생성해야 합니다. 그런 다음 그 위에 분산 테이블을 생성할 수 있습니다. 어댑터는 클러스터 생성을 관리하지 않습니다.
+* 어댑터는 클러스터 생성을 관리하지 않습니다. 분산 구체화(Distributed materializations)에서 사용하는 클러스터는 서버에 미리 정의되어 있어야 합니다.
 * dbt가 데이터베이스에 릴레이션(테이블/뷰)을 생성할 때는 일반적으로 `{{ database }}.{{ schema }}.{{ table/view id }}` 형식으로 생성합니다. ClickHouse에는 스키마 개념이 없습니다. 따라서 어댑터는 `{{schema}}.{{ table/view id }}`를 사용하며, 여기서 `schema`는 ClickHouse 데이터베이스를 의미합니다.
 
 ## Fivetran {#fivetran}

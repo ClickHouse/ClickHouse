@@ -195,11 +195,12 @@ ENGINE = MergeTree()
 
 <ExperimentalBadge />
 
-`Quantized(method, dimensions[, ...])` — `Array(Float32)`、`Array(Float64)`、または `Array(BFloat16)` 型のカラムで近似ベクトル検索をサポートする特殊用途のコーデックです。
+`Quantized(method, dimensions[, ...])` — `Array(Float32)`、`Array(Float64)`、`Array(BFloat16)`、`Array(Int8)`、または `Array(UInt8)` 型のカラムで近似ベクトル検索をサポートする特殊用途のコーデックです。
 元のフル精度ベクトルに加えて、各ベクトルに対応するコンパクトな*量子化コード*も保存します。
 `MergeTree` ファミリーのテーブルでは、設定 [`vector_search_use_quantized_codes`](/ja/reference/settings/session-settings/vector-search#vector_search_use_quantized_codes) を使用するベクトル検索クエリは、量子化コードをスキャンしてショートリストを作成した後、フル精度ベクトルに対して結果を再スコアリングします。
 この2段階検索では、再現率は低下しますが、通常のフル精度スキャンよりも読み取りバイト数を削減できます。
 `dimensions` はベクトル長を表します。サポートされる `method` の値は `rabitq`、`turboquant`、`int8`、`prefix`、`product` で、それぞれサイズ、精度、距離関数の間で異なるトレードオフがあります。
+`Array(Int8)` および `Array(UInt8)` カラムでは、`int8` メソッドと、フォーマットに `int8` を指定した `prefix` メソッドはサポートされていません。
 
 このコーデックは `CREATE TABLE` でのみ設定でき、`ADD COLUMN ... CODEC(Quantized(...))` を含め、`ALTER TABLE` で追加、削除、変更することはできません。
 暗号化コーデックの `AES_128_GCM_SIV` を含め、他のコーデックと連結することはできません。

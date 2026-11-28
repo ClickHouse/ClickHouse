@@ -261,8 +261,10 @@ Datadog receiver 包含在 ClickStack 发行版的 OpenTelemetry collector 中�
   ## 当前可迁移的内容 {#what-you-can-migrate-today}
 </div>
 
-Datadog receiver 是 OpenTelemetry Collector Contrib 中的一个 alpha 组件，并且在 ClickStack collector 发行版中被标记为 Experimental，因此需要通过特性开关启用。
+Datadog 接收器 是 OpenTelemetry Collector Contrib 中的一个 alpha 组件，并且在 ClickStack 采集器 发行版中被标记为 Experimental，因此需要通过特性开关启用。
 
-该 receiver 已针对 **日志和 trace** 工作负载进行了充分测试，推荐用于基于这些信号评估 ClickStack。**指标** 虽然可用，但仍需进一步测试和开发。该 receiver 目前支持 Datadog 的 v1 和 v2 metrics intake 端点；使用更新协议版本的 agent 必须显式配置为通过受支持的端点发送指标。
+该 接收器 已针对 **日志和 trace** 工作负载进行了充分测试，推荐用于基于这些信号评估 ClickStack。**指标** 虽然可用，但仍需进一步测试和开发。该 接收器 目前支持 Datadog 的 v1 和 v2 指标摄取 端点；使用更新协议版本的 agent 必须显式配置为通过受支持的端点发送指标。
 
-目前，如果你的应用已经使用 Datadog SDKs，或你的基础设施中正在运行 Datadog agent，这个 receiver 可以帮助你快速评估 ClickStack。并行运行两条管道，验证数据在 ClickStack 中的呈现方式和查询效果，然后再决定是否推进更大范围的迁移。如果评估结果显示出明显优势，同一架构也支持渐进式迁移：在各项服务逐步迁移到 OpenTelemetry 的过程中，保留现有的 Datadog instrumentation。
+目前，如果你的应用已经使用 Datadog SDKs，或你的基础设施中正在运行 Datadog agent，这个 接收器 可以帮助你快速评估 ClickStack。并行运行两条管道，验证数据在 ClickStack 中的呈现方式和查询效果，然后再决定是否推进更大范围的迁移。如果评估结果显示出明显优势，同一架构也支持渐进式迁移：在各项服务逐步迁移到 OpenTelemetry 的过程中，保留现有的 Datadog 插桩。
+
+应用还可以将 DogStatsD 自定义指标直接发送到 ClickStack 采集器，采集器也能从接收到的链路追踪数据中派生出请求、错误和耗时指标。请参阅[接收 StatsD 指标](/zh/clickstack/ingesting-data/collector#statsd-receiver)和[从 span 派生指标](/zh/clickstack/ingesting-data/collector#span-metrics)。

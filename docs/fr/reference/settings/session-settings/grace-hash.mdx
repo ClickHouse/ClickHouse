@@ -19,7 +19,9 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Le paramètre n'est plus expérimental. La valeur par défaut reste inchangée."}]}]} />
 
-Nombre initial de buckets pour le grace hash join
+Nombre de compartiments avec lequel démarre l’algorithme de jointure `grace_hash`. Les lignes des deux tables sont réparties entre les compartiments selon le hachage des clés de jointure ; un seul compartiment est conservé en mémoire, les autres étant écrits sur disque puis joints ultérieurement. Lorsque le compartiment en mémoire dépasse les limites de mémoire, le nombre de compartiments est doublé, dans la limite de `grace_hash_join_max_buckets`.
+
+La valeur est arrondie à la puissance de deux supérieure. Une valeur plus élevée évite de redistribuer les lignes lorsque la table de droite est connue pour être volumineuse, au prix d’un plus grand nombre de fichiers temporaires.
 
 ## grace_hash_join_max_buckets {#grace_hash_join_max_buckets}
 

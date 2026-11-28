@@ -80,6 +80,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 (укрупнение блоков и запись в целевую таблицу) распараллеливается
 на количество потоков до указанного значения.
 
+Для пунктов назначения, результат в которых зависит от порядка вставки, запись выполняется в одном потоке, если входные данные поступают одним потоком:
+`CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, `ReplacingMergeTree`
+(включая их реплицируемые варианты), таблицы `MergeTree` с `UNIQUE KEY`, `EmbeddedRocksDB` и `Distributed`
+(движок таблицы на шарде неизвестен). У `SELECT` с несколькими выходными потоками нет входного порядка,
+который требовалось бы сохранять, поэтому для таких пунктов назначения могут использоваться параллельные приёмники. Для `KeeperMap` запись всегда выполняется в одном потоке.
+Эти ограничения действуют и для пунктов назначения, в которые данные поступают через materialized view или таблицу `Alias`.
+
 Возможные значения:
 
 * 0 — Автоматически. Используется число CPU-ядер, доступных серверу (то же автоматическое значение, что и у [`max_threads`](/ru/reference/settings/session-settings/max-threads#max_threads)), которое при нехватке памяти уменьшается параметром [`max_insert_threads_min_free_memory_per_thread`](/ru/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread).

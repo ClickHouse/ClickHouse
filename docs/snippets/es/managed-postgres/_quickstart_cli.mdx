@@ -2,7 +2,7 @@
 title: Inicio rápido de la CLI
 ---
 
-En esta página se explica el aprovisionamiento de ClickHouse Managed Postgres, la carga de datos, su replicación a ClickHouse y la ejecución de consultas, todo desde la línea de comandos con [clickhousectl](/es/concepts/features/interfaces/cli) y `psql`. Salvo el inicio de sesión opcional con `--interactive`, los comandos no son interactivos. `clickhousectl` genera JSON con `--json`, y también de forma automática cuando detecta un agente de programación; pase `--format` a `cloud service query` para obtener valores sin formato.
+En esta página se explica el aprovisionamiento de ClickHouse Managed Postgres, la carga de datos, su replicación a ClickHouse y la ejecución de consultas, todo desde la línea de comandos con [clickhousectl](/es/concepts/features/interfaces/cli) y `psql`. Salvo el inicio de sesión opcional con `--interactive`, los comandos no son interactivos. `clickhousectl` genera JSON con `--json`, y también de forma automática cuando detecta un agente de programación; pase `--format` a `cloud clickhouse query` para obtener valores sin formato.
 
 ## Requisitos previos {#prerequisites}
 
@@ -198,7 +198,7 @@ psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type O
 Cree un servicio en la misma región y guarde la respuesta; la contraseña solo aparece en la respuesta de creación:
 
 ```bash
-clickhousectl cloud service create \
+clickhousectl cloud clickhouse create \
   --name quickstart-ch \
   --region us-east-1 \
   --json > ch.json
@@ -210,12 +210,12 @@ CH_PASSWORD=$(jq -r .password ch.json)
 Espere hasta que esté en ejecución; ClickPipe requiere que el destino esté en ejecución:
 
 ```bash
-while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+while [ "$(clickhousectl cloud clickhouse get "$CH_ID" --json | jq -r .state)" != "running" ]; do
   sleep 15
 done
 ```
 
-Para usar un servicio existente, configure `CH_ID` con el valor de `clickhousectl cloud service list` y `CH_PASSWORD` con la contraseña del usuario `default`, que necesita el paso `pg_clickhouse`.
+Para usar un servicio existente, configure `CH_ID` con el valor de `clickhousectl cloud clickhouse list` y `CH_PASSWORD` con la contraseña del usuario `default`, que necesita el paso `pg_clickhouse`.
 
 ### Replicar las tablas en ClickHouse {#replicate-to-clickhouse}
 
@@ -266,7 +266,7 @@ done
 Ejecuta consultas SQL directamente desde la CLI en el servicio de ClickHouse. En la primera llamada, clickhousectl añade tu clave de API al endpoint de Query API del servicio y crea el endpoint si aún no existe; no se crea ninguna clave nueva. Pasa `--no-auto-enable` para que, en su lugar, la operación falle. `--format TabSeparated` imprime solo el valor, sin formato adicional, del que depende la comparación siguiente:
 
 ```bash
-clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+clickhousectl cloud clickhouse query "$CH_ID" --format TabSeparated \
   --query "SELECT count() FROM public_events FINAL WHERE _peerdb_is_deleted = 0"
 ```
 
@@ -277,12 +277,12 @@ Binding the authenticated API key to the Query API endpoint for service 'quickst
 1000000
 ```
 
-Las nuevas operaciones de escritura en Postgres se replican de forma continua. Inserte una fila y consulte repetidamente hasta que el recuento alcance 1.000.001 (normalmente, en menos de un minuto):
+Las nuevas operaciones de escritura en Postgres se replican de forma continua. Inserte una fila y consulte repetidamente hasta que el recuento alcance 1,000,001 (normalmente, en menos de un minuto):
 
 ```bash
 psql "$PG_URL" -c "INSERT INTO events (event_name, event_type, user_id, user_ip) VALUES ('cdc-test', 'click', 42, '10.0.0.1');"
 
-while [ "$(clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+while [ "$(clickhousectl cloud clickhouse query "$CH_ID" --format TabSeparated \
   --query "SELECT count() FROM public_events FINAL WHERE _peerdb_is_deleted = 0")" != "1000001" ]; do
   sleep 10
 done
@@ -290,10 +290,10 @@ done
 
 ### Consultar ClickHouse desde Postgres {#query-clickhouse-from-postgres}
 
-La extensión [`pg_clickhouse`](/es/products/managed-postgres/extensions/pg_clickhouse/introduction) permite que Postgres actúe como una capa de consulta unificada para datos transaccionales y analíticos. Obtén el nombre de host HTTPS de ClickHouse y, a continuación, configura la extensión con `psql`:
+La extensión [`pg_clickhouse`](/es/products/managed-postgres/extensions/pg_clickhouse/introduction) permite que Postgres actúe como una capa de consulta unificada para datos transaccionales y analíticos. Obtén el nombre del host HTTPS de ClickHouse y, a continuación, configura la extensión con `psql`:
 
 ```bash
-CH_HOST=$(clickhousectl cloud service get "$CH_ID" --json \
+CH_HOST=$(clickhousectl cloud clickhouse get "$CH_ID" --json \
   | jq -r '.endpoints[] | select(.protocol=="https") | .host')
 
 psql "$PG_URL" <<SQL
@@ -309,7 +309,7 @@ SQL
 
 El heredoc se deja sin comillas a propósito, para que el shell sustituya `$CH_HOST` y `$CH_PASSWORD` antes de que el SQL llegue a Postgres. Las tablas replicadas ahora aparecen como tablas externas en el esquema `organization`; las consultas contra ellas se ejecutan en ClickHouse.
 
-Medido en `m6gd.large` con este conjunto de datos, las consultas analíticas se ejecutan entre 6 y 9 veces más rápido mediante las tablas externas (por ejemplo, un GROUP BY de 5 agregaciones: 176 ms vía ClickHouse frente a 1.133 ms localmente; un JOIN con agregaciones: 298 ms frente a 2.764 ms).
+Medido en `m6gd.large` con este conjunto de datos, las consultas analíticas se ejecutan entre 6 y 9 veces más rápido mediante las tablas externas (por ejemplo, un GROUP BY de 5 agregaciones: 176 ms vía ClickHouse frente a 1,133 ms localmente; un JOIN con agregaciones: 298 ms frente a 2,764 ms).
 
 ## Limpieza {#cleanup-resources}
 
@@ -323,5 +323,5 @@ clickhousectl cloud postgres delete "$PG_ID"
 No se puede eliminar directamente un servicio de ClickHouse en ejecución. `--force` lo detiene, espera a que se complete la detención y luego lo elimina:
 
 ```bash
-clickhousectl cloud service delete "$CH_ID" --force
+clickhousectl cloud clickhouse delete "$CH_ID" --force
 ```

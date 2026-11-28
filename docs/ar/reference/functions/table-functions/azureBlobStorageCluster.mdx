@@ -12,31 +12,57 @@ doc_type: 'reference'
 يتيح هذا معالجة الملفات من [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) بالتوازي باستخدام العديد من العقد في عنقود محدد. على العقدة البادئة، يُنشئ اتصالًا بجميع العقد في العنقود، ويفك علامات النجمة في مسار ملف S3، ويوزّع كل ملف ديناميكيًا. وعلى العقدة العاملة، يطلب من العقدة البادئة المهمة التالية لمعالجتها ثم يعالجها. ويتكرر ذلك حتى تكتمل جميع المهام.
 تشبه دالة الجدول هذه [الدالة s3Cluster](/ar/reference/functions/table-functions/s3Cluster).
 
-## البنية
+## الصيغة {#syntax}
 
-```sql
-azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
-```
+<Tabs>
+  <Tab title="سلسلة الاتصال">
+    تكون بيانات الاعتماد مُضمَّنة في سلسلة الاتصال، لذا لا حاجة إلى تمرير `account_name`/`account_key` بشكل منفصل:
 
-## المعاملات
+    ```sql
+    azureBlobStorageCluster(cluster_name, connection_string, container_name, blobpath [, format, compression, structure])
+    ```
+  </Tab>
 
-| Argument            | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster_name`      | اسم العنقود المستخدم لبناء مجموعة من العناوين ومعلمات الاتصال بالخوادم البعيدة والمحلية.                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `connection_string` | `storage_account_url` — تتضمن `connection_string` اسم الحساب والمفتاح ([إنشاء connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account))، أو يمكنك أيضًا توفير URL لحساب التخزين هنا، وتمرير اسم الحساب ومفتاحه كمعلمات منفصلة (راجع المعلمتين `account_name` و`account_key`) |
-| `container_name`    | اسم الحاوية                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `blobpath`          | مسار الملف. يدعم أحرف البدل التالية في وضع `readonly`: `*`, `**`, `?`, `{abc,def}` و `{N..M}`، حيث إن `N` و`M` — أرقام، و`'abc'` و`'def'` — سلاسل نصية.                                                                                                                                                                                                                                                                                                                                        |
-| `account_name`      | إذا استُخدم `storage_account_url`، فيمكن تحديد اسم الحساب هنا                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `account_key`       | إذا استُخدم `storage_account_url`، فيمكن تحديد مفتاح الحساب هنا                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `format`            | تنسيق الملف: [تنسيق](/ar/reference/formats/index)                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `compression`       | القيم المدعومة: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. افتراضيًا، سيُكتشف الضغط تلقائيًا من امتداد الملف. (وهو ما يعادل ضبطه على `auto`). بالنسبة إلى `snappy`، يُحدَّد تنسيق النقل عبر الشبكة بواسطة الإعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (`basic` افتراضيًا).                                                                                                                                |
-| `structure`         | بنية الجدول. التنسيق `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                            |
+  <Tab title="URL حساب التخزين">
+    يتطلب تمرير `account_name` و`account_key` كوسيطتين منفصلتين:
 
-## القيمة المعادة
+    ```sql
+    azureBlobStorageCluster(cluster_name, storage_account_url, container_name, blobpath, account_name, account_key [, format, compression, structure])
+    ```
+  </Tab>
+
+  <Tab title="Workload identity">
+    يستخدم Azure Workload Identity عبر `extra_credentials`، ولا يمكن الجمع بينه وبين `account_name` / `account_key`، كما يتطلب `storage_account_url` (وليس `connection_string`):
+
+    ```sql
+    azureBlobStorageCluster(cluster_name, storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, structure])
+    ```
+
+    يعتمد Workload Identity على هوية الخادم نفسه، ولذلك يُرفض افتراضيًا: فعّل الإعداد `allow_server_credentials_in_user_queries` في الـ session التي تُنفّذ الاستعلام أو في ملف تعريف الإعدادات الخاص بها.
+  </Tab>
+</Tabs>
+
+## الوسيطات {#arguments}
+
+| Argument              | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`        | اسم العنقود المستخدم لبناء مجموعة من العناوين ومعلمات الاتصال بالخوادم البعيدة والمحلية.                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `connection_string`   | سلسلة اتصال تتضمن بيانات اعتماد مضمنة (اسم الحساب + مفتاح الحساب أو رمز SAS). عند استخدام هذه الصيغة، يجب **عدم** تمرير `account_name` و`account_key` بشكل منفصل، ولا يمكن استخدام `client_id` / `tenant_id`. راجع [تهيئة سلسلة اتصال](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account). |
+| `storage_account_url` | عنوان URL لنقطة نهاية حساب التخزين، مثل `https://<account>.blob.core.windows.net/`. عند استخدام هذه الصيغة، مرّر إما `account_name` و`account_key`، أو `extra_credentials(client_id=, tenant_id=)` لاستخدام Workload Identity.                                                                                                                                                                                                                                                                     |
+| `container_name`      | اسم الحاوية                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `blobpath`            | مسار الملف. يدعم أحرف البدل التالية في وضع `readonly`: `*`, `**`, `?`, `{abc,def}` و `{N..M}`، حيث إن `N` و`M` — أرقام، و`'abc'` و`'def'` — سلاسل نصية.                                                                                                                                                                                                                                                                                                                                         |
+| `account_name`        | اسم حساب التخزين. **مطلوب** عند استخدام `storage_account_url` دون SAS أو Workload Identity؛ يجب **عدم** تمريره مع `connection_string` أو `extra_credentials`.                                                                                                                                                                                                                                                                                                                                      |
+| `account_key`         | مفتاح حساب التخزين. **مطلوب** عند استخدام `storage_account_url` دون SAS أو Workload Identity؛ يجب **عدم** تمريره مع `connection_string` أو `extra_credentials`.                                                                                                                                                                                                                                                                                                                                    |
+| `format`              | تنسيق الملف: [تنسيق](/ar/reference/formats/index)                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `compression`         | القيم المدعومة: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. افتراضيًا، سيُكتشف الضغط تلقائيًا من امتداد الملف. (وهو ما يعادل ضبطه على `auto`). بالنسبة إلى `snappy`، يُحدَّد تنسيق النقل عبر الشبكة بواسطة الإعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (`basic` افتراضيًا).                                                                                                                                 |
+| `structure`           | بنية الجدول. التنسيق `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `extra_credentials`   | استخدم `client_id` و`tenant_id` للمصادقة باستخدام Workload Identity في Azure. لا يمكن استخدامه مع `account_name` / `account_key`، ويتطلب `storage_account_url` (وليس `connection_string`). يجب تعيين `AZURE_FEDERATED_TOKEN_FILE` على كل عقدة في العنقود.                                                                                                                                                                                                                                          |
+
+## القيمة المعادة {#returned-value}
 
 جدول بالبنية المحددة لقراءة البيانات من الملف المحدد أو كتابتها فيه.
 
-## أمثلة
+## أمثلة {#examples}
 
 على غرار محرك الجدول [AzureBlobStorage](/ar/reference/engines/table-engines/integrations/azureBlobStorage)، يمكن للمستخدمين استخدام محاكي Azurite لتطوير Azure Storage محليًا. يمكن الاطلاع على مزيد من التفاصيل [هنا](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). نفترض أدناه أن Azurite متاح على اسم المضيف `azurite1`.
 
@@ -49,11 +75,11 @@ SELECT count(*) FROM azureBlobStorageCluster(
         'auto', 'key UInt64')
 ```
 
-## استخدام توقيعات الوصول المشتركة (SAS)
+## استخدام توقيعات الوصول المشتركة (SAS) {#using-shared-access-signatures-sas-sas-tokens}
 
 راجع [azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) للاطلاع على أمثلة.
 
-## ذو صلة
+## ذو صلة {#related}
 
 * [محرك AzureBlobStorage](/ar/reference/engines/table-engines/integrations/azureBlobStorage)
 * [دالة الجدول azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage)

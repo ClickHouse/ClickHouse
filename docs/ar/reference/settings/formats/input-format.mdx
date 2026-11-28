@@ -1067,6 +1067,23 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 مسار الملف المستخدَم لتسجيل الأخطاء أثناء قراءة تنسيقات النص (CSV، TSV).
 
+## input_format_skip_duplicated_fields {#input_format_skip_duplicated_fields}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "إعداد جديد لتخطي مرات الظهور المتكررة لحقل ضمن صف من بيانات الإدخال بدلاً من إطلاق استثناء."}]}]} />
+
+يُفعّل أو يُعطّل تخطي مرات الظهور المتكررة لحقل ضمن صف واحد من بيانات الإدخال.
+
+عند تفعيله، يحتفظ الحقل الذي يتكرر في الصف بقيمته الأولى، وتُتخطّى مرات ظهوره الأخرى بدلاً من إطلاق الاستثناء `Duplicate field found`. وعندئذٍ يُحدَّد نوع هذا الحقل عند استنتاج المخطط بناءً على قيمته الأولى.
+
+الصيغ المدعومة:
+
+* `JSONEachRow` والصيغ التي تقرأ كائنات JSON بالطريقة نفسها (`JSONStringsEachRow`، و`JSONObjectEachRow`، وصفوف `JSON`)، بما في ذلك الحقول المتداخلة التي تُقرأ باستخدام `input_format_import_nested_json`
+* `BSONEachRow`
+* `TSKV`
+* `Form`
+
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

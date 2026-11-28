@@ -1,0 +1,38 @@
+---
+description: 'Documentação sobre colunas fixadas (fixas) na Interface Web SQL integrada (`/play`)'
+sidebarTitle: 'Colunas fixadas na interface web'
+slug: /concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/pinned-columns
+title: 'Colunas fixadas na interface web'
+doc_type: 'reference'
+sidebar: false
+---
+
+A Interface Web SQL integrada (`play.html`, disponibilizada no caminho [`/play`](/pt-BR/concepts/features/connect-to-clickhouse/protocols/http) de qualquer porta HTTP do ClickHouse) pode manter colunas escolhidas de um resultado visíveis enquanto o restante da tabela é rolado horizontalmente. Uma coluna fixada permanece presa à borda mais próxima da área de resultados em vez de sumir com a rolagem. Assim, uma coluna-chave — um identificador, um nome, uma data — continua visível ao lado das colunas mais à direita que você estiver lendo.
+
+## Fixando uma coluna {#pinning-a-column}
+
+Um ícone de 📌 alfinete aparece à esquerda de cada cabeçalho de coluna. Clique nele para fixar a coluna; clique novamente para desafixá-la. O ícone é um botão de verdade, então quem usa o teclado pode chegar até ele com a tecla Tab e alterná-lo pelo teclado, e ele informa seu estado de fixação às tecnologias assistivas.
+
+Em dispositivos com ponteiro que permite passar o cursor sobre os elementos (como um mouse), o ícone só aparece enquanto o cursor está sobre o cabeçalho ou quando o botão de alternância está em foco, para não atrapalhar no restante do tempo. Já em dispositivos de toque e outros dispositivos de ponteiro impreciso, que não têm esse recurso, o ícone é sempre exibido para que possa ser tocado diretamente. Em uma coluna fixada, o ícone permanece exibido com intensidade total, indicando que a coluna está fixada.
+
+## Quando a fixação está disponível {#when-pinning-is-available}
+
+A fixação só é oferecida quando a tabela é larga o suficiente para permitir rolagem horizontal. Quando a tabela inteira cabe na área de visualização, nenhum conteúdo sai de vista com a rolagem; por isso, o botão de alternância de fixação fica desabilitado e é excluído da ordem de tabulação do teclado. Assim que o resultado passa a permitir rolagem horizontal — seja por ser um resultado largo, por causa de uma janela estreita ou por um resultado em streaming que cresce horizontalmente —, os botões de alternância ficam ativos.
+
+## Como uma coluna fixada se comporta durante a rolagem {#how-a-pinned-column-behaves-when-scrolling}
+
+Uma coluna fixada desliza junto com o conteúdo durante a rolagem horizontal até o ponto em que sairia da área de visualização; a partir daí, ela se prende à borda mais próxima — a borda esquerda para colunas à esquerda e a borda direita para colunas à direita — e permanece visível. Quando há várias colunas fixadas, elas se empilham junto à borda na ordem original, cada uma separada do conteúdo rolável por uma linha divisória. Uma célula fixada é exibida por cima das células comuns que rolam por baixo dela, inclusive de uma célula selecionada, para que permaneça sempre legível.
+
+## Compartilhado em um resultado {#shared-across-a-result}
+
+As fixações são controladas pelo nome da coluna e compartilhadas entre as tabelas de resultados que pertencem a um mesmo resultado — uma execução de `Run all` (várias consultas) renderiza uma tabela por instrução, e todas elas compartilham o mesmo conjunto de colunas fixadas —, assim como acontece com os [modos de codificação por cores](/pt-BR/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding) por coluna. Fixar uma coluna chamada `id` em uma dessas tabelas mantém fixada a coluna chamada `id` nas demais e nas execuções posteriores da mesma consulta que retornarem essa coluna.
+
+O conjunto de colunas fixadas pertence ao resultado a que se refere: à aba de consulta e, em uma aba que seja um [notebook](/pt-BR/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook), a cada célula individualmente. Por isso, fixar uma coluna em uma célula não afeta as outras células — nem as outras abas —, que mantêm suas próprias fixações independentes.
+
+## Persistência {#persistence}
+
+O conjunto de colunas fixadas fica registrado na URL da página, no histórico do navegador e no snapshot do resultado da célula à qual pertence. Assim, ele é preservado ao recarregar a página, compartilhar o link ou navegar para trás e para a frente. Fixar ou desafixar uma coluna em uma célula que não está com o editor no momento também atualiza a cópia salva dessa célula, de modo que o estado se mantém após um recarregamento. Apenas as colunas fixadas são armazenadas — um conjunto vazio não adiciona nada à URL nem ao estado do histórico —, para que a URL e o histórico permaneçam compactos.
+
+## Limitações {#limitations}
+
+* O layout vertical (transposto) de linha única não tem colunas com rolagem horizontal e, portanto, não oferece fixação.

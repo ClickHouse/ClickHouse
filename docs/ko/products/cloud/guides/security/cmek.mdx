@@ -46,7 +46,7 @@ TDE는 서비스 생성 시 활성화해야 합니다. 기존 서비스는 생�
 </div>
 
 <Warning>
-  ClickHouse Cloud 서비스를 암호화하는 데 사용된 KMS 키를 삭제하면 ClickHouse 서비스가 중지되며, 기존 백업을 포함한 데이터는 복구할 수 없게 됩니다. 키를 교체할 때 실수로 데이터가 손실되는 것을 방지하려면 삭제하기 전에 일정 기간 기존 KMS 키를 유지하는 것이 좋습니다.
+  ClickHouse Cloud 서비스를 암호화하는 데 사용된 KMS 키를 영구적으로 삭제하면 서비스 데이터와 기존 백업을 복구할 수 없게 됩니다. 키를 삭제하면 먼저 서비스가 중지되며, 대부분의 KMS 서비스 제공업체는 삭제된 키를 완전히 폐기하기 전까지 일정 대기 기간 동안 복구 가능한 상태로 유지합니다([KMS 키 폴러](#kms-key-poller) 참조). 키를 교체할 때 실수로 데이터가 손실되는 것을 방지하려면 기존 KMS 키를 삭제하기 전에 일정 기간 유지하십시오.
 </Warning>
 
 서비스가 TDE로 암호화된 후에는 키를 업데이트하여 CMEK를 활성화할 수 있습니다. TDE 설정을 업데이트하면 서비스가 자동으로 재시작됩니다. 이 과정에서 기존 KMS 키는 데이터 암호화 키(DEK)를 복호화하고, 새 KMS 키는 DEK를 다시 암호화합니다. 이렇게 하면 서비스가 재시작된 후부터는 새 KMS 키가 암호화 작업에 사용됩니다. 이 과정은 몇 분 정도 걸릴 수 있습니다.
@@ -87,7 +87,7 @@ TDE는 서비스 생성 시 활성화해야 합니다. 기존 서비스는 생�
 
   9. Key ARN을 복사합니다
 
-  10. ClickHouse Cloud로 돌아가 Service Settings의 Transparent Data Encryption 섹션에 Key ARN을 붙여넣습니다
+  10. ClickHouse Cloud로 돌아가 서비스 설정의 투명한 데이터 암호화(Transparent Data Encryption) 섹션에 Key ARN을 붙여넣습니다
 
   11. 변경 사항을 저장합니다
 </Accordion>
@@ -104,7 +104,7 @@ TDE는 서비스 생성 시 활성화해야 합니다. 기존 서비스는 생�
      * Cloud KMS Viewer
   8. 키 권한을 저장합니다
   9. Key Resource Path를 복사합니다
-  10. ClickHouse Cloud로 돌아가 Service Settings의 Transparent Data Encryption 섹션에 Key Resource Path를 붙여넣습니다
+  10. ClickHouse Cloud로 돌아가 서비스 설정의 투명한 데이터 암호화(Transparent Data Encryption) 섹션에 Key Resource Path를 붙여넣습니다
   11. 변경 사항을 저장합니다
 </Accordion>
 
@@ -142,11 +142,19 @@ TDE는 서비스 생성 시 활성화해야 합니다. 기존 서비스는 생�
 
 CMEK를 설정한 후에는 위 절차에 따라 새 KMS 키를 생성하고 권한을 부여해 키를 순환하십시오. 그런 다음 서비스 설정으로 돌아가 새 ARN(AWS), Key Resource Path(GCP) 또는 Key Name(Azure)을 붙여 넣고 설정을 저장하십시오. 새 키를 적용하기 위해 서비스가 다시 시작됩니다.
 
-<div id="kms-key-poller">
-  #### KMS 키 폴러 {#kms-key-poller}
-</div>
+#### KMS 키 폴러 {#kms-key-poller}
 
-CMEK를 사용하는 경우 제공된 KMS 키의 유효성을 10분마다 확인합니다. KMS 키에 대한 액세스가 유효하지 않으면 ClickHouse 서비스가 중지됩니다. 서비스를 다시 재개하려면 이 가이드의 단계에 따라 KMS 키 액세스를 복원한 후 서비스를 다시 시작하십시오.
+CMEK를 사용하면 제공된 KMS 키의 유효성을 10분마다 검사합니다. KMS 키에 액세스할 수 없게 되면 ClickHouse 서비스가 중지됩니다. 서비스를 재개하려면 이 가이드의 단계에 따라 KMS 키에 대한 액세스를 복원한 다음 서비스를 재시작하십시오.
+
+키 폴러에 의해 중지된 서비스는 삭제되지 않으며, 복구 기한도 없습니다. 키가 철회되었거나 비활성화된 경우에는 키에 대한 액세스를 복원하고 서비스를 재시작하면 서비스가 데이터와 함께 다시 실행됩니다.
+
+반면 키 삭제는 상황이 다릅니다. 키가 영구적으로 삭제되면 서비스 데이터와 해당 백업을 더 이상 복호화할 수 없습니다([고객 관리형 암호화 키](#customer-managed-encryption-keys-cmek)의 경고 참조). 각 KMS 서비스 제공업체는 삭제된 키를 파기하기 전에 일정한 대기 기간 동안 복구 가능한 상태로 유지합니다.
+
+* AWS KMS: 7~30일(기본값 30일). [키 삭제를 취소](https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys-cancelling-key-deletion.html)한 다음 키를 활성화하십시오.
+* GCP Cloud KMS: 24시간~120일(기본값 30일). 이 기간은 키를 생성할 때 설정되며 이후에는 변경할 수 없으므로, 짧은 기간으로 생성된 키는 파기가 예약된 지 24시간 만에 파기될 수도 있습니다. 기본값을 전제로 하지 말고 키 버전의 예약된 파기 시간을 확인하십시오. [키 버전을 복원](https://docs.cloud.google.com/kms/docs/destroy-restore)한 다음 활성화하십시오.
+* Azure Key Vault: 볼트에 일시 삭제(soft-delete)가 활성화되어 있고 키가 purge되지 않은 경우 7~90일. 제거 보호(purge protection)가 설정되어 있지 않으면 삭제된 키가 이 기간이 끝나기 전에 영구적으로 purge될 수 있습니다. 기간 만료 전 영구 삭제를 방지하려면 제거 보호를 활성화하십시오. [삭제된 키를 복구](https://learn.microsoft.com/en-us/azure/key-vault/general/key-vault-recovery)하십시오.
+
+키를 다시 사용할 수 있게 되면 서비스를 재시작하십시오.
 
 <div id="backup-and-restore">
   ### 백업 및 복원 {#backup-and-restore}

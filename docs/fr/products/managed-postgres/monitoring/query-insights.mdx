@@ -2,15 +2,15 @@
 slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'Query insights'
 title: 'Query insights pour Postgres'
-description: 'Télémétrie par statement pour ClickHouse Managed Postgres : chaque motif de requête exécuté par votre base de données, classé par impact, avec les compteurs de diagnostic qui expliquent pourquoi chacun est lent'
-keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'slow queries', 'p99 latency', 'query patterns', 'postgres performance', 'temp blocks', 'parallel workers', 'wal', 'wait events', 'lock waits', 'blocked sessions']
+description: 'Télémétrie par statement pour ClickHouse Managed Postgres : chaque modèle de requête exécuté par votre base de données, classé par impact, avec les compteurs de diagnostic qui expliquent pourquoi chacun est lent'
+keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'slow queries', 'p99 latency', 'query patterns', 'postgres performance', 'temp blocks', 'parallel workers', 'wal', 'wait events', 'lock waits', 'blocked sessions', 'blocking queries']
 doc_type: 'guide'
 ---
 
 Query Insights recueille la télémétrie de chaque statement de votre
 instance [ClickHouse Managed Postgres](/fr/products/managed-postgres/overview) et classe chaque
-motif de requête par impact, afin de vous permettre de passer de &quot;le p99 dérive
-à la hausse&quot; à &quot;ce motif écrit sur disque&quot; sans quitter la Console Cloud.
+modèle de requête par impact, afin de vous permettre de passer de &quot;le p99 dérive
+à la hausse&quot; à &quot;ce modèle écrit sur disque&quot; sans quitter la Console Cloud.
 
 Les données par statement proviennent de [`pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch),
 l’extension Postgres open-source qui transmet en flux des compteurs par statement vers
@@ -25,13 +25,14 @@ Ouvrez votre instance ClickHouse Managed Postgres dans la Console Cloud, puis cl
 zones, dans l&#39;ordre où vous les utiliserez réellement :
 
 * Un **vue d’ensemble** qui affiche sur un seul écran un aperçu de l&#39;état de santé de la base de données.
-* Une table **requête lente récurrente** qui classe chaque modèle de requête exécuté par votre base de données,
+* Une table **Modèles de requêtes lents** qui classe chaque motif de requête exécuté par votre base de données,
   triée selon le critère qui vous semble pertinent.
 * Un panneau **Requêtes récentes** qui répertorie les exécutions individuelles dans l&#39;ordre
   chronologique inverse.
-* Une table **Waits** qui classe les événements d&#39;attente dans lesquels les sessions actives ont passé
-  du temps.
-* Un **volet de détail** qui agrège tous les compteurs pour un seul modèle.
+* Un onglet **Waits** qui classe les événements d&#39;attente dans lesquels les sessions actives ont passé
+  du temps, avec une table **Requêtes bloquantes** qui indique quelles sessions
+  ont bloqué des requêtes en attente de verrous.
+* Un **panneau latéral de détails** qui agrège tous les compteurs pour un seul motif.
 
 Utilisez le sélecteur **Time period** en haut pour basculer entre les 15
 dernières minutes, la dernière heure, le dernier jour, la dernière semaine ou le dernier mois. La taille des buckets d&#39;agrégation s&#39;ajuste
@@ -64,7 +65,7 @@ ou nul, et des latences par percentile qui restent proches les unes des autres.
   </Frame>
 </div>
 
-### Graphiques d’attente {#wait-charts}
+### Graphiques des attentes {#wait-charts}
 
 La troisième ligne indique ce sur quoi les sessions actives de l’instance principale étaient en attente,
 à partir d’[échantillons prélevés toutes les 30 secondes](#how-waits) :
@@ -76,12 +77,12 @@ La troisième ligne indique ce sur quoi les sessions actives de l’instance pri
 | **Blocked sessions**             | Nombre moyen de sessions bloquées par un verrou.                                                                                                                                                                   |
 
 Si **Blocked sessions** reste au-dessus de zéro pendant que **Lock wait
-time** augmente, cela peut signaler une contention de verrou persistante. Cliquez sur n’importe quel
-graphique d’attente pour ouvrir la table [Waits](#waits).
+time** augmente, cela peut signaler une contention de verrou persistante. Cliquez sur
+**Active sessions by wait type** pour ouvrir l’onglet [Waits](#waits).
 
 <div className="ch-image-lg">
   <Frame>
-    ![Graphiques d’attente montrant les sessions actives empilées par type d’attente, le délai d’attente de verrou (p50, p95 et maximum) et les sessions bloquées au fil du temps](/images/managed-postgres/monitoring/query-insights-wait-charts.webp)
+    ![Graphiques des attentes montrant les sessions actives empilées par type d’attente, le délai d’attente de verrou (p50, p95 et maximum) et les sessions bloquées au fil du temps](/images/managed-postgres/monitoring/query-insights-wait-charts.webp)
   </Frame>
 </div>
 
@@ -166,8 +167,10 @@ ciblé sur le motif de cette exécution précise.
 
 ## Waits {#waits}
 
-Développez **Waits** ou cliquez sur un [graphique d&#39;attente](#wait-charts) pour afficher les événements
-d&#39;attente classés selon le nombre moyen de sessions actives sur la période sélectionnée.
+Ouvrez l&#39;onglet **Waits** ou cliquez sur **Active sessions by wait type** dans les
+[graphiques des attentes](#wait-charts) pour afficher le même graphique ainsi qu&#39;un tableau **Wait events
+breakdown** qui classe les événements d&#39;attente selon le nombre moyen de sessions actives sur
+la période sélectionnée.
 
 <div className="ch-image-lg">
   <Frame>
@@ -184,6 +187,66 @@ d&#39;attente classés selon le nombre moyen de sessions actives sur la période
 
 Pour une description de chaque événement, consultez la
 [référence des événements d&#39;attente de Postgres](https://www.postgresql.org/docs/current/monitoring-stats.html#WAIT-EVENT-TABLE).
+
+### Requêtes bloquantes {#blocking-queries}
+
+Sous le tableau des événements d’attente, **Requêtes bloquantes** indique quelles requêtes ont attendu
+des verrous et quelles sessions les ont bloquées. Une session bloquante
+détient soit un verrou incompatible, soit une place plus avancée dans la file d’attente pour l’obtenir.
+Chaque ligne associe une requête en attente à son bloqueur direct et peut
+regrouper des échantillons provenant de plusieurs sessions. Les paires les plus
+fréquemment observées apparaissent en premier.
+
+La collecte est désactivée par défaut. Pour la démarrer, activez le
+commutateur **Enable** à côté du titre **Requêtes bloquantes**. Seuls les utilisateurs autorisés à
+gérer le service peuvent activer ou désactiver la collecte, et les réplicas de lecture
+reprennent le paramètre de l’instance principale. L’échantillonnage démarre généralement en une minute environ.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Section Requêtes bloquantes avec la collecte désactivée : le commutateur Enable à côté du titre est désactivé et un message indique que la collecte des requêtes bloquantes est désactivée](/images/managed-postgres/monitoring/query-insights-blocking-queries-off.webp)
+  </Frame>
+</div>
+
+Lorsque la collecte est activée, le tableau affiche les requêtes bloquantes observées pendant la
+période sélectionnée. Pour arrêter la collecte, désactivez le commutateur **Enable**.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Section Requêtes bloquantes avec la collecte activée : le commutateur Enable est activé, au-dessus des filtres de base de données, d’utilisateur et d’application et d’un tableau comportant les colonnes Waiting query, Blocked by, Blocker application, Blocker state, Lock, Sessions, Longest wait et Last seen, montrant des attentes de verrous de ligne et de table derrière des bloqueurs active et idle in transaction](/images/managed-postgres/monitoring/query-insights-blocking-queries.webp)
+  </Frame>
+</div>
+
+| Colonne                 | Contenu                                                                                                                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Waiting query**       | Le texte normalisé de la requête qui a attendu le verrou.                                                                                                                                      |
+| **Blocked by**          | Le texte normalisé du statement en cours ou le plus récent du bloqueur.                                                                                                                        |
+| **Blocker application** | L’`application_name` des sessions bloquantes.                                                                                                                                                  |
+| **Blocker state**       | L’état du bloqueur lors du dernier échantillon, par exemple `active` ou `idle in transaction`. **waiting** signifie que le bloqueur attendait lui-même un verrou dans au moins un échantillon. |
+| **Lock**                | Le type de verrou, par exemple **Row** ou **Table**, et le mode de verrou demandé par la requête en attente, lors du dernier échantillon.                                                      |
+| **Sessions**            | Le nombre de sessions distinctes ayant attendu.                                                                                                                                                |
+| **Longest wait**        | La plus longue durée d’attente relevée pour une session en attente au moment de l’échantillonnage.                                                                                             |
+| **Last seen**           | L’heure de l’échantillon le plus récent ayant observé cette paire.                                                                                                                             |
+
+Ouvrez le sélecteur **Colonnes** pour afficher les utilisateurs, applications et PID des
+sessions en attente, ainsi que les utilisateurs et PID des sessions bloquantes. Filtrez le
+tableau par base de données, utilisateur ou application des sessions en attente.
+
+Un bloqueur à l’état `idle in transaction` est souvent le premier à traiter : il
+a ouvert une transaction, pris des verrous, et ne l’a ni validée ni annulée.
+Son texte **Blocked by** correspond à son statement le plus récent, qui n’est pas forcément
+celui qui a pris le verrou.
+
+**No query text** signifie que Query Insights ne dispose d’aucun texte pour ce statement.
+C’est le cas lorsque le dernier statement de la session bloquante était une commande
+utilitaire telle que `LOCK TABLE`, lorsqu’une requête attend un verrou de table
+avant que Postgres ne lui ait assigné un identifiant de requête, ou lorsque Query Insights
+n’a enregistré aucune exécution complète du statement. Query Insights masque également
+le texte des statements provenant des sessions que le service utilise en interne,
+par exemple pour la supervision et la réplication. La ligne affiche tout de même
+l’application, l’état et le verrou. **Prepared transaction** dans **Blocked
+by** signifie qu’une transaction préparée détient le verrou ; il n’y a donc aucune
+session bloquante à décrire.
 
 ## Panneau latéral de détails {#detail}
 
@@ -243,12 +306,13 @@ se trouve au même endroit, sur un seul écran.
 
 La télémétrie par statement est également disponible via
 [ClickHouse Cloud OpenAPI](/fr/products/managed-postgres/openapi#query-insights).
-La table [requête lente récurrente](#slow-patterns) correspond à l’endpoint
-[lister les modèles de requêtes lentes](/fr/products/cloud/api-reference/postgres/slow-query-patterns-get-list),
-et le [volet de détail](#detail) correspond à l’endpoint
-[récupérer un modèle de requête lente](/fr/products/cloud/api-reference/postgres/slow-query-pattern-get),
-qui renvoie les métriques agrégées d’un modèle ainsi que ses
-exécutions récentes.
+La table [Modèles de requêtes lents](#slow-patterns) correspond à l’endpoint
+[lister les motifs de requêtes lentes](/fr/products/cloud/api-reference/postgres/slow-query-patterns-get-list),
+et le [panneau latéral de détails](#detail) correspond à l’endpoint
+[récupérer un motif de requête lente](/fr/products/cloud/api-reference/postgres/slow-query-pattern-get),
+qui renvoie les métriques agrégées d’un motif ainsi que ses
+exécutions récentes. La table [Requêtes bloquantes](#blocking-queries) correspond à l’endpoint
+[lister les requêtes bloquantes](/fr/products/managed-postgres/openapi#list-blocking-queries).
 
 <div id="how-it-works">
   ## Fonctionnement {#how-it-works}
@@ -275,10 +339,16 @@ ralentir Postgres.
 
 ### Les attentes sont échantillonnées {#how-waits}
 
-Les [graphiques d&#39;attente](#wait-charts) et la table [Waits](#waits) s&#39;appuient sur des échantillons
+Les [graphiques des attentes](#wait-charts) et la table [Waits](#waits) s&#39;appuient sur des échantillons
 collectés toutes les 30 secondes sur l&#39;instance principale. Les attentes brèves peuvent survenir
 entièrement entre deux échantillons et ne pas apparaître : ces vues sont donc surtout
 utiles pour repérer les attentes prolongées et la contention de verrou.
+
+Les [requêtes bloquantes](#blocking-queries) sont elles aussi échantillonnées toutes les 30 secondes,
+sur chaque instance où la collecte est activée : un verrou détenu quelques
+secondes seulement peut donc ne pas apparaître. Chaque échantillon enregistre les identifiants de requêtes, et non le texte
+des requêtes. Le texte affiché dans la table provient des motifs normalisés que Query
+Insights collecte déjà : les valeurs littérales n&#39;y apparaissent donc jamais.
 
 <div id="how-raw-events">
   ### Événements bruts, non agrégés {#how-raw-events}
@@ -310,6 +380,6 @@ ClickHouse. Le code source et les tickets sont disponibles sur
 
 * [Tableau de bord Monitoring](/fr/products/managed-postgres/monitoring/dashboard) — graphiques intégrés sur les ressources et l’activité
 * [Prometheus endpoint](/fr/products/managed-postgres/monitoring/prometheus) — scraper les métriques au niveau de l’hôte dans votre propre stack d’observability
-* [ClickHouse Managed Postgres OpenAPI](/fr/products/managed-postgres/openapi#query-insights) — interroger par programmation les requête lente récurrente et les exécutions récentes
+* [ClickHouse Managed Postgres OpenAPI](/fr/products/managed-postgres/openapi#query-insights) — interroger par programmation les modèles de requêtes lents, les exécutions récentes et les requêtes bloquantes
 * [Extensions](/fr/products/managed-postgres/extensions) — les extensions disponibles sur les instances ClickHouse Managed Postgres
 * [`pg_stat_ch` sur GitHub](https://github.com/clickhouse/pg_stat_ch) — l’extension open-source sur laquelle repose Query Insights

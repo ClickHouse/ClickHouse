@@ -14,7 +14,7 @@ Estas opciones configuran el servidor ClickHouse y se generan automáticamente a
 
 ## vector_similarity_index_cache_max_entries {#vector_similarity_index_cache_max_entries}
 
-<SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="No" />Tamaño de la caché del índice de similitud vectorial, en entradas. Cero significa que está deshabilitada.
+<SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="Yes" />Tamaño de la caché del índice de similitud vectorial, en entradas. Cero significa que está deshabilitada.
 
 ## vector_similarity_index_cache_policy {#vector_similarity_index_cache_policy}
 
@@ -22,10 +22,14 @@ Estas opciones configuran el servidor ClickHouse y se generan automáticamente a
 
 ## vector_similarity_index_cache_size {#vector_similarity_index_cache_size}
 
-<SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Sí" />Tamaño de la caché para los índices de similitud vectorial. Cero significa que está deshabilitado.
+<SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />Tamaño de la caché para los índices de similitud vectorial. Cero significa que está deshabilitado.
 
 <Note>
-  Esta configuración puede modificarse en tiempo de ejecución y se aplicará de inmediato.
+  Este ajuste puede modificarse en tiempo de ejecución y se aplicará de inmediato.
+</Note>
+
+<Note>
+  En ClickHouse Cloud, el tamaño máximo de la caché depende del tamaño del pod de Kubernetes. El tamaño exacto puede consultarse en `system.server_settings`. Dado que los ajustes del servidor no pueden modificarse desde SQL ni desde la consola, póngase en contacto con el soporte técnico para configurar un tamaño mayor.
 </Note>
 
 ## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio}

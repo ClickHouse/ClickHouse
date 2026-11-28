@@ -7,9 +7,13 @@ title: 'mise en veille automatique'
 doc_type: 'guide'
 ---
 
-## Automatic idling {#automatic-idling}
+## Mise en veille automatique {#automatic-idling}
 
-L&#39;mise en veille automatique met en pause un ClickHouse Cloud service après une période sans queries soumises par l&#39;utilisateur, sous réserve des [conditions de mise en veille adaptative](#adaptive-idling). Vous pouvez activer la mise en veille automatique et configurer la durée d&#39;inactivité depuis la page **Settings** du service.
+La mise en veille automatique met en pause un service ClickHouse Cloud après une période sans requêtes soumises par l&#39;utilisateur, sous réserve des [conditions de mise en veille adaptative](#adaptive-idling). Vous pouvez activer la mise en veille automatique et configurer la durée d&#39;inactivité depuis la page **Settings** du service.
+
+<Note>
+  La [capacité de calcul Gen 2](/fr/products/cloud/features/compute-generations) ne prend pas en charge la mise en veille automatique pendant l&#39;aperçu privé.
+</Note>
 
 ## Qu&#39;est-ce qui est facturé lorsque le service est en pause ? {#billing-while-paused}
 

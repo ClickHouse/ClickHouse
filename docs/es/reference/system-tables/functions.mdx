@@ -16,6 +16,7 @@ Contiene información sobre las funciones normales y de agregación.
 
 * `name` ([String](/es/reference/data-types/string)) — El nombre de la función.
 * `is_aggregate` ([UInt8](/es/reference/data-types/int-uint)) — Indica si la función es una función de agregación.
+* `is_window` ([UInt8](/es/reference/data-types/int-uint)) — Indica si la función es una función de ventana que solo puede usarse con una cláusula `OVER`.
 * `case_insensitive` ([UInt8](/es/reference/data-types/int-uint)) — Indica si el nombre de la función se puede usar sin distinguir entre mayúsculas y minúsculas.
 * `alias_to` ([String](/es/reference/data-types/string)) — El nombre original de la función, si su nombre es un alias.
 * `create_query` ([String](/es/reference/data-types/string)) — Obsoleto.

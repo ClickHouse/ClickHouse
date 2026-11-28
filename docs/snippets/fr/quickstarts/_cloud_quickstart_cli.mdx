@@ -2,7 +2,7 @@
 title: Guide de démarrage rapide de Cloud CLI
 ---
 
-Cette page explique comment provisionner un service ClickHouse Cloud, s’y connecter et charger des données, le tout depuis la ligne de commande à l’aide de [Interface en ligne de commande de ClickHouse](/fr/concepts/features/interfaces/cli) (`clickhousectl`). À l’exception de la connexion facultative via `--interactive`, les commandes sont non interactives. `clickhousectl` génère du JSON avec `--json`, et le fait automatiquement lorsqu’il est exécuté par un agent de code.
+Cette page explique comment provisionner un service ClickHouse Cloud, s’y connecter et charger des données, le tout depuis la ligne de commande à l’aide de [Interface en ligne de commande de ClickHouse](/fr/concepts/features/interfaces/cli) (`clickhousectl`). À l’exception de la connexion facultative via `--interactive` et de l’authentification dans le navigateur pour `clickhouse client`, les commandes sont non interactives. `clickhousectl` génère du JSON avec `--json`, et le fait automatiquement lorsqu’il est exécuté par un agent de code.
 
 ## Prérequis {#prerequisites}
 
@@ -28,20 +28,24 @@ Vous pouvez également passer `--api-key` et `--api-secret`, ou définir les var
 
 ## Créer un service ClickHouse {#create-service}
 
-Créez le service et enregistrez la réponse ; le mot de passe de l’utilisateur `default` n’est affiché qu’une seule fois :
+Créez le service et enregistrez la réponse. Le mot de passe de l’utilisateur `default` n’est renvoyé qu’une seule fois ; c’est pourquoi `--dotenv` l’écrit, avec les paramètres de connexion, dans le fichier `.env` du répertoire courant au lieu de l’afficher :
 
 ```bash
-clickhousectl cloud service create \
+clickhousectl cloud clickhouse create \
   --name quickstart-ch \
   --region us-east-1 \
+  --dotenv \
   --json > ch.json
 ```
 
-La réponse inclut l’ID du service, les endpoints et le mot de passe généré (tronqué ici ; la réponse complète contient également les paramètres de scaling, la liste d’accès IP et les tags) :
+La réponse inclut l’ID du service, les endpoints et ce qui a été écrit dans `.env` (tronqué ici ; la réponse complète contient également les paramètres de scaling, la liste d’accès IP et les tags) :
 
 ```json
 {
-  "password": "dK7mPq2x_-TzrL9vNw0s",
+  "dotenv": {
+    "file": ".env",
+    "keys": ["CLICKHOUSE_HOST", "CLICKHOUSE_PORT", "CLICKHOUSE_HTTP_PORT", "CLICKHOUSE_USER", "CLICKHOUSE_SECURE", "CLICKHOUSE_PASSWORD"]
+  },
   "service": {
     "id": "4f7b92f3-4163-403a-b538-b9bc6e2e8f66",
     "name": "quickstart-ch",
@@ -67,34 +71,32 @@ La réponse inclut l’ID du service, les endpoints et le mot de passe généré
 }
 ```
 
-Extrayez les éléments nécessaires pour la suite de ce guide :
+Extrayez l’ID du service, requis par toutes les commandes suivantes :
 
 ```bash
 CH_ID=$(jq -r .service.id ch.json)
-CH_PASSWORD=$(jq -r .password ch.json)
-CH_HOST=$(jq -r '.service.endpoints[] | select(.protocol=="nativesecure") | .host' ch.json)
 ```
 
-Si le mot de passe est perdu, générez-en un nouveau avec `clickhousectl cloud service reset-password "$CH_ID"`.
+Le mot de passe n’est plus nécessaire pour la suite de ce guide ; votre application le lit dans `.env` via la variable `CLICKHOUSE_PASSWORD`. Ce fichier contient une information d’authentification : excluez-le donc du contrôle de version. Si le mot de passe est perdu, générez-en un nouveau avec `clickhousectl cloud clickhouse reset-password "$CH_ID"`.
 
-Les services créés avec `clickhousectl` utilisent par défaut une liste d’accès IP autorisant toutes les adresses (`0.0.0.0/0`). Pour restreindre l’accès, transmettez `--ip-allow` lors de la création du service ; consultez [&quot;Définir des filtres IP&quot;](/fr/products/cloud/guides/security/connectivity/setting-ip-filters).
+Les services créés avec `clickhousectl` utilisent par défaut une liste d’accès IP autorisant toutes les adresses (`0.0.0.0/0`). Pour restreindre l’accès, transmettez `--ip-allow` lors de la création du service ; consultez [&quot;Définir des filtres IP&quot;](/fr/products/cloud/guides/security/connectivity/setting-ip-filters).
 
 ## Attendez que le service soit provisionné {#wait-for-provisioning}
 
-Le provisionnement prend environ une minute. Interrogez le service jusqu’à ce que son état soit `running` :
+Le provisionnement prend environ une minute. Interrogez le service jusqu’à ce que son état soit `running` :
 
 ```bash
-while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+while [ "$(clickhousectl cloud clickhouse get "$CH_ID" --json | jq -r .state)" != "running" ]; do
   sleep 15
 done
 ```
 
 ## Exécuter du SQL avec l’API de requête {#run-sql}
 
-`clickhousectl cloud service query` exécute du SQL via HTTP, sans binaire `clickhouse` local ni mot de passe du service. Lors du premier appel, clickhousectl ajoute votre API key au point de terminaison de l’API de requêtes du service, en créant ce point de terminaison si nécessaire ; aucune nouvelle clé n’est créée. Passez l’option `--no-auto-enable` pour que la commande échoue plutôt :
+`clickhousectl cloud clickhouse query` exécute du SQL via HTTP, sans binaire `clickhouse` local ni mot de passe du service. Lors du premier appel, clickhousectl ajoute votre API key à l’endpoint de l’API de requêtes du service, en créant cet endpoint si nécessaire ; aucune nouvelle clé n’est créée. Passez l’option `--no-auto-enable` pour que la commande échoue plutôt :
 
 ```bash
-clickhousectl cloud service query "$CH_ID" --json --query "SHOW databases"
+clickhousectl cloud clickhouse query "$CH_ID" --json --query "SHOW databases"
 ```
 
 La première ligne de la sortie ci-dessous est écrite sur stderr et n&#39;apparaît que lorsque la CLI change d&#39;endpoint :
@@ -112,10 +114,10 @@ Par défaut, la sortie est au format `PrettyCompact` dans un terminal, `TabSepar
 ## Créer une base de données et une table {#create-database-and-table}
 
 ```bash
-clickhousectl cloud service query "$CH_ID" \
+clickhousectl cloud clickhouse query "$CH_ID" \
   --query "CREATE DATABASE IF NOT EXISTS helloworld"
 
-clickhousectl cloud service query "$CH_ID" \
+clickhousectl cloud clickhouse query "$CH_ID" \
   --query "CREATE TABLE helloworld.my_first_table (
     user_id UInt32,
     message String,
@@ -128,7 +130,7 @@ clickhousectl cloud service query "$CH_ID" \
 Chaque commande affiche `OK` sur stderr. Insérez quelques lignes :
 
 ```bash
-clickhousectl cloud service query "$CH_ID" <<'SQL'
+clickhousectl cloud clickhouse query "$CH_ID" <<'SQL'
 INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
   (101, 'Hello, ClickHouse!', now(), -1.0),
   (102, 'Insert a lot of rows per batch', yesterday(), 1.41421),
@@ -140,7 +142,7 @@ SQL
 Vérifiez que l’opération a réussi :
 
 ```bash
-clickhousectl cloud service query "$CH_ID" --json \
+clickhousectl cloud clickhouse query "$CH_ID" --json \
   --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp"
 ```
 
@@ -167,7 +169,7 @@ Supposons que le texte suivant se trouve dans un fichier CSV nommé `data.csv` :
 
 ```bash
 printf 'INSERT INTO helloworld.my_first_table FORMAT CSV\n' | cat - data.csv \
-  | clickhousectl cloud service query "$CH_ID"
+  | clickhousectl cloud clickhouse query "$CH_ID"
 ```
 
 L&#39;API de requête cesse d&#39;attendre au bout d&#39;environ 30 secondes, et un `INSERT` ayant expiré peut tout de même avoir été exécuté ; vérifiez donc le nombre de lignes avant toute nouvelle tentative. Pour les fichiers volumineux, utilisez plutôt [`clickhouse client`](#native-client).
@@ -175,7 +177,7 @@ L&#39;API de requête cesse d&#39;attendre au bout d&#39;environ 30 secondes, et
 Vérifiez que les nouvelles lignes ont bien été insérées :
 
 ```bash
-clickhousectl cloud service query "$CH_ID" --json \
+clickhousectl cloud clickhouse query "$CH_ID" --json \
   --query "SELECT count() FROM helloworld.my_first_table"
 ```
 
@@ -185,19 +187,16 @@ clickhousectl cloud service query "$CH_ID" --json \
 
 ## Se connecter avec clickhouse client {#native-client}
 
-Vous pouvez également vous connecter via le protocole natif à l’aide de [**clickhouse client**](/fr/concepts/features/interfaces/client). L’Interface en ligne de commande de ClickHouse gère le binaire `clickhouse` pour vous ; vous n’avez donc pas besoin d’installer un client séparément :
+Vous pouvez également vous connecter via le protocole natif à l’aide de [**clickhouse client**](/fr/concepts/features/interfaces/client). L’Interface en ligne de commande de ClickHouse gère le binaire `clickhouse` pour vous ; vous n’avez donc pas besoin d’installer un client séparément. `clickhousectl cloud clickhouse client` nécessite ClickHouse 25.12 ou une version ultérieure ; la commande suivante installe la dernière version et la définit comme version par défaut :
 
 ```bash
 clickhousectl local use latest
 ```
 
-Cela installe la dernière version de ClickHouse et crée un lien symbolique vers `~/.local/bin/clickhouse`, ce qui vous permet d’exécuter directement la commande `clickhouse` dès que `~/.local/bin` figure dans votre `PATH` (la commande affiche un message si ce n&#39;est pas le cas).
-
-Connectez-vous ensuite à l’aide du hostname et du mot de passe indiqués dans la réponse de création. Avec `--query`, le résultat s’affiche, puis le client se ferme ; sans cette option, vous accédez à l’invite interactive (`:)`), que vous quittez avec `exit` :
+`cloud clickhouse client` récupère l’hôte et le port du service, puis ouvre `clickhouse client` via TLS natif. Le client vous authentifie dans un navigateur avec votre utilisateur Cloud : aucun mot de passe n’est donc nécessaire, mais une personne doit finaliser la connexion. Les scripts et les agents de code doivent plutôt utiliser `cloud clickhouse query`. Avec `--query`, le résultat s’affiche, puis le client se ferme ; sans cette option, vous accédez à l’invite interactive (`:)`), que vous quittez avec `exit` :
 
 ```bash
-clickhouse client --host "$CH_HOST" --secure --port 9440 \
-  --user default --password "$CH_PASSWORD" \
+clickhousectl cloud clickhouse client "$CH_ID" \
   --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp FORMAT TabSeparated"
 ```
 
@@ -211,12 +210,11 @@ clickhouse client --host "$CH_HOST" --secure --port 9440 \
 101	Granules are the smallest chunks of data read	2026-08-27 10:41:33	3.14159
 ```
 
-La même syntaxe de commande permet de téléverser des fichiers. Elle n’est pas soumise au délai d’attente de l’API de requête ; utilisez-la donc pour les fichiers volumineux :
+La même commande permet de téléverser des fichiers, que le client lit depuis votre machine avec `FROM INFILE`. Elle n’est pas soumise au délai d’attente de l’API de requête ; utilisez-la donc pour les fichiers volumineux :
 
 ```bash
-clickhouse client --host "$CH_HOST" --secure --port 9440 \
-  --user default --password "$CH_PASSWORD" \
-  --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
+clickhousectl cloud clickhouse client "$CH_ID" \
+  --query "INSERT INTO helloworld.my_first_table FROM INFILE 'data.csv' FORMAT CSV"
 ```
 
 ClickHouse Cloud déduplique les blocs insérés identiques : charger une seconde fois le même fichier `data.csv` n’ajoute donc aucune ligne.
@@ -226,7 +224,7 @@ ClickHouse Cloud déduplique les blocs insérés identiques : charger une second
 La suppression d’un service efface définitivement toutes ses données. `--force` arrête d’abord un service en cours d’exécution et attend que l’arrêt soit terminé, ce qui peut prendre plusieurs minutes :
 
 ```bash
-clickhousectl cloud service delete "$CH_ID" --force
+clickhousectl cloud clickhouse delete "$CH_ID" --force
 ```
 
-Pour conserver les données sans payer le compute, arrêtez plutôt le service avec `clickhousectl cloud service stop "$CH_ID"`.
+Pour conserver les données sans payer le compute, arrêtez plutôt le service avec `clickhousectl cloud clickhouse stop "$CH_ID"`.

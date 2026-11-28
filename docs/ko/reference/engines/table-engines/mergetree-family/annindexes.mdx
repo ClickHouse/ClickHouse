@@ -461,7 +461,11 @@ SELECT 쿼리가 벡터 유사성 인덱스를 사용하려면 해당 인덱스�
 동일한 벡터 유사성 인덱스가 메인 메모리에 반복해서 로드되지 않도록 ClickHouse는 이러한 인덱스를 위한 전용 인메모리 캐시를 제공합니다.
 이 캐시가 클수록 불필요한 로드 발생은 줄어듭니다.
 최대 캐시 크기는 서버 설정 [vector&#95;similarity&#95;index&#95;cache&#95;size](/ko/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size)로 구성할 수 있습니다.
-기본적으로 캐시는 최대 5 GB까지 커질 수 있습니다.
+ClickHouse OSS에서는 기본적으로 캐시가 최대 5 GB까지 커질 수 있습니다.
+
+ClickHouse Cloud에서는 최대 캐시 크기가 pod 크기에 따라 달라집니다.
+정확한 크기는 [system.server&#95;settings](/ko/reference/system-tables/server_settings)에서 확인할 수 있습니다.
+서버 설정은 SQL이나 콘솔에서 변경할 수 없으므로, 캐시 크기를 늘리려면 지원팀에 문의하세요.
 
 다음 로그 메시지(`system.text_log`)는 벡터 유사성 인덱스가 로드되고 있음을 나타냅니다.
 이러한 메시지가 서로 다른 벡터 검색 쿼리에서 반복적으로 나타난다면, 캐시 크기가 너무 작다는 뜻입니다.
@@ -476,13 +480,13 @@ SELECT 쿼리가 벡터 유사성 인덱스를 사용하려면 해당 인덱스�
 
 <Note>
   벡터 유사성 인덱스 캐시는 벡터 인덱스 그래뉼을 저장합니다.
-  개별 벡터 인덱스 그래뉼의 크기가 캐시 크기보다 크면 캐시되지 않습니다.
-  따라서 &quot;스토리지 및 메모리 사용량 추정&quot;의 공식 또는 [system.data&#95;skipping&#95;indices](/ko/reference/system-tables/data_skipping_indices)를 기준으로 벡터 인덱스 크기를 계산한 뒤, 이에 맞춰 캐시 크기를 설정하십시오.
+  개별 벡터 인덱스 그래뉼의 크기가 캐시 크기보다 크면 해당 그래뉼은 캐시되지 않습니다.
+  따라서 &quot;스토리지 및 메모리 사용량 추정&quot;의 공식 또는 [system.data&#95;skipping&#95;indices](/ko/reference/system-tables/data_skipping_indices)를 바탕으로 벡터 인덱스 크기를 계산하고, 그에 맞게 캐시 크기를 설정하십시오.
 </Note>
 
-*느린 벡터 검색 쿼리를 조사할 때는 먼저 벡터 인덱스 캐시를 확인하고, 필요하면 크기를 늘려야 한다는 점을 다시 강조합니다.*
+*벡터 검색 쿼리가 느린 원인을 조사할 때는 가장 먼저 벡터 인덱스 캐시를 확인하고 필요하면 크기를 늘려야 한다는 점을 다시 한번 강조합니다.*
 
-현재 벡터 유사성 인덱스 캐시 크기는 [system.metrics](/ko/reference/system-tables/metrics)에서 확인할 수 있습니다:
+벡터 유사성 인덱스 캐시의 현재 크기는 [system.metrics](/ko/reference/system-tables/metrics)에서 확인할 수 있습니다:
 
 ```sql
 SELECT metric, value
@@ -499,6 +503,13 @@ SELECT ProfileEvents['VectorSimilarityIndexCacheHits'], ProfileEvents['VectorSim
 FROM system.query_log
 WHERE type = 'QueryFinish' AND query_id = '<...>'
 ORDER BY event_time_microseconds;
+```
+
+[`SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE`](/ko/reference/statements/system#drop-vector-similarity-index-cache) SQL 문은 캐시에서 모든 벡터 유사성 인덱스를 제거합니다.
+특정 테이블의 인덱스만 캐시에서 제거하려면 `FOR TABLE` 절을 추가하십시오:
+
+```sql
+SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE FOR TABLE tab;
 ```
 
 프로덕션 환경에서는 모든 벡터 인덱스가 항상 메모리에 상주할 수 있도록 캐시 크기를 충분히 크게 설정하는 것을 권장합니다.
@@ -527,7 +538,7 @@ ClickHouse 벡터 인덱스는 다음 양자화 옵션을 지원합니다.
 
 **데이터 전송 조정**
 
-벡터 검색 쿼리의 기준 벡터는 사용자가 제공하며, 일반적으로 Large Language Model (LLM)을 호출해 가져옵니다.
+벡터 검색 쿼리의 기준 벡터는 사용자가 제공하며, 일반적으로 대규모 언어 모델 (LLM)을 호출해 가져옵니다.
 ClickHouse에서 벡터 검색을 실행하는 일반적인 Python 코드는 다음과 같습니다
 
 ```python
@@ -549,7 +560,7 @@ result = chclient.query(
 또한 ClickHouse 서버 로그 파일에도 상당한 공간이 필요하며, 그 결과 `system.query_log` 역시 비대해집니다.
 
 대부분의 LLM 모델은 임베딩 벡터를 네이티브 float의 목록 또는 NumPy 배열로 반환합니다.
-따라서 Python 애플리케이션에서는 다음과 같은 방식으로 참조 벡터 매개변수를 바이너리 형식으로 바인딩하는 것을 권장합니다:
+따라서 Python 애플리케이션에서는 다음과 같은 방식으로 기준 벡터 매개변수를 바이너리 형식으로 바인딩하는 것을 권장합니다:
 
 ```python
 search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
@@ -689,7 +700,7 @@ LIMIT 3;
 
 #### 코덱 적용 {#quantized-codecs-declaring}
 
-`Array(Float32)`(또는 `Array(Float64)` / `Array(BFloat16)`) 컬럼에 `Quantized(...)` 코덱을 지정합니다.
+`Array(Float32)`(또는 `Array(Float64)` / `Array(BFloat16)` / `Array(Int8)` / `Array(UInt8)`) 컬럼에 `Quantized(...)` 코덱을 지정합니다.
 
 ```sql
 SET enable_quantized_codec = 1;
@@ -707,15 +718,20 @@ ORDER BY ...;
 
 #### 양자화 방식 {#quantized-codecs-methods}
 
-각 양자화 방식은 크기와 정확도 간에 서로 다른 절충 관계가 있습니다. `dimensions` 인수는 벡터 길이입니다.
+각 양자화 방식은 크기와 정확도 간에 서로 다른 절충 관계가 있습니다.
+`dimensions` 인수는 벡터 길이입니다.
 
-* `Quantized('rabitq', dimensions)` — 좌표당 1개의 부호 비트와 편향 없는 코사인 보정 계수(`dimensions/8 + 4`바이트)를 사용합니다. 작고, `popcount` 계산 비용이 낮으며, 기본값으로 쓰기 좋은 강력한 선택지입니다. `cosineDistance`만 지원합니다.
-* `Quantized('turboquant', dimensions)` — 더 높은 충실도의 후보를 위해 좌표당 2비트(1비트 MSE 코드와 1비트 잔차 코드)를 사용합니다(`dimensions/4 + 4`바이트). `cosineDistance`만 지원합니다.
+* `Quantized('rabitq', dimensions)` — 좌표당 1개의 부호 비트와 편향 없는 코사인 보정 계수(`dimensions/8 + 4`바이트)를 사용합니다. 작고, `popcount` 계산 비용이 낮으며, 기본값으로 쓰기 좋은 강력한 선택지입니다. 코사인 거리만 추정합니다. `L2Distance`는 아래를 참고하십시오.
+* `Quantized('turboquant', dimensions)` — 더 높은 충실도의 후보를 위해 좌표당 2비트(1비트 MSE 코드와 1비트 잔차 코드)를 사용합니다(`dimensions/4 + 4`바이트). 코사인 거리만 추정합니다. `L2Distance`는 아래를 참고하십시오.
 * `Quantized('int8', dimensions)` — 좌표당 `Int8` 코드 1개와 벡터 노름을 사용합니다(`dimensions + 4`바이트). 크기는 가장 크지만 원본 보존도가 가장 높은 플랫 코드입니다. `L2Distance`와 `cosineDistance`를 지원합니다.
 * `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka: 앞의 `leading_dimensions`개 좌표만 유지하고, `Int8`(벡터별 스케일 포함) 또는 `BFloat16`으로 저장합니다. Matryoshka Representation Learning으로 학습된 임베딩에 매우 작은 코드를 제공합니다. `L2Distance`와 `cosineDistance`를 지원합니다.
-* `Quantized('product', dimensions, nbits, m)` — Product Quantization: 파트별 코드북을 k-means로 학습하며, 각 벡터는 `nbits`비트 코드 `m`개로 표현됩니다(따라서 `dimensions`는 `m`의 배수여야 합니다). 가장 컴팩트한 옵션이며 바이트당 리콜도 가장 높지만, 삽입 시 학습 단계가 필요합니다. `L2Distance`와 `cosineDistance`를 지원합니다.
+* `Quantized('product', dimensions, nbits, m)` — Product Quantization: 파트별 코드북을 k-means로 학습하며, 각 벡터는 `nbits`비트 코드 `m`개로 표현됩니다(따라서 `dimensions`는 `m`의 배수여야 합니다). 가장 컴팩트한 옵션이며 바이트당 재현율도 가장 높지만, 삽입 시 학습 단계가 필요합니다. `L2Distance`와 `cosineDistance`를 지원합니다.
 
 `rabitq`와 `turboquant`는 `dimensions`가 8의 배수여야 합니다.
+
+`Array(Int8)` 및 `Array(UInt8)` 컬럼에서는 `int8` 메서드와 포맷이 `int8`인 `prefix` 메서드를 지원하지 않습니다. 이들 방식의 코드가 원본 벡터보다 작지 않기 때문입니다.
+`UInt8` 임베딩은 일반적으로 부호 있는 값을 128만큼 이동한 값입니다. `rabitq`와 `turboquant` 메서드는 벡터가 원점을 중심으로 분포한다고 가정하므로, `Array(UInt8)` 컬럼에서는 인코딩 전에 저장된 벡터와 기준 벡터의 각 원소에서 128을 뺍니다.
+따라서 최종 후보 목록은 이동된 벡터의 코사인 거리를 기준으로 순위가 매겨지지만, 최종 결과는 원본 벡터의 정확한 `cosineDistance`로 다시 점수를 매깁니다.
 
 #### 코덱 사용 {#quantized-codecs-searching}
 
@@ -733,10 +749,13 @@ SETTINGS vector_search_use_quantized_codes = 1;
 `vector_search_use_quantized_codes = 1`을 설정하면 옵티마이저가 쿼리를 2단계 스캔으로 재작성합니다.
 이 설정은 기본적으로 비활성화되어 있습니다.
 이 설정을 사용하지 않으면 동일한 쿼리가 원본 벡터를 대상으로 일반적인 정확 스캔으로 실행됩니다.
-모든 메서드는 거리 함수 `cosineDistance`를 지원하며, `int8`, `prefix`, `product` 메서드는 거리 함수 `L2Distance`도 추가로 지원합니다.
+모든 메서드는 거리 함수 `cosineDistance`와 `L2Distance`를 지원합니다.
+`int8`, `prefix`, `product` 메서드는 두 거리를 모두 추정합니다.
+`rabitq` 및 `turboquant` 메서드는 벡터 노름을 저장하지 않으므로 코사인 거리만 추정합니다. `L2Distance`를 사용하면 최종 후보 목록은 코사인 거리를 기준으로 순위가 매겨지고, 결과는 정확한 `L2Distance`로 재점수화됩니다.
+반환되는 거리는 정확하지만, 재현율은 벡터 노름의 편차 정도에 따라 달라집니다. 정규화된 벡터에서는 두 순위가 동일합니다.
 
 `vector_search_index_fetch_multiplier` 설정은 쿼리의 `LIMIT`를 기준으로 최종 후보 목록에 포함할 후보 수를 지정합니다.
-승수가 클수록 rescoring이 늘어나는 대신 재현율이 향상됩니다.
+승수가 클수록 재점수화가 늘어나는 대신 재현율이 향상됩니다.
 기본값은 `1`(오버샘플링 없음)이며, 일반적으로 좋은 재현율을 얻으려면 값을 높여야 합니다(예: `10`).
 
 ### Quantized Bit (QBit) {#approximate-nearest-neighbor-search-qbit}

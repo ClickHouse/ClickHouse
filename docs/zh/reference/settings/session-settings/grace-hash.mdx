@@ -19,7 +19,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "该设置不再处于实验性阶段，默认值保持不变。"}]}]} />
 
-grace hash join 的初始桶数量
+`grace_hash` JOIN 算法的初始桶数量。两张表的行会根据连接键的哈希值分配到各个桶中；内存中只保留一个桶，其余桶会写入磁盘，稍后再进行连接。当内存中的桶超出内存限制时，桶数量会翻倍，最多增加到 `grace_hash_join_max_buckets`。
+
+该值会向上取整为 2 的幂。若已知右表较大，设置较大的值可以避免对行进行重新分配，代价是会产生更多临时 File。
 
 ## grace_hash_join_max_buckets {#grace_hash_join_max_buckets}
 

@@ -11,31 +11,57 @@ doc_type: 'reference'
 指定されたクラスター内の多数のノードを使って、[Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) のファイルを並列に処理できます。イニシエーターでは、クラスター内のすべてのノードへの接続を確立し、S3 ファイルパス内のアスタリスクを展開して、各ファイルを動的に割り当てます。ワーカーノードでは、イニシエーターに次に処理するタスクを問い合わせて実行します。これを、すべてのタスクが完了するまで繰り返します。
 このテーブル関数は、[s3Cluster function](/ja/reference/functions/table-functions/s3Cluster) に似ています。
 
-## 構文
+## 構文 {#syntax}
 
-```sql
-azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
-```
+<Tabs>
+  <Tab title="接続文字列">
+    認証情報は接続文字列に埋め込まれているため、`account_name`/`account_key` を別途指定する必要はありません。
 
-## 引数
+    ```sql
+    azureBlobStorageCluster(cluster_name, connection_string, container_name, blobpath [, format, compression, structure])
+    ```
+  </Tab>
 
-| 引数                  | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster_name`      | リモートおよびローカルのサーバーのアドレス群と接続パラメータ一式を構築するために使用するクラスター名です。                                                                                                                                                                                                                                                                                                                                                                                             |
-| `connection_string` | `storage_account_url` — connection&#95;string にはアカウント名とキーが含まれます ([接続文字列の作成](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account))。また、ここでストレージアカウント URL を指定し、アカウント名とアカウントキーを個別のパラメータとして指定することもできます (`account_name` および `account_key` パラメータを参照)。 |
-| `container_name`    | コンテナー名                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `blobpath`          | ファイルパスです。readonly モードでは、次のワイルドカードをサポートします: `*`, `**`, `?`, `{abc,def}` および `{N..M}`。ここで `N`, `M` は数値、`'abc'`, `'def'` は文字列です。                                                                                                                                                                                                                                                                                                                     |
-| `account_name`      | `storage_account_url` を使用する場合は、ここでアカウント名を指定できます                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `account_key`       | `storage_account_url` を使用する場合は、ここでアカウントキーを指定できます                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `format`            | ファイルの[フォーマット](/ja/reference/formats/index)です。                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `compression`       | サポートされる値: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`。デフォルトでは、ファイル拡張子に基づいて圧縮を自動判定します (`auto` を設定した場合と同じです) 。`snappy` では、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定で選択されます (デフォルトは `basic`) 。                                                                                                                                                                |
-| `structure`         | テーブルの構造です。形式は `'column1_name column1_type, column2_name column2_type, ...'` です。                                                                                                                                                                                                                                                                                                                                                                   |
+  <Tab title="ストレージアカウント URL">
+    `account_name` と `account_key` をそれぞれ個別の引数として指定する必要があります。
 
-## 戻り値
+    ```sql
+    azureBlobStorageCluster(cluster_name, storage_account_url, container_name, blobpath, account_name, account_key [, format, compression, structure])
+    ```
+  </Tab>
+
+  <Tab title="Workload Identity">
+    `extra_credentials` を介して Azure Workload Identity を使用します。`account_name` / `account_key` とは併用できず、`connection_string` ではなく `storage_account_url` を指定する必要があります。
+
+    ```sql
+    azureBlobStorageCluster(cluster_name, storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, structure])
+    ```
+
+    Workload Identity はサーバー自身のアイデンティティを使用するため、デフォルトでは拒否されます。クエリを実行する session、またはその設定プロファイルで `allow_server_credentials_in_user_queries` を有効にしてください。
+  </Tab>
+</Tabs>
+
+## 引数 {#arguments}
+
+| 引数                    | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`        | リモートおよびローカルのサーバーのアドレス群と接続パラメータ一式を構築するために使用するクラスター名です。                                                                                                                                                                                                                                                                                                                                                                                 |
+| `connection_string`   | 埋め込み認証情報 (アカウント名 + アカウントキー、または SAS トークン) を含む接続文字列です。この形式を使用する場合、`account_name` と `account_key` を個別に渡しては**いけません**。また、`client_id` / `tenant_id` は使用できません。[接続文字列を構成する](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)を参照してください。 |
+| `storage_account_url` | ストレージアカウントのエンドポイント URL です (例: `https://<account>.blob.core.windows.net/`) 。この形式を使用する場合は、`account_name` と `account_key` を渡すか、Workload Identity を使う場合は `extra_credentials(client_id=, tenant_id=)` を渡します。                                                                                                                                                                                                                               |
+| `container_name`      | コンテナー名                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `blobpath`            | ファイルパスです。readonly モードでは、次のワイルドカードをサポートします: `*`, `**`, `?`, `{abc,def}` および `{N..M}`。ここで `N`, `M` は数値、`'abc'`, `'def'` は文字列です。                                                                                                                                                                                                                                                                                                         |
+| `account_name`        | ストレージアカウント名です。SAS または Workload Identity を使わずに `storage_account_url` を使用する場合は**必須**です。`connection_string` や `extra_credentials` と併せて渡しては**いけません**。                                                                                                                                                                                                                                                                                     |
+| `account_key`         | ストレージアカウントキーです。SAS または Workload Identity を使わずに `storage_account_url` を使用する場合は**必須**です。`connection_string` や `extra_credentials` と併せて渡しては**いけません**。                                                                                                                                                                                                                                                                                    |
+| `format`              | ファイルの[フォーマット](/ja/reference/formats/index)です。                                                                                                                                                                                                                                                                                                                                                                                         |
+| `compression`         | サポートされる値: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`。デフォルトでは、ファイル拡張子に基づいて圧縮を自動判定します (`auto` を設定した場合と同じです) 。`snappy` では、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定で選択されます (デフォルトは `basic`) 。                                                                                                                                                 |
+| `structure`           | テーブルの構造です。形式は `'column1_name column1_type, column2_name column2_type, ...'` です。                                                                                                                                                                                                                                                                                                                                                       |
+| `extra_credentials`   | Azure Workload Identity 認証で使用する `client_id` と `tenant_id` を指定します。`account_name` / `account_key` とは併用できず、`storage_account_url` が必要です (`connection_string` とは併用不可) 。クラスター内のすべてのノードで `AZURE_FEDERATED_TOKEN_FILE` が設定されている必要があります。                                                                                                                                                                                                       |
+
+## 戻り値 {#returned-value}
 
 指定されたファイル内のデータを読み書きするための、指定された構造を持つテーブル。
 
-## 例
+## 例 {#examples}
 
 [AzureBlobStorage](/ja/reference/engines/table-engines/integrations/azureBlobStorage) テーブルエンジンと同様に、ローカルで Azure Storage を開発する際には Azurite エミュレーターを使用できます。詳細は[こちら](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage)を参照してください。以下では、Azurite がホスト名 `azurite1` で利用可能であると仮定します。
 
@@ -48,11 +74,11 @@ SELECT count(*) FROM azureBlobStorageCluster(
         'auto', 'key UInt64')
 ```
 
-## Shared Access Signatures (SAS) の使用
+## Shared Access Signatures (SAS) の使用 {#using-shared-access-signatures-sas-sas-tokens}
 
 例については、[azureBlobStorage](/ja/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens)を参照してください。
 
-## 関連項目
+## 関連項目 {#related}
 
 * [AzureBlobStorage エンジン](/ja/reference/engines/table-engines/integrations/azureBlobStorage)
 * [azureBlobStorage テーブル関数](/ja/reference/functions/table-functions/azureBlobStorage)

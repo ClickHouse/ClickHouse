@@ -59,13 +59,21 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 | 标签   | `label_replace`, `label_join`                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 类型   | `scalar`, `vector`                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | 直方图  | `histogram_quantile`                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 排序   | `sort`, `sort_desc`, `sort_by_label`, `sort_by_label_desc`                                                                                                                                                                                                                                                                                                                                                                                        |
 | 其他   | `time`, `step`, `range`, `pi`, `absent`, `timestamp`                                                                                                                                                                                                                                                                                                                                                                                              |
 
 **注意**：`histogram_quantile` 在经典直方图桶 (由 `le` 标签标识) 上使用线性插值。原生直方图不受支持。`phi` (分位数级别) 参数必须是常量标量。像 `histogram_quantile(time() / 1000, ...)` 这样每个时间步都会变化的表达式会因 `NOT_IMPLEMENTED` 异常而被拒绝。
 
 **注意**：`min_of(a, b)` 和 `max_of(a, b)` 分别返回两个标量值中较小或较大的值。两个参数都必须是标量。
 
-**注意**：`step`、`range`、`min_of`、`max_of`、`ts_of_min_over_time`、`ts_of_max_over_time`、`ts_of_last_over_time`、`ts_of_first_over_time` 和 `mad_over_time` 是 Prometheus 中的 Experimental 函数 (通过 `--enable-feature=promql-experimental-functions` 启用) ；ClickHouse 无需该标志即可计算它们。
+**注意**：排序函数仅在作为查询的最外层函数时才会对结果排序。在其他位置，排序函数均不起作用；而 Prometheus 会保留嵌套排序函数的顺序，例如 `abs(sort_desc(x))`。
+
+* `sort` 和 `sort_desc` 按样本值对结果排序，`NaN` 排在最后。值相同的数据系列按其标签排序。
+* `sort_by_label` 和 `sort_by_label_desc` 按指定标签的值对结果排序，并按自然顺序进行比较 (`host2` 排在 `host10` 之前) 。缺少指定标签的数据系列按该标签为空处理。这些标签值相同的数据系列按其全部标签排序。
+
+该顺序在以下三种情况下与 Prometheus 不同：仅前导零不同的数字 (`7` 和 `007`) 视为相等；任意长度的数字均按数值比较 (Prometheus 会将超出 `Int64` 范围的数字按文本比较) ；缺少指定标签的数据系列始终排在具有该标签的数据系列之前 (在 Prometheus 中，其位置取决于输入顺序) 。
+
+**注意**：`step`、`range`、`min_of`、`max_of`、`ts_of_min_over_time`、`ts_of_max_over_time`、`ts_of_last_over_time`、`ts_of_first_over_time`、`mad_over_time`、`sort_by_label` 和 `sort_by_label_desc` 是 Prometheus 中的 Experimental 函数 (通过 `--enable-feature=promql-experimental-functions` 启用) ；ClickHouse 无需该标志即可计算它们。
 
 ### 运算符 {#operators}
 

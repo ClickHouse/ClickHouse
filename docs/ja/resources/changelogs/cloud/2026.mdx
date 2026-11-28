@@ -10,6 +10,28 @@ rss: true
 
 この ClickHouse Cloud の変更ログに加えて、[Cloud Compatibility](/ja/products/cloud/guides/cloud-compatibility) ページも参照してください。
 
+<Update label="2026-11-23">
+  今週のリリースでは、本番データベースの保護機能が強化され、セキュリティインシデント発生時の連絡体制が改善されたほか、Claude の利用料金の請求方法に新しいオプションが追加されました。
+
+  ## 新機能 {#2026-11-23-new-features}
+
+  ### Managed Postgres の削除保護 {#deletion-protection-for-managed-postgres}
+
+  [ClickHouse Managed Postgres](/ja/cloud/managed-postgres) サービスの **Settings** ページまたは OpenAPI から、削除保護を有効化できるようになりました。保護が有効な間は、オフにするまでコンソールまたは API からの削除リクエストが `409` で拒否されるため、本番データベースの誤削除を防止できます。削除保護はリードレプリカではまだ利用できません。
+
+  ## インテグレーション {#2026-11-23-integrations}
+
+  ### Anthropic の Claude Platform との連携請求 {#linked-billing-with-anthropics-claude-platform}
+
+  ClickHouse Cloud の組織は、**Organization settings → Claude organization** から Claude Platform の組織を関連付けられるようになりました。関連付けると、[ClickHouse Agents](/ja/agents/index) をはじめとする対応 ClickHouse Cloud 製品での Claude の利用料金が Anthropic からその組織に直接請求され、既存の Anthropic のコミットメントから差し引かれます。関連付けは API キーを共有することなく Claude 側で承認でき、月間支出上限を設定できます (上限は Claude Console で変更可能です) 。また、関連付けはどちら側からでも解除できます。関連付けた組織では、Opus 5.5 や Haiku 5.5 など、ClickHouse のカタログにある Claude モデルを利用できます。このオプトイン機能は、対象となるすべての組織で利用できます。詳しくは [Claude Platform との連携請求](/ja/products/cloud/features/ai-ml/linked-billing-claude-platform)を参照してください。
+
+  ## セキュリティ {#2026-11-23-security}
+
+  ### 組織のセキュリティ連絡先の指定 {#designate-security-contacts-for-your-organization}
+
+  組織の管理者は、最大 3 名のセキュリティ連絡先を指定できるようになりました。これにより、セキュリティインシデントが発生した際に、ClickHouse が組織内の誰に連絡すべきかを確実に把握できます。この機能は一般提供されています。
+</Update>
+
 <Update label="2026-11-16">
   今週の更新では、Cloud サービスとサポートセッションの保護機能が追加されたほか、より安全な認証情報管理がプレビューとして提供されます。また、ClickHouse オブザーバビリティと ClickHouse Managed Postgres も利用可能になりました。
 
@@ -175,45 +197,29 @@ rss: true
 </Update>
 
 <Update label="Sep 22, 2026">
-  今週の更新では、ClickHouse Cloud のコンプライアンス対応範囲を新たな APAC リージョンへ拡大し、レプリカ対応ルーティングをパブリックベータとして追加、さらにメトリクス、コンピュート、dbt に関する新機能を導入しました。HIPAA および PCI 規制対応の cell が AWS ソウルおよびシドニーで利用可能になりました。対象のお客様は Prometheus 互換のメトリクスワークロードと On-Demand Compute を評価でき、ClickHouse は dbt Core v2 および dbt Platform から利用できます。
-
-  <a id="security" />
+  今週の更新では、ClickHouse Cloud のコンプライアンス対応範囲を新たな APAC リージョンへ拡大し、レプリカ対応ルーティングをパブリックベータとして追加、さらにメトリクス、コンピュート、dbt に関する新機能を導入しました。HIPAA および PCI 規制対応の セル が AWS ソウルおよびシドニーで利用可能になりました。対象のお客様は Prometheus 互換のメトリクスワークロードと On-Demand Compute を評価でき、ClickHouse は dbt Core v2 および dbt Platform から利用できます。
 
   ## セキュリティ {#security}
 
-  <a id="hipaa-and-pci-support-in-aws-seoul-and-sydney" />
-
   ### AWS ソウルおよびシドニーでの HIPAA および PCI サポート {#hipaa-and-pci-support-in-aws-seoul-and-sydney}
 
-  HIPAA および PCI 規制対応の cell が AWS ソウル (`ap-northeast-2`) および AWS シドニー (`ap-southeast-2`) リージョンで利用可能になりました。これらのリージョンでコンプライアンス準拠のワークロードを実行するには、サービス作成時に HIPAA または PCI を選択してください。詳細は[コンプライアンス概要](/ja/products/cloud/reference/security/compliance-overview#hipaa-since-2024)および[サポート対象リージョン](/ja/products/cloud/reference/supported-regions)を参照してください。
-
-  <a id="new-features" />
+  HIPAA および PCI 規制対応の セル が AWS ソウル (`ap-northeast-2`) および AWS シドニー (`ap-southeast-2`) リージョンで利用可能になりました。これらのリージョンでコンプライアンス準拠のワークロードを実行するには、サービス作成時に HIPAA または PCI を選択してください。詳細は[コンプライアンス概要](/ja/products/cloud/reference/security/compliance-overview#hipaa-since-2024)および[サポート対象リージョン](/ja/products/cloud/reference/supported-regions)を参照してください。
 
   ## 新機能 {#new-features}
-
-  <a id="replica-aware-routing-now-in-public-beta" />
 
   ### レプリカ対応ルーティングがパブリックベータに {#replica-aware-routing-now-in-public-beta}
 
   [レプリカ対応ルーティング](/ja/products/cloud/features/infrastructure/replica-aware-routing)が Enterprise のお客様向けにパブリックベータとして利用可能になり、ネイティブの ClickHouse Cloud および BYOC デプロイメントに対応しました。アカウントで有効化された後は、サービス設定から直接オンにできます。詳しくは[announcement](https://clickhouse.com/blog/replica-aware-routing-public-beta)を参照してください。
 
-  <a id="promql-support-in-private-preview" />
-
   ### PromQL サポートがプライベートプレビューに {#promql-support-in-private-preview}
 
-  Prometheus のメトリクスを `TimeSeries` テーブルエンジンに保存し、PromQL で ClickHouse サービスに対して直接クエリできるようになりました。トランスパイラやプロキシは不要なため、既存のコレクター、Grafana ダッシュボード、Prometheus ツールはそのまま動作し続けます。Prometheus remote-write v1 で書き込み、Prometheus HTTP API 経由で読み取るほか、`prometheusQuery` および `prometheusQueryRange` テーブル関数を使って SQL session から PromQL を実行することもできます。AWS、GCP、Azure 上の一部の ClickHouse Cloud および BYOC のお客様に、[プライベートプレビューの順番待ちリスト](https://clickhouse.com/cloud/promql-support-waitlist)経由で提供されます。[Prometheus インターフェイスのドキュメント](/ja/concepts/features/interfaces/prometheus)および[announcement](https://clickhouse.com/blog/introducing-promql)を参照してください。
-
-  <a id="on-demand-compute-now-in-private-preview" />
+  Prometheus のメトリクスを `TimeSeries` テーブルエンジンに保存し、PromQL で ClickHouse サービスに対して直接クエリできるようになりました。トランスパイラやプロキシは不要なため、既存のコレクター、Grafana ダッシュボード、Prometheus ツールはそのまま動作し続けます。Prometheus remote-write v1 で書き込み、Prometheus HTTP API 経由で読み取るほか、`prometheusQuery` および `prometheusQueryRange` テーブル関数を使って SQL session から PromQL を実行することもできます。AWS、GCP、Azure 上の一部の ClickHouse Cloud および BYOC のお客様に、[プライベートプレビューの順番待ちリスト](https://clickhouse.com/cloud/promql-support-waitlist)経由で提供されます。[Prometheus インターフェイスのドキュメント](/ja/concepts/features/connect-to-clickhouse/prometheus)および[announcement](https://clickhouse.com/blog/introducing-promql)を参照してください。
 
   ### On-Demand Compute がプライベートプレビューに {#on-demand-compute-now-in-private-preview}
 
   On-Demand Compute では、対象となるコンピュート負荷の高い `SELECT` クエリが、既存のサービスとエンドポイントを通じて追加の ClickHouse ワーカーを利用できます。リサイズや追加のプロビジョニングは不要です。オプトインはクエリ設定によりクエリ単位で行い、認証、プランニング、調整、結果の返却は引き続きサービスが担います。内部的には、オプティマイザと多段階クエリ実行を導入しています。頻度は高くないものの負荷の大きいアドホック読み取りや、大規模スキャン、`SharedMergeTree`、Apache Iceberg、Delta Lake データに対する結合や集計に適しています。[プライベートプレビューの順番待ちリスト](https://clickhouse.com/cloud/on-demand-compute-waitlist)経由で、一部のお客様にご利用いただけます。[On-Demand Compute のドキュメント](/ja/products/cloud/features/infrastructure/on-demand-compute)および[announcement](https://clickhouse.com/blog/on-demand-compute)を参照してください。
 
-  <a id="integrations" />
-
   ## インテグレーション {#integrations}
-
-  <a id="clickhouse-adapter-for-dbt-v2-and-clickhouse-in-dbt-platform" />
 
   ### dbt v2 向け ClickHouse アダプターと dbt Platform での ClickHouse {#clickhouse-adapter-for-dbt-v2-and-clickhouse-in-dbt-platform}
 

@@ -225,7 +225,9 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Разрешает выполнять функцию multiIf в столбцовом режиме
+Позволяет функции `multiIf` вычислять результат сразу для всего столбца, а не построчно, что ускоряет выполнение.
+
+Столбцовое выполнение используется, только если тип результата — число, `Decimal`, тип даты или даты-времени, `Enum`, `IPv4` или `IPv6`, а число ветвей функции не превышает 255. В остальных случаях используется выполнение в режиме row-by-row независимо от этой настройки.
 
 ## allow_expire_snapshots {#allow_expire_snapshots}
 

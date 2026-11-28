@@ -488,6 +488,14 @@ Nous exécutons des tests fonctionnels, d’intégration, de stress et unitaires
 Nous exécutons, à chaque commit, les tests fonctionnels, d’intégration, de stress et unitaires avec UBSan.
 Le code de certaines bibliothèques tierces n’est pas instrumenté pour détecter les comportements indéfinis.
 
+Nous activons en outre la vérification `unsigned-integer-overflow`, qui ne fait pas partie de
+`-fsanitize=undefined`, car le dépassement de capacité d’un entier non signé est un comportement bien défini : la valeur reboucle
+modulo 2<sup>N</sup>. Un rebouclage *involontaire* n’en reste pas moins un bogue ; les endroits qui
+rebouclent intentionnellement (fonctions de hachage, sommes de contrôle, générateurs de nombres pseudo-aléatoires, sémantique de
+l’arithmétique de ClickHouse sur les types non signés) sont donc annotés avec l’attribut `NO_SANITIZE_UNSIGNED_OVERFLOW`
+(voir `base/base/sanitizer_defs.h`). Pour des fichiers entiers, ainsi que pour le code tiers composé uniquement d’en-têtes,
+la vérification est plutôt désactivée dans `tests/ubsan_ignorelist.txt`.
+
 ### Valgrind (memcheck) {#valgrind-memcheck}
 
 Nous exécutions autrefois les tests fonctionnels sous Valgrind pendant la nuit, mais ce n’est plus le cas.

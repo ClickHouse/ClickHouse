@@ -370,11 +370,12 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 * `region` — S3 리전 이름을 지정합니다. 선택 사항입니다.
 * `use_insecure_imds_request` — `true`로 설정하면 S3 클라이언트가 Amazon EC2 메타데이터에서 자격 증명을 가져오는 동안 안전하지 않은 IMDS 요청을 사용합니다. 선택 사항이며, 기본값은 `false`입니다.
 * `expiration_window_seconds` — 만료 기반 자격 증명의 만료 여부를 확인할 때 적용되는 유예 시간입니다. 선택 사항이며, 기본값은 `120`입니다.
-* `no_sign_request` - 모든 자격 증명을 무시하여 요청에 서명하지 않도록 합니다. 공개 버킷에 접근할 때 유용합니다.
+* `no_sign_request` - 모든 자격 증명을 무시하여 요청에 서명하지 않도록 합니다. 공개 버킷에 액세스할 때 유용합니다.
+* `request_payer` - 요청자 지불(requester-pays) 버킷에 액세스하려면 `requester`로 설정하십시오. 이 경우 지정된 엔드포인트로 보내는 모든 요청에 `x-amz-request-payer: requester` 헤더가 포함됩니다. 선택 사항입니다. [`s3_request_payer`](/ko/reference/settings/session-settings/s3#s3_request_payer) 설정보다 우선합니다.
 * `header` — 지정된 엔드포인트로 보내는 요청에 지정한 HTTP 헤더를 추가합니다. 선택 사항이며, 여러 번 지정할 수 있습니다.
 * `access_header` - 다른 소스에서 가져온 자격 증명이 없는 경우, 지정된 엔드포인트로 보내는 요청에 지정한 HTTP 헤더를 추가합니다.
-* `server_side_encryption_customer_key_base64` — 지정하면 SSE-C 암호화가 적용된 S3 객체에 접근하는 데 필요한 헤더가 설정됩니다. 선택 사항입니다.
-* `server_side_encryption_kms_key_id` - 지정하면 [SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html)이 적용된 S3 객체에 접근하는 데 필요한 헤더가 설정됩니다. 빈 문자열을 지정하면 AWS 관리형 S3 키가 사용됩니다. 선택 사항입니다.
+* `server_side_encryption_customer_key_base64` — 지정하면 SSE-C 암호화가 적용된 S3 객체에 액세스하는 데 필요한 헤더가 설정됩니다. 선택 사항입니다.
+* `server_side_encryption_kms_key_id` - 지정하면 [SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html)이 적용된 S3 객체에 액세스하는 데 필요한 헤더가 설정됩니다. 빈 문자열을 지정하면 AWS 관리형 S3 키가 사용됩니다. 선택 사항입니다.
 * `server_side_encryption_kms_encryption_context` - `server_side_encryption_kms_key_id`와 함께 지정하면 SSE-KMS용 지정된 암호화 컨텍스트 헤더가 설정됩니다. 선택 사항입니다.
 * `server_side_encryption_kms_bucket_key_enabled` - `server_side_encryption_kms_key_id`와 함께 지정하면 SSE-KMS용 S3 버킷 키를 활성화하는 헤더가 설정됩니다. 선택 사항이며, `true` 또는 `false`를 사용할 수 있습니다. 기본값은 지정되지 않음이며, 버킷 수준 설정을 따릅니다.
 * `max_single_read_retries` — 단일 읽기 중 최대 시도 횟수입니다. 기본값은 `4`입니다. 선택 사항입니다.

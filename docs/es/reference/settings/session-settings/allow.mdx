@@ -225,7 +225,9 @@ Al deshabilitarla, solo se rechazan las lecturas: crear, adjuntar, eliminar y de
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Permite ejecutar la función multiIf de forma columnar
+Permite que la función `multiIf` calcule su resultado para una columna completa de una sola vez, en lugar de fila por fila, lo que resulta más rápido.
+
+La ejecución columnar solo se utiliza si el tipo de resultado es un número, `Decimal`, un tipo de fecha o de fecha y hora, `Enum`, `IPv4` o `IPv6`, y la función tiene como máximo 255 ramas. En los demás casos, se utiliza la ejecución row-by-row, independientemente de este parámetro de configuración.
 
 ## allow_expire_snapshots {#allow_expire_snapshots}
 

@@ -2,7 +2,7 @@
 title: 快速入门 命令行客户端
 ---
 
-本页介绍如何仅通过命令行，使用 [clickhousectl](/zh/concepts/features/interfaces/cli) 和 `psql` 完成 ClickHouse Managed Postgres 的预配、数据加载、将数据复制到 ClickHouse 以及查询。除可选的 `--interactive` 登录外，命令均为非交互式。`clickhousectl` 可通过 `--json` 输出 JSON，在检测到 coding agent 时也会自动输出 JSON；为 `cloud service query` 指定 `--format` 即可获取纯文本值。
+本页介绍如何仅通过命令行，使用 [clickhousectl](/zh/concepts/features/interfaces/cli) 和 `psql` 完成 ClickHouse Managed Postgres 的预配、数据加载、将数据复制到 ClickHouse 以及查询。除可选的 `--interactive` 登录外，命令均为非交互式。`clickhousectl` 可通过 `--json` 输出 JSON，在检测到 coding agent 时也会自动输出 JSON；为 `cloud clickhouse query` 指定 `--format` 即可获取纯文本值。
 
 ## 前置条件 {#prerequisites}
 
@@ -198,7 +198,7 @@ psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type O
 在同一区域创建一个服务并保存响应；密码仅会显示在创建时返回的响应中：
 
 ```bash
-clickhousectl cloud service create \
+clickhousectl cloud clickhouse create \
   --name quickstart-ch \
   --region us-east-1 \
   --json > ch.json
@@ -210,12 +210,12 @@ CH_PASSWORD=$(jq -r .password ch.json)
 等待其进入运行状态；ClickPipe 需要一个处于运行状态的目标端：
 
 ```bash
-while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+while [ "$(clickhousectl cloud clickhouse get "$CH_ID" --json | jq -r .state)" != "running" ]; do
   sleep 15
 done
 ```
 
-若要改用现有服务，请将 `CH_ID` 设置为 `clickhousectl cloud service list` 中显示的值，并将 `CH_PASSWORD` 设置为该服务 `default` 用户的密码，`pg_clickhouse` 步骤需要用到它。
+若要改用现有服务，请将 `CH_ID` 设置为 `clickhousectl cloud clickhouse list` 中显示的值，并将 `CH_PASSWORD` 设置为该服务 `default` 用户的密码，`pg_clickhouse` 步骤需要用到它。
 
 ### 将表复制到 ClickHouse {#replicate-to-clickhouse}
 
@@ -266,7 +266,7 @@ done
 直接通过命令行客户端向 ClickHouse 服务执行 SQL。首次调用时，clickhousectl 会将您现有的 API key 添加到该服务的查询 API 端点 (如该端点尚不存在，则会先行创建) ，而不会新建 key。如果希望此时直接报错，请传入 `--no-auto-enable`。`--format TabSeparated` 仅输出纯值，下方的比较正是基于这一点：
 
 ```bash
-clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+clickhousectl cloud clickhouse query "$CH_ID" --format TabSeparated \
   --query "SELECT count() FROM public_events FINAL WHERE _peerdb_is_deleted = 0"
 ```
 
@@ -282,7 +282,7 @@ Postgres 中的新写入会持续复制。插入一行，然后轮询，直到�
 ```bash
 psql "$PG_URL" -c "INSERT INTO events (event_name, event_type, user_id, user_ip) VALUES ('cdc-test', 'click', 42, '10.0.0.1');"
 
-while [ "$(clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+while [ "$(clickhousectl cloud clickhouse query "$CH_ID" --format TabSeparated \
   --query "SELECT count() FROM public_events FINAL WHERE _peerdb_is_deleted = 0")" != "1000001" ]; do
   sleep 10
 done
@@ -293,7 +293,7 @@ done
 [`pg_clickhouse`](/zh/products/managed-postgres/extensions/pg_clickhouse/introduction) 扩展可让 Postgres 作为事务型数据和分析型数据的统一查询层。获取 ClickHouse 的 HTTPS 主机名，然后通过 `psql` 配置该扩展：
 
 ```bash
-CH_HOST=$(clickhousectl cloud service get "$CH_ID" --json \
+CH_HOST=$(clickhousectl cloud clickhouse get "$CH_ID" --json \
   | jq -r '.endpoints[] | select(.protocol=="https") | .host')
 
 psql "$PG_URL" <<SQL
@@ -307,7 +307,7 @@ IMPORT FOREIGN SCHEMA "default" FROM SERVER ch INTO organization;
 SQL
 ```
 
-这里特意不给 heredoc 加引号，这样 shell 就会在 SQL 到达 Postgres 之前先替换 `$CH_HOST` 和 `$CH_PASSWORD`。现在，这些复制表会在 `organization` schema 中显示为 foreign tables；对它们发起的查询实际上会在 ClickHouse 中执行。
+这里特意不给 heredoc 加引号，这样命令行环境就会在 SQL 到达 Postgres 之前先替换 `$CH_HOST` 和 `$CH_PASSWORD`。现在，这些复制表会在 `organization` schema 中显示为 foreign tables；对它们发起的查询实际上会在 ClickHouse 中执行。
 
 在使用该数据集的 `m6gd.large` 上测得，通过 foreign tables 运行分析查询的速度可提升 6-9 倍 (例如，一个包含 5 个聚合的 GROUP BY：通过 ClickHouse 为 176 ms，本地执行为 1,133 ms；一个带聚合的 JOIN：298 ms，而本地为 2,764 ms) 。
 
@@ -323,5 +323,5 @@ clickhousectl cloud postgres delete "$PG_ID"
 运行中的 ClickHouse 服务无法直接删除。使用 `--force` 会先将其停止，等待停止完成，然后再删除：
 
 ```bash
-clickhousectl cloud service delete "$CH_ID" --force
+clickhousectl cloud clickhouse delete "$CH_ID" --force
 ```

@@ -99,7 +99,38 @@ url = 'https://connection.url/'
 
 可选配置参数 `update_timeout_ms` 的默认值为 `5000`。
 
-您可以通过 `system.server_settings` 和 `getServerSetting` 查看当前存储类型：
+#### 密钥轮换 {#named-collections-key-rotation}
+
+可以配置多个密钥，每个密钥都有一个 `id` 属性。`current_key_id` 用于选择
+加密新条目的密钥 (`current_key_hex` 则根据密钥值选择) 。所有已配置的密钥都会
+用于解密。运行中的服务器不会应用密钥变更，即使执行
+`SYSTEM RELOAD CONFIG` 也不会生效，必须重启服务器。现有命名集合仍可使用
+旧密钥读取，并在下次通过以下操作写入时，使用当前密钥重新加密：
+`ALTER NAMED COLLECTION`、`CREATE OR REPLACE NAMED COLLECTION` 或从备份中恢复。如果服务器
+缺少某个命名集合的加密密钥，就会报告错误，指出该密钥的指纹，
+并在加载时跳过该命名集合。为服务器配置该密钥并重启后，
+或者由持有该密钥的服务器重写该命名集合后，该命名集合便会重新加载。只有在使用旧密钥加密的
+所有命名集合都已重写后，才能从配置中移除该旧密钥。
+
+```xml
+<clickhouse>
+  <named_collections_storage>
+    <type>local_encrypted</type>
+    <key_hex id="0">bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <key_hex id="1">00112233445566778899aabbccddeeff</key_hex>
+    <current_key_id>1</current_key_id>
+  </named_collections_storage>
+</clickhouse>
+```
+
+要轮换 `local_encrypted` 存储的密钥，请添加新密钥，按照上面的示例将其设为当前密钥，
+然后重启服务器。对于共享 `keeper_encrypted` 或
+`zookeeper_encrypted` 存储的服务器，在任何一台使用新密钥写入之前，必须确保所有服务器都已配置该密钥：
+如果某台服务器以新密钥作为当前密钥重启，它写入的条目将无法被尚未重启的服务器解密。
+请分两个阶段轮换密钥：首先添加新密钥，保留旧密钥作为当前密钥，并重启
+所有服务器；然后将新密钥设为当前密钥，再次重启所有服务器。
+
+可以通过 `system.server_settings` 和 `getServerSetting` 查看当前使用的存储类型：
 
 ```sql
 SELECT value, getServerSetting('named_collections_storage_type')
@@ -107,7 +138,7 @@ FROM system.server_settings
 WHERE name = 'named_collections_storage.type';
 ```
 
-更改存储类型需要重启 server；`SYSTEM RELOAD CONFIG` 不会更改当前使用的 backend。
+更改存储类型需要重启服务器；`SYSTEM RELOAD CONFIG` 不会切换当前使用的后端。
 
 ## 在配置文件中存储命名集合 {#storing-named-collections-in-configuration-files}
 
@@ -559,19 +590,48 @@ kafka_max_block_size = '1048576';
 
 ### TLS 与客户端证书 {#kafka-mtls-named-collection}
 
-TLS 路径和 `ssl.key.password` 属于[扩展的 librdkafka 设置](/zh/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)，而非 Kafka 表引擎的 `kafka_*` 设置。在命名集合中，可以在 DDL 中通过 `kafka.` 前缀设置这些参数 (例如 `kafka.ssl_ca_location`) ，也可以在 XML 的 `<kafka>` 节点下设置 (例如 `<ssl_ca_location>`) 。当 `ENGINE = Kafka(collection)` 使用该命名集合时，服务端的全局 `<kafka>` 配置不会被合并。
+TLS 证书、私钥以及 `ssl.key.password` 属于[扩展 librdkafka 设置](/zh/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)，而非 Kafka 表引擎的 `kafka_*` 设置。在命名集合中，可在 DDL 中通过 `kafka.` 前缀进行设置 (例如 `kafka.ssl_ca_pem`) ，或在 XML 的 `<kafka>` 节点下进行设置 (例如 `<ssl_ca_location>`) 。当 `ENGINE = Kafka(collection)` 使用该集合时，不会合并全局服务器 `<kafka>` 配置。
+
+通过 SQL 创建的命名集合仅接受显式允许的 `librdkafka` 属性。对于 TLS，请通过 `ssl.ca.pem`、`ssl.certificate.pem` 或 `ssl.key.pem` 传入证书或私钥的内容。如需使用文件路径或允许列表之外的其他属性，请在服务器配置文件中定义该集合。参见[在命名集合中使用 TLS 和 SASL](/zh/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)。
+
+DDL 示例：
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 ```
 
-如果 `kafka_broker_list`、`kafka_topic_list`、`kafka_group_name`、`kafka_format`、`kafka_sasl_username` 和 `kafka_sasl_password` 的值需要因表而异，请在表级 `SETTINGS` 中分别指定。完整的 `CREATE TABLE` 示例请参见[结合命名集合使用 TLS 和 SASL](/zh/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)。
+使用 XML 的示例 (可引用服务器上的文件) ：
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
+```
+
+如果 `kafka_broker_list`、`kafka_topic_list`、`kafka_group_name`、`kafka_format`、`kafka_sasl_username` 和 `kafka_sasl_password` 的取值需要因表而异，请在表的 `SETTINGS` 中指定这些参数。完整的 `CREATE TABLE` 示例请参见[使用命名集合配置 TLS 和 SASL](/zh/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)。
 
 ### OAUTHBEARER/OIDC 身份验证 {#oauthbearer-oidc-authentication}
 

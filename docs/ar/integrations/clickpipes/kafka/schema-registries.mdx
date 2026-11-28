@@ -16,10 +16,10 @@ integration:
 
 ## سجلات المخططات المدعومة لـ ClickPipes الخاصة بالدفق {#supported-schema-registries}
 
-يدعم Kafka ClickPipes فئتين من سجلات المخططات:
+يدعم Kafka ClickPipes عائلتين من سجلات المخططات:
 
 * [السجلات المتوافقة مع Confluent](#confluent-compatible-registries): أي سجل متوافق مع واجهة برمجة تطبيقات Confluent Schema Registry، مثل Confluent Schema Registry نفسه وRedpanda Schema Registry. يدعم Avro وProtobuf.
-* [AWS Glue Schema Registry](#aws-glue-schema-registry): لبيانات Avro المُسلسلة باستخدام AWS Glue SerDe، والتي تأتي عادةً من Amazon MSK.
+* [AWS Glue Schema Registry](#aws-glue-schema-registry): لبيانات Avro وProtobuf المُسلسلة باستخدام AWS Glue SerDe، والتي تأتي عادةً من Amazon MSK.
 
 يدعم Kinesis ClickPipes سجل المخططات AWS Glue Schema Registry لبيانات Avro وProtobuf.
 
@@ -61,12 +61,12 @@ integration:
 
 ## AWS Glue Schema Registry {#aws-glue-schema-registry}
 
-إذا كان المنتجون لديك يُسلسلون بيانات Avro باستخدام AWS Glue SerDe (على سبيل المثال، `AWSKafkaAvroSerializer` مع topic في Amazon MSK)، فيمكن لـ ClickPipes حلّ هذه المخططات مباشرةً من AWS Glue Schema Registry. يستخدم Glue صيغة wire مختلفة وواجهة برمجة تطبيقات مختلفة عن السجلات المتوافقة مع Confluent، لذا يُهيَّأ بشكل منفصل.
+إذا كان المنتجون لديك يُسلسلون بيانات Avro أو Protobuf باستخدام AWS Glue SerDe (على سبيل المثال، `AWSKafkaAvroSerializer` أو `GlueSchemaRegistryKafkaSerializer` مع topic في Amazon MSK)، فيمكن لـ ClickPipes حلّ هذه المخططات مباشرةً من AWS Glue Schema Registry. يستخدم Glue صيغة wire مختلفة وواجهة برمجة تطبيقات مختلفة عن السجلات المتوافقة مع Confluent، لذا يُهيَّأ بشكل منفصل.
 
 يتوفر إعداد AWS Glue Schema Registry عبر ClickHouse Cloud console وواجهة برمجة تطبيقات ClickPipes وTerraform provider.
 
 <Note>
-  **Kafka:** تدعم سجلات AWS Glue صيغة Avro فقط. **Kinesis:** تدعم سجلات AWS Glue كلًّا من `AvroConfluent` و`Protobuf`. أما JSON فلا يُدعم عبر Glue SerDe.
+  تدعم سجلات AWS Glue صيغتي `AvroConfluent` و`Protobuf` لكلٍّ من Kafka وKinesis. أما JSON فلا يُدعم عبر Glue SerDe. وعلى عكس السجلات المتوافقة مع Confluent، لا يمكن اكتشاف الصيغة من السجل، لذا حدّدها صراحةً عند إنشاء ClickPipe.
 </Note>
 
 ### الإعداد {#glue-configuration}
@@ -87,6 +87,8 @@ integration:
 | ARN لدور IAM | مشروط | دور مخصص للوصول إلى السجل. وهو اختياري إذا كان الوسيط يستخدم مصادقة IAM، ومطلوب في غير ذلك.                              | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
 
 لا يوجد URL لسجل لتكوينه. يحمل كل سجل تنتجه Glue SerDe معرّف إصدار مخططه الخاص، ويحلّه ClickPipes باستخدام `glue:GetSchemaVersion` ويخزّنه مؤقتًا، بإجراء استدعاء واحد لواجهة برمجة التطبيقات لكل إصدار مخطط مميز. يُعالَج تطور المخطط تلقائيًا: فعندما تنتقل السجلات إلى إصدار مخطط جديد أثناء التدفق، يُحلّ عند ظهوره أول مرة. أما بالنسبة إلى Kinesis، فهيّئ الحقول نفسها عبر [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) أو [Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
+
+أما بالنسبة إلى Protobuf، فيجب أن تستخدم السجلات التأطير الذي تكتبه أداة تسلسل AWS Glue: ترويسة Glue بطول 18 بايت، يليها فهرس الرسالة بصيغة varint غير موقَّع، ثم الرسالة المُسلسَلة. ويمثّل الفهرس موضع الرسالة بين جميع الرسائل المعرّفة في ملف المخطط (بما فيها الرسائل المتداخلة)، مرتّبةً حسب الاسم المؤهَّل بالكامل. ولا تُدعَم السجلات التي تحمل ترويسة Glue دون فهرس رسالة.
 
 ### إعداد IAM {#glue-iam-setup}
 
@@ -184,18 +186,19 @@ integration:
 
 ### استكشاف الأخطاء وإصلاحها {#glue-troubleshooting}
 
-| الخطأ                                                                                        | السبب والحل                                                                                                                                                                                             |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `access denied retrieving schema version …: check the IAM role grants glue:GetSchemaVersion` | تفتقر هوية IAM المستخدمة للوصول إلى السجل إلى صلاحية `glue:GetSchemaVersion`. بالنسبة إلى الوصول المستند إلى الدور، قد لا تتضمن سياسة الثقة للدور معرّف دور خدمتك أيضًا. أعد التحقق من إعداد IAM أعلاه. |
-| `… is not authorized to perform: sts:AssumeRole on resource: …`                              | تشير سياسة الثقة إلى الكيان الأساسي الخطأ. يتضمن الخطأ الدور المحدد الذي حاول تولّي الدور. استخدم هذه القيمة في سياسة الثقة.                                                                            |
-| `schema version … not found in Glue schema registry`                                         | تشير السجلات إلى إصدار مخطط غير موجود في الحساب أو المنطقة المُعدَّين. تأكد من مطابقة **منطقة AWS** لمنطقة السجل.                                                                                       |
-| `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"` | يسجّل المنتجون لديك المخططات في سجل مختلف عن السجل المحدد في الـ pipe. صحح **اسم السجل**، أو وجّه المنتجين إلى السجل الصحيح.                                                                            |
-| `the AWS Glue schema registry only supports the Avro format`                                 | لا تدعم Glue pipes سوى تنسيق Avro. لا يتم دعم JSON وProtobuf عبر Glue SerDe.                                                                                                                            |
+| الخطأ                                                                                        | السبب والحل                                                                                                                                                                                                                             |
+| -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access denied retrieving schema version …: check the IAM role grants glue:GetSchemaVersion` | تفتقر هوية IAM المستخدمة للوصول إلى السجل إلى صلاحية `glue:GetSchemaVersion`. بالنسبة إلى الوصول المستند إلى الدور، قد لا تتضمن سياسة الثقة للدور معرّف دور خدمتك أيضًا. أعد التحقق من إعداد IAM أعلاه.                                 |
+| `… is not authorized to perform: sts:AssumeRole on resource: …`                              | تشير سياسة الثقة إلى الكيان الأمني الخطأ. يتضمن الخطأ الدور المحدد الذي حاول تولّي الدور. استخدم هذه القيمة في سياسة الثقة.                                                                                                            |
+| `schema version … not found in Glue schema registry`                                         | تشير السجلات إلى إصدار مخطط غير موجود في الحساب أو المنطقة المُعدَّين. تأكد من مطابقة **منطقة AWS** لمنطقة السجل.                                                                                                                       |
+| `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"` | يسجّل المنتجون لديك المخططات في سجل مختلف عن السجل المحدد في الـ pipe. صحح **اسم السجل**، أو وجّه المنتجين إلى السجل الصحيح.                                                                                                            |
+| `the AWS Glue schema registry only supports the Avro and Protobuf formats`                   | يجمع الـ ClickPipe بين سجل Glue وصيغة غير مدعومة، مثل JSON. اختر Avro أو Protobuf.                                                                                                                                                      |
+| `message index … out of range: Glue schema version … defines N messages`                     | يحتوي السجل على ترويسة Glue ولكن دون فهرس رسالة صالح، وعادةً ما يحدث ذلك لأن أداة تسلسل مخصصة أغفلته. وعندئذٍ يقرأ ClickPipes البايت الأول من الرسالة على أنه الفهرس. اكتب الفهرس في المنتِج، كما تفعل أداة التسلسل الخاصة بـ AWS Glue. |
 
 ### القيود {#glue-limitations}
 
-* يدعم Kafka تنسيق Avro فقط. لا يُدعم JSON Schema وProtobuf عبر Glue SerDe.
-* يدعم Kinesis التنسيقين `AvroConfluent` و`Protobuf` عبر AWS Glue Schema Registry. لا يمكن الجمع بين مخطط Protobuf مُحمَّل وسجل مخططات.
+* يدعم Kafka وKinesis الصيغتين `AvroConfluent` و`Protobuf` عبر AWS Glue Schema Registry. لا يُدعم JSON Schema عبر Glue SerDe.
+* لا يمكن الجمع بين مخطط Protobuf مُحمَّل وسجل مخططات.
 
 ## مواءمة المخطط {#schema-mapping}
 

@@ -13,26 +13,20 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются на основе исходного кода ClickHouse.
 
-<div id="use_adaptive_write_buffer_for_dynamic_subcolumns">
-  ## use_adaptive_write_buffer_for_dynamic_subcolumns
-</div>
+## use_adaptive_write_buffer_for_dynamic_subcolumns {#use_adaptive_write_buffer_for_dynamic_subcolumns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Разрешает использовать адаптивные буферы записи при записи динамических подстолбцов, чтобы
 снизить использование памяти
 
-<div id="use_async_block_ids_cache">
-  ## use_async_block_ids_cache
-</div>
+## use_async_block_ids_cache {#use_async_block_ids_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Устаревшая настройка, не имеет эффекта.
 
-<div id="use_compact_variant_discriminators_serialization">
-  ## use_compact_variant_discriminators_serialization
-</div>
+## use_compact_variant_discriminators_serialization {#use_compact_variant_discriminators_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,9 +35,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Этот режим позволяет использовать значительно меньше памяти для хранения дискриминаторов
 в частях, если в основном используется один вариант или имеется много значений NULL.
 
-<div id="use_const_adaptive_granularity">
-  ## use_const_adaptive_granularity
-</div>
+## use_const_adaptive_granularity {#use_const_adaptive_granularity}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -68,17 +60,25 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 [ALTER TABLE ... REWRITE PARTS](/ru/reference/statements/alter/partition#rewrite-parts),
 чтобы применить его к существующим частям. Части `Compact` всегда используют адаптивную гранулярность.
 
-<div id="use_metadata_cache">
-  ## use_metadata_cache
-</div>
+## use_metadata_cache {#use_metadata_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Устаревшая настройка, не имеет эффекта.
 
-<div id="use_primary_key_cache">
-  ## use_primary_key_cache
-</div>
+## use_object_shared_data_serialization_version_for_small_parts_on_insert {#use_object_shared_data_serialization_version_for_small_parts_on_insert}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "новая настройка"}]}]} />
+
+Записывать общие данные внутри типа JSON в частях, создаваемых при вставках (включая их проекции), с версией сериализации из
+[object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts)
+независимо от размера частей, чтобы вставки оставались быстрыми. Если настройка отключена, версия для вставленных частей данных выбирается по
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/ru/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version),
+так же как для слитых частей.
+
+## use_primary_key_cache {#use_primary_key_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

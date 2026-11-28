@@ -192,14 +192,15 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
         MONGODB_PASSWORD: "your-mongodb-password"
     ```
 
-    外部のシークレット管理 (secrets operator の使用など) では、既存の Kubernetes Secret を参照できます：
+    既存の Kubernetes Secret (secrets operator で管理されているものなど) から、デフォルトの接続とソースを読み込むには:
 
     ```yaml
     hyperdx:
-      useExistingConfigSecret: true
-      existingConfigSecret: "my-external-secret"
-      existingConfigConnectionsKey: "connections.json"
-      existingConfigSourcesKey: "sources.json"
+      deployment:
+        useExistingConfigSecret: true
+        existingConfigSecret: "my-external-secret"
+        existingConfigConnectionsKey: "connections.json"
+        existingConfigSourcesKey: "sources.json"
     ```
 
     <Tip>
@@ -210,9 +211,7 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
   </Step>
 </Steps>
 
-<div id="using-clickhouse-cloud">
-  ## Using ClickHouse Cloud {#using-clickhouse-cloud}
-</div>
+## Using ClickHouse Cloud {#using-clickhouse-cloud}
 
 ClickHouse Cloud を使用する場合は、組み込みの ClickHouse インスタンスを無効にし、ClickHouse Cloud の認証情報を指定します。
 
@@ -222,35 +221,41 @@ clickhouse:
   enabled: false
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-cloud-instance.clickhouse.cloud:9440?secure=true"
+    CLICKHOUSE_USER: "default"
   secrets:
     CLICKHOUSE_PASSWORD: "your-cloud-password"
     CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
 
-  useExistingConfigSecret: true
-  existingConfigSecret: "clickhouse-cloud-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "clickhouse-cloud-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
-接続用のSecretを別途作成します：
+接続用のSecretを別途作成します。`connections.json` と `sources.json` の両方が必須です。この例ではソースのリストを空にしています。インストール後に UI でソースを設定するか、[External ClickHouse](/ja/clickstack/deployment/helm-deployment-options#external-clickhouse-secret) に示すようにソース定義を指定してください：
 
 ```bash
 cat <<EOF > connections.json
 [
   {
     "name": "ClickHouse Cloud",
-    "host": "https://your-cloud-instance.clickhouse.cloud",
-    "port": 8443,
+    "host": "https://your-cloud-instance.clickhouse.cloud:8443",
     "username": "default",
     "password": "your-cloud-password"
   }
 ]
 EOF
 
-kubectl create secret generic clickhouse-cloud-config \
-  --from-file=connections.json=connections.json
+echo '[]' > sources.json
 
-rm connections.json
+kubectl create secret generic clickhouse-cloud-config \
+  --from-file=connections.json=connections.json \
+  --from-file=sources.json=sources.json
+
+rm connections.json sources.json
 ```
 
 ```shell
@@ -260,7 +265,7 @@ helm install my-clickstack clickstack/clickstack -f values-clickhouse-cloud.yaml
 <Tip>
   **高度な外部設定**
 
-  secret ベースの設定、外部 OTel collector、または最小構成での本番デプロイについては、[デプロイメントオプション ガイド](/ja/clickstack/deployment/helm-deployment-options)を参照してください。
+  Secret ベースの設定、外部 OTel collector、または最小構成での本番デプロイについては、[デプロイメントオプション ガイド](/ja/clickstack/deployment/helm-deployment-options)を参照してください。
 </Tip>
 
 <div id="production-notes">

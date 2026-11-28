@@ -430,6 +430,68 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 ['Server','nginx']
 ```
 
+## fullMatch {#fullMatch}
+
+Introduit dans : v26.11.0
+
+Vérifie si une chaîne donnée correspond dans son intégralité au motif d’expression régulière fourni.
+
+Contrairement à [`match`](#match), qui recherche une correspondance n’importe où dans la chaîne, cette fonction
+renvoie `1` uniquement si le motif correspond à la chaîne entière, comme si le motif était ancré aux
+deux extrémités avec `^` et `$`. Cela correspond à `RE2::FullMatch` de la bibliothèque RE2, à
+`re.fullmatch` en Python et à `regexp_full_match` dans DuckDB.
+
+Cette fonction utilise la bibliothèque d’expressions régulières RE2. Veuillez consulter [re2](https://github.com/google/re2/wiki/Syntax) pour connaître la syntaxe prise en charge.
+
+La correspondance repose sur l’hypothèse UTF-8 : par exemple, `¥` utilise deux octets en interne, mais est traité comme un seul point de code lors de la correspondance.
+L’expression régulière ne doit pas contenir d’octets NULL.
+Si la chaîne d’entrée ou le motif ne sont pas en UTF-8 valide, le comportement est indéfini.
+
+Contrairement au comportement par défaut de re2, `.` correspond aux sauts de ligne. Pour désactiver cela, faites précéder le motif de `(?-s)`.
+
+**Syntaxe**
+
+```sql
+fullMatch(haystack, pattern)
+```
+
+**Alias** : `regexp_full_match`
+
+**Arguments**
+
+* `haystack` — Chaîne dans laquelle le motif est recherché. [`String`](/fr/reference/data-types/string)
+* `pattern` — Motif d’expression régulière. Peut être une constante ou provenir d’un colonne. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie `1` si le motif correspond à la chaîne entière, `0` sinon. [`UInt8`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Correspondance avec la chaîne entière**
+
+```sql title=Query
+SELECT fullMatch('abcde', 'a.*e'), fullMatch('abcde', 'b.*d'), match('abcde', 'b.*d')
+```
+
+```response title=Response
+┌─fullMatch('abcde', 'a.*e')─┬─fullMatch('abcde', 'b.*d')─┬─match('abcde', 'b.*d')─┐
+│                          1 │                          0 │                      1 │
+└────────────────────────────┴────────────────────────────┴────────────────────────┘
+```
+
+**Motif avec une alternance de premier niveau**
+
+```sql title=Query
+SELECT fullMatch('gold-1', 'zzz|gold.*'), fullMatch('app-gold-1', 'zzz|gold.*')
+```
+
+```response title=Response
+┌─fullMatch('gold-1', 'zzz|gold.*')─┬─fullMatch('app-gold-1', 'zzz|gold.*')─┐
+│                                 1 │                                     0 │
+└───────────────────────────────────┴───────────────────────────────────────┘
+```
+
 ## hasAllTokens {#hasAllTokens}
 
 Introduit dans : v25.10.0
@@ -915,7 +977,7 @@ Avant la recherche, la fonction tokenise `input` ainsi que `phrase`, si ce derni
 Si aucun index de texte n&#39;est défini pour la colonne, le tokenizer `splitByNonAlpha` est utilisé à la place — sauf si un tokenizer est fourni comme troisième argument facultatif.
 L&#39;argument tokenizer doit être l&#39;un de `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK` ou `icu`.
 
-Si `input` est de type [Array(String)](/fr/reference/data-types/array), ses éléments sont tokenisés comme toute autre entrée et leurs jetons forment une seule séquence par ligne, de sorte qu’une phrase peut s’étendre sur deux éléments. Avec le tokenizer `array`, chaque élément constitue un jeton, ce qui permet d’effectuer une recherche dans une colonne de valeurs déjà tokenisées.
+Si `input` est de type [Array(String)](/fr/reference/data-types/array), ses éléments sont tokenisés comme toute autre entrée et une expression doit se trouver entièrement dans un seul élément. Avec le tokenizer `array`, chaque élément constitue un jeton et une expression s’étend sur des éléments consécutifs, ce qui permet d’effectuer une recherche dans une colonne de valeurs déjà tokenisées.
 Si `phrase` est de type [Array(String)](/fr/reference/data-types/array), ses éléments constituent les jetons à rechercher, dans l’ordre et
 en conservant les doublons. Les éléments vides de `phrase` sont ignorés, car aucun tokenizer ne produit de jeton vide.
 
@@ -939,16 +1001,16 @@ hasPhrase(input, phrase[, tokenizer])
 **Arguments**
 
 * `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Nullable(String)`](/fr/reference/data-types/nullable) ou [`Nullable(FixedString)`](/fr/reference/data-types/nullable) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array) ou [`Array(Nullable(String))`](/fr/reference/data-types/array) ou [`Array(Nullable(FixedString))`](/fr/reference/data-types/array)
-* `phrase` — Phrase à rechercher. [`const String`](/fr/reference/data-types/string) ou [`const Array(String)`](/fr/reference/data-types/array)
+* `phrase` — Expression à rechercher. [`const String`](/fr/reference/data-types/string) ou [`const Array(String)`](/fr/reference/data-types/array)
 * `tokenizer` — Le tokenizer à utiliser. Facultatif, `splitByNonAlpha` est utilisé par défaut. [`const String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
-Renvoie `1` si la phrase est trouvée sous la forme d’une séquence consécutive de jetons, sinon `0`. [`UInt8`](/fr/reference/data-types/int-uint)
+Renvoie `1` si l’expression est trouvée sous la forme d’une séquence consécutive de jetons, sinon `0`. [`UInt8`](/fr/reference/data-types/int-uint)
 
 **Exemples**
 
-**Correspondance de phrase**
+**Correspondance d’expression**
 
 ```sql title=Query
 SELECT hasPhrase('the quick brown fox jumps', 'quick brown')
@@ -972,28 +1034,28 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 └─────────────────────────────────────────────────────┘
 ```
 
-**Séquence de jetons fournie sous forme de tableaux**
+**Valeurs déjà tokenisées avec le tokenizer `array`**
 
 ```sql title=Query
-SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')
 ```
 
 ```response title=Response
-┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
-│                                                               1 │
-└─────────────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')─┐
+│                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Phrase répartie sur deux éléments**
+**Une expression ne peut pas s&#39;étendre sur deux éléments**
 
 ```sql title=Query
-SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+SELECT hasPhrase(['the quick', 'brown fox'], 'quick brown')
 ```
 
 ```response title=Response
-┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
-│                                                         1 │
-└───────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the quick', 'brown fox'], 'quick brown')─┐
+│                                                    0 │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}
@@ -1534,7 +1596,7 @@ Si la chaîne d’entrée ou le motif ne sont pas en UTF-8 valide, le comporteme
 
 Contrairement au comportement par défaut de re2, `.` correspond aux sauts de ligne. Pour désactiver cela, faites précéder le motif de `(?-s)`.
 
-Le motif n’est pas ancré. Pour faire correspondre la chaîne entière, ancrez vous-même le motif à l’aide de `^` et `$`.
+Le motif n’est pas ancré. Pour faire correspondre la chaîne entière, ancrez vous-même le motif à l’aide de `^` et `$`, ou utilisez la fonction [`fullMatch`](#fullMatch).
 
 Si vous souhaitez simplement rechercher des sous-chaînes, vous pouvez utiliser à la place les fonctions [`like`](#like) ou [`position`](#position), qui sont bien plus rapides que cette fonction.
 

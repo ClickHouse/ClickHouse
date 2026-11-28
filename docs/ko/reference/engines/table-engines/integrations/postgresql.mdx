@@ -81,6 +81,8 @@ TLS/SSL 매개변수는 `libpq`로 전달되며, 명명된 컬렉션 키 또는 
 * `sslrootcert`(CA 인증서 또는 특수 값 `system`), `sslcert`(클라이언트 인증서), `sslkey`(클라이언트 private key)는 서버 로컬 파일의 경로입니다. 서버 구성 파일에 정의된 명명된 컬렉션에서만 지정할 수 있으며, 쿼리에서 재정의할 수 없습니다. 서버가 자체 권한으로 파일을 열기 때문입니다.
 * `sslrootcert_pem`, `sslcert_pem`, `sslkey_pem`은 경로 대신 해당 파일의 리터럴 내용을 받습니다. 쿼리, SQL로 생성한 명명된 컬렉션 또는 명명된 컬렉션 재정의 등 어디에서나 지정할 수 있으며, 비밀번호와 마찬가지로 logs 및 `SHOW` 쿼리에서 마스킹됩니다.
 
+클라이언트 인증서(`sslcert` 또는 `sslcert_pem`)와 클라이언트 키(`sslkey` 또는 `sslkey_pem`)가 모두 구성되어 있지 않으면 ClickHouse는 `sslcertmode=disable`을 전송하므로, `libpq`는 서비스 계정의 실행 환경에서 자동으로 제공되는 기본 인증서나 키(`~/.postgresql/postgresql.{crt,key}`)로 인증하지 않습니다. 엔드포인트와 사용자를 SQL에서 지정하는 연결은 서비스 계정의 기본 인증 정보를 재사용해서는 안 되기 때문입니다.
+
 예를 들어, 암호화된 연결을 요구하고 server certificate를 확인하려면 다음과 같이 합니다.
 
 ```xml

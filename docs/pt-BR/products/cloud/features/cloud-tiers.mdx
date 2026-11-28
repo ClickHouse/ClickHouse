@@ -204,9 +204,11 @@ Esta página explica quais tiers são mais adequados ao seu caso de uso específ
   </tbody>
 </table>
 
-<div id="basic">
-  ## Basic
-</div>
+<Note>
+  A [capacidade computacional Gen 2](/pt-BR/products/cloud/features/compute-generations) está disponível em prévia privada apenas para organizações elegíveis dos tiers Scale e Enterprise em determinadas regiões AWS. Seus recursos de escalonamento e de entrada em estado ocioso diferem dos recursos do tier padrão descritos nesta tabela.
+</Note>
+
+## Basic {#basic}
 
 * Opção econômica compatível com implantações de réplica única.
 * Ideal para casos de uso departamentais com menores volumes de dados que não exigem garantias rígidas de confiabilidade.
@@ -216,9 +218,7 @@ Esta página explica quais tiers são mais adequados ao seu caso de uso específ
   Você pode fazer upgrade para o tier Scale ou para o tier Enterprise para escalar seus serviços.
 </Note>
 
-<div id="scale">
-  ## Scale
-</div>
+## Scale {#scale}
 
 Projetado para workloads que exigem SLAs mais robustos (implantações com 2 ou mais réplicas), escalabilidade e segurança avançada.
 
@@ -228,9 +228,7 @@ Projetado para workloads que exigem SLAs mais robustos (implantações com 2 ou 
   * Opções de [escalabilidade flexível](/pt-BR/products/cloud/features/autoscaling/overview) (aumentar/reduzir verticalmente, expandir/reduzir horizontalmente).
   * [Backups configuráveis](/pt-BR/products/cloud/guides/backups/configurable-backups)
 
-<div id="enterprise">
-  ## Enterprise
-</div>
+## Enterprise {#enterprise}
 
 Atende a implantações de grande escala e de missão crítica com requisitos rigorosos de segurança e conformidade.
 
@@ -247,9 +245,7 @@ Atende a implantações de grande escala e de missão crítica com requisitos ri
   Os tiers Scale e Enterprise oferecem suporte a [serviços grandes com réplica única](/pt-BR/products/cloud/features/large-single-replica-services). Os serviços Scale e os serviços Enterprise com perfis padrão `1:4` oferecem suporte ao autoscaling vertical de autoatendimento, enquanto os serviços Enterprise com perfis personalizados exigem redimensionamento vertical com assistência do suporte. Os serviços com réplica única do tier Basic permanecem com tamanho fixo (`8 GiB` ou `12 GiB`).
 </Note>
 
-<div id="upgrading-to-a-different-tier">
-  ## Fazendo upgrade para outro tier
-</div>
+## Fazendo upgrade para outro tier {#upgrading-to-a-different-tier}
 
 Você sempre pode fazer upgrade de Basic para Scale ou de Scale para Enterprise. O downgrade entre tiers exige desabilitar recursos premium.
 

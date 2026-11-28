@@ -105,9 +105,9 @@ Dans des cas exceptionnels, vous pouvez avoir besoin d’une cohérence séquent
 Dans une base de données, la cohérence séquentielle signifie que les opérations semblent s’exécuter dans un certain ordre séquentiel, et que cet ordre est le même pour tous les processus qui interagissent avec la base de données. Autrement dit, chaque opération semble prendre effet instantanément entre son lancement et son achèvement, et il existe un ordre unique, partagé par tous, dans lequel les opérations sont observées par n’importe quel processus.
 
 Du point de vue de l’utilisateur, cela se traduit généralement par le besoin d’écrire des données dans ClickHouse et, lors de leur lecture, de garantir que les dernières lignes insérées sont bien renvoyées.
-Cela peut être réalisé de plusieurs façons (par ordre de préférence) :
+Cela peut être réalisé de plusieurs façons (par ordre de préférence) :
 
-1. **Lire/écrire sur le même nœud** - Si vous utilisez le protocole natif, ou une [session pour effectuer vos écritures/lectures via HTTP](/fr/concepts/features/interfaces/http#default-database), vous devez alors être connecté à la même réplique : dans ce cas, vous lisez directement depuis le nœud sur lequel vous écrivez, votre lecture sera donc toujours cohérente.
+1. **Lire/écrire sur le même nœud** - Si vous utilisez le protocole natif, ou une [session pour effectuer vos écritures/lectures via HTTP](/fr/concepts/features/connect-to-clickhouse/protocols/http#default-database), vous devez alors être connecté à la même réplique : dans ce cas, vous lisez directement depuis le nœud sur lequel vous écrivez, votre lecture sera donc toujours cohérente.
 2. **Synchroniser manuellement les répliques** - Si vous écrivez sur une réplique et lisez depuis une autre, vous pouvez utiliser `SYSTEM SYNC REPLICA LIGHTWEIGHT` avant la lecture.
 3. **Activer la cohérence séquentielle** - via le paramètre de requête [`select_sequential_consistency = 1`](/fr/reference/settings/session-settings/other#select_sequential_consistency). En OSS, le paramètre `insert_quorum = 'auto'` doit également être spécifié.
 
@@ -116,7 +116,7 @@ Cela peut être réalisé de plusieurs façons (par ordre de préférence) :
 Voir [ici](/fr/products/cloud/features/infrastructure/shared-merge-tree#consistency) pour plus de détails sur l’activation de ces paramètres.
 
 > L’utilisation de la cohérence séquentielle imposera une charge plus importante à ClickHouse Keeper. Cela peut
-> entraîner des inserts et des lectures plus lents. Avec SharedMergeTree, utilisé dans ClickHouse Cloud comme principal moteur de table, la cohérence séquentielle [entraîne moins de surcharge et passe mieux à l’échelle](/fr/products/cloud/features/infrastructure/shared-merge-tree#consistency). En OSS, vous devez utiliser cette approche avec prudence et mesurer la charge sur Keeper.
+> entraîner des insertions et des lectures plus lentes. Avec SharedMergeTree, utilisé dans ClickHouse Cloud comme principal moteur de table, la cohérence séquentielle [entraîne moins de surcoût et passe mieux à l’échelle](/fr/products/cloud/features/infrastructure/shared-merge-tree#consistency). En OSS, vous devez utiliser cette approche avec prudence et mesurer la charge sur Keeper.
 
 <div id="transactional-acid-support">
   ## Prise en charge transactionnelle (ACID) {#transactional-acid-support}

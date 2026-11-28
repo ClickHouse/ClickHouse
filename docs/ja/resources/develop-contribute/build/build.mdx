@@ -84,6 +84,15 @@ rustup default nightly-2026-11-02
 rustup component add rust-src
 ```
 
+Linux x86&#95;64 および aarch64 では、ClickHouse はデフォルトで musl に静的リンクされるため、Rust も musl をターゲットにする必要があります。
+`rustup` は `*-unknown-linux-gnu` ターゲットしかインストールしないため、musl のターゲットを追加してください。追加しない場合、`cmake` が `Target x86_64-unknown-linux-musl is not installed for toolchain nightly-2026-11-02` というエラーで失敗します。
+
+```bash
+rustup target add --toolchain nightly-2026-11-02 "$(uname -m)-unknown-linux-musl"
+```
+
+`-DUSE_MUSL=OFF` (glibc) を指定したビルドでは、`rustup` がデフォルトでインストールする `*-unknown-linux-gnu` ターゲットを使用します。
+
 <Tip>
   ccache は Rust をキャッシュしないため、新しいビルドディレクトリではすべての Rust クレートが再度コンパイルされます。
   `-DRUST_BUILD_CACHE_DIR=<path>` を指定すると、Cargo はコンパイル済みのクレートをそのディレクトリに保持し、同じチェックアウトおよび設定から作成した新しいビルドディレクトリでそれらが再利用されます (delta-kernel-rs を除く)。チェックアウトと設定の組み合わせごとに約 7 GB を使用します。サイズの上限はなく、いつでも削除できます。

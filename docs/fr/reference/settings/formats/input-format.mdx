@@ -1067,6 +1067,23 @@ formats échappés/en texte intégral ne sont pas affectés : dans ces formats,
 
 Chemin du fichier utilisé pour enregistrer les erreurs lors de la lecture de formats textuels (CSV, TSV).
 
+## input_format_skip_duplicated_fields {#input_format_skip_duplicated_fields}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nouveau paramètre permettant d’ignorer les occurrences répétées d’un champ dans une ligne de données d’entrée au lieu de lever une exception."}]}]} />
+
+Active ou désactive l’omission des occurrences répétées d’un champ au sein d’une même ligne de données d’entrée.
+
+Lorsque ce paramètre est activé, un champ qui apparaît plusieurs fois dans une ligne conserve sa première valeur et ses autres occurrences sont ignorées, au lieu de lever l’exception `Duplicate field found`. L’inférence de schéma infère alors le type de ce champ à partir de sa première valeur.
+
+Formats pris en charge :
+
+* `JSONEachRow` et les formats qui lisent les objets JSON de la même manière (`JSONStringsEachRow`, `JSONObjectEachRow`, les lignes de `JSON`), y compris les champs imbriqués lus avec `input_format_import_nested_json`
+* `BSONEachRow`
+* `TSKV`
+* `Form`
+
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

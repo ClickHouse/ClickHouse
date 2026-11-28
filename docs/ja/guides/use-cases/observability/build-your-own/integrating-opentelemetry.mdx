@@ -123,9 +123,7 @@ collector は、ログ収集のために 2 つの主要な receiver を提供し
 
 可能であれば、構造化ログを採用し、ログを JSON (つまり ndjson) 形式で出力することを推奨します。これにより、後段で必要になるログ処理が簡単になります。たとえば、[collector プロセッサ](https://opentelemetry.io/docs/collector/configuration/#processors)を使って ClickHouse に送信する前に処理する場合でも、materialized view を使ってインサート時に処理する場合でも同様です。構造化ログを使用すると、最終的に後続の処理リソースを節約でき、ClickHouse 環境で必要な CPU を削減できます。
 
-<div id="example">
-  ### 例 {#example}
-</div>
+### 例 {#example}
 
 例として、構造化 (JSON) ログと非構造化ログのデータセットを用意しています。いずれも約 10m 行で、以下のリンクから利用できます。
 
@@ -134,12 +132,12 @@ collector は、ログ収集のために 2 つの主要な receiver を提供し
 
 以下の例では、構造化データセットを使用します。以降の例を再現するには、このファイルをダウンロードして展開しておいてください。
 
-以下は、ディスク上のこれらのファイルを `filelog receiver` で読み込み、生成されたメッセージを stdout に出力する OTel Collector のシンプルな構成です。ここではログが構造化されているため、[`json_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/json_parser.md) operator を使用します。`access-structured.log` ファイルへのパスは適宜変更してください。
+以下は、ディスク上のこれらのファイルを `filelog receiver` で読み込み、生成されたメッセージを stdout に出力する OTel Collector のシンプルな構成です。ここではログが構造化されているため、[`json_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/json_parser.md) オペレーター を使用します。`access-structured.log` ファイルへのパスは適宜変更してください。
 
 <Info>
   **パースには ClickHouse の利用を検討してください**
 
-  以下の例では、ログから timestamp を抽出しています。これには `json_parser` operator を使用する必要があります。この operator はログ行全体を JSON 文字列に変換し、その結果を `LogAttributes` に格納します。これは計算コストが高くなる可能性がありますが、[ClickHouse ではより効率的に実行できます](https://clickhouse.com/blog/worlds-fastest-json-querying-tool-clickhouse-local) - [SQL による構造の抽出](/ja/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql)。同等の非構造化ログの例として、[`regex_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/regex_parser.md) を使用して同じことを実現するものを[こちら](https://pastila.nl/?01da7ee2/2ffd3ba8124a7d6e4ddf39422ad5b863#swBkiAXvGP7mRPgbuzzHFA==)で確認できます。
+  以下の例では、ログから タイムスタンプ を抽出しています。これには `json_parser` オペレーター を使用する必要があります。この オペレーター はログ行全体を JSON 文字列に変換し、その結果を `LogAttributes` に格納します。これは計算コストが高くなる可能性がありますが、[ClickHouse ではより効率的に実行できます](https://clickhouse.com/blog/worlds-fastest-json-querying-tool-clickhouse-local) - [SQL による構造の抽出](/ja/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql)。同等の非構造化ログの例として、[`regex_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/regex_parser.md) を使用して同じことを実現するものを[こちら](https://pastila.nl/?01da7ee2/2ffd3ba8124a7d6e4ddf39422ad5b863#swBkiAXvGP7mRPgbuzzHFA==)で確認できます。
 </Info>
 
 **[config-structured-logs.yaml](https://www.otelbin.io/#config=receivers%3A*N_filelog%3A*N___include%3A*N_____-_%2Fopt%2Fdata%2Flogs%2Faccess-structured.log*N___start*_at%3A_beginning*N___operators%3A*N_____-_type%3A_json*_parser*N_______timestamp%3A*N_________parse*_from%3A_attributes.time*_local*N_________layout%3A_*%22*.Y-*.m-*.d_*.H%3A*.M%3A*.S*%22*N*N*Nprocessors%3A*N__batch%3A*N____timeout%3A_5s*N____send*_batch*_size%3A_1*N*N*Nexporters%3A*N_logging%3A*N___loglevel%3A_debug*N*N*Nservice%3A*N_pipelines%3A*N___logs%3A*N_____receivers%3A_%5Bfilelog%5D*N_____processors%3A_%5Bbatch%5D*N_____exporters%3A_%5Blogging%5D%7E)**
@@ -170,12 +168,12 @@ service:
       exporters: [logging]
 ```
 
-collector をローカルにインストールするには、[公式手順](https://opentelemetry.io/docs/collector/installation/)に従ってください。重要なのは、[contrib distribution](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib) (`filelog` receiver を含む) を使用するように手順を読み替えることです。たとえば、`otelcol_0.102.1_darwin_arm64.tar.gz` ではなく、`otelcol-contrib_0.102.1_darwin_arm64.tar.gz` をダウンロードします。リリースは[こちら](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)で確認できます。
+collector をローカルにインストールするには、[公式手順](https://opentelemetry.io/docs/collector/installation/)に従ってください。重要なのは、[contrib ディストリビューション](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib) (`filelog` receiver を含む) を使用するように手順を読み替えることです。たとえば、`otelcol_0.102.1_darwin_arm64.tar.gz` ではなく、`otelcol-contrib_0.102.1_darwin_arm64.tar.gz` をダウンロードします。リリースは[こちら](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)で確認できます。
 
 インストール後、OTel collector は次のコマンドで実行できます。
 
 ```bash
-./otelcol-contrib --config config-logs.yaml
+./otelcol-contrib --config config-structured-logs.yaml
 ```
 
 構造化ログを使用する場合、出力されるメッセージは次の形式になります。

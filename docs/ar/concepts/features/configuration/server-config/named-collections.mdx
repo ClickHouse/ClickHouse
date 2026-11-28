@@ -83,7 +83,7 @@ url = 'https://connection.url/'
 فيمكنك استخدام `local_encrypted` أو `keeper_encrypted`/`zookeeper_encrypted`.
 
 لاستخدام ZooKeeper/Keeper، نحتاج أيضًا إلى إعداد `path` (المسار في ZooKeeper/Keeper الذي ستُخزَّن فيه المجموعات المُسمّاة) ضمن
-قسم `named_collections_storage` في ملف التهيئة. يستخدم المثال التالي التشفير وZooKeeper/Keeper:
+قسم `named_collections_storage` في ملف الإعدادات. يستخدم المثال التالي التشفير وZooKeeper/Keeper:
 
 ```xml
 <clickhouse>
@@ -99,7 +99,38 @@ url = 'https://connection.url/'
 
 القيمة الافتراضية لمَعلمة التهيئة الاختيارية `update_timeout_ms` هي `5000`.
 
-يمكنك فحص نوع التخزين النشط عبر `system.server_settings` و`getServerSetting`:
+#### تدوير المفاتيح {#named-collections-key-rotation}
+
+يمكن تهيئة عدة مفاتيح، لكلٍّ منها attribute باسم `id`، ويحدد `current_key_id` المفتاح
+الذي تُشفَّر به العناصر الجديدة (أو يحدده `current_key_hex` بقيمته بدلًا من ذلك). ويُستخدم كل مفتاح مُهيَّأ
+لفك التشفير. لا يرصد الخادم أثناء تشغيله أي تغييرات على المفاتيح، ولا حتى عند تنفيذ
+`SYSTEM RELOAD CONFIG`، إذ يلزم إعادة التشغيل. تظل المجموعات المسمّاة الموجودة قابلة للقراءة باستخدام
+مفتاحها القديم، ويُعاد تشفيرها بالمفتاح الحالي عند كتابتها في المرة التالية، سواء عبر
+`ALTER NAMED COLLECTION` أو `CREATE OR REPLACE NAMED COLLECTION` أو الاستعادة من نسخة احتياطية. وإذا افتقر الخادم
+إلى المفتاح الذي شُفِّرت به مجموعة مسمّاة، فإنه يُبلغ عن error يتضمن بصمة ذلك
+المفتاح، ويتخطى تلك المجموعة أثناء التحميل، ثم تُحمَّل مجددًا بمجرد إعادة تشغيل الخادم مع
+المفتاح، أو بمجرد أن يعيد خادم يمتلك المفتاح كتابة المجموعة. لا تُزِل مفتاحًا قديمًا من
+التهيئة إلا بعد إعادة كتابة كل مجموعة مسمّاة مُشفَّرة به.
+
+```xml
+<clickhouse>
+  <named_collections_storage>
+    <type>local_encrypted</type>
+    <key_hex id="0">bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <key_hex id="1">00112233445566778899aabbccddeeff</key_hex>
+    <current_key_id>1</current_key_id>
+  </named_collections_storage>
+</clickhouse>
+```
+
+لتدوير مفتاح تخزين من النوع `local_encrypted`، أضف المفتاح الجديد، واجعله المفتاح الحالي كما في
+المثال أعلاه، ثم أعد تشغيل الخادم. أما الخوادم التي تتشارك تخزينًا من النوع `keeper_encrypted` أو
+`zookeeper_encrypted`، فيجب أن تعرف جميعها المفتاح الجديد قبل أن يكتب أيٌّ منها باستخدامه: فالخادم الذي
+أُعيد تشغيله بمفتاح حالي جديد يكتب عناصر يتعذّر على الخوادم التي لم يُعَد تشغيلها بعدُ فكُّ تشفيرها.
+لذا، دوّر المفتاح على مرحلتين: أضف أولًا المفتاح الجديد مع إبقاء المفتاح القديم هو الحالي، ثم أعد تشغيل
+جميع الخوادم؛ وبعد ذلك اجعل المفتاح الجديد هو الحالي، وأعد تشغيل جميع الخوادم مرة أخرى.
+
+يمكنك الاطلاع على نوع التخزين النشط عبر `system.server_settings` و`getServerSetting`:
 
 ```sql
 SELECT value, getServerSetting('named_collections_storage_type')
@@ -107,7 +138,7 @@ FROM system.server_settings
 WHERE name = 'named_collections_storage.type';
 ```
 
-يتطلب تغيير نوع التخزين إعادة تشغيل الخادم؛ ولا يغيّر `SYSTEM RELOAD CONFIG` الواجهة الخلفية النشطة.
+يتطلب تغيير نوع التخزين إعادة تشغيل الخادم، إذ لا يؤدي الأمر `SYSTEM RELOAD CONFIG` إلى تغيير الواجهة الخلفية النشطة.
 
 ## تخزين المجموعات المسماة في ملفات التهيئة {#storing-named-collections-in-configuration-files}
 
@@ -559,19 +590,48 @@ kafka_max_block_size = '1048576';
 
 ### TLS وشهادات العميل {#kafka-mtls-named-collection}
 
-تُعدّ مسارات TLS و`ssl.key.password` من [إعدادات librdkafka الموسّعة](/ar/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)، وليست من إعدادات `kafka_*` الخاصة بمحرك جدول Kafka. في المجموعة المسمّاة، اضبطها باستخدام البادئة `kafka.` في DDL (مثل `kafka.ssl_ca_location`) أو ضمن `<kafka>` في XML (مثل `<ssl_ca_location>`). وعندما يستخدم `ENGINE = Kafka(collection)` المجموعةَ، لا تُدمَج تهيئة `<kafka>` العامة الخاصة بالخادم.
+تُعدّ شهادات TLS والمفاتيح الخاصة و`ssl.key.password` من [إعدادات librdkafka الموسّعة](/ar/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)، وليست من إعدادات `kafka_*` الخاصة بمحرك جدول Kafka. في المجموعة المسمّاة، عيّنها باستخدام البادئة `kafka.` في DDL (مثل `kafka.ssl_ca_pem`) أو ضمن `<kafka>` في XML (مثل `<ssl_ca_location>`). وعندما يستخدم `ENGINE = Kafka(collection)` المجموعة، لا تُدمج تهيئة `<kafka>` العامة على مستوى الخادم.
+
+لا تقبل المجموعة المسمّاة المُنشأة باستخدام SQL إلا خصائص `librdkafka` المسموح بها صراحةً. أما بالنسبة إلى TLS، فمرّر محتوى الشهادة أو المفتاح في `ssl.ca.pem` أو `ssl.certificate.pem` أو `ssl.key.pem`. ولاستخدام مسارات الملفات أو خصائص أخرى غير مدرجة في قائمة السماح، عرّف المجموعة في ملف إعدادات الخادم. راجع [TLS وSASL مع المجموعات المسمّاة](/ar/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections).
+
+مثال باستخدام DDL:
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 ```
 
-استخدم `SETTINGS` على مستوى الجدول لتحديد `kafka_broker_list` و`kafka_topic_list` و`kafka_group_name` و`kafka_format` و`kafka_sasl_username` و`kafka_sasl_password` عندما يلزم أن تختلف هذه القيم من جدول إلى آخر. يمكنك الاطلاع على مثال كامل لعبارة `CREATE TABLE` في [TLS وSASL مع المجموعات المسمّاة](/ar/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections).
+مثال باستخدام XML، إذ يمكنه الإشارة إلى ملفات موجودة على الخادم:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
+```
+
+استخدم `SETTINGS` على مستوى الجدول لتحديد `kafka_broker_list` و`kafka_topic_list` و`kafka_group_name` و`kafka_format` و`kafka_sasl_username` و`kafka_sasl_password` إذا كان يلزم أن تختلف هذه القيم من جدول إلى آخر. يمكنك الاطلاع على مثال كامل لـ `CREATE TABLE` في [TLS وSASL مع المجموعات المسمّاة](/ar/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections).
 
 ### مصادقة OAUTHBEARER/OIDC {#oauthbearer-oidc-authentication}
 

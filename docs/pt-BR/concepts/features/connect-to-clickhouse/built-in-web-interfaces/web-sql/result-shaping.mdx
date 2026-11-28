@@ -1,0 +1,117 @@
+---
+description: 'Documentação sobre ordenação, filtragem e paginação de um resultado na Interface Web SQL integrada (`/play`)'
+sidebarTitle: 'Modelagem de resultados na interface web'
+slug: /concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/result-shaping
+title: 'Ordenação, filtragem e paginação na interface web'
+doc_type: 'reference'
+sidebar: false
+---
+
+A Interface Web SQL integrada (`play.html`, disponibilizada no caminho [`/play`](/pt-BR/concepts/features/connect-to-clickhouse/protocols/http) de qualquer porta HTTP do ClickHouse) permite ordenar um resultado por suas colunas, filtrá-lo pelos valores delas e navegar por ele em páginas — tudo isso sem editar a consulta.
+
+Nada disso acontece no navegador. Cada alteração executa novamente a consulta com a configuração de construção de consultas correspondente, que o servidor materializa encapsulando a consulta como uma tabela derivada com `ORDER BY`, `WHERE` e `LIMIT` externos. Assim, o resultado exibido na tela é o resultado ordenado, filtrado e paginado da consulta inteira, e não uma reorganização das linhas que a página continha naquele momento.
+
+## Ordenação {#sorting}
+
+Duas setas aparecem à direita de cada cabeçalho de coluna: ▲ ordena o resultado por essa coluna em ordem crescente e ▼, em ordem decrescente. Clicar em uma seta ativa essa ordenação e executa a consulta novamente; clicar na seta da direção que já está ativa desativa a ordenação, e clicar na seta da outra direção muda para ela. As setas são botões de verdade, então quem usa o teclado pode chegar até elas com a tecla Tab e ativá-las pelo teclado, e cada uma expõe seu estado às tecnologias assistivas (o próprio cabeçalho contém `aria-sort`).
+
+Em dispositivos com ponteiro que permite passar o cursor sobre os elementos (como um mouse), as setas só aparecem enquanto o cursor está sobre o cabeçalho ou quando uma seta está em foco, para não atrapalhar nos demais momentos; em dispositivos de toque e outros dispositivos de ponteiro impreciso, que não oferecem esse recurso, elas ficam sempre visíveis para que possam ser tocadas diretamente. Uma coluna que faz parte da ordenação exibe as duas setas mesmo sem o cursor sobre ela: uma para que a ordenação possa ser identificada rapidamente, e a outra porque inverter a direção é a próxima ação mais provável.
+
+Todos os ícones de um cabeçalho de coluna funcionam da mesma forma, seja qual for a funcionalidade que controlam: o ícone fica esmaecido enquanto essa funcionalidade não está aplicada à coluna e, quando passa a estar, é exibido na cor reservada aos controles ativos (magenta no tema claro e amarelo no escuro); é também nesse caso que ele permanece visível sem o cursor sobre ele. O esmaecimento é uma perda de cor, nunca de opacidade, de modo que um ícone nunca parece desbotado sobre o nome da coluna ou sobre a codificação por cores das células.
+
+### Ordenação por várias colunas {#sorting-by-several-columns}
+
+Ativar uma ordenação substitui a atual: as colunas ordenadas anteriormente são desativadas e a coluna clicada passa a ser a única chave de ordenação. Mantenha <kbd>Shift</kbd> pressionado ao clicar para preservar as chaves de ordenação já em vigor e adicionar esta coluna depois delas, seguindo a mesma ordem usada pelo `ORDER BY`: a primeira chave prevalece, e cada chave seguinte desempata as anteriores. Com mais de uma chave de ordenação, cada seta ativa também exibe, em sobrescrito, a posição da respectiva coluna nessa ordem (▼¹, ▲², …).
+
+Usar <kbd>Shift</kbd> em uma coluna que já é chave de ordenação apenas inverte sua direção, sem alterar sua posição na ordem. Desativar uma coluna remove somente essa coluna e mantém as demais chaves onde estão.
+
+## Filtragem {#filtering}
+
+### A partir de um cabeçalho de coluna {#filtering-from-a-column-header}
+
+Um ícone de funil aparece em cada cabeçalho de coluna, ao lado das setas de ordenação, e é exibido da mesma forma que elas. Ao clicar nele, abre-se um campo de entrada para um predicado sobre aquela coluna, com um botão de aplicar (▶) colado à direita; o marcador de posição sugere a estrutura que um predicado assume para o tipo da coluna — `> 10` para um número, `LIKE '%test%'` para uma string. O campo de entrada abre dentro da célula do cabeçalho, que ganha uma segunda linha para acomodá-lo — a mesma linha em que o filtro é exibido depois de definido, de modo que o filtro é editado no mesmo lugar onde é lido. O que se digita é a parte que vem depois do nome da coluna, então `> 10` se torna `WHERE column > 10`, e qualquer expressão que o servidor aceite nessa posição funciona — `BETWEEN 1 AND 5`, `IN (1, 2, 3)`, `IS NOT NULL`, `% 2 = 0`.
+
+Clicar no botão de aplicar (ou pressionar <kbd>Enter</kbd>) aplica o filtro e executa a consulta novamente; pressionar <kbd>Esc</kbd>, clicar em outro lugar ou sair do campo com Tab descarta a edição e fecha o campo de entrada. O botão de aplicar fica inativo enquanto não há nada a aplicar — um campo vazio em uma coluna sem filtro —, mas permanece ativo quando o campo está vazio em uma coluna que tem filtro, já que esvaziar o campo e aplicar é a forma de remover um filtro pelo campo de entrada. Filtros em várias colunas são combinados com `AND`.
+
+### A partir de uma célula {#filtering-from-a-cell}
+
+Ao selecionar uma célula, um ícone de funil também aparece ao lado do ícone de cópia, quando a coluna oferece suporte a um filtro sobre aquele valor. Ao clicar nele, são oferecidas as comparações adequadas:
+
+| Valor                                                               | Opções oferecidas                                                                               |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Um número                                                           | `=`, `!=`, `>`, `<`, `>=`, `<=`                                                                 |
+| Uma data ou um horário (`Date`, `Date32`, `DateTime`, `DateTime64`) | `=`, `!=`, `>`, `<`, `>=`, `<=`                                                                 |
+| Uma string de no máximo 100 caracteres                              | `=`, `!=`, `contains` — uma string vazia recebe apenas `=` e `!=`, já que toda string a contém  |
+| Um `Bool`                                                           | `true`, `false` — os dois valores em si, em vez de uma comparação com o valor desta célula      |
+| Um `Enum`                                                           | `=`, `!=` — uma correspondência parcial sobre um conjunto fechado de nomes não é um filtro útil |
+| `NULL`                                                              | `IS NULL`, `IS NOT NULL`                                                                        |
+
+A opção escolhida é aplicada imediatamente. Uma data, um horário ou um enum é comparado exatamente com o texto que o servidor renderizou, que o ClickHouse interpreta de volta como o tipo da própria coluna (no caso de um enum, o nome do valor). `contains` se torna um pattern `LIKE` com os caracteres `%` e `_` do próprio valor escapados, de modo que a correspondência seja literal. Uma célula cujo valor não se encaixe em nenhum dos casos acima — um array, uma tupla, um map, um texto longo — não oferece menu; ainda assim, sua coluna pode ser filtrada pelo campo de entrada do cabeçalho.
+
+### O filtro em vigor {#the-filter-in-effect}
+
+Uma coluna filtrada exibe seu predicado abaixo do nome enquanto o filtro estiver definido, de modo que sempre fica claro que as linhas na tela são um subconjunto do resultado; o ícone de funil desce para ficar ao lado do predicado, no canto inferior esquerdo do cabeçalho. Clicar no predicado reabre o campo de entrada sobre ele, no mesmo lugar; o ✕ ao lado remove o filtro, assim como aplicar uma entrada vazia. Ambas as ações executam a consulta novamente.
+
+Há um único filtro por coluna, seja qual for a origem: definir um filtro a partir de uma célula substitui o que o campo de entrada do cabeçalho tiver definido ali, e o cabeçalho sempre exibe o filtro em vigor.
+
+Um resultado filtrado que volta vazio mantém seus cabeçalhos de coluna (em vez do layout vertical usado normalmente para exibir resultados vazios), para que o filtro sem nenhuma correspondência possa ser visto e removido.
+
+## Paginação {#pagination}
+
+O resultado é exibido até um limite: 1000 linhas, ou menos no caso de um resultado muito largo. Quando o resultado é truncado nesse limite, ainda há mais dados para visualizar, e um paginador aparece abaixo da tabela:
+
+```text
+Page: 1 2 …   Per page: 1000
+```
+
+Clicar em um número de página define o tamanho da página como o limite de exibição e essa página como a configuração [`page`](/pt-BR/reference/settings/session-settings/other#page) e, em seguida, executa a consulta novamente; o servidor converte a página no `OFFSET` correspondente. A partir daí, o paginador permanece visível enquanto o resultado estiver paginado, mesmo que cada página fique exatamente cheia e, portanto, não pareça mais truncada.
+
+O número de páginas não é exibido, pois não é conhecido — contar as linhas do resultado exigiria executar uma segunda consulta. O paginador lista as dez páginas anteriores à atual, a página atual e a próxima, seguidas de `…`. Clicar em `…` o transforma em um campo de entrada para qualquer número de página, que é aplicado quando o campo perde o foco (pressionar <kbd>Enter</kbd> tem o mesmo efeito).
+
+A próxima página só é oferecida enquanto a atual estiver cheia. Uma página que retorna com menos linhas do que comporta marca o fim do resultado, portanto não há página depois dela. (Um resultado cujo comprimento seja, por acaso, um múltiplo exato do tamanho da página ainda oferece mais uma página, que então retorna vazia: distinguir esse caso exigiria, novamente, contar as linhas.)
+
+`Per page` mostra quantas linhas cabem em uma página e é editado da mesma forma: clique no valor e digite outro. Ele não pode exceder o que o resultado consegue exibir de uma só vez — uma página maior retornaria linhas que a tabela acabaria descartando por truncamento, e a próxima página começaria depois delas; assim, ao continuar paginando, as linhas que nunca couberam seriam puladas silenciosamente. Um número maior é interpretado como esse máximo, que passa a ser o valor exibido. Alterá-lo faz a paginação recomeçar na primeira página, já que páginas de um novo tamanho contêm linhas diferentes.
+
+Alterar a ordenação ou qualquer filtro leva de volta à primeira página: ambos mudam quais linhas o resultado contém, ou em que ordem, de modo que a página em que o usuário estava não corresponde mais à mesma fatia do resultado.
+
+## Como é aplicada {#how-it-is-applied}
+
+A estrutura é enviada por meio das configurações de construção de consultas [`order`](/pt-BR/reference/settings/session-settings/other#order), [`filter`](/pt-BR/reference/settings/session-settings/other#filter), [`limit`](/pt-BR/reference/settings/session-settings/other#limit) e [`page`](/pt-BR/reference/settings/session-settings/other#page). Como o servidor as aplica à consulta analisada sintaticamente, e não ao seu texto, elas se combinam com os elementos já presentes na consulta: um `UNION`, uma cláusula `FORMAT` no final ou as próprias cláusulas `ORDER BY` e `LIMIT` continuam funcionando, e a consulta no editor nunca é reescrita.
+
+Os nomes de colunas são passados como identificadores entre aspas. Assim, uma coluna do resultado cujo nome seja uma expressão (`count()`) ou contenha um espaço pode ser usada como chave de ordenação ou de filtro.
+
+## Quando está disponível {#when-it-is-available}
+
+A estrutura é oferecida apenas para as instruções que essas configurações estruturam, ou seja, consultas `SELECT` e `UNION` (incluindo uma consulta que começa com uma cláusula `WITH` ou com `FROM`). Ela não é oferecida para `SHOW`, `DESCRIBE`, `EXISTS` ou `EXPLAIN`: essas instruções de fato produzem uma tabela, mas as configurações não se aplicam a elas, então um controle ali prometeria um resultado que as linhas não têm.
+
+Uma estrutura se aplica ao resultado de uma única instrução, portanto não é oferecida para uma execução de várias instruções via &quot;Executar tudo&quot;, cujas instruções são consultas separadas, com colunas próprias.
+
+Ela também não é oferecida para um resultado com no máximo uma linha na primeira página: qualquer ordem de uma única linha é a mesma ordem, e um filtro sobre ela só pode mantê-la ou removê-la, de modo que os controles não fariam nada além de reexecutar a consulta para as mesmas linhas — e um resultado vazio não tem sequer uma linha a remover. É pelo mesmo motivo que os botões de alternância de [codificação por cores](/pt-BR/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding) ficam ocultos nesse caso: com no máximo uma linha, não há nada a comparar.
+
+Dois tipos de resultado com uma única linha mantêm seus controles, porque nesses casos os controles são a única forma de voltar atrás:
+
+* um que já está ordenado ou filtrado, cuja ordenação precisa continuar reversível e cujo filtro precisa continuar removível — um filtro que corresponde a uma única linha é justamente como um resultado longo se torna curto, e retirar os controles junto deixaria o usuário preso com o filtro ativo;
+* um truncado no limite de exibição, que é a primeira página de um resultado mais longo: o tamanho da página é limitado pelo número de células que a tabela consegue exibir de uma vez, então um resultado muito largo pode ser truncado em uma única linha, e as linhas seguintes são exatamente o que a ordenação e a paginação existem para alcançar.
+
+Uma estrutura pertence à instrução em que foi criada. Executar uma instrução diferente — após editar a consulta ou mover o cursor para outra instrução em um editor com várias instruções — a descarta, em vez de aplicar um `ORDER BY` ou um `WHERE` a uma coluna que a nova instrução talvez não tenha.
+
+Ela também pertence ao contexto em que essa instrução foi executada: o banco de dados selecionado, o servidor e o usuário para os quais foi enviada e os valores de seus parâmetros de consulta. O mesmo texto passa a referenciar colunas diferentes quando qualquer um desses itens muda — `SELECT * FROM events` após trocar de banco de dados, ou `SELECT * FROM {tbl:Identifier}` após editar o parâmetro —, então a estrutura também é descartada nesses casos, e a próxima execução retorna o resultado sem estrutura.
+
+## Download e cópia {#downloading-and-copying}
+
+O download executa novamente a consulta de origem com a mesma estrutura, de modo que o arquivo exportado contém as mesmas linhas, na mesma ordem, do resultado exibido na tela. A cópia usa o resultado renderizado e, portanto, também corresponde a ele.
+
+## Persistência {#persistence}
+
+A estrutura é mantida na URL da página (`sort_columns`, `filters`, `page` e `page_size`), no histórico do navegador e no snapshot do resultado da célula à qual pertence. Assim, ela é preservada ao recarregar a página, compartilhar o link ou navegar para trás e para frente. Como a estrutura determina as linhas, e não apenas sua apresentação, um link compartilhado que executa a consulta automaticamente (`run=1`) executa essa consulta novamente com a mesma estrutura e, assim, reproduz o próprio resultado. Apenas estruturas ativas são armazenadas — um resultado sem estrutura não acrescenta nada à URL nem ao estado do histórico — para mantê-los compactos.
+
+Um resultado restaurado mantém sua estrutura vinculada ao contexto que o produziu, conforme descrito acima: o snapshot registra o banco de dados, a conexão e os valores dos parâmetros usados para produzir suas linhas. Portanto, executar novamente a instrução após alterar qualquer um desses elementos descarta a estrutura, em vez de aplicá-la a um resultado diferente.
+
+Assim como os [modos de codificação por cores](/pt-BR/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding) e as [colunas fixadas](/pt-BR/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/pinned-columns), a estrutura pertence ao resultado que ela estrutura: à aba da consulta e, quando a aba é um [notebook](/pt-BR/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook), à célula específica. Portanto, ordenar ou filtrar um resultado não altera nem executa novamente o resultado de outra aba ou de outra célula — estruturar o resultado de uma célula executa novamente essa célula.
+
+## Limitações {#limitations}
+
+* Uma estrutura que o servidor não consegue aplicar faz a consulta falhar, e o erro é exibido como em qualquer outra consulta com falha. A estrutura é então descartada, pois uma execução com falha não renderiza nem os cabeçalhos nem o paginador que permitiriam removê-la.
+* A ordenação e a filtragem identificam uma coluna pelo nome dela no resultado. Um resultado pode conter o mesmo nome duas vezes (`SELECT 1 AS x, 2 AS x`, uma junção de tabelas que compartilham nomes de colunas), e essas colunas não podem ser diferenciadas pelo nome; por isso, elas não recebem controles de ordenação nem de filtro, enquanto as colunas com nome único do mesmo resultado mantêm os seus.
+* A ordenação por múltiplas colunas exige a tecla <kbd>Shift</kbd> e, portanto, não está disponível em dispositivos com tela sensível ao toque; já a ordenação por uma única coluna está.
+* O layout vertical (transposto) de um resultado de uma única linha não tem cabeçalhos de coluna e, portanto, nenhum controle; por esse motivo, um resultado que o usuário já tenha estruturado mantém o layout horizontal.

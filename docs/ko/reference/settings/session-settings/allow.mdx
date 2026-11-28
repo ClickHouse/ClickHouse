@@ -225,7 +225,9 @@ JOIN 키에서 Dynamic 타입을 사용할 수 있습니다. 호환성을 위해
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-multiIf 함수를 열 지향으로 실행할 수 있도록 허용합니다
+`multiIf` 함수가 결과를 행 단위가 아닌 컬럼 전체에 대해 한 번에 계산하도록 허용합니다. 이 방식이 더 빠릅니다.
+
+열 지향 실행은 결과 타입이 숫자, `Decimal`, 날짜 또는 날짜-시간 타입, `Enum`, `IPv4`, `IPv6` 중 하나이고 함수의 분기가 255개 이하인 경우에만 사용됩니다. 그 외에는 이 설정과 관계없이 row-by-row 실행이 사용됩니다.
 
 ## allow_expire_snapshots {#allow_expire_snapshots}
 

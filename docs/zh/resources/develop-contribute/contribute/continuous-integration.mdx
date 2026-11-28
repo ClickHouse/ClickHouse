@@ -201,9 +201,9 @@ python -m ci.praktika run "<BUILD_JOB_NAME>"
 
 除 Python 3 和 Docker 之外，无需其他依赖。
 
-#### 可用的构建作业 {#available-build-jobs}
+#### 可用的构建 Job {#available-build-jobs}
 
-构建作业名称与 CI Report 中显示的名称完全一致：
+构建 Job 名称与 CI Report 中显示的名称完全一致：
 
 **AMD64 构建：**
 
@@ -215,7 +215,6 @@ python -m ci.praktika run "<BUILD_JOB_NAME>"
 * `Build (amd_ubsan)` - Undefined Behavior Sanitizer 构建
 * `Build (amd_binary)` - 不使用 Thin LTO 的快速发布构建
 * `Build (amd_compat)` - 适用于旧系统的兼容性构建
-* `Build (amd_musl)` - 使用 musl libc 的构建
 * `Build (amd_darwin)` - macOS 构建
 * `Build (amd_freebsd)` - FreeBSD 构建
 
@@ -236,7 +235,7 @@ python -m ci.praktika run "<BUILD_JOB_NAME>"
 * `Build (loongarch64)` - LoongArch 64 位
 * `Build (wasm64)` - 通过 Emscripten 构建的 WebAssembly 64 位。Experimental：构建 `clickhouse` 二进制文件，并验证 `clickhouse local` 可在 Node.js ≥ 24 下执行查询 (该模块也可在浏览器中运行，但 CI 尚未对此进行验证)
 
-如果作业成功，构建结果将位于 `<repo_root>/ci/tmp/build` 目录下。
+如果 Job 成功，构建结果将位于 `<repo_root>/ci/tmp/build` 目录下。
 
 **注意：** 对于不属于“其他架构”类别的构建 (“其他架构”类别使用交叉编译) ，你的本地机器架构必须与构建类型一致，才能按 `BUILD_JOB_NAME` 的要求生成相应构建。
 
@@ -302,7 +301,7 @@ clang-tidy -p ci/tmp/build src/Common/StringUtils.cpp
 
 master 分支在每次提交时，都会基于启用 LLVM 覆盖率插桩的构建版本运行无状态测试、集成测试和单元测试，并发布覆盖率报告。
 拉取请求只有添加了 `ci-coverage` 标签 (或修改了用于收集和报告覆盖率的代码) 时才会运行这些 Job；添加该标签后，即可获取该拉取请求的覆盖率报告以及变更代码行的覆盖率。
-未添加该标签时，拉取请求会改为在 `arm_binary` 构建版本上运行相同的无状态测试和集成测试配置；单元测试则会在每个拉取请求中基于 `amd_debug` 构建版本以及启用 sanitizers 的构建版本运行。
+未添加该标签时，拉取请求会改为在 `arm_binary` 构建版本上运行相同的无状态测试和集成测试配置；单元测试则会在每个拉取请求中基于 `arm_debug`、`arm_asan_ubsan`、`arm_tsan` 和 `amd_msan` 构建版本运行。
 对于在 ARM 上会自行跳过的集成测试模块，如果变更涉及其覆盖的代码，这些模块会在相应的 sanitizer 定向 Job 中运行。
 如果某个拉取请求仅新增了无状态测试，且需要覆盖率报告，则可以改用 `ci-llvm-coverage` 标签：该标签会运行覆盖率 Job、被排除在覆盖率统计之外的测试所对应的 Job、针对变更测试的无状态不稳定性检查、代码风格检查以及 AI 代码审查，并跳过其余所有 Job。此类拉取请求可以带着该标签合并；但如果拉取请求还改动了其他任何内容，则不能合并。
 

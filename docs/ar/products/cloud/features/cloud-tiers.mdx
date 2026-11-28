@@ -204,9 +204,11 @@ doc_type: 'reference'
   </tbody>
 </table>
 
-<div id="basic">
-  ## Basic
-</div>
+<Note>
+  تتوفر [القدرة الحاسوبية من الجيل 2](/ar/products/cloud/features/compute-generations) في مرحلة المعاينة الخاصة حصريًا للمؤسسات المؤهلة في مستويات Scale وEnterprise في مناطق AWS محددة. وتختلف قدراتها على توسيع النطاق والدخول في حالة خمول عن القدرات القياسية الموضحة في هذا الجدول.
+</Note>
+
+## Basic {#basic}
 
 * خيار اقتصادي يدعم عمليات النشر ذات النسخة المتماثلة الواحدة.
 * مثالي لحالات الاستخدام على مستوى الأقسام ذات أحجام البيانات الأصغر التي لا تتطلب ضمانات موثوقية صارمة.
@@ -216,9 +218,7 @@ doc_type: 'reference'
   يمكنك الترقية إلى فئة Scale أو Enterprise لتوسيع خدماتك.
 </Note>
 
-<div id="scale">
-  ## Scale
-</div>
+## Scale {#scale}
 
 مخصص لأحمال العمل التي تتطلب اتفاقيات مستوى خدمة محسّنة (عمليات نشر تضم نُسختين متماثلتين أو أكثر)، وقابلية توسّع، وأمانًا متقدمًا.
 
@@ -228,9 +228,7 @@ doc_type: 'reference'
   * خيارات [التوسّع المرن](/ar/products/cloud/features/autoscaling/overview) (التوسّع/التقليص رأسيًا وأفقيًا).
   * [النسخ الاحتياطية القابلة للتخصيص](/ar/products/cloud/guides/backups/configurable-backups)
 
-<div id="enterprise">
-  ## Enterprise
-</div>
+## Enterprise {#enterprise}
 
 مخصّص لعمليات النشر واسعة النطاق والبالغة الأهمية، ذات متطلبات الأمان والامتثال الصارمة.
 
@@ -247,9 +245,7 @@ doc_type: 'reference'
   تدعم فئتا Scale وEnterprise [الخدمات الكبيرة ذات النسخة المتماثلة الواحدة](/ar/products/cloud/features/large-single-replica-services). تدعم خدمات Scale وخدمات Enterprise ذات ملفات تعريف `1:4` القياسية التوسّع الرأسي التلقائي بالخدمة الذاتية، بينما تتطلب خدمات Enterprise ذات ملفات التعريف المخصّصة تغيير الحجم الرأسي بمساعدة الدعم. تظل الخدمات ذات النسخة المتماثلة الواحدة في فئة Basic ثابتة الحجم (`8 GiB` أو `12 GiB`).
 </Note>
 
-<div id="upgrading-to-a-different-tier">
-  ## الترقية إلى فئة خدمة مختلفة
-</div>
+## الترقية إلى فئة خدمة مختلفة {#upgrading-to-a-different-tier}
 
 يمكنك دائمًا الترقية من Basic إلى Scale أو من Scale إلى Enterprise. أما الرجوع إلى فئة أدنى، فسيتطلب تعطيل الميزات المتميزة.
 

@@ -868,8 +868,11 @@ ORDER BY _part ASC
 
 يخضع إصدار التسلسل للتحكم عبر إعدادات MergeTree
 [object&#95;shared&#95;data&#95;serialization&#95;version](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
-و[object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
-(جزء المستوى الصفري هو الجزء الذي يُنشأ عند إدراج البيانات إلى الجدول، وخلال دمج تكون الأجزاء ذات مستويات أعلى).
+و[object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts).
+يُستخدم الإعداد الثاني للأجزاء الصغيرة، وهي: الأجزاء التي تُنشأ أثناء عمليات الإدراج (ما لم يكن الإعداد
+[use&#95;object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts&#95;on&#95;insert](/ar/reference/settings/merge-tree-settings/use#use_object_shared_data_serialization_version_for_small_parts_on_insert)
+معطّلًا)، والأجزاء التي يقل حجمها عن الحد الأدنى المحدد في
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/ar/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version).
 
 ملاحظة: لا يُدعَم تغيير تسلسل بنية البيانات المشتركة إلا
 مع `v3` [object serialization version](/ar/reference/settings/merge-tree-settings/other#object_serialization_version)

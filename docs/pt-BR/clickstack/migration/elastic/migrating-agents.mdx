@@ -375,17 +375,17 @@ Demonstramos essas duas opções abaixo.
   </Step>
 </Steps>
 
-### Execute o Elastic Agent como coletor OpenTelemetry {#run-agent-as-otel}
+### Execute o Elastic Agent como Coletor OpenTelemetry {#run-agent-as-otel}
 
-O Elastic Agent inclui um coletor EDOT embutido que permite instrumentar seus aplicativos e sua infraestrutura uma única vez e enviar dados para vários fornecedores e backends.
+O Elastic Agent inclui um EDOT Collector embutido que permite instrumentar seus aplicativos e sua infraestrutura uma única vez e enviar dados para vários fornecedores e backends.
 
 <Info>
-  **Integrações e orquestração do Agent**
+  **Integrações e orquestração do agente**
 
-  Os usuários que executam o coletor EDOT distribuído com o Elastic Agent não poderão aproveitar as [integrações existentes oferecidas pelo Agent](https://www.elastic.co/docs/reference/fleet/manage-integrations). Além disso, o coletor não pode ser gerenciado centralmente pelo Fleet, o que obriga o usuário a executar o [Agent no modo standalone](https://www.elastic.co/docs/reference/fleet/configure-standalone-elastic-agents) e gerenciar a configuração por conta própria.
+  Os usuários que executam o EDOT Collector distribuído com o Elastic Agent não poderão aproveitar as [integrações existentes oferecidas pelo agente](https://www.elastic.co/docs/reference/fleet/manage-integrations). Além disso, o coletor não pode ser gerenciado centralmente pelo Fleet, o que obriga o usuário a executar o [agente no modo standalone](https://www.elastic.co/docs/reference/fleet/configure-standalone-elastic-agents) e gerenciar a configuração por conta própria.
 </Info>
 
-Para executar o Elastic Agent com o coletor EDOT, consulte o [guia oficial da Elastic](https://www.elastic.co/docs/reference/fleet/otel-agent-transform). Em vez de configurar o endpoint da Elastic, como indicado no guia, remova os `exporters` existentes e configure a saída OTLP para enviar dados ao coletor OpenTelemetry do ClickStack. Por exemplo, a configuração dos `exporters` passa a ser:
+Para executar o Elastic Agent com o EDOT Collector, consulte o [guia oficial da Elastic](https://www.elastic.co/docs/reference/fleet/otel-agent-transform). Em vez de configurar o endpoint da Elastic, como indicado no guia, remova os `exporters` existentes e configure a saída OTLP para enviar dados ao Coletor OpenTelemetry do ClickStack. Por exemplo, a configuração dos `exporters` passa a ser:
 
 ```yaml
 exporters:
@@ -397,12 +397,6 @@ exporters:
     tls:
       insecure: true
 ```
-
-<Info>
-  **Managed ClickStack**
-
-  Por padrão, não é necessário uma chave de API de ingestão ao executar um coletor OpenTelemetry em modo standalone para o Managed ClickStack. No entanto, é possível proteger a ingestão especificando um token de autenticação OTLP. Consulte [&quot;Protegendo o coletor&quot;](/pt-BR/clickstack/ingesting-data/collector#securing-the-collector).
-</Info>
 
 A `YOUR_INGESTION_API_KEY` aqui é gerada pelo ClickStack. Você pode encontrar essa chave na UI do ClickStack em `Team Settings → API Keys`.
 

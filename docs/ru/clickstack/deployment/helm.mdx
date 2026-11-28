@@ -192,14 +192,15 @@ Helm-чарт для ClickStack доступен [здесь](https://github.com
         MONGODB_PASSWORD: "your-mongodb-password"
     ```
 
-    Для внешнего управления секретами (например, с помощью оператора для secrets) можно сослаться на уже существующий секрет Kubernetes:
+    Чтобы загрузить соединения и источники по умолчанию из уже существующего секрета Kubernetes, например управляемого оператором для secrets:
 
     ```yaml
     hyperdx:
-      useExistingConfigSecret: true
-      existingConfigSecret: "my-external-secret"
-      existingConfigConnectionsKey: "connections.json"
-      existingConfigSourcesKey: "sources.json"
+      deployment:
+        useExistingConfigSecret: true
+        existingConfigSecret: "my-external-secret"
+        existingConfigConnectionsKey: "connections.json"
+        existingConfigSourcesKey: "sources.json"
     ```
 
     <Tip>
@@ -210,9 +211,7 @@ Helm-чарт для ClickStack доступен [здесь](https://github.com
   </Step>
 </Steps>
 
-<div id="using-clickhouse-cloud">
-  ## Использование ClickHouse Cloud {#using-clickhouse-cloud}
-</div>
+## Использование ClickHouse Cloud {#using-clickhouse-cloud}
 
 Если вы используете ClickHouse Cloud, отключите встроенный экземпляр ClickHouse и укажите учетные данные Cloud:
 
@@ -222,35 +221,41 @@ clickhouse:
   enabled: false
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-cloud-instance.clickhouse.cloud:9440?secure=true"
+    CLICKHOUSE_USER: "default"
   secrets:
     CLICKHOUSE_PASSWORD: "your-cloud-password"
     CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
 
-  useExistingConfigSecret: true
-  existingConfigSecret: "clickhouse-cloud-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "clickhouse-cloud-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
-Создайте секрет подключения отдельно:
+Создайте секрет подключения отдельно. Требуются оба файла: `connections.json` и `sources.json`. В этом примере используется пустой список источников: настройте источники в интерфейсе после установки или задайте их определения, как показано в разделе [Внешний ClickHouse](/ru/clickstack/deployment/helm-deployment-options#external-clickhouse-secret):
 
 ```bash
 cat <<EOF > connections.json
 [
   {
     "name": "ClickHouse Cloud",
-    "host": "https://your-cloud-instance.clickhouse.cloud",
-    "port": 8443,
+    "host": "https://your-cloud-instance.clickhouse.cloud:8443",
     "username": "default",
     "password": "your-cloud-password"
   }
 ]
 EOF
 
-kubectl create secret generic clickhouse-cloud-config \
-  --from-file=connections.json=connections.json
+echo '[]' > sources.json
 
-rm connections.json
+kubectl create secret generic clickhouse-cloud-config \
+  --from-file=connections.json=connections.json \
+  --from-file=sources.json=sources.json
+
+rm connections.json sources.json
 ```
 
 ```shell
@@ -260,7 +265,7 @@ helm install my-clickstack clickstack/clickstack -f values-clickhouse-cloud.yaml
 <Tip>
   **Расширенные варианты внешней конфигурации**
 
-  Для развертываний в production со конфигурацией на основе secret, внешними OTel collector или минимальной настройкой см. [руководство по вариантам развертывания](/ru/clickstack/deployment/helm-deployment-options).
+  Для развертываний в продакшне со конфигурацией на основе Secret, внешними OTel collector или минимальной настройкой см. [руководство по вариантам развертывания](/ru/clickstack/deployment/helm-deployment-options).
 </Tip>
 
 <div id="production-notes">

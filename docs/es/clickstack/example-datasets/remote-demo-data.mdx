@@ -1,21 +1,21 @@
 ---
 slug: /use-cases/observability/clickstack/getting-started/remote-demo-data
-title: 'Dataset de demostración remoto'
-description: 'Primeros pasos con ClickStack y un dataset de demostración remoto'
+title: 'Conjunto de datos de demostración remoto'
+description: 'Primeros pasos con ClickStack y un conjunto de datos de demostración remoto'
 doc_type: 'guide'
-keywords: ['clickstack', 'datos de ejemplo', 'dataset de demostración', 'logs', 'observabilidad']
+keywords: ['clickstack', 'datos de ejemplo', 'conjunto de datos de demostración', 'logs', 'observabilidad']
 ---
 
 import DemoArchitecture from '/snippets/es/_demo.mdx';
 
-**La siguiente guía asume que has implementado Open Source ClickStack siguiendo las [instrucciones para la imagen todo en uno](/es/clickstack/getting-started/oss) o [Local Mode Only](/es/clickstack/deployment/local-mode-only), y que ya has completado la creación inicial del usuario. Como alternativa, puedes omitir toda la configuración local y conectarte directamente a nuestra demo alojada de ClickStack en [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), que utiliza este conjunto de datos.**
+**La siguiente guía asume que has desplegado Open Source ClickStack siguiendo las [instrucciones para la imagen todo en uno](/es/clickstack/getting-started/oss) o [Local Mode Only](/es/clickstack/deployment/local-mode-only), y que ya has completado la creación inicial del usuario. Como alternativa, puedes omitir toda la configuración local y conectarte directamente a nuestra demo alojada de ClickStack en [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), que utiliza este conjunto de datos.**
 
 Esta guía utiliza un conjunto de datos de ejemplo alojado en el ClickHouse playground público en [sql.clickhouse.com](https://sql.clickhouse.com), al que puedes conectarte desde tu implementación local de ClickStack.
 
 <Warning>
-  **No compatible con Managed ClickStack**
+  **No compatible con ClickHouse Observability**
 
-  Las bases de datos remotas no son compatibles cuando se usa Managed ClickStack. Por lo tanto, este conjunto de datos tampoco es compatible.
+  Las bases de datos remotas no son compatibles cuando se usa ClickHouse Observability. Por lo tanto, este conjunto de datos tampoco es compatible.
 </Warning>
 
 Contiene aproximadamente 40 horas de datos capturados de la versión para ClickHouse de la demo oficial de OpenTelemetry (OTel). Los datos se reproducen cada noche con las marcas de tiempo ajustadas a la ventana temporal actual, lo que permite a los usuarios explorar el comportamiento del sistema mediante los logs, las trazas y las métricas integrados en la UI de ClickStack.

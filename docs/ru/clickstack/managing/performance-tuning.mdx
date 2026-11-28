@@ -77,6 +77,33 @@ import OtelTracesSchema from '/snippets/ru/clickstack/_schema_otel_traces.mdx';
 
 Все описанные ниже оптимизации можно применять непосредственно к базовым таблицам с помощью стандартного ClickHouse SQL — либо через [SQL-консоль ClickHouse Cloud](/ru/integrations/connectors/sql-clients/sql-console), либо через [клиент ClickHouse](/ru/concepts/features/interfaces/client).
 
+## Определение источников нагрузки запросов {#query-attribution}
+
+Прежде чем приступать к оптимизации, выясните, какие панели мониторинга, оповещения и другие возможности создают наибольшую нагрузку. ClickStack помечает каждый запрос, отправляемый в ClickHouse, поэтому для любого запроса в [`system.query_log`](/ru/reference/system-tables/query_log) или [`system.processes`](/ru/reference/system-tables/processes) можно определить его инициатора:
+
+* Его `query_id` начинается с `hdx-` и имени компонента, отправившего запрос, например `hdx-alert-<uuid>` или `hdx-mcp-<uuid>`. По нему можно найти выполняющийся запрос в `system.processes`, где нет столбца `log_comment`: там комментарий хранится в `Settings['log_comment']`.
+* Его `log_comment` — небольшой объект JSON. Поле `surface` указывает, что отправило запрос, например `dashboard`, `search`, `chart-explorer`, `alert`, `mcp` или `api`. В зависимости от компонента он также содержит ID `dashboard` и `tile`, сохранённого `search`, `alert` и `source`, а также `label` — например, имя инструмента MCP, маршрут API или имя встроенной панели мониторинга. Пример: `{"v":1,"surface":"mcp","label":"clickstack_service_health"}`.
+
+Комментарий фиксирует, что было запрошено, а не кто это запросил: идентификаторы пользователей и команд не записываются. (Чтобы записывать адрес электронной почты пользователя в журнал запросов, используйте параметр соединения **Query Log Setting Prefix**; см. [Соединения](/ru/clickstack/managing/config#connection-settings).) Некоторые внутренние запросы, например проверка версии, имеют идентификатор запроса с префиксом `hdx-` и пустой `log_comment`. Запросы PromQL содержат ту же информацию об источнике.
+
+Следующий запрос показывает, откуда поступает нагрузка на чтение, в разрезе компонентов и панелей мониторинга:
+
+```sql
+SELECT
+    JSONExtractString(log_comment, 'surface') AS surface,
+    JSONExtractString(log_comment, 'dashboard') AS dashboard,
+    count() AS queries,
+    formatReadableSize(sum(read_bytes)) AS read
+FROM system.query_log
+WHERE (type = 'QueryFinish') AND startsWith(query_id, 'hdx-')
+GROUP BY
+    surface,
+    dashboard
+ORDER BY sum(read_bytes) DESC
+```
+
+В ClickHouse Cloud таблицы `system.query_log` и `system.processes` локальны для каждой реплики. Чтобы охватить все реплики сервиса, читайте данные из `clusterAllReplicas(default, system.query_log)` или `clusterAllReplicas(default, system.processes)`. На одном сервере без кластера `default` (например, при использовании образа «всё в одном») обращайтесь к таблицам напрямую.
+
 <div id="materialize-frequently-queried-attributes">
   ## Оптимизация 1. Материализуйте часто запрашиваемые атрибуты {#materialize-frequently-queried-attributes}
 </div>

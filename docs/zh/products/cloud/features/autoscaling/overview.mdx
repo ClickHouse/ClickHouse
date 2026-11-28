@@ -2,7 +2,7 @@
 sidebarTitle: '自动扩缩容'
 slug: /manage/scaling
 description: 'ClickHouse Cloud 自动扩缩容概述'
-keywords: ['自动扩缩容', '自动伸缩', '扩缩容', '水平扩缩容', '垂直扩缩容', '突发']
+keywords: ['自动扩缩容', '自动伸缩', '扩缩容', '横向扩缩容', '垂直扩缩容', '突发']
 title: '自动扩缩容'
 doc_type: 'guide'
 ---
@@ -14,7 +14,11 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 <ScalePlanFeatureBadge feature="垂直自动扩缩容" />
 
 <Note>
-  Scale 和 Enterprise 层级既支持单副本服务，也支持多副本服务。单副本 Scale 服务以及采用标准 `1:4` profile 的 Enterprise 服务支持自助式垂直自动扩缩容。采用自定义 profile 的 Enterprise 服务需要支持团队协助进行垂直调整。Scale 和 Enterprise 服务可横向扩缩容至多个副本。基础版层级服务仅有一个副本，规模固定，且不支持垂直或水平扩缩容。有关更多信息，请参阅[大型单副本服务](/zh/products/cloud/features/large-single-replica-services)。
+  [Gen 2 计算资源](/zh/products/cloud/features/compute-generations)目前处于私有预览阶段，不支持自动扩缩容和空闲功能，但可以使用手动扩缩容和定时伸缩设置。
+</Note>
+
+<Note>
+  Scale 和 Enterprise 层级既支持单副本服务，也支持多副本服务。单副本 Scale 服务以及采用标准 `1:4` profile 的 Enterprise 服务支持自助式垂直自动扩缩容。采用自定义 profile 的 Enterprise 服务需要支持团队协助进行垂直调整。Scale 和 Enterprise 服务可横向扩缩容至多个副本。基础版层级服务仅有一个副本，规模固定，且不支持垂直或横向扩缩容。有关更多信息，请参阅[大型单副本服务](/zh/products/cloud/features/large-single-replica-services)。
 </Note>
 
 ## 选择计算方案 {#choosing-a-compute-option}
@@ -41,6 +45,14 @@ ClickHouse Cloud 为 Scale 和 Enterprise 层级服务提供手动横向扩缩�
 * **垂直扩缩容**：
   * 标准 `1:4` profile 支持垂直自动扩缩容。
   * 自定义 profile (`highMemory` 和 `highCPU`) 不支持垂直自动扩缩容或手动垂直扩缩容。不过，可通过联系支持团队来对这些服务执行垂直扩缩容。
+
+对于 [BYOC (自备 Cloud) ](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 服务，扩缩容规则如下：
+
+* **横向扩缩容**：支持手动扩缩容。自动横向扩缩容仅适用于已启用自动扩缩容的 BYOC 部署，会在配置的上下限范围内调整副本数量，同时保持每个副本的规格不变。请联系支持团队，确认您的部署是否支持此功能。
+* **垂直扩缩容**：只有为您的组织启用垂直自动扩缩容后，才能使用该功能。请联系支持团队确认是否可用。垂直扩缩容采用与 BYOC 基础设施节点规格相匹配的离散规格。
+  * 在 BYOC 中，每台服务器都在独立的节点上运行。ClickHouse 为每台服务器分配整个节点的资源，确保节点容量不被浪费。
+  * 在 ClickHouse Cloud 中，多台服务器共享一个节点，因此服务器规格可以在连续范围内调整。
+  * 为 BYOC 服务设置最小和最大规格时，您需要从离散规格列表中选择，而不是从连续范围中选择。
 
 <Note>
   ClickHouse Cloud 中的扩缩容采用我们称为 [&quot;Make Before Break&quot; (MBB)](/zh/products/cloud/features/autoscaling/make-before-break) 的方式。

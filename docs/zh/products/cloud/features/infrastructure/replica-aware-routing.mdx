@@ -13,16 +13,16 @@ import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePl
 
 <EnterprisePlanFeatureBadge feature="副本感知路由" />
 
-副本感知路由 (也称为粘性会话、粘性路由或会话亲和性) 会将相关请求路由到同一个 ClickHouse 副本。当您需要让[临时表](/zh/reference/statements/create/table/temporary-table)或[命名会话状态](/zh/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)在多个查询间保持可用、希望相关查询复用同一副本的本地缓存，或需要在写入及后续读取之间实现[写后读一致性](#read-after-write-consistency)时，请使用此功能。
+副本感知路由 (也称为粘性会话、粘性路由或会话亲和性) 会将相关请求路由到同一个 ClickHouse 副本。当您需要让[临时表](/zh/reference/statements/create/table/temporary-table)或[命名会话状态](/zh/concepts/features/connect-to-clickhouse/protocols/http#using-clickhouse-sessions-in-the-http-protocol)在多个查询间保持可用、希望相关查询复用同一副本的本地缓存，或需要在写入及后续读取之间实现[写后读一致性](#read-after-write-consistency)时，请使用此功能。
 
-这是一种尽力而为的机制，并不保证隔离性。代理会将每个路由值映射到一个副本。只要副本数量不变，该映射便会保持稳定；服务扩缩容可能会使该值映射到其他副本。
+这是一种尽力而为的机制，并不保证隔离性。proxy 会将每个路由值映射到一个副本。只要副本数量不变，该映射便会保持稳定；服务扩缩容可能会使该值映射到其他副本。
 
 副本感知路由在以下两种接口上均可使用：
 
 * 通过 [HTTP/HTTPS](#http-based-routing)，使用 `X-ClickHouse-Replica-Tag` 请求头。
 * 通过[原生协议](#native-protocol-routing)，使用 TLS 服务器名称指示 (SNI) 覆盖。
 
-两者需分别启用，并在代理背后使用相同的一致性哈希机制。
+两者需分别启用，并在 proxy 背后使用相同的一致性哈希机制。
 
 ## 前置条件 {#prerequisites}
 
@@ -42,7 +42,7 @@ Enterprise 客户可在 ClickHouse Cloud 控制台的服务设置页面启用副
 
 ## 基于 HTTP 的路由 {#http-based-routing}
 
-要将工作负载固定到某个副本，请在 [HTTPS 接口](/zh/concepts/features/interfaces/http)中发送 `X-ClickHouse-Replica-Tag` 请求头。代理会根据请求头的值进行一致性哈希，因此只要副本数量不变，具有相同请求头值的请求就会被路由到同一副本。不同的值会独立进行哈希，可能会落到相同或不同的副本，但您无法指定某个值映射到*哪个*副本。
+要将工作负载固定到某个副本，请在 [HTTPS 接口](/zh/concepts/features/connect-to-clickhouse/protocols/http)中发送 `X-ClickHouse-Replica-Tag` 请求头。proxy 会根据请求头的值进行一致性哈希，因此只要副本数量不变，具有相同请求头值的请求就会被路由到同一副本。不同的值会独立进行哈希，可能会落到相同或不同的副本，但您无法指定某个值映射到*哪个*副本。
 
 使用现有服务的主机名即可，无需使用特殊的粘性主机名或更改 DNS。请求头的值可以是您选择的任意字符串，例如应用程序名称、用户 ID 或工作负载标签。不带该请求头的请求仍会使用常规负载均衡。
 
@@ -64,7 +64,7 @@ echo 'SELECT hostName()' | curl \
 
 ## 原生协议路由 {#native-protocol-routing}
 
-使用[原生协议](/zh/interfaces/tcp)时，将路由值以 `<routing-value>.sticky.<host>` 形式的 TLS 服务器名称传入，并照常连接到常规的服务 hostname。[ClickHouse Client](/zh/interfaces/client) 通过 `--tls-sni-override` 接收路由值：
+使用[原生协议](/zh/concepts/features/connect-to-clickhouse/protocols/native-tcp)时，将路由值以 `<routing-value>.sticky.<host>` 形式的 TLS 服务器名称传入，并照常连接到常规的服务主机名。[ClickHouse Client](/zh/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client) 通过 `--tls-sni-override` 接收路由值：
 
 ```bash
 clickhouse client \
@@ -78,7 +78,7 @@ clickhouse client \
 
 ## 写后读一致性 {#read-after-write-consistency}
 
-在多副本 service 上，某个副本上的写入可能要等到 replication 追赶完成后，才能在其他副本上可见。发送写入时附带路由值，并在后续读取中复用同一个值。proxy 会将二者路由到同一个副本，因此即使其他副本仍有延迟，你也能读到自己刚写入的数据。该模式适用于写入后立即读回相同数据的工作负载，例如交互式应用，或在继续后续步骤前先 validate inserts 的 ETL jobs。
+在多副本服务上，某个副本上的写入可能要等到 replication 追赶完成后，才能在其他副本上可见。发送写入时附带路由值，并在后续读取中复用同一个值。proxy 会将二者路由到同一个副本，因此即使其他副本仍有延迟，你也能读到自己刚写入的数据。该模式适用于写入后立即读回相同数据的工作负载，例如交互式应用，或在继续后续步骤前先 validate inserts 的 ETL jobs。
 
 在 schema 变更尚未 replicated 完成时，这种方式同样有帮助：复用路由值 可以让 inserts 始终落在已具备新 schema 的副本上。
 
@@ -118,7 +118,7 @@ clickhouse client \
   --query 'SELECT count() FROM events'
 ```
 
-如需在所有副本上获得更强的保证，你还可以在 ClickHouse Cloud 中将 [`select_sequential_consistency`](/zh/reference/settings/session-settings#select_sequential_consistency) 设置为 `1`。
+如需在所有副本上获得更强的保证，你还可以在 ClickHouse Cloud 中将 [`select_sequential_consistency`](/zh/reference/settings/session-settings/other#select_sequential_consistency) 设置为 `1`。
 
 ## 检查命中了哪个副本 {#check-which-replica}
 

@@ -77,6 +77,33 @@ ClickHouse에서 테이블은 [데이터베이스](/ko/reference/statements/crea
 
 아래에 설명된 모든 최적화는 표준 ClickHouse SQL을 사용해 기본 테이블에 직접 적용할 수 있으며, [ClickHouse Cloud SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console) 또는 [ClickHouse client](/ko/concepts/features/interfaces/client)를 통해 적용할 수 있습니다.
 
+## 쿼리 부하를 유발하는 요인 찾기 {#query-attribution}
+
+최적화에 앞서 어떤 대시보드, 알림 및 기타 기능이 가장 많은 작업을 유발하는지 파악하십시오. ClickStack은 ClickHouse로 보내는 모든 쿼리에 태그를 지정하므로, [`system.query_log`](/ko/reference/system-tables/query_log) 또는 [`system.processes`](/ko/reference/system-tables/processes)에 있는 쿼리가 어디에서 발행되었는지 추적할 수 있습니다.
+
+* 쿼리의 `query_id`는 `hdx-`와 쿼리를 발행한 영역의 이름으로 시작합니다(예: `hdx-alert-<uuid>`, `hdx-mcp-<uuid>`). 이 값으로 `system.processes`에서 실행 중인 쿼리를 찾을 수 있습니다. `system.processes`에는 `log_comment` 컬럼이 없으므로, 주석(Comment)은 `Settings['log_comment']`에서 확인하십시오.
+* 쿼리의 `log_comment`는 작은 JSON 객체입니다. `surface`는 쿼리를 발행한 주체를 나타내며, `dashboard`, `search`, `chart-explorer`, `alert`, `mcp`, `api` 등의 값을 가집니다. 영역에 따라 `dashboard`와 `tile`, 저장된 `search`, `alert`, `source`의 ID가 포함되며, MCP 도구 이름, API 라우트, 내장 대시보드 이름 등을 나타내는 `label`도 포함됩니다. 예: `{"v":1,"surface":"mcp","label":"clickstack_service_health"}`.
+
+주석에는 무엇을 요청했는지만 기록되고 누가 요청했는지는 기록되지 않으며, 사용자나 팀 식별자도 기록되지 않습니다. (쿼리 로그(query logs)에 사용자 이메일을 기록하려면 연결의 **Query Log Setting Prefix**를 사용하십시오. 자세한 내용은 [연결](/ko/clickstack/managing/config#connection-settings)을 참조하십시오.) 버전 검사와 같은 일부 내부 쿼리는 `hdx-`로 시작하는 쿼리 ID(query ID)를 가지지만 `log_comment`는 비어 있습니다. PromQL 쿼리에도 동일한 출처 정보가 포함됩니다.
+
+다음 쿼리는 영역 및 대시보드별로 읽기 부하가 어디에서 발생하는지 보여줍니다.
+
+```sql
+SELECT
+    JSONExtractString(log_comment, 'surface') AS surface,
+    JSONExtractString(log_comment, 'dashboard') AS dashboard,
+    count() AS queries,
+    formatReadableSize(sum(read_bytes)) AS read
+FROM system.query_log
+WHERE (type = 'QueryFinish') AND startsWith(query_id, 'hdx-')
+GROUP BY
+    surface,
+    dashboard
+ORDER BY sum(read_bytes) DESC
+```
+
+ClickHouse Cloud에서 `system.query_log`와 `system.processes`는 각 레플리카에 로컬로 저장됩니다. 서비스의 모든 레플리카를 대상으로 하려면 `clusterAllReplicas(default, system.query_log)` 또는 `clusterAllReplicas(default, system.processes)`에서 조회하십시오. all-in-one 이미지처럼 `default` 클러스터가 없는 단일 서버에서는 테이블을 직접 쿼리하십시오.
+
 <div id="materialize-frequently-queried-attributes">
   ## 최적화 1. 자주 쿼리되는 속성 구체화하기 {#materialize-frequently-queried-attributes}
 </div>

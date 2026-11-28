@@ -11,7 +11,7 @@ ClickStack 提供多种方式，可将可观测性数据摄取到您的 ClickHou
 <Note>
   其中一些集成指南使用 ClickStack 开源版内置的 OpenTelemetry Collector 进行快速测试和评估。
 
-  对于生产部署，我们建议将集成以 OpenTelemetry Collector agent 的形式运行，并尽量靠近您的工作负载。这些 agent 应通过 OTLP 将遥测数据转发到 ClickStack OpenTelemetry Collector，再由其将数据发送到用于 ClickStack 开源版的自管理 ClickHouse 实例，或发送到托管 ClickStack。有关生产环境配置，请参阅 [“发送 OpenTelemetry 数据”](/zh/clickstack/ingesting-data/opentelemetry)。
+  对于生产部署，我们建议将集成以 OpenTelemetry Collector agent 的形式运行，并尽量靠近您的工作负载。这些 agent 应通过 OTLP 将遥测数据转发到 ClickStack OpenTelemetry Collector，再由其将数据发送到您的 ClickStack 开源版部署所使用的 ClickHouse 实例。有关生产环境配置，请参阅 [“发送 OpenTelemetry 数据”](/zh/clickstack/ingesting-data/opentelemetry)。
 </Note>
 
 | Section                                                                    | Description            |
@@ -24,6 +24,7 @@ ClickStack 提供多种方式，可将可观测性数据摄取到您的 ClickHou
 | [Kafka Logs](/zh/clickstack/integration-examples/kafka-logs)                  | 采集 Kafka Broker 日志     |
 | [Kafka Metrics](/zh/clickstack/integration-examples/kafka-metrics)            | 监控 Kafka 性能            |
 | [Kubernetes](/zh/clickstack/integration-examples/kubernetes)                  | 监控 K8s 集群              |
+| [Loom](/zh/clickstack/integration-examples/loom)                              | 发送 Loom 请求链路追踪和指标      |
 | [MongoDB Logs](/zh/clickstack/integration-examples/mongodb-logs)              | 采集 MongoDB 服务器日志       |
 | [MySQL Logs](/zh/clickstack/integration-examples/mysql)                       | 采集 MySQL 慢查询/错误日志      |
 | [Nginx Logs](/zh/clickstack/integration-examples/nginx-logs)                  | 采集 Nginx 访问/错误日志       |

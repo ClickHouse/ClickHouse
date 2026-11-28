@@ -15,9 +15,7 @@ doc_type: 'guide'
 * نشر تدفقات البيانات أو الاشتراك بها.
 * معالجة التدفقات بمجرد توفرها.
 
-<div id="creating-a-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -48,6 +46,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_password = '',]
     [rabbitmq_commit_on_select = false,]
     [rabbitmq_max_rows_per_message = 1,]
+    [rabbitmq_max_idle_producer_connections = 0,]
     [rabbitmq_handle_error_mode = 'default']
 ```
 
@@ -78,14 +77,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `reject_unhandled_messages` - ارفض الرسائل (أرسل إقرارًا سلبيًا إلى RabbitMQ) عند حدوث `error`. يتم تمكين هذا الإعداد تلقائيًا إذا كان هناك `x-dead-letter-exchange` معرّف في `rabbitmq_queue_settings_list`.
 * `rabbitmq_commit_on_select` - نفّذ `commit` للرسائل عند تنفيذ `select query`. القيمة الافتراضية: `false`.
 * `rabbitmq_max_rows_per_message` — الحد الأقصى لعدد الـ صفوف المكتوبة في رسالة RabbitMQ واحدة للتنسيقات المعتمدة على الصفوف. القيمة الافتراضية: `1`.
+* `rabbitmq_max_idle_producer_connections` - الحد الأقصى لعدد الاتصالات الخاملة، لكلٍّ منها قناة مفتوحة، التي يحتفظ بها الجدول لاستعلامات `INSERT` اللاحقة. وتُجنّب إعادة استخدامها تكلفة الاتصال بـ RabbitMQ (وتكلفة مصافحة TLS) مع كل `INSERT`، كما هو الحال مثلًا عندما يكتب materialized view إلى الجدول عند كل إدراج في جدوله المصدر. تُفحص الاتصالات الخاملة كل بضع ثوانٍ: فيُغلق الاتصال الذي ظل خاملًا لمدة تعادل نصف مهلة heartbeat المتفاوض عليها مع الخادم، لأن الخادم يغلقه بمجرد انقضاء هذه المهلة، كما يُغلق الاتصال المفقود. تؤدي القيمة `0` إلى تعطيل إعادة الاستخدام، إذ يفتح كل `INSERT` اتصاله الخاص ثم يغلقه. القيمة الافتراضية: `0`.
 * `rabbitmq_empty_queue_backoff_start_ms` — نقطة بداية `backoff` لإعادة جدولة القراءة إذا كانت RabbitMQ قائمة انتظار فارغة.
 * `rabbitmq_empty_queue_backoff_end_ms` — نقطة نهاية `backoff` لإعادة جدولة القراءة إذا كانت RabbitMQ قائمة انتظار فارغة.
 * `rabbitmq_empty_queue_backoff_step_ms` — قيمة خطوة `backoff` لإعادة جدولة القراءة إذا كانت RabbitMQ قائمة انتظار فارغة.
 * `rabbitmq_handle_error_mode` — كيفية التعامل مع `error` في محرك RabbitMQ. القيم الممكنة: default (سيتم طرح الاستثناء إذا فشلنا في `parse` رسالة)، stream (سيتم حفظ رسالة الاستثناء والرسالة الخام في أعمدة افتراضية `_error` و`_raw_message`)، dead&#95;letter&#95;queue (سيتم حفظ البيانات المرتبطة بالخطأ في system.dead&#95;letter&#95;queue).
 
-<div id="ssl-connection">
-  ### اتصال SSL
-</div>
+### اتصال SSL {#ssl-connection}
 
 باستخدام صيغة `rabbitmq_host_port`، اضبط `rabbitmq_secure = 1` لاستخدام TLS.
 أما باستخدام صيغة `rabbitmq_address`، فيُحدَّد النقل من مخطط عنوان URI، لذا استخدم `amqps`: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`. يتم تجاهل `rabbitmq_secure` لصيغة العنوان، ويُرفض استخدام `rabbitmq_secure = 1` مع عنوان `amqp://` بنص عادي، بدلًا من الاتصال بصمت دون تشفير.
@@ -126,9 +124,7 @@ CREATE TABLE queue (
 </rabbitmq>
 ```
 
-<div id="description">
-  ## الوصف
-</div>
+## الوصف {#description}
 
 لا يُعد `SELECT` مفيدًا كثيرًا لقراءة الرسائل (إلا لأغراض Debug)، لأن كل رسالة لا يمكن قراءتها إلا مرة واحدة. والأكثر عملية هو إنشاء مسارات في الوقت الفعلي باستخدام [العروض المادية](/ar/reference/statements/create/view). وللقيام بذلك:
 
@@ -189,9 +185,7 @@ CREATE MATERIALIZED VIEW consumer TO daily
 SELECT key, value FROM daily ORDER BY key;
 ```
 
-<div id="virtual-columns">
-  ## الأعمدة الافتراضية
-</div>
+## الأعمدة الافتراضية {#virtual-columns}
 
 * `_exchange_name` - اسم الـ exchange في RabbitMQ. نوع البيانات: `String`.
 * `_channel_id` - معرّف القناة ChannelID التي أُعلن عليها المستهلك الذي استلم الرسالة. نوع البيانات: `String`.
@@ -207,15 +201,11 @@ SELECT key, value FROM daily ORDER BY key;
 
 ملاحظة: لا تُملأ الأعمدة الافتراضية `_raw_message` و `_error` إلا عند حدوث استثناء أثناء التحليل، وتكون دائمًا `NULL` عندما تُحلَّل الرسالة بنجاح.
 
-<div id="caveats">
-  ## محاذير
-</div>
+## محاذير {#caveats}
 
 على الرغم من أنه يمكنك تحديد [تعبيرات الأعمدة الافتراضية](/ar/reference/statements/create/table#default_values) (مثل `DEFAULT` و`MATERIALIZED` و`ALIAS`) في تعريف الجدول، فسيتم تجاهلها. وبدلاً من ذلك، ستُملأ الأعمدة بالقيم الافتراضية المقابلة لأنواعها.
 
-<div id="data-formats-support">
-  ## دعم تنسيقات البيانات
-</div>
+## دعم تنسيقات البيانات {#data-formats-support}
 
 يدعم محرك RabbitMQ جميع [التنسيقات](/ar/reference/formats/index) التي يدعمها ClickHouse.
 يعتمد عدد الصفوف في رسالة RabbitMQ الواحدة على ما إذا كان التنسيق يعتمد على الصفوف أو على الكتل:
@@ -223,9 +213,7 @@ SELECT key, value FROM daily ORDER BY key;
 * بالنسبة إلى التنسيقات المعتمدة على الصفوف، يمكن التحكم في عدد الصفوف في رسالة RabbitMQ الواحدة من خلال ضبط `rabbitmq_max_rows_per_message`.
 * بالنسبة إلى التنسيقات المعتمدة على الكتل، لا يمكن تقسيم الكتلة إلى أجزاء أصغر، ولكن يمكن التحكم في عدد الصفوف في الكتلة الواحدة باستخدام الإعداد العام [max&#95;block&#95;size](/ar/reference/settings/session-settings/max#max_block_size).
 
-<div id="data-durability">
-  ## متانة البيانات عند انقطاع الطاقة
-</div>
+## متانة البيانات عند انقطاع الطاقة {#data-durability}
 
 قد يفقد محرك `RabbitMQ` بصمت صفوفًا سبق استهلاكها إذا فُقدت ذاكرة التخزين المؤقت للصفحات في نظام التشغيل قبل كتابة البيانات المُدرجة على القرص. بعد دفع دفعة إلى العروض المادية التابعة، يرسل المستهلك `basic.ack` إلى الوسيط، ما يتيح للوسيط حذف تلك الرسائل. لكن الصفوف المُدرجة لا تصبح متينة إلا بعد مزامنة الجزء الهدف مع القرص باستخدام fsync، وهو ما لا يحدث افتراضيًا بصورة متزامنة (`fsync_after_insert = 0`). إذا فُقدت ذاكرة التخزين المؤقت للصفحات بعد الإقرار وقبل مزامنة الجزء الهدف مع القرص، يكون الوسيط قد حذف الرسائل بالفعل، ويستأنف المستهلك بعد تجاوزها عند إعادة الاتصال، فتُفقد الصفوف دون أي خطأ، ويكون `count()` أصغر ببساطة. لا يكشف إنهاء العملية العادي عن ذلك، لأن النواة تحتفظ بذاكرة التخزين المؤقت للصفحات وتكتبها إلى القرص في النهاية. أما فقدان ذاكرة التخزين المؤقت للصفحات فيكشف هذه المشكلة؛ ومن أمثلته انقطاع الطاقة على مستوى الجهاز، أو إعادة تشغيل غير نظيفة للمضيف أو للنواة.
 

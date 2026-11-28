@@ -15,9 +15,7 @@ doc_type: 'guide'
 * データフローをパブリッシュまたはサブスクライブする。
 * 利用可能になったストリームを処理する。
 
-<div id="creating-a-table">
-  ## テーブルの作成
-</div>
+## テーブルの作成 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -48,6 +46,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_password = '',]
     [rabbitmq_commit_on_select = false,]
     [rabbitmq_max_rows_per_message = 1,]
+    [rabbitmq_max_idle_producer_connections = 0,]
     [rabbitmq_handle_error_mode = 'default']
 ```
 
@@ -78,14 +77,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `reject_unhandled_messages` - エラー時にメッセージを拒否します (RabbitMQ に negative acknowledgement を送信します) 。この設定は、`rabbitmq_queue_settings_list` に `x-dead-letter-exchange` が定義されている場合、自動的に有効になります。
 * `rabbitmq_commit_on_select` - select クエリ実行時にメッセージを commit します。デフォルト: `false`。
 * `rabbitmq_max_rows_per_message` — 行ベースのフォーマットで 1 つの RabbitMQ メッセージに書き込まれる最大行数。デフォルト: `1`。
+* `rabbitmq_max_idle_producer_connections` - 後続の `INSERT` クエリ用にテーブルが保持しておく、チャネルを開いたままのアイドル状態の接続の最大数。これらの接続を再利用することで、`INSERT` のたびに RabbitMQ へ接続するコスト (および TLS ハンドシェイクのコスト) を省けます。たとえば、ソーステーブルへの挿入のたびにマテリアライズドビューがこのテーブルへ書き込む場合などに効果的です。アイドル状態の接続は数秒ごとにチェックされます。サーバーとネゴシエートしたハートビートタイムアウトの半分の時間にわたってアイドル状態が続いた接続は、タイムアウト経過後にサーバー側で閉じられてしまうため、その時点で閉じられます。切断された接続も同様に閉じられます。`0` を指定すると再利用は無効になり、各 `INSERT` はそれぞれ専用の接続を開いて閉じます。デフォルト: `0`。
 * `rabbitmq_empty_queue_backoff_start_ms` — RabbitMQ キューが空の場合に読み取りを再スケジュールするための backoff の開始点。
 * `rabbitmq_empty_queue_backoff_end_ms` — RabbitMQ キューが空の場合に読み取りを再スケジュールするための backoff の終了点。
 * `rabbitmq_empty_queue_backoff_step_ms` — RabbitMQ キューが空の場合に読み取りを再スケジュールするための backoff のステップ。
 * `rabbitmq_handle_error_mode` — RabbitMQ エンジンでの error の処理方法。設定可能な値: default (メッセージのパースに失敗した場合は例外がスローされます) 、stream (例外メッセージと生メッセージは仮想カラム `_error` および `_raw_message` に保存されます) 、dead&#95;letter&#95;queue (error 関連のデータは system.dead&#95;letter&#95;queue に保存されます) 。
 
-<div id="ssl-connection">
-  ### SSL 接続
-</div>
+### SSL 接続 {#ssl-connection}
 
 `rabbitmq_host_port` 形式では、TLS を使用するために `rabbitmq_secure = 1` を設定します。
 `rabbitmq_address` 形式ではトランスポートは URI スキームによって決まるため、`amqps` を使用します: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`。アドレス形式では `rabbitmq_secure` は無視され、平文の `amqp://` アドレスと `rabbitmq_secure = 1` を併用すると、暗号化されていない状態で暗黙的に接続する代わりに拒否されます。
@@ -126,9 +124,7 @@ RabbitMQ のサーバー設定は、ClickHouse の設定ファイルに追加す
 </rabbitmq>
 ```
 
-<div id="description">
-  ## 説明
-</div>
+## 説明 {#description}
 
 メッセージの読み取りに `SELECT` はあまり有用ではありません (デバッグ時を除く) 。これは、各メッセージを読み取れるのが 1 回限りだからです。より実用的なのは、[materialized views](/ja/reference/statements/create/view) を使ってリアルタイムのスレッドを作成することです。これを行うには、次の手順に従います。
 
@@ -189,9 +185,7 @@ CREATE MATERIALIZED VIEW consumer TO daily
 SELECT key, value FROM daily ORDER BY key;
 ```
 
-<div id="virtual-columns">
-  ## 仮想カラム
-</div>
+## 仮想カラム {#virtual-columns}
 
 * `_exchange_name` - RabbitMQ exchange名。データ型: `String`。
 * `_channel_id` - メッセージを受信した コンシューマー が宣言された ChannelID。データ型: `String`。
@@ -207,15 +201,11 @@ SELECT key, value FROM daily ORDER BY key;
 
 注: `_raw_message` と `_error` の仮想カラムに値が設定されるのは、パース中に例外が発生した場合のみです。メッセージが正常にパースされた場合、これらは常に `NULL` です。
 
-<div id="caveats">
-  ## 注意事項
-</div>
+## 注意事項 {#caveats}
 
 [デフォルトカラム式](/ja/reference/statements/create/table#default_values) (`DEFAULT`、`MATERIALIZED`、`ALIAS` など) をテーブル定義で指定していても、これらは無視されます。代わりに、各カラムにはその型に応じたデフォルト値が設定されます。
 
-<div id="data-formats-support">
-  ## データフォーマットのサポート
-</div>
+## データフォーマットのサポート {#data-formats-support}
 
 RabbitMQエンジンは、ClickHouseでサポートされているすべての[フォーマット](/ja/reference/formats/index)に対応しています。
 1 つの RabbitMQ メッセージに含められる行数は、フォーマットが行ベースかブロックベースかによって異なります。
@@ -223,9 +213,7 @@ RabbitMQエンジンは、ClickHouseでサポートされているすべての[�
 * 行ベースのフォーマットでは、1 つの RabbitMQ メッセージに含める行数は、`rabbitmq_max_rows_per_message` の設定で制御できます。
 * ブロックベースのフォーマットでは、ブロックをさらに小さなパーツに分割することはできませんが、1 つのブロックに含める行数は、一般設定 [max&#95;block&#95;size](/ja/reference/settings/session-settings/max#max_block_size) で制御できます。
 
-<div id="data-durability">
-  ## 電源喪失時のデータ永続性
-</div>
+## 電源喪失時のデータ永続性 {#data-durability}
 
 `RabbitMQ` エンジンでは、挿入データがディスクに書き込まれる前に OS page cache が失われると、すでに消費された行がエラーなしに失われる可能性があります。バッチが依存先の materialized view にプッシュされると、コンシューマー は broker に `basic.ack` を送信し、broker はそれらのメッセージを削除できます。ただし、挿入された行が永続化されるのは、ターゲットパーツが fsync された後です。デフォルトではこれは同期的に行われません (`fsync_after_insert = 0`) 。確認応答の後、かつターゲットパーツが fsync される前に page cache が失われると、broker はすでにメッセージを削除しており、コンシューマー は再接続時にそれらのメッセージを過ぎた位置から処理を再開するため、行はエラーなしに失われ、`count()` は単に小さくなります。通常のプロセス kill では、kernel が page cache を保持し、最終的に書き戻すため、この問題は表面化しません。一方、page cache が失われるとこの問題は表面化します。たとえば、デバイスレベルの電源喪失や、正常でない host または kernel のリセットが該当します。
 

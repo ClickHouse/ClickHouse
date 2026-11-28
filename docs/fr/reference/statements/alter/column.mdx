@@ -124,11 +124,13 @@ Réinitialise toutes les données d’une colonne pour une partition donnée. Po
 
 Si la clause `IF EXISTS` est spécifiée, la requête ne renverra pas d’erreur si la colonne n’existe pas.
 
-Exemple :
+Exemple :
 
 ```sql
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
+
+Pour les tables de la famille `MergeTree`, `CLEAR COLUMN` accepte également les colonnes virtuelles [`_block_number` et `_block_offset`](/fr/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns). Quel que soit le nom indiqué, les deux colonnes sont réinitialisées, de sorte qu’une part renvoie son numéro de bloc minimum en tant que `_block_number` et `_part_offset` en tant que `_block_offset`.
 
 ## COMMENT COLUMN {#comment-column}
 

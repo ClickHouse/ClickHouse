@@ -20,6 +20,30 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="No" />حدّ مرن لعدد الاتصالات النشطة التي تحاول ذاكرة التخزين المؤقت الموزعة الإبقاء عليها متاحة. إذا انخفض عدد الاتصالات المتاحة إلى أقل من distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections، فستُغلَق الاتصالات الأقدم نشاطًا حتى يرتفع العدد مجددًا فوق هذا الحد.
 
+## distributed_cache_max_request_processing_time_ms {#distributed_cache_max_request_processing_time_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="60000" changeable_without_restart="No" />يُنهي خادم ذاكرة التخزين المؤقت الموزعة أي طلب ظل يعالجه طوال هذا العدد من المللي ثانية منذ آخر `StartRequest` أو `ContinueRequest` للطلب، دون احتساب الوقت المستغرق في انتظار العميل؛ ويبدأ مع كل نطاق قراءة جديد احتساب مهلة زمنية جديدة. يُنهى الطلب فور تمكّن الخادم من الإبلاغ عنه، أما الطلب الذي لا يبلغ تلك المرحلة إطلاقًا فيُغلق اتصاله بعد انقضاء المدة المحددة في `distributed_cache_stuck_request_scan_interval_ms`. وتعني القيمة 0 عدم وجود حدّ.
+
+## distributed_cache_slow_down_min_stuck_requests {#distributed_cache_slow_down_min_stuck_requests}
+
+<SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />لا يطلب خادم ذاكرة التخزين المؤقت الموزعة من العميل إبطاء وتيرته إلا إذا بلغ عدد طلباته العالقة هذا الحد على الأقل، كي لا يُطلب من عميل لديه طلبان أو نحوهما قيد الإرسال أن يُبطئ بسبب طلب واحد عالق. أما القيمتان 0 و1 فتتركان القرار لـ `distributed_cache_slow_down_stuck_requests_ratio` وحده.
+
+## distributed_cache_slow_down_stuck_requests_ratio {#distributed_cache_slow_down_stuck_requests_ratio}
+
+<SettingsInfoBlock type="Double" default_value="0.2" changeable_without_restart="No" />يطلب خادم ذاكرة التخزين المؤقت الموزعة من العميل إبطاء وتيرته بمجرد أن تبلغ الطلبات العالقة هذه النسبة على الأقل من طلباته قيد التنفيذ، ولا تُحتسب الاتصالات الخاملة. وتعني القيمة 0 عدم إرسال هذا الطلب مطلقًا.
+
+## distributed_cache_slow_down_window_ms {#distributed_cache_slow_down_window_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />المدة، بالمللي ثانية، التي يطلب خلالها خادم ذاكرة التخزين المؤقت الموزعة من العميل التوقف عن إرسال الطلبات إليه بعد أن يعلق عدد كبير جدًا من طلباته. يجب ألا تقل القيمة عن ضعف `distributed_cache_stuck_request_scan_interval_ms`، بحيث لا تنتهي النافذة إلا إذا لم يجددها الفحص؛ وتُرفض القيمة 0.
+
+## distributed_cache_stuck_request_no_progress_timeout_ms {#distributed_cache_stuck_request_no_progress_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />يُغلق خادم ذاكرة التخزين المؤقت الموزعة الاتصال إذا لم يتبادل طلبه أي بيانات طوال هذا العدد من المللي ثانية، دون احتساب الوقت المستغرق في انتظار العميل. تؤدي القيمة 0 إلى تعطيل هذا الحد، غير أن فحص الطلبات العالقة لا يتوقف إلا إذا كانت قيمة `distributed_cache_max_request_processing_time_ms` تساوي 0 أيضًا.
+
+## distributed_cache_stuck_request_scan_interval_ms {#distributed_cache_stuck_request_scan_interval_ms}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="5000" changeable_without_restart="No" />الفاصل الزمني، بالمللي ثانية، لعملية فحص الطلبات العالقة على خادم ذاكرة التخزين المؤقت الموزعة.
+
 ## distributed_cache_temporary_data_background_retry_delay_milliseconds {#distributed_cache_temporary_data_background_retry_delay_milliseconds}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="30000" changeable_without_restart="No" />مدة التأخير، بالمللي ثانية، قبل إعادة محاولة معالجة البيانات المؤقتة المُثبَّتة في الخلفية.
@@ -75,6 +99,10 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 ## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />يسري مفعوله فقط في ClickHouse Cloud. الحد الأقصى لعدد النطاقات التي يُبقيها مُسخِّن ذاكرة التخزين المؤقت في قائمة الانتظار لقرص لا يتوفر فيه ذاكرة تخزين مؤقت لنظام الملفات المحلي؛ وعند تجاوز هذا الحد تُستبعد أقدم النطاقات (أما عند توفر ذاكرة تخزين مؤقت محلية، فيعتمد المُسخِّن على الإعداد `max_elements` الخاص بها). تعني القيمة صفر عدم وجود حد.
+
+## distributed_cache_warmer_skip_parts_produced_in_current_availability_zone {#distributed_cache_warmer_skip_parts_produced_in_current_availability_zone}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />يسري مفعوله فقط في ClickHouse Cloud. عندما يقتصر مُهيِّئ ذاكرة التخزين المؤقت على تهيئة distributed cache وحدها (أي عندما لا يكون لقرص جزء البيانات ذاكرة تخزين مؤقت لنظام الملفات المحلي، أو عندما تكون ذاكرة التخزين المؤقت معطّلة لعمليات القراءة)، يتخطى أجزاء البيانات التي أنتجتها نسخة متماثلة في منطقة التوافر الحالية، إذ إنها كُتبت عبر distributed cache، ومن ثَمّ فهي موجودة أصلًا في ذاكرة التخزين المؤقت لهذه المنطقة. أما أجزاء البيانات مجهولة المصدر فتُهيَّأ دائمًا.
 
 ## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
 

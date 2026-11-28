@@ -377,7 +377,7 @@ Elastic Agent를 배포한 사용자는 여러 마이그레이션 경로 중에�
 
 ### OpenTelemetry collector로 Elastic Agent 실행 {#run-agent-as-otel}
 
-Elastic Agent에는 내장된 EDOT Collector가 포함되어 있어 애플리케이션과 인프라에 한 번만 계측을 적용하고 데이터를 여러 공급업체와 백엔드로 전송할 수 있습니다.
+Elastic Agent에는 내장된 EDOT Collector가 포함되어 있어 애플리케이션과 인프라를 한 번만 계측하고 데이터를 여러 공급업체와 백엔드로 전송할 수 있습니다.
 
 <Info>
   **에이전트 통합 및 오케스트레이션**
@@ -397,12 +397,6 @@ exporters:
     tls:
       insecure: true
 ```
-
-<Info>
-  **Managed ClickStack**
-
-  기본적으로 Managed ClickStack용 OpenTelemetry Collector를 standalone으로 실행하는 경우 API 수집 키는 필요하지 않습니다. 하지만 OTLP 인증 토큰을 지정해 수집을 보호할 수 있습니다. 자세한 내용은 [&quot;collector 보안 설정&quot;](/ko/clickstack/ingesting-data/collector#securing-the-collector)을 참조하십시오.
-</Info>
 
 여기서 `YOUR_INGESTION_API_KEY`는 ClickStack에서 발급됩니다. 이 키는 ClickStack UI의 `Team Settings → API Keys`에서 확인할 수 있습니다.
 

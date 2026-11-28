@@ -58,7 +58,7 @@ Nombre maximal de requêtes HTTP que les fonctions d’IA peuvent émettre au co
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "8"},{"label": "nouveau paramètre"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "8"},{"label": "La modification a été rétroportée vers la 26.8 et y est consignée."}]}]} />
 
 Nombre maximal de requêtes vers le fournisseur qu’un fil d’exécution de requête peut avoir en cours simultanément. Avec `1`, les requêtes sont émises une par une.
 
@@ -77,7 +77,7 @@ Une valeur supérieure à `1` assouplit deux garanties :
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000000"},{"label": "Nouveau paramètre"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Les quotas par requête des fonctions d’IA sont désactivés par défaut : 0 signifie qu’aucune limite ne s’applique."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Les quotas par requête des fonctions d’IA sont désactivés par défaut : 0 signifie qu’aucune limite ne s’applique."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "1000000"},{"label": "Nouveau paramètre"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "0"},{"label": "La modification a été rétroportée dans la version 26.7 et y est consignée."}]}]} />
 
 Nombre total maximal de jetons d’entrée (`prompt`) sur l’ensemble des appels à l’API des fonctions d’IA dans une seule requête, y compris les lectures et écritures en cache. La valeur 0 (par défaut) désactive la limite. Comptabilisé de façon cumulative à partir des réponses du fournisseur. Notez que cette limite peut être dépassée à hauteur des jetons d’entrée d’un appel pour chaque requête en cours, car les jetons d’entrée d’un appel ne sont connus qu’à l’arrivée de sa réponse. Comme les autres quotas d’IA, elle est appliquée par serveur / fragment de requête, et non cumulée sur une requête distribuée, et doit être définie dans la requête de niveau supérieur : une surcharge `SETTINGS` dans une sous-requête est ignorée.
 
@@ -89,9 +89,9 @@ Cette limite n’est appliquée qu’aux fournisseurs qui renvoient un objet `us
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "500000"},{"label": "Nouveau paramètre"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Les quotas par requête des fonctions d’IA sont désactivés par défaut : 0 signifie qu’il n’y a aucune limite."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Les quotas par requête des fonctions d’IA sont désactivés par défaut : 0 signifie qu’il n’y a aucune limite."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "500000"},{"label": "Nouveau paramètre"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "0"},{"label": "La modification a été rétroportée vers la version 26.7 et y est consignée."}]}]} />
 
-Nombre total maximal de tokens de sortie (complétion) pour l’ensemble des appels à l’API des fonctions d’IA au sein d’une même requête. 0 (valeur par défaut) désactive la limite. Comptabilisé de façon cumulative à partir des réponses du fournisseur. Notez que cette limite peut être dépassée jusqu’à l’équivalent des tokens de sortie d’un appel pour chaque requête en cours, car les tokens de sortie d’un appel ne sont connus qu’à l’arrivée de sa réponse. Comme les autres quotas d’IA, elle est appliquée par serveur / fragment de requête, et non cumulée sur une requête distribuée, et doit être définie dans la requête de niveau supérieur : une surcharge `SETTINGS` dans une sous-requête est ignorée.
+Nombre total maximal de tokens de sortie (complétion) pour l’ensemble des appels à l’API des fonctions d’IA au sein d’une même requête. 0 (valeur par défaut) désactive la limite. Comptabilisé de façon cumulative à partir des réponses du fournisseur. Notez que cette limite peut être dépassée jusqu’à l’équivalent des tokens de sortie d’un appel pour chaque requête en cours, car les tokens de sortie d’un appel ne sont connus qu’à l’arrivée de sa réponse. Comme les autres quotas d’IA, elle est appliquée par serveur / fragment de requête, et non cumulée sur une requête distribuée, et doit être définie dans la requête de niveau supérieur : une surcharge `SETTINGS` dans une sous-requête est ignorée.
 
 Cette limite n’est appliquée qu’aux fournisseurs qui renvoient un objet `usage` dans leur réponse (OpenAI, Anthropic, vLLM). Elle ne s’applique pas aux fonctions d’embedding (`aiEmbed`, `aiSimilarity`), qui ne produisent jamais de tokens de sortie.
 
@@ -101,7 +101,7 @@ Cette limite n’est appliquée qu’aux fournisseurs qui renvoient un objet `us
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Effectuer par défaut une nouvelle tentative après une erreur d’API transitoire, afin qu’un seul code 429 ou 5xx du fournisseur n’entraîne pas l’échec de la requête."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nouveau paramètre"}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "3"},{"label": "Effectuer par défaut jusqu’à trois nouvelles tentatives après une erreur d’API transitoire, afin de réduire la charge sur un fournisseur surchargé et soumis à une limitation de débit en cas de requêtes concurrentes."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "3"},{"label": "Effectuer par défaut jusqu’à trois nouvelles tentatives après une erreur d’API transitoire, afin qu’un code 429 ou 5xx du fournisseur n’entraîne pas l’échec de la requête et que les requêtes vers un fournisseur surchargé et soumis à une limitation de débit soient réessayées en cas de requêtes concurrentes."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nouveau paramètre"}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "3"},{"label": "Cette modification a été rétroportée vers la version 26.8 et y est consignée."}]}]} />
 
 Nombre maximal de nouvelles tentatives en cas d&#39;erreurs transitoires pour chaque requête d’API. Chaque nouvelle tentative utilise un backoff exponentiel à partir de `ai_function_retry_initial_delay_ms`. 5 au maximum.
 

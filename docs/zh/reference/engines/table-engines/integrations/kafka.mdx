@@ -118,17 +118,27 @@ Kafka 表引擎仅将 [librdkafka](https://github.com/confluentinc/librdkafka/bl
 
 使用命名集合时,**`config.xml` 中服务器全局的 `<kafka>` 块不会被合并**。每个集合都必须包含该表所需的全部扩展属性(包括 TLS 文件;若未通过非空的表 `SETTINGS` 设置 `security.protocol`,则还需包含该属性)。
 
-对于使用客户端证书的 `SASL_SSL`,常见的做法是:将 TLS 路径和 `ssl.key.password` 存储在命名集合中;在表的 `SETTINGS` 子句中设置 `kafka_broker_list`、`kafka_topic_list`、`kafka_group_name`、`kafka_format`,并视需要设置 `kafka_sasl_username` / `kafka_sasl_password`。`kafka.security_protocol` 和 `kafka_security_protocol` 都会设置 `security.protocol`,两者同时存在时以非空的表设置为准。如果集合中已存储该属性,则表设置即构成对命名集合的覆盖:这需要对该集合拥有 `SHOW NAMED COLLECTIONS SECRETS` 权限;若该键被标记为 `NOT OVERRIDABLE`,则会报错 `Override not allowed`。`kafka_sasl_mechanism`、`kafka_sasl_username` 和 `kafka_sasl_password` 同样遵循此规则。
+通过 `CREATE NAMED COLLECTION` 创建的命名集合仅接受[允许列表](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp)中的 `librdkafka` 属性,例如 `security.protocol`、`sasl.username` 和 `fetch.min.bytes`。如果表所用的集合包含未列入允许列表的属性,ClickHouse 会返回 `BAD_ARGUMENTS`。如需使用其他受支持的属性(例如 `sasl.kerberos.keytab` 或 `sasl.oauthbearer.token.endpoint.url`),请在服务器配置文件中定义该集合。此限制同样适用于在表创建后通过 `ALTER NAMED COLLECTION` 添加的属性。
 
-示例(证书路径必须存在于每台为该表运行消费者的 ClickHouse 服务器上):
+在通过 SQL 创建的命名集合中,以下属性应直接传入文件内容而非文件路径:`ssl.key.pem`、`ssl.certificate.pem`、`ssl.ca.pem`、`https.ca.pem` 和 `sasl.oauthbearer.assertion.private.key.pem`。`ssl.ca.location` 和 `https.ca.location` 也可取值 `probe`,因为它并非路径。
+
+对于使用客户端证书的 `SASL_SSL`,常见的做法是:将证书、私钥和 `ssl.key.password` 存储在命名集合中;在表的 `SETTINGS` 子句中设置 `kafka_broker_list`、`kafka_topic_list`、`kafka_group_name`、`kafka_format`,并视需要设置 `kafka_sasl_username` / `kafka_sasl_password`。`kafka.security_protocol` 和 `kafka_security_protocol` 都会设置 `security.protocol`,两者同时存在时以非空的表设置为准。如果集合中已存储该属性,则表设置即构成对命名集合的覆盖:这需要对该集合拥有 `SHOW NAMED COLLECTIONS SECRETS` 权限;若该键被标记为 `NOT OVERRIDABLE`,则会报错 `Override not allowed`。`kafka_sasl_mechanism`、`kafka_sasl_username` 和 `kafka_sasl_password` 同样遵循此规则。
+
+以下示例使用通过 SQL 创建的命名集合,其中包含 PEM 格式的证书和私钥:
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 
 CREATE TABLE queue (
@@ -144,7 +154,7 @@ SETTINGS
     kafka_sasl_password = 'password';
 ```
 
-在 XML 中定义的命名集合里配置相同的扩展设置：
+在 XML 中定义的命名集合里配置相同的扩展设置，也可以改为引用这些文件 (这些文件必须存在于每台为该表运行消费者的 ClickHouse 服务器上) ：
 
 ```xml
 <clickhouse>
@@ -228,16 +238,16 @@ CREATE TABLE queue3 (
 
 建议每个 Kafka topic 都使用自己专用的消费者组，以确保 topic 与组之间保持独占的一对一对应关系，尤其是在 topic 可能被动态创建和删除的环境中 (例如测试或暂存环境) 。
 
-`SELECT` 对读取消息并不是特别有用 (调试除外) ，因为每条消息只能被读取一次。更实用的做法是使用 materialized view 创建实时处理线程。为此：
+`SELECT` 对读取消息并不是特别有用 (调试除外) ，因为每条消息只能被读取一次。更实用的做法是使用物化视图创建实时处理线程。为此：
 
 1. 使用该引擎创建一个 Kafka 消费者，并将其视为数据 stream。
 2. 创建一个具有所需结构的表。
-3. 创建一个 materialized view，将来自该引擎的数据转换后写入先前创建的表中。
+3. 创建一个物化视图，将来自该引擎的数据转换后写入先前创建的表中。
 
 当 `MATERIALIZED VIEW` 关联到该引擎时，它就会开始在后台收集数据。这使你能够持续从 Kafka 接收消息，并使用 `SELECT` 将其转换为所需格式。
-一个 Kafka 表可以拥有任意多个 materialized view。它们不会直接从 Kafka 表中读取数据，而是接收新的记录 (以块的形式) 。通过这种方式，你可以将数据写入多个明细粒度不同的表中 (包括聚合和非聚合) 。
+一个 Kafka 表可以拥有任意多个物化视图。它们不会直接从 Kafka 表中读取数据，而是接收新的记录 (以块的形式) 。通过这种方式，你可以将数据写入多个明细粒度不同的表中 (包括聚合和非聚合) 。
 
-示例，使用 [named collections](/zh/concepts/features/configuration/server-config/named-collections) 来存储 connection 参数：
+示例，使用 [命名集合](/zh/concepts/features/configuration/server-config/named-collections) 来存储连接参数：
 
 ```sql
   CREATE NAMED COLLECTION kafka_creds AS
@@ -269,14 +279,32 @@ CREATE TABLE queue3 (
 
 为提高性能，接收到的消息会按 [max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings/max-insert#max_insert_block_size) 的大小分组成块。如果在 [stream&#95;flush&#95;interval&#95;ms](/zh/reference/settings/session-settings/stream#stream_flush_interval_ms) 毫秒内仍未形成一个完整的块，则无论该块是否完整，数据都会被刷写到表中。
 
-要停止接收 topic 数据或更改转换逻辑，请分离该 materialized view：
+以下表设置控制已消费的数据写入物化视图的频率：
+
+* `kafka_max_block_size` — 块中的行数达到此值时，立即刷写该块。默认值：`max_insert_block_size` 除以 `kafka_num_consumers`。
+* `kafka_flush_interval_ms` — 经过指定时长后，即使块未满也会刷写。默认值：[stream&#95;flush&#95;interval&#95;ms](/zh/reference/settings/session-settings/stream#stream_flush_interval_ms) (7500 毫秒) 。减小此值可缩短从消息生成到在 target table 中可见的延迟。
+* `kafka_consumer_reschedule_ms` — 没有新消息时，引擎会等待指定时长再进行轮询。默认值：`500` 毫秒。
+
+这些设置属于 Kafka 表，需在该表的 `SETTINGS` 子句中指定，不能在服务器配置文件的 `<kafka>` 部分中设置：该部分中的每个键都会作为属性传递给 librdkafka (参见[配置](#configuration)) ，因此，在该部分中，`<flush_interval_ms>` 等配置项并不被视为 ClickHouse 设置。
+
+```sql
+CREATE TABLE queue (timestamp UInt64, level String, message String)
+ENGINE = Kafka
+SETTINGS kafka_broker_list = 'localhost:9092',
+         kafka_topic_list = 'topic',
+         kafka_group_name = 'group1',
+         kafka_format = 'JSONEachRow',
+         kafka_flush_interval_ms = 1000;
+```
+
+要停止接收 topic 数据或更改转换逻辑，请分离该物化视图：
 
 ```sql
 DETACH TABLE consumer;
 ATTACH TABLE consumer;
 ```
 
-如果你想使用 `ALTER` 修改目标表，我们建议先禁用materialized view，以避免目标表与视图数据之间出现不一致。
+如果你想使用 `ALTER` 修改目标表，我们建议先禁用物化视图，以避免目标表与视图数据之间出现不一致。
 
 ## 配置 {#configuration}
 

@@ -8,6 +8,10 @@ keywords: ['تثبيت', 'مُدار ذاتيًا', 'Linux', 'MacOS', 'Windows',
 
 ثبّت ClickHouse على المنصة التي تديرها.
 
+<Note>
+  الملفات التنفيذية لنظام Linux الخاصة بمعماريتي `amd64` و`aarch64` مرتبطة ربطًا ثابتًا بمكتبة C ‏`musl`. ولا تُحلّ أسماء المضيفين إلا من خلال `/etc/hosts` وخوادم DNS المدرجة في `/etc/resolv.conf`؛ إذ لا يُستخدم Name Service Switch ‏(`/etc/nsswitch.conf`)، ومن ثمّ يتعذّر تحليل أسماء المضيفين التي لا توفرها سوى وحدات NSS مثل `sss` أو `mdns` أو `ldap`.
+</Note>
+
 ## التطوير المحلي {#local-development}
 
 شغّل ClickHouse على جهازك لبناءه واختباره والتجربة عليه.

@@ -42,14 +42,14 @@ ClickHouse 版本、运行本地 ClickHouse 和 Postgres 服务器、执行查�
     ```
 
     <Accordion title="其他安装方法">
-      | 工具                       | 命令                              |
-      | ------------------------ | ------------------------------- |
-      | npm                      | `npm install -g clickhousectl`  |
-      | uv                       | `uv tool install clickhousectl` |
-      | pipx                     | `pipx install clickhousectl`    |
-      | pip                      | `pip install clickhousectl`     |
-      | cargo-binstall           | `cargo binstall clickhousectl`  |
-      | Cargo，从源码构建 (Rust 1.94+) | `cargo install clickhousectl`   |
+      | 工具                         | 命令                              |
+      | -------------------------- | ------------------------------- |
+      | npm                        | `npm install -g clickhousectl`  |
+      | uv                         | `uv tool install clickhousectl` |
+      | pipx                       | `pipx install clickhousectl`    |
+      | pip                        | `pip install clickhousectl`     |
+      | cargo-binstall             | `cargo binstall clickhousectl`  |
+      | Cargo，从源码构建 (Rust 1.94.1+) | `cargo install clickhousectl`   |
 
       只有安装脚本和 npm 会创建 `chctl` 别名。
     </Accordion>
@@ -60,6 +60,9 @@ ClickHouse 版本、运行本地 ClickHouse 和 Postgres 服务器、执行查�
     clickhousectl update --check
     clickhousectl update
     ```
+
+    `update` 会替换通过安装脚本、直接下载或 Cargo 安装的版本。对于通过 npm、uv、
+    pipx 和 pip 安装的版本，它不会直接更新，而是输出需要运行的软件包管理器命令。
   </Step>
 
   <Step title="安装 ClickHouse" id="cli-install-clickhouse">
@@ -100,12 +103,13 @@ ClickHouse 版本、运行本地 ClickHouse 和 Postgres 服务器、执行查�
   </Step>
 
   <Step title="启动 clickhouse-server" id="cli-start-clickhouse-server">
-    `clickhousectl` 会将本地服务器的作用域限定在其运行时所在的目录中。请先创建一个
-    项目目录，然后在该目录中启动服务器：
+    `clickhousectl` 会将本地服务器的作用域限定在项目范围内。先创建一个项目目录，
+    再使用 `local init` 将其标记为项目根目录，然后在该目录中启动服务器：
 
     ```bash
     mkdir my-project && cd my-project
-    clickhousectl local server start
+    clickhousectl local init
+    clickhousectl local clickhouse start
     ```
 
     ```response
@@ -115,17 +119,18 @@ ClickHouse 版本、运行本地 ClickHouse 和 Postgres 服务器、执行查�
       Version:   26.9.1.1312
     ```
 
-    该服务器在后台运行，名称为 `default`。其数据存放在
-    `./.clickhouse/` 中，因此后续的 `clickhousectl local` 命令需在同一
-    目录下运行；`clickhousectl` 不会搜索上级目录。服务器默认监听
-    HTTP 端口 `8123` 和 TCP 端口 `9000`；若这些端口已被占用，则改用空闲端口。
+    该服务器在后台运行，名称为 `default`。其数据存放在项目根目录下的
+    `.clickhouse/` 中。与 Git 类似，后续的 `clickhousectl local`
+    命令可在该目录或其下任意子目录中执行。服务器
+    监听 HTTP 端口 `8123` 和 TCP 端口 `9000`；如果这些端口已被占用，则改用空闲端口。
     如需指定端口，请传入 `--http-port` 和 `--tcp-port`。如需运行多个
-    服务器，请为每个服务器指定名称，例如 `clickhousectl local server start dev`。
+    服务器，请为每个服务器指定名称，例如 `clickhousectl local clickhouse start dev`。
+    `local ch` 是 `local clickhouse` 的简写。
 
     验证服务器是否正在运行：
 
     ```bash
-    clickhousectl local server list
+    clickhousectl local clickhouse list
     ```
 
     ```response
@@ -135,17 +140,19 @@ ClickHouse 版本、运行本地 ClickHouse 和 Postgres 服务器、执行查�
 
     1 server, 1 running
     ```
+
+    `clickhousectl local status` 会列出项目中的所有 ClickHouse 服务器和 Postgres 实例，无论其正在运行还是已停止。
   </Step>
 
   <Step title="启动 ClickHouse 客户端" id="cli-start-clickhouse-client">
-    在同一目录下，使用 `clickhouse-client` 连接到服务器：
+    在项目中的任意位置，使用 `clickhouse-client` 连接到服务器：
 
     ```bash
     clickhousectl local client
     ```
 
-    `local client` 会连接到名为 `default` 的服务器，并使用与该服务器相同的
-    ClickHouse 版本。如需连接其他服务器，请传入服务器名称，
+    `local client` 会连接到名为 `default` 的服务器；如果没有名为 `default` 的服务器，则连接到项目中唯一的
+    服务器，并使用与该服务器相同的 ClickHouse 版本。如需连接其他服务器，请传入服务器名称，
     例如 `clickhousectl local client dev`。您将看到类似以下的输出：
 
     ```response
@@ -171,17 +178,17 @@ ClickHouse 版本、运行本地 ClickHouse 和 Postgres 服务器、执行查�
   </Step>
 
   <Step title="停止服务器" id="cli-stop-clickhouse-server">
-    服务器会一直在后台运行，直到您手动停止。请在
-    同一目录下执行以下命令停止服务器：
+    服务器会一直在后台运行，直到您手动停止。可在
+    项目中的任意位置执行以下命令停止服务器：
 
     ```bash
-    clickhousectl local server stop
+    clickhousectl local clickhouse stop
     ```
 
-    停止服务器后，其数据会被保留，供下次执行 `clickhousectl local server start` 时使用。
+    停止服务器后，其数据会被保留，供下次执行 `clickhousectl local clickhouse start` 时使用。
 
     <Warning>
-      `clickhousectl local server remove` 会永久删除已停止服务器的数据。
+      `clickhousectl local clickhouse remove` 会永久删除已停止服务器的数据。
     </Warning>
   </Step>
 </Steps>

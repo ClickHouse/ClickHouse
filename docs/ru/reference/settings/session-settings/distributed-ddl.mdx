@@ -12,19 +12,29 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются из [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="distributed_ddl_entry_format_version">
-  ## distributed_ddl_entry_format_version
-</div>
+## distributed_ddl_entry_format_version {#distributed_ddl_entry_format_version}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
-Версия совместимости для запросов распределённого DDL (с предложением ON CLUSTER)
+Версия совместимости запросов распределённого DDL (ON CLUSTER). Используйте меньшее значение, чтобы более старые серверы в
+кластере могли выполнять эти запросы.
 
-Значение по умолчанию в Cloud: `6`.
+Серверы не выполняют записи с версиями `1` и `2`. Более старые серверы создают такие записи при значениях настройки `1`, `2`
+и `3`, поэтому перед обновлением установите на всех серверах значение этой настройки не ниже `4` и дождитесь, пока очередь
+распределённого DDL будет обработана.
 
-<div id="distributed_ddl_output_mode">
-  ## distributed_ddl_output_mode
-</div>
+Возможные значения:
+
+* `3` — то же, что и `4`. Записывается как `4`, поскольку более старые серверы отклоняют записи с версией `3`.
+* `4` — запись содержит настройки, изменённые в сеансе, и контекст трассировки OpenTelemetry, а запросы `CREATE` нормализуются на initiator.
+* `5` — дополнительно сохраняет `initial_query_id` запроса.
+* `6` — дополнительно содержит признак того, является ли запрос частью `BACKUP` или `RESTORE`.
+* `7` — дополнительно содержит UUID родительской таблицы, по которому база данных `Replicated` выполняет запрос только при наличии таблицы.
+* `8` — дополнительно содержит пользователя и роли initiator, которые хосты используют при включённой настройке сервера `distributed_ddl_use_initial_user_and_roles`.
+
+Значение по умолчанию в облаке: `6`.
+
+## distributed_ddl_output_mode {#distributed_ddl_output_mode}
 
 <SettingsInfoBlock type="DistributedDDLOutputMode" default_value="throw" />
 
@@ -42,9 +52,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Значение по умолчанию в Cloud: `none_only_active`.
 
-<div id="distributed_ddl_task_timeout">
-  ## distributed_ddl_task_timeout
-</div>
+## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
 
 <SettingsInfoBlock type="Int64" default_value="180" />
 

@@ -7,9 +7,7 @@ title: '系统表概览'
 doc_type: 'reference'
 ---
 
-<div id="system-tables-introduction">
-  ## 系统表概览
-</div>
+## 系统表概览 {#system-tables-introduction}
 
 系统表提供以下信息：
 
@@ -59,9 +57,7 @@ doc_type: 'reference'
 
 默认情况下，表会无限增长。要控制表的大小，可以使用 [生存时间 (TTL)](/zh/reference/statements/alter/ttl) 设置来删除过期的日志记录。还可以使用 `MergeTree` 引擎表的分区功能。
 
-<div id="system-tables-sources-of-system-metrics">
-  ## 系统指标的来源
-</div>
+## 系统指标的来源 {#system-tables-sources-of-system-metrics}
 
 为了收集系统指标，ClickHouse server 使用以下来源：
 
@@ -87,9 +83,7 @@ doc_type: 'reference'
   你可以使用 `sudo sysctl kernel.task_delayacct=1` 启用它，或者在 `/etc/sysctl.d/` 中创建一个 `.conf` 文件，并写入 `kernel.task_delayacct = 1`
 </Note>
 
-<div id="system-tables-in-clickhouse-cloud">
-  ## ClickHouse Cloud 中的系统表
-</div>
+## ClickHouse Cloud 中的系统表 {#system-tables-in-clickhouse-cloud}
 
 在 ClickHouse Cloud 中，系统表与在自管理部署中一样，可为服务的状态和性能提供关键洞察。一些系统表作用于整个集群范围，尤其是那些从 Keeper 节点获取数据的表，因为这些节点负责管理分布式元数据。这些表反映的是集群的整体状态，因此在单个节点上查询时，结果也应保持一致。例如，无论从哪个节点查询，[`parts`](/zh/reference/system-tables/parts) 都应保持一致：
 
@@ -117,7 +111,7 @@ WHERE `table` = 'pypi'
 1 row in set. Elapsed: 0.004 sec.
 ```
 
-相较之下，其他系统表则是节点特有的，例如仅驻留在内存中，或使用 MergeTree 表引擎持久化数据。日志和指标等数据通常属于这种情况。持久化可确保历史数据在分析时仍然可用。不过，这些节点级表天然是各节点彼此独立的。
+相较之下，其他系统表则是节点特有的，例如仅驻留在内存中，或使用 MergeTree 表引擎持久化数据。日志和指标等数据通常属于这种情况。持久化可确保历史数据在分析时仍然可用。不过，这些节点级表天然是各节点彼此独立的。请注意，在 ClickHouse Cloud 中，已持久化的表会将数据保存在对象存储中，而不是节点的本地磁盘上。
 
 通常，判断某个系统表是否为节点特有时，可以应用以下规则：
 
@@ -149,9 +143,7 @@ SHOW TABLES FROM system LIKE 'query_log%'
 11 rows in set. Elapsed: 0.004 sec.
 ```
 
-<div id="querying-multiple-versions">
-  ### 查询多个版本
-</div>
+### 查询多个版本 {#querying-multiple-versions}
 
 我们可以使用 [`merge`](/zh/reference/functions/table-functions/merge) 函数跨这些表查询。例如，下面的查询会找出每个 `query_log` 表中发送到目标节点的最新查询：
 
@@ -177,8 +169,8 @@ ORDER BY most_recent DESC
 │ query_log_9  │ 2025-03-18 14:01:32 │
 └──────────────┴─────────────────────┘
 
-11 行，耗时 0.373 秒。已处理 6.44 百万行，25.77 MB（17.29 百万行/秒，69.17 MB/秒）
-峰值内存占用：28.45 MiB。
+11 rows in set. Elapsed: 0.373 sec. Processed 6.44 million rows, 25.77 MB (17.29 million rows/s., 69.17 MB/s.)
+Peak memory usage: 28.45 MiB.
 ```
 
 <Info>
@@ -187,11 +179,9 @@ ORDER BY most_recent DESC
   虽然表名中的数字后缀可能暗示数据的顺序，但绝不能依赖它。因此，在针对特定日期范围进行查询时，务必将 merge 表函数与日期过滤器结合使用。
 </Info>
 
-需要特别注意的是，这些表仍然 **仅存在于各个节点本地**。
+需要特别注意的是，这些表仍然 **为每个节点各自独有**。
 
-<div id="querying-across-nodes">
-  ### 跨节点查询
-</div>
+### 跨节点查询 {#querying-across-nodes}
 
 为了全面查看整个集群，用户可以结合使用 [`clusterAllReplicas`](/zh/reference/functions/table-functions/cluster) 函数和 `merge` 函数。`clusterAllReplicas` 函数支持跨 &quot;default&quot; 集群中的所有副本查询系统表，将各节点的数据汇总为统一结果。结合 `merge` 函数后，这种方法可用于查询集群中特定表的全部系统数据。
 
@@ -233,9 +223,7 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 3 rows in set. Elapsed: 0.026 sec. Processed 1.97 million rows, 7.88 MB (75.51 million rows/s., 302.05 MB/s.)
 ```
 
-<div id="querying-across-nodes-and-versions">
-  ### 跨节点和跨版本查询
-</div>
+### 跨节点和跨版本查询 {#querying-across-nodes-and-versions}
 
 由于系统表存在版本差异，结果仍无法反映集群中的全部数据。将上述方法与 `merge` 函数结合使用后，就能得到在所选日期范围内的准确结果：
 
@@ -256,9 +244,7 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 3 rows in set. Elapsed: 0.462 sec. Processed 7.94 million rows, 31.75 MB (17.17 million rows/s., 68.67 MB/s.)
 ```
 
-<div id="related-content">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content}
 
 * 博客：[系统表：透视 ClickHouse 内部机制](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
 * 博客：[监控必备查询 - 第 1 部分 - INSERT 查询](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)

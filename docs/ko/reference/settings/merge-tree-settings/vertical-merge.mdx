@@ -48,7 +48,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 값이 true이면 행 TTL 머지에서 수평 병합으로 폴백하지 않고 수직 병합 알고리즘을 사용할 수 있습니다.
 이 설정은 `MergeTree`, `Replacing`, `Collapsing` 또는 `VersionedCollapsing` 머지 모드에서 행 TTL은 있고 컬럼 TTL이나 `GROUP BY` TTL은 없는
-테이블에만 적용되며, 머지 대상 파트 중 경량한 삭제가 적용된 파트가 없는 경우에 한합니다. 그 외의 TTL 머지는 계속 수평 병합으로 수행됩니다.
+테이블에만 적용됩니다. 그 외의 TTL 머지는 계속 수평 병합으로 수행됩니다.
 
 ## vertical_merge_remote_filesystem_prefetch {#vertical_merge_remote_filesystem_prefetch}
 

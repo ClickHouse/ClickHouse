@@ -1,0 +1,76 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-11-12
+title: '演示日 - 2026-11-12'
+sidebarTitle: '2026-11-12'
+description: 'ClickStack 演示日（2026-11-12）'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+## 文本索引块大小与更快的过滤器查找 {#text-index-block-size-and-faster-filter-lookups}
+
+*演示者：[@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ClickStack 的过滤器面板以往可能加载缓慢，而且即使存在匹配的值，字段也可能显示为空。在报告的演示中，一张包含 537M 行日志的表大约需要 30 秒才能返回建议，且 100 个键中只有 22 个获得了建议。经过这些改动，同一面板为全部 100 个键都返回了建议，加载速度也更快。
+
+该面板使用文本索引来发现 Map 的键及其值。例如，它可能会找到键 `service`，并给出 `checkout` 和 `billing` 等候选值。这样可以避免扫描原始日志，但打开索引的开销仍然很大。
+
+每个文本索引都包含一个已排序的词元字典，并划分为多个块。请求头记录了每个块的起始位置，使 ClickHouse 能够直接跳转到相关块。块越大，请求头中的条目就越少，开始查找前需要加载的信息也越少。Aaron 在视频中对此做了直观讲解。
+
+现在，schema 在 `otel_logs`、`otel_traces` 和 `hyperdx_sessions` 上设置了 `text_index_dictionary_block_size = 8192`，而此前的默认值为 512。在本地基准测试中，这使每个 part 的请求头从 17.7 KB 缩减到 1.3 KB。该迁移适用于 ClickHouse 26.6 及更高版本 (包括现有安装) ，并会保留显式设置的表配置。新的 parts 使用更大的块；现有 parts 在合并之前保持原有布局。
+
+请求头变小后，逐个查找每个键就变得切实可行。此前，所有键共用同一个查询，默认上限为 300 万条索引记录。像请求 ID 这样拥有数百万个不同值的键，可能会耗尽该上限，导致后面的键得不到建议。而这种不完整的结果还可能被缓存下来。
+
+对于配置了更大块的索引，现在每个键都有各自 20,000 条索引记录的上限。查找以每批 10 个键并行执行，因此值很多的键不会占用其他键的配额。`topKWeighted` 会在已读取的记录中近似选出最常见的值，取代此前按字母顺序选取靠前值的做法。配置了较小块的索引在每个批次内仍沿用旧的查找方式。
+
+初始的键和值查找也会读取更少的 parts。默认情况下，它们最多检查按大小排序处于中间位置的 20 个 parts。**Map key index parts** 控制该数量，**Map key index part size** 用于选择中等大小、最小或最大的 parts。这减少了索引读取，尤其是在需要从对象存储获取数据时效果明显。代价是建议可能会遗漏所选 parts 之外的键或值，而且频率估算仅反映已检查的记录。对单个键执行“加载更多”时，会读取所有相关的 parts。
+
+另一项修复让匹配的并发调用方共享同一个正在运行的 `getMapKeys` 查询。此前，打开搜索页面可能会把相同的读取执行两次。在示例表上，这些重复查询合计占用了约 47 GiB 的查询内存。现在每次读取只执行一次。
+
+在报告的基准测试中，更大的块还提升了文本索引搜索性能：在 parts 数量相同的情况下，部分查询提速约 60%。另一项尚未合并的改动使用 `topKWeighted` 来发现常见的 Map 键，而无需对每个不同的键进行分组。在一张每个 part 约有 5.5M 个不同键的表上，其报告的基准测试显示查询时间从 9.1 秒缩短到 2.6 秒，内存从 14 GiB 降至 78 MiB。
+
+**相关 PR：** [#3611](https://github.com/ClickHouse/clickstack/pull/3611) 在并发调用方之间共享同一次 Map 键读取，[#3635](https://github.com/ClickHouse/clickstack/pull/3635) 为文本索引键和值查找读取可配置的 parts 集合，[#3617](https://github.com/ClickHouse/clickstack/pull/3617) 以每批 10 个键的方式显示最常见的文本索引值，[#3614](https://github.com/ClickHouse/clickstack/pull/3614) 使用 topKWeighted 查找最常见的 Map 键 (未合并)
+
+## 无需自定义请求头的 MCP 服务器连接 {#mcp-server-connections-without-custom-headers}
+
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=396" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，要将 agent 连接到 ClickHouse Cloud 中的 ClickStack MCP 服务器，需要通过自定义 HTTP 请求头传递服务 ID。但大多数 MCP 客户端都不便设置自定义请求头，有些甚至完全不支持，因此每个 agent 都得单独手动编辑 config。
+
+现在，服务 ID 默认以查询参数的形式附加在 MCP URL 上传递——ClickHouse AI 团队此前已采用这种方式规避同样的限制。对于支持该命令的客户端，现在只需一条命令即可完成 agent 设置 (例如 Codex 以前需要将一个配置块粘贴到其 TOML config 中) ；无法运行该命令的客户端则可直接使用该 URL。
+
+该变更合并后不久，Claude Code 便在其 MCP 配置中移除了对自定义请求头的支持，导致基于请求头的设置方式在生产环境中失效，而使用查询参数的连接则不受影响。
+
+此变更适用于云端 MCP 端点。开源 MCP 服务器使用 bearer 令牌进行身份验证，无需传递服务 ID。对于开源版本，`npx @hyperdx/cli mcp install` 会以隐藏输入的方式提示您输入个人或组织 API key，完成校验后，自动将该服务器写入 Claude Code、Codex、Cursor 和 VS Code 的 config 中。
+
+## 入门指南中的 Datadog 代理设置 {#datadog-agent-setup-in-getting-started}
+
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=469" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+入门指南流程现在会将 Datadog 代理与其他 SDK 和采集器一并列出，您无需离开 onboarding 页面，即可将现有的 Datadog 代理指向 ClickStack。
+
+页面中显示的 Datadog 摄取端点来自 ClickHouse Cloud 数据平面，该数据平面现在会将此 URL 连同其他端点一起传递给前端。与其他 SDK 一样，设置说明也从公开文档中拉取，因此该页面会始终与 [Datadog 迁移指南](https://clickhouse.com/docs/clickstack/migration/datadog)保持同步。
+
+接收器本身会在 ClickStack 采集器内部将 Datadog 的日志、trace 和指标载荷转换为 OpenTelemetry 数据模型，因此现有的代理和 SDK 无需任何改动即可照常运行。在开源 ClickStack 中，该接收器监听 8126 端口，可通过 `ENABLE_DATADOG_RECEIVER=true` 启用。
+
+## 组织 API 密钥 {#organization-api-keys}
+
+*演示者 [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=497" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，外部 API 和 MCP 服务器唯一可用的 bearer 凭证是个人访问密钥。一旦密钥所有者被移出团队，该密钥就会失效，导致用它配置的 Terraform、CI 及其他自动化流程中断，各团队只能借助机器人用户来绕过这一问题。
+
+现在，您可以在 **团队设置** &gt; **API &amp; Agents** 中创建归团队所有的 API 密钥。每个密钥都可以填写描述，并将有效期设为 30 天、一年或永不过期。完整密钥仅在创建时显示一次，并以 SHA-256 哈希形式存储。列表中会显示每个密钥的创建者、最近使用时间和过期时间，便于您发现很少使用或即将过期的密钥，并直接在此处撤销。密钥被撤销或过期后，将从下一次请求起生效。
+
+每个密钥都对应一个独立的服务账号，其权限与其他用户相同。使用该密钥创建的任何内容 (告警、仪表盘、保存的搜索) 都归属于该服务账号，而非创建密钥的人；如果创建者后来被移除，其创建的密钥会显示为“Deleted user”，并可继续正常使用。服务账号无法登录，也不会出现在 **成员** 列表中。密钥无法邀请成员，也无法创建或撤销其他密钥。
+
+凡是能使用个人密钥的地方，都能使用组织密钥：外部 API v2、MCP 服务器以及 `npx @hyperdx/cli mcp install`。使用 Terraform provider 时，需要将密钥与团队 ID 一并传入。该功能主要面向自托管部署，且不受 RBAC 约束：开源 ClickStack 没有角色机制，因此任何团队成员都可以管理组织密钥，而密钥可以执行用户能执行的任何操作。
+
+**相关 PR：** [#3435](https://github.com/ClickHouse/clickstack/pull/3435) 团队所有的 API 密钥

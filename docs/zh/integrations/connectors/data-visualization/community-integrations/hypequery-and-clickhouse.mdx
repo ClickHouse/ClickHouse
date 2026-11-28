@@ -1,0 +1,230 @@
+---
+sidebarTitle: 'hypequery'
+keywords: ['clickhouse', 'hypequery', 'connect', 'integrate', 'embedded', 'analytics', 'typescript', 'python', 'semantic', 'semantic layer', 'mcp', 'react']
+description: 'hypequery 是一个开源语义层，用于在 ClickHouse 上构建嵌入式分析。只需使用 TypeScript 或 Python 定义一次指标，即可通过您自己的后端将其提供给仪表盘、API 和 AI 智能体使用。'
+title: '将 hypequery 连接到 ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[hypequery](https://hypequery.com) 是一个采用 Apache 2.0 许可证的开源语义层，面向在 ClickHouse 上构建嵌入式分析和 AI 智能体的团队。您可以使用 TypeScript 或 Python 定义数据集及其维度、度量、指标、关系和 tenant 规则，然后按名称进行查询。同一套定义还可以对外提供为：带有 OpenAPI 的、经过身份验证的 HTTP 端点，显式指定类型的 React 钩子，以及供 AI 智能体使用的 Model Context Protocol (MCP) 工具。TypeScript SDK 还包含一个 type-safe 的 ClickHouse 查询构建器。
+
+hypequery 既不是托管式 BI 工具，也不是独立的语义层服务器，而是一组随后端一起安装和部署的库，因此您的 ClickHouse 凭证始终保留在您自己的服务器上。它通过 HTTP 接口连接 ClickHouse：在 TypeScript 中使用 [`@clickhouse/client`](/zh/integrations/language-clients/js/index)，在 Python 中使用 [`clickhouse-connect`](/zh/integrations/language-clients/python/index)。
+
+## 前置条件 {#prerequisites}
+
+* 一个 ClickHouse 服务，可以是自管理部署，也可以运行在 [ClickHouse Cloud](/zh/get-started/setup/cloud) 上。
+* 使用 TypeScript SDK 需要安装 Node.js；使用 Python SDK 需要安装 Python 3.11 或更高版本。
+
+<Steps>
+  <Step title="准备连接详情" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="安装 hypequery" id="2-install-hypequery">
+    <Tabs>
+      <Tab title="TypeScript">
+        ```bash
+        npm install @hypequery/datasets @hypequery/clickhouse
+        npm install -D @hypequery/cli
+        ```
+      </Tab>
+
+      <Tab title="Python">
+        ```bash
+        pip install "hypequery[clickhouse]"
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="配置连接" id="3-configure-the-connection">
+    将步骤 1 中获取的连接详情添加到应用程序的环境变量中。注意，两个 SDK 读取的变量并不相同。
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```bash
+        CLICKHOUSE_URL=https://<your-service>.clickhouse.cloud:8443
+        CLICKHOUSE_DATABASE=analytics
+        CLICKHOUSE_USERNAME=<username>
+        CLICKHOUSE_PASSWORD=<password>
+        ```
+      </Tab>
+
+      <Tab title="Python">
+        ```bash
+        CLICKHOUSE_HOST=<your-service>.clickhouse.cloud
+        CLICKHOUSE_PORT=8443
+        CLICKHOUSE_SECURE=true
+        CLICKHOUSE_DATABASE=analytics
+        CLICKHOUSE_USERNAME=<username>
+        CLICKHOUSE_PASSWORD=<password>
+        ```
+
+        使用 ClickHouse Cloud 或其他任何启用 TLS 的服务时，请设置 `CLICKHOUSE_SECURE=true`。
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="根据您的 schema 生成数据集" id="4-generate-datasets">
+    该命令行客户端会连接到 ClickHouse，读取您的表，并为每个表生成一个数据集定义：
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```bash
+        npx hypequery generate:datasets
+        ```
+
+        这会生成 `analytics/datasets.ts`。
+      </Tab>
+
+      <Tab title="Python">
+        ```bash
+        hypequery init
+        ```
+      </Tab>
+    </Tabs>
+
+    请检查生成的定义，并重命名其中的维度和度量，使其与您产品中使用的术语保持一致。整理后的数据集如下所示：
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```typescript
+        import { dataset, dimension, measure } from '@hypequery/datasets';
+
+        export const Orders = dataset('orders', {
+          source: 'orders',
+          tenantKey: 'tenant_id',
+          timeKey: 'created_at',
+          dimensions: {
+            country: dimension.string(),
+            status: dimension.string(),
+            createdAt: dimension.timestamp({ column: 'created_at' }),
+          },
+          measures: {
+            revenue: measure.sum('amount'),
+            orderCount: measure.count('id'),
+          },
+        });
+        ```
+      </Tab>
+
+      <Tab title="Python">
+        ```python
+        from hypequery.datasets import dataset, dimension, measure
+
+        orders = dataset(
+            "orders",
+            source="orders",
+            tenant_key="tenant_id",
+            time_key="created_at",
+            dimensions={
+                "country": dimension.string(),
+                "status": dimension.string(),
+                "createdAt": dimension.timestamp(column="created_at"),
+            },
+            measures={
+                "revenue": measure.sum("amount"),
+                "orderCount": measure.count("id"),
+            },
+        )
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="查询数据集" id="5-query-a-dataset">
+    按名称选择维度和度量。hypequery 会验证请求、生成参数化 SQL，并在 ClickHouse 上执行。由于该数据集声明了 `tenantKey`，每个查询都必须传入调用方的 tenant，hypequery 会自动添加对应的 `WHERE tenant_id = ...` 过滤器。未指定 tenant 的查询会被拒绝：
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```typescript
+        import { createQueryBuilder } from '@hypequery/clickhouse';
+        import { createDatasetClient, eq } from '@hypequery/datasets';
+        import { Orders } from './analytics/datasets';
+
+        const db = createQueryBuilder({
+          url: process.env.CLICKHOUSE_URL!,
+          username: process.env.CLICKHOUSE_USERNAME!,
+          password: process.env.CLICKHOUSE_PASSWORD!,
+          database: process.env.CLICKHOUSE_DATABASE!,
+        });
+
+        const analytics = createDatasetClient({ queryBuilder: db });
+
+        const result = await analytics.execute(Orders, {
+          dimensions: ['country'],
+          measures: ['revenue', 'orderCount'],
+          filters: [eq('status', 'completed')],
+          orderBy: [{ field: 'revenue', direction: 'desc' }],
+          limit: 10,
+        }, {
+          runtime: { tenant: 'org_123' },
+        });
+
+        console.log(result.data);
+        ```
+      </Tab>
+
+      <Tab title="Python">
+        ```python
+        from hypequery.datasets import (
+            DatasetQuery,
+            ExecutionContext,
+            create_dataset_client,
+            filter,
+            order,
+            tenant,
+        )
+        from hypequery.execution import ClickHouseConnection, create_clickhouse_executor
+
+        analytics = create_dataset_client(
+            executor=create_clickhouse_executor(ClickHouseConnection.from_env()),
+        )
+
+        result = analytics.execute(
+            orders,
+            DatasetQuery(
+                dimensions=("country",),
+                measures=("revenue", "orderCount"),
+                filters=(filter.eq("status", "completed"),),
+                order_by=(order.desc("revenue"),),
+                limit=10,
+            ),
+            context=ExecutionContext(tenant=tenant("org_123")),
+        )
+
+        print(result.data)
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## 为应用程序和智能体提供数据集 {#serve-datasets}
+
+数据集在进程内运行正常后，无需再编写任何 SQL 即可将其对外提供：
+
+* **HTTP 端点**：TypeScript 中的 `@hypequery/serve` 或 Python 中的 `hypequery.serve` 会将每个数据集转换为经过身份验证的端点，并附带输入校验和 OpenAPI 文档。Python API 可挂载到 FastAPI、Django 或 Flask 中。请参阅 [Serve](https://hypequery.com/docs/datasets/serve-integration) 和 [Python serving](https://hypequery.com/docs/python/serving)。
+* **React 钩子**：`@hypequery/react` 会为这些端点生成显式指定类型的 TanStack Query 钩子，因此浏览器端代码始终无需持有 ClickHouse 凭证。请参阅 [React](https://hypequery.com/docs/react/getting-started)。
+* **面向 AI 智能体的 MCP 工具**：`npx hypequery mcp` 会启动一个 MCP 服务器，让智能体能够发现您的数据集并查询命名指标，而不是直接运行原始 SQL。请参阅 [MCP](https://hypequery.com/docs/mcp/overview)。
+
+所有接入方式都基于同一个数据集定义，因此每种方式都会应用相同的 tenant 范围限定，并返回一致的数值。
+
+## 无需 ClickHouse 服务器即可运行 {#run-without-a-server}
+
+在本地开发和 CI 场景中，hypequery 可以在进程内 ClickHouse 引擎 [chDB](/zh/chdb/index) 上运行相同的数据集，既不需要服务器，也不需要凭证。详见 [在 TypeScript 中使用 chDB](https://hypequery.com/docs/chdb) 和 [在 Python 中使用 chDB](https://hypequery.com/docs/python/datasets/chdb)。
+
+## 了解更多 {#learn-more}
+
+* [TypeScript 快速入门](https://hypequery.com/docs/quick-start)
+* [Python SDK](https://hypequery.com/docs/python)
+* [示例](https://github.com/hypequery/hypequery-examples)
+* [GitHub 上的 hypequery](https://github.com/hypequery/hypequery)

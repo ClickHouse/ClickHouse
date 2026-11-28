@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で確認でき、ClickHouse のソースコードから自動生成されています。
 
-## object_shared_data_buckets_for_compact_part
+## object_shared_data_buckets_for_compact_part {#object_shared_data_buckets_for_compact_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
@@ -22,7 +22,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 compact パーツにおける JSON の共有データシリアル化のバケット数です。`map_with_buckets`、`advanced`、および `advanced_chunked` の共有データシリアル化で機能します。
 許容される最大値は 256 です。
 
-## object_shared_data_buckets_for_wide_part
+## object_shared_data_buckets_for_wide_part {#object_shared_data_buckets_for_wide_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -31,7 +31,7 @@ compact パーツにおける JSON の共有データシリアル化のバケッ
 wide パーツにおける JSON シリアル化の共有データ用バケット数です。`map_with_buckets`、`advanced`、および `advanced_chunked` の共有データシリアル化で機能します。
 許容される最大値は 256 です。
 
-## object_shared_data_serialization_version
+## object_shared_data_serialization_version {#object_shared_data_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
 
@@ -50,18 +50,26 @@ JSON データ型内の 共有データシリアル化バージョン。
 `map_with_buckets`、`advanced`、および `advanced_chunked` シリアライゼーションのバケット数は、次の設定によって決まります
 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part)。
 
-## object_shared_data_serialization_version_for_zero_level_parts
+## object_shared_data_serialization_version_for_small_parts {#object_shared_data_serialization_version_for_small_parts}
+
+**別名**: `object_shared_data_serialization_version_for_zero_level_parts`
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "map"},{"label": "ゼロレベルパーツ向けの JSON シリアル化バージョンを制御する設定を追加"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "map_with_buckets"},{"label": "ゼロレベルパーツで map_with_buckets の共有データ シリアル化バージョンをデフォルトで有効化"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "map_with_buckets"},{"label": "object_shared_data_serialization_version_for_zero_level_parts からリネームされ、挿入されたデータパーツおよびサイズが最小値を下回るパーツに適用されるようになりました"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "map"},{"label": "レベル 0 のパーツに対する JSON シリアル化バージョンを制御する設定を追加"}]}, {"id": "row-3","items": [{"label": "25.12"},{"label": "map_with_buckets"},{"label": "レベル 0 のパーツに対して map_with_buckets 共有データシリアル化バージョンをデフォルトで有効化"}]}]} />
 
-この設定では、insert 時に作成されるゼロレベルパーツについて、
-JSON 型内の共有データに使用するシリアル化バージョンを指定できます。
-ゼロレベルパーツに `advanced` または `advanced_chunked` の共有データ シリアル化を使用することは推奨されません。挿入にかかる時間が
-大幅に増加する可能性があるためです。
+小さなデータパーツにおける、JSON型内の共有データのシリアル化バージョンです。
+データパートは、挿入によって作成され、かつ
+[use&#95;object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts&#95;on&#95;insert](/ja/reference/settings/merge-tree-settings/use#use_object_shared_data_serialization_version_for_small_parts_on_insert)
+が有効になっている場合、または非圧縮サイズが
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/ja/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version)
+を下回る場合に、小さなデータパーツと見なされます。
+それ以外のパーツには、[object&#95;shared&#95;data&#95;serialization&#95;version](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version) で指定されたメインバージョンが使用されます。
 
-## object_shared_data_target_chunk_rows
+小さなデータパーツは短時間で再度マージされるため、`advanced` や `advanced_chunked` の共有データシリアル化は使用しないことを推奨します。
+これらを使用すると、挿入処理とマージが大幅に遅くなります。
+
+## object_shared_data_target_chunk_rows {#object_shared_data_target_chunk_rows}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
 

@@ -66,10 +66,12 @@ Una investigación puede comenzar con un pago fallido, una carga lenta de pantal
   ## Requisitos previos {#prerequisites}
 </div>
 
-* **ClickStack** instalado y accesible desde sus servicios de backend, ya sea autogestionado o en ClickHouse Cloud. Consulte [Primeros pasos con ClickStack de código abierto](/es/clickstack/getting-started/oss) o [Primeros pasos con ClickHouse Observability autogestionado](/es/clickstack/self-configured/getting-started/managed).
+* **ClickStack Open Source** instalado y accesible desde sus servicios de backend. Consulte [Primeros pasos con ClickStack de código abierto](/es/clickstack/getting-started/oss).
 * Sus servicios de backend instrumentados con **OpenTelemetry** y enviando trazas a ClickStack. Consulte [Ingesta con OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry).
 * El **SDK de Capture de bitdrift** integrado en su aplicación móvil. Consulte la [documentación del SDK de bitdrift](https://docs.bitdrift.io/) para obtener instrucciones de instalación.
 * Una **cuenta de bitdrift**, con [Soporte](https://bitdrift.io/contact-us) disponible para habilitar el tracing de su tenant (el tracing es una función experimental que bitdrift habilita para cada tenant).
+
+Para ClickHouse Observability, consulte la [guía de integración de bitdrift](/es/clickstack/observability/integration-partners/bitdrift) específica.
 
 ## Configurar el tracing {#configure-tracing}
 
@@ -93,7 +95,7 @@ Una vez configurado, las filas de logs de la cronología de bitdrift y las vista
 
 ## Flexibilidad de implementación {#deployment-flexibility}
 
-La integración funciona tanto si ClickStack es autogestionado como si se ejecuta como una oferta administrada en ClickHouse Cloud, ya que no modifica la forma en que los datos llegan a ClickStack. bitdrift no exporta telemetría móvil a ClickStack: captura el contexto de traza de OpenTelemetry de una solicitud en el dispositivo y crea un enlace a la traza de backend que sus propios servicios instrumentados con OpenTelemetry ya envían a ClickStack. bitdrift solo necesita la dirección de la UI de ClickStack para crear el enlace **Ver traza**, por lo que no es necesario modificar la implementación de ClickStack ni su canalización de ingestión.
+La integración funciona con ClickStack Open Source tanto si su base de datos se ejecuta localmente como en ClickHouse Cloud, ya que no modifica la forma en que los datos llegan a ClickStack. bitdrift no exporta telemetría móvil a ClickStack: captura el contexto de traza de OpenTelemetry de una solicitud en el dispositivo y crea un enlace a la traza de backend que sus propios servicios instrumentados con OpenTelemetry ya envían a ClickStack. bitdrift solo necesita la dirección de la UI de ClickStack para crear el enlace **Ver traza**, por lo que no es necesario modificar la implementación de ClickStack ni su canalización de ingestión.
 
 <div id="next-steps">
   ## Próximos pasos {#next-steps}

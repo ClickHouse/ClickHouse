@@ -41,6 +41,18 @@ Valores possíveis:
 * manifest&#95;file&#95;metadata - Tudo o que está acima + metadados dos arquivos de manifesto Avro percorridos.
 * manifest&#95;file&#95;entry - Tudo o que está acima + entradas dos arquivos de manifesto Avro percorridos.
 
+## iceberg_metadata_previous_versions_max {#iceberg_metadata_previous_versions_max}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "100"},{"label": "Nova configuração. As gravações em tabelas Iceberg passam a limitar o `metadata-log`, que antes crescia a cada commit."}]}]} />
+
+O número máximo de entradas no `metadata-log` de uma tabela Iceberg mantidas por uma gravação, incluindo a entrada do arquivo de metadados que ela grava. Quando uma gravação adiciona uma entrada que ultrapassa o limite, as entradas mais antigas são removidas. Os arquivos de metadados em si não são excluídos.
+
+A propriedade de tabela do Iceberg `write.metadata.previous-versions-max` tem precedência sobre esta configuração. Assim como na implementação em Java, a propriedade indica o número de arquivos de metadados anteriores e vale no mínimo um, de modo que o `metadata-log` mantém uma entrada a mais do que o seu valor.
+
+A configuração não tem efeito sobre tabelas em um catálogo que grava os próprios arquivos de metadados, como um catálogo REST: nesse caso, o catálogo mantém o `metadata-log` de acordo com sua própria configuração e com a propriedade da tabela.
+
 ## iceberg_metadata_staleness_ms {#iceberg_metadata_staleness_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

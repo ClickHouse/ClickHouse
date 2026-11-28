@@ -192,14 +192,15 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
         MONGODB_PASSWORD: "your-mongodb-password"
     ```
 
-    لإدارة الأسرار الخارجية (مثلًا باستخدام مشغّل أسرار)، يمكنك الإشارة إلى Kubernetes secret موجود مسبقًا:
+    لتحميل الاتصالات والمصادر الافتراضية من Kubernetes secret موجود مسبقًا، مثل سرّ يديره مشغّل أسرار:
 
     ```yaml
     hyperdx:
-      useExistingConfigSecret: true
-      existingConfigSecret: "my-external-secret"
-      existingConfigConnectionsKey: "connections.json"
-      existingConfigSourcesKey: "sources.json"
+      deployment:
+        useExistingConfigSecret: true
+        existingConfigSecret: "my-external-secret"
+        existingConfigConnectionsKey: "connections.json"
+        existingConfigSourcesKey: "sources.json"
     ```
 
     <Tip>
@@ -210,9 +211,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
   </Step>
 </Steps>
 
-<div id="using-clickhouse-cloud">
-  ## استخدام ClickHouse Cloud {#using-clickhouse-cloud}
-</div>
+## استخدام ClickHouse Cloud {#using-clickhouse-cloud}
 
 إذا كنت تستخدم ClickHouse Cloud، فعطّل مثيل ClickHouse المدمج وأدخِل بيانات اعتماد Cloud:
 
@@ -222,35 +221,41 @@ clickhouse:
   enabled: false
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-cloud-instance.clickhouse.cloud:9440?secure=true"
+    CLICKHOUSE_USER: "default"
   secrets:
     CLICKHOUSE_PASSWORD: "your-cloud-password"
     CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
 
-  useExistingConfigSecret: true
-  existingConfigSecret: "clickhouse-cloud-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "clickhouse-cloud-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
-أنشئ مورد `secret` للاتصال بشكل منفصل:
+أنشئ مورد `secret` للاتصال بشكل منفصل. ويلزم توفير كلٍّ من `connections.json` و`sources.json`. يستخدم هذا المثال قائمة مصادر فارغة؛ لذا هيّئ المصادر في UI بعد التثبيت، أو قدّم تعريفات المصادر كما هو موضح في [ClickHouse خارجي](/ar/clickstack/deployment/helm-deployment-options#external-clickhouse-secret):
 
 ```bash
 cat <<EOF > connections.json
 [
   {
     "name": "ClickHouse Cloud",
-    "host": "https://your-cloud-instance.clickhouse.cloud",
-    "port": 8443,
+    "host": "https://your-cloud-instance.clickhouse.cloud:8443",
     "username": "default",
     "password": "your-cloud-password"
   }
 ]
 EOF
 
-kubectl create secret generic clickhouse-cloud-config \
-  --from-file=connections.json=connections.json
+echo '[]' > sources.json
 
-rm connections.json
+kubectl create secret generic clickhouse-cloud-config \
+  --from-file=connections.json=connections.json \
+  --from-file=sources.json=sources.json
+
+rm connections.json sources.json
 ```
 
 ```shell

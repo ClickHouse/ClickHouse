@@ -12,19 +12,29 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="distributed_ddl_entry_format_version">
-  ## distributed_ddl_entry_format_version
-</div>
+## distributed_ddl_entry_format_version {#distributed_ddl_entry_format_version}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
-分布式 DDL (ON CLUSTER) 查询的兼容版本
+分布式 DDL (ON CLUSTER) 查询的兼容性版本。使用较低的值可确保集群中较旧的服务器仍能
+执行这些查询。
+
+服务器不会执行版本为 `1` 和 `2` 的条目。当设置值为 `1`、`2`
+或 `3` 时，较旧的服务器会写入这些版本的条目，因此在升级之前，请在所有服务器上将此设置设为至少 `4`，并等待分布式 DDL
+队列处理完毕。
+
+可选值：
+
+* `3` — 与 `4` 相同。条目会以版本 `4` 写入，因为较旧的服务器会拒绝版本为 `3` 的条目。
+* `4` — 条目携带会话中更改过的设置以及 OpenTelemetry 追踪上下文，且 `CREATE` 查询会在发起服务器上进行归一化。
+* `5` — 额外保留查询的 `initial_query_id`。
+* `6` — 额外携带该查询是否属于 `BACKUP` 或 `RESTORE` 操作的信息。
+* `7` — 额外携带父表的 UUID，`Replicated` 数据库据此仅在该表存在时才执行查询。
+* `8` — 额外携带发起服务器的用户和角色，各主机会结合服务器设置 `distributed_ddl_use_initial_user_and_roles` 使用这些信息。
 
 Cloud 默认值：`6`。
 
-<div id="distributed_ddl_output_mode">
-  ## distributed_ddl_output_mode
-</div>
+## distributed_ddl_output_mode {#distributed_ddl_output_mode}
 
 <SettingsInfoBlock type="DistributedDDLOutputMode" default_value="throw" />
 
@@ -42,9 +52,7 @@ Cloud 默认值：`6`。
 
 Cloud 默认值：`none_only_active`。
 
-<div id="distributed_ddl_task_timeout">
-  ## distributed_ddl_task_timeout
-</div>
+## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
 
 <SettingsInfoBlock type="Int64" default_value="180" />
 

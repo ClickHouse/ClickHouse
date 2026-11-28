@@ -890,26 +890,23 @@ Defina `--disable-version-update-checks=true` em ambientes isolados da internet 
   ## Configurações do ClickHouse {#clickhouse-settings}
 </div>
 
-<div id="default-user-password">
-  ### Senha do usuário `default` {#default-user-password}
-</div>
+### Senha do usuário `default` {#default-user-password}
 
 `spec.settings.defaultUserPassword` define a senha do usuário `default` integrado.
-Forneça o valor de uma chave em um Secret (recomendado) ou em um ConfigMap que
-você criar, em vez de inseri-lo diretamente no CR:
+Forneça o valor de uma chave em um Secret que você criar, em vez de
+inseri-lo diretamente no CR:
 
 ```yaml
 spec:
   settings:
     defaultUserPassword:
       passwordType: password   # default; see "Password types" below
-      secret:                  # exactly one of secret or configMap
-        name: clickhouse-password   # name of the Secret/ConfigMap
+      secret:
+        name: clickhouse-password   # name of the Secret
         key: password               # the key inside it, not the password value
 ```
 
-Forneça exatamente um entre `secret` e `configMap`, cada opção com `name` (o objeto)
-e `key` (a entrada que contém a senha).
+Defina tanto `name` (o Secret) quanto `key` (a entrada que contém a senha).
 
 <div id="password-types">
   #### Tipos de senha {#password-types}
@@ -970,13 +967,15 @@ spec:
         key: password
 ```
 
-<div id="using-configmap-for-user-passwords">
-  #### Usando um ConfigMap {#using-configmap-for-user-passwords}
-</div>
+#### Usando um ConfigMap (obsoleto) {#using-configmap-for-user-passwords}
 
-Um ConfigMap funciona da mesma forma, mas seu conteúdo não é protegido como o de um Secret.
-Use-o apenas para valores não sensíveis ou já hasheados, como um
-digest `password_sha256_hex`:
+<Warning>
+  A fonte `configMap` está obsoleta e foi removida na `v1alpha2`. Os ConfigMaps
+  não são protegidos como os Secrets, e hashes de senha sem salt podem ser quebrados por força bruta.
+  Em vez disso, armazene a senha, em texto simples ou já hashed, em um Secret.
+</Warning>
+
+Um ConfigMap funciona da mesma forma que um Secret, mas seu conteúdo não é protegido:
 
 ```yaml
 spec:

@@ -1,0 +1,145 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-10-15
+title: 'デモデイズ - 2026-10-15'
+sidebarTitle: '2026-10-15'
+description: '2026-10-15 の ClickStack デモデー'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-10-15"
+---
+
+## 保存前に Webhook のボディテンプレートを検証 {#validating-webhook-body-templates-before-they-save}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまでは、ボディテンプレートに不備がある Generic または incident.io の Webhook を保存しても、警告は表示されませんでした。その結果、アラートの配信はすべて失敗し、エラーは ClickStack のトレースとサーバーログにしか記録されませんでした。よくある原因は、`{{#if (eq state \"ALERT\")}}` のように Handlebars の 式 内で引用符を JSON エスケープしてしまうことでした。これは JSON としては有効ですが、テンプレートとしては無効です。
+
+Webhook のフォームでは、編集中にテンプレートがチェックされ、`Template error on line 1, column 29` のように行とカラムを含むエラーがエディタの下に表示されるようになりました。チェックは入力が 300 ms 止まってから行われるため、`{{ … }}` 式 の入力途中でエラーが表示されることはありません。空のボディはサービスのデフォルトテンプレートが使用されるためスキップされ、レンダリングされない Slack のボディも同様にスキップされます。また、エディタの下には `{{alertId}}`、`{{status}}`、`{{value}}`、`{{groupKey}}` など、サポートされている変数が簡単な説明とともに表示されます。
+
+同じ検証が、内部 API、外部 API v2、および MCP の `clickstack_save_webhook` ツールにおいて、サーバー側でも実行されるようになりました。作成、更新、テストの際にテンプレートが無効な場合は、Handlebars のエラーとその行・カラムを含む 400 が返されます。テストの場合は、何も送信されないうちに失敗します。検証ではテンプレートがコンパイルできるかどうかを確認するだけで、結果のレンダリングや、出力が有効な JSON かどうかのチェックは行いません。
+
+自動化されたワークフロー向けに、新しい `POST /api/v2/webhooks/validate` エンドポイントが追加され、Terraform で plan 時に Webhook の構成をチェックできるようになりました。`POST /api/v2/dashboards/validate` と同様に、保存せずに検証のみを行います。作成時と同じ URL およびボディのチェックを実行し、常に 200 と `{ valid, errors, normalized }` を返します。名前の一意性はチェックされません。
+
+**関連 プルリクエスト:** [#3350](https://github.com/hyperdxio/hyperdx/pull/3350) Webhook のボディテンプレートのコンパイルエラーをエディタに表示、[#3365](https://github.com/hyperdxio/hyperdx/pull/3365) コンパイルできない Webhook のボディテンプレートを拒否し、/api/v2/webhooks/validate を追加
+
+## オンボーディング時の PromQL ログソースの自動検出 {#auto-detecting-a-promql-source-during-onboarding}
+
+*デモ担当者: [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=96" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+接続にログソースが 1 つもない場合、ClickStack は OpenTelemetry のテーブルを探し、Logs、Traces、Metrics、Sessions の各ログソースを自動的に作成します。PromQL を有効にしている場合 (`NEXT_PUBLIC_ENABLE_PROMQL=true`) は、ClickHouse の `TimeSeries` テーブルが見つかると PromQL ログソースも作成されるようになりました。
+
+検出時には `engine = 'TimeSeries'` のテーブルを探し、それらが内部で作成する MergeTree テーブルは対象外とします。候補が複数ある場合は、次の優先順位で確認します。
+
+* `prometheus.metrics`：[ClickHouse の Prometheus ドキュメント](https://clickhouse.com/docs/concepts/features/interfaces/prometheus#create-a-timeseries-table)で使用されているテーブルです。
+* OpenTelemetry のテーブルと同じデータベースにある `metrics_ts`：collector の PromQL 移行によって作成されるテーブルです。
+* 任意のデータベースにある `metrics_ts`
+
+`TimeSeries` テーブルが 1 つしかない場合、ClickStack はテーブル名にかかわらずそのテーブルを使用します。
+
+`TimeSeries` テーブルしかない接続でも、手動セットアップに回されることなく PromQL ログソースが作成されるようになりました。検出や PromQL ログソースの作成に失敗しても、他のログソースはそのまま残ります。
+
+**関連 プルリクエスト:** [#3310](https://github.com/hyperdxio/hyperdx/pull/3310) オンボーディング時に PromQL ログソースを自動検出、[#3311](https://github.com/hyperdxio/hyperdx/pull/3311) 開発用のデフォルトログソースに PromQL ログソースをプロビジョニング
+
+## PromQL チャートの系列数の上限と最小粒度 {#series-limits-and-minimum-granularity-for-promql-charts}
+
+*デモ担当者: [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=176" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+PromQL の折れ線グラフと積み上げ棒グラフに、ビルダーチャートや生のSQLチャートと同じ **系列数の上限** 表示設定が追加されました。これまではブラウザ上でレンダリングされる系列が 250 件に制限され、残りを読み込むオプションはあったものの、この設定は表に出ておらず、タイルにも保存されませんでした。
+
+上限は、生のSQLチャートと同様にブラウザ上で適用されます。Prometheus 自体の `limit` パラメータは、値の上位系列ではなく、ラベルでソート済みの部分集合を返すうえ、ClickHouse テーブル関数によるフォールバックではこのパラメータが無視されるためです。非表示の系列に関するヒントも PromQL 向けの内容になり、`GROUP BY` や `WHERE` ではなく、ラベルマッチャーを絞り込むか `sum by (...)` を追加するよう案内します。
+
+PromQL ログソースにも、メトリクスログソースと同様に **自動粒度の最小値** 設定が追加されました。この設定では、折れ線グラフ、数値、テーブル、円グラフ、棒グラフ (生成される PromQL プレビューを含む) で、自動粒度が選択できる最小のバケットサイズを指定します。`$__rate_interval` もこの値をスクレイプ間隔として使用し、未設定の場合は 15s にフォールバックします。タイルで明示的に指定した粒度設定には影響しません。
+
+**関連 プルリクエスト:** [#3292](https://github.com/hyperdxio/hyperdx/pull/3292) PromQL ログソースで自動粒度の最小値をサポート、[#3294](https://github.com/hyperdxio/hyperdx/pull/3294) PromQL 時系列チャートで系列数の上限をサポート
+
+## PromQL ログソースのログソースレベルのアクセス制御 {#source-level-access-control-for-promql-sources}
+
+*デモ担当者: [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=301" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**この機能は Managed ClickStack にのみ適用されます。**
+
+ログ、トレース、メトリクスと同様に、PromQL ログソースにもロールベースのアクセス制御が適用されるようになりました。きめ細かなログソースロールを使えば、ある PromQL ログソースには **閲覧** アクセスを付与し、別のログソースへのアクセスは制限するといった設定が可能です。
+
+すべての `/v1/prometheus/*` ルートでログソースへの **閲覧** アクセスがチェックされるようになり、アクセス権がない場合は 403 `RBAC_PERMISSION_DENIED` が返されます。呼び出し元のログソースアクセスルールによってログソース自体が非表示になっている場合は、ログソース API と同様に 404 `Source not found` が返されます。なお、この変更によって ClickHouse 側でのロールの適用が追加されるわけではありません。ClickStack Cloud では、PromQL クエリがすでにユーザー自身のトークンを使用しているためです。
+
+## ダッシュボード向けアドホックフィルター {#ad-hoc-filters-for-dashboards}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=401" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ダッシュボードでは、既存の変数とフィルタに加えて、**アドホックのキーと値**というフィルタタイプを使用できるようになりました。各アドホックフィルターは、ログやトレースなどの 1 つ以上の ClickHouse ログソース、または Prometheus ログソースをもとに、利用可能なキーと値の候補を表示します。デフォルトでは、条件はそれらのログソースを使用するすべてのタイルに適用されますが、適用先のログソースを限定することもできます。この機能は `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS` で有効化でき、予定されている作業のおよそ半分が完了しています。
+
+ダッシュボードのフィルタバーでフィルタの入力欄をクリックし、キー、オペレーター、値を選択します。キーと値はいずれも候補が表示されます。SQL ログソースでは、equals、not equals、正規表現、正規表現の否定、`LIKE`、`NOT LIKE` がサポートされています。PromQL ログソースでは、カラムキーではなく Prometheus のラベルを使用します。適用された条件はピルとして表示され、編集、除外条件への切り替え、クリアができます。選択内容は URL に保存されるほか、ダッシュボードのデフォルトのフィルタ状態の一部として保存することもできます。
+
+条件がタイルにどのように反映されるかは、タイルの種類によって異なります。
+
+* ビルダータイルは既存の `filter` 設定プロパティを使用するため、`WHERE` 句に変数を追加する必要はありません。
+* 生のSQLタイルでは `$__filters` を使用します。クエリにこのマクロを含める必要があり、含まれていない場合は警告が表示されます。条件が適用されていない場合、このマクロは `1 = 1` に展開されます。
+* PromQL タイルは Grafana と同じパーサーライブラリを使用し、すべてのメトリクスセレクターに条件をラベルマッチャーとして追加します。
+
+適用された条件は、生成された SQL および PromQL のプレビューで確認できます。
+
+**検索タイル**から直接フィルタリングすることもできます。セルにカーソルを合わせると、検索ページと同じコピー、フィルタ、除外のオプションが表示されます。フィルタリングすると、該当するアドホックフィルターに値が追加され、同じ値をもう一度クリックすると削除されます。行をサイドパネルで開いた場合も、そのフィルタボタンはダッシュボードに適用されます。現時点では、クリックによるフィルタリングは検索タイルでのみ利用できます。
+
+ダッシュボードをインポートする際には、アドホックフィルターのクエリ対象のログソースと適用先のログソースの両方を再マッピングできます。外部 API と MCP は、まだアドホックフィルターに対応していません。
+
+**関連 プルリクエスト:** [#3335](https://github.com/hyperdxio/hyperdx/pull/3335) Add schemas and types for adhoc dashboard filters, [#3317](https://github.com/hyperdxio/hyperdx/pull/3317) Extract FilterPill, add filter editor components, [#3341](https://github.com/hyperdxio/hyperdx/pull/3341) Add UI for configuring adhoc dashboard filters, [#3343](https://github.com/hyperdxio/hyperdx/pull/3343) Render adhoc dashboard filter inputs, [#3366](https://github.com/hyperdxio/hyperdx/pull/3366) Broadcast adhoc dashboard filter conditions, [#3367](https://github.com/hyperdxio/hyperdx/pull/3367) Support ログソース remapping during ad hoc filter import, [#3380](https://github.com/hyperdxio/hyperdx/pull/3380) Support click-to-adhoc-filter on search tiles
+
+## SELECT と ORDER BY を結果テーブルへ移動 {#moving-select-and-order-by-into-the-results-table}
+
+*デモ担当者: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=636" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**これは検証段階の取り組みであり、リリースを確約するものではありません。**
+
+現在の検索ページでは、`SELECT` と `ORDER BY` が `WHERE` の隣に配置されていますが、これらが影響するのは結果テーブルだけです。イベントパターンやイベントデルタに切り替えても表示されたままで、変更しても何も反映されません。また、話を聞いたユーザーの中には、`SELECT` でカラムを選択できることに気付いていなかった人もいました。ユーザーが探していたのは、カラムやソートを操作するコントロールでした。
+
+このプロトタイプでは、両方を **カラム** と **ソート** として結果テーブルのツールバーに移動し、イベントデルタとイベントパターンでは非表示にしています。**カラム** には現在の `SELECT` 項目が一覧表示され、ドラッグで並べ替えたり削除したりできます。候補を選択するか、`upper(Body) as message` のような式を入力して **Add** をクリックします。**SQL** タブでは、`SELECT` 全体を直接編集できます。
+
+**ソート** には、各 `ORDER BY` フィールドとそのソート方向が一覧表示され、`(toDateTime(Timestamp), Timestamp) DESC` のようなタプルにも対応しています。**SQL** で句を直接編集することもできます。`Timestamp DESC NULLS LAST` のように、コントロールで分解できない式は SQL タブで開かれます。コントロールで変更すると SQL が自動的に組み立てられますが、これまでどおり自分で記述することもできます。
+
+**Apply** で句を更新して検索を実行し、**Cancel** で変更を破棄し、**Reset to default** でログソースのデフォルトに戻します。幅のリセット、行の折り返し、生成された SQL の表示、CSV のエクスポートといったテーブルアクションは、ツールバー右側のアイコンボタンに移動しています。
+
+これにより、検索フォームにも少し余裕が生まれます。1 行目の左側にはログソース、右側には **Update** と **Alerts** が配置されます。`WHERE` 句は全幅の専用行に置かれ、Live Tail、リフレッシュ間隔、**Run** と並びます。
+
+この PR はまだドラフト段階です。使用感について、ぜひご意見をお聞かせください。
+
+**関連 プルリクエスト:** [#3387](https://github.com/hyperdxio/hyperdx/pull/3387) 結果テーブルから検索カラムとソートを編集 (オープン)
+
+## スマートフォンでも使える検索ページ {#a-usable-search-page-on-a-phone}
+
+*デモ担当者: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=843" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+スマートフォンでアラートを開いたら、すぐにログを確認できるのが理想です。これまでは、フィルタのサイドバーが 200px 未満に縮まらず、クエリの行も折り返されず、結果は `100vh` のフレーム内でクリッピングされていました。そのため、ログまでスクロールすることさえできませんでした。
+
+検索ページは、ナビゲーションが折りたたまれるのと同じ 900px 未満の幅で、コンパクトなレイアウトに切り替わるようになりました。フィルタは初期状態では閉じており、**Show filters** からドロワーとして開くため、ログテーブルが全幅を使えます。`SELECT` と `ORDER BY` は **カラム** トグルの中に収められますが、検索ボックスは常に表示されます。ヒストグラムも 72px に縮小して残り、結果はツールバー下の領域でスクロールします。フィルタのドロワーを開いてもデスクトップでの設定は変わらず、ウィンドウ幅を 900px 超に広げるとデスクトップのレイアウトに戻ります。
+
+コンパクトなビューポート用のフックとレスポンシブなサイドパネルは `packages/app/src/components/CompactViewport/` にあり、他のページでも再利用できます。最初に採用したのは検索ページです。この変更は、本記事で紹介しているカラムとソートのプロトタイプより前に取り込まれました。このプロトタイプでは、画面幅にかかわらず `SELECT` と `ORDER BY` を結果テーブルに移動する予定です。
+
+**関連 プルリクエスト:** [#3376](https://github.com/hyperdxio/hyperdx/pull/3376) 保存済み検索をスマートフォンでも使えるようにする
+
+## フィルタのキーと値をサイドバーにストリーミング表示 {#streaming-filter-keys-and-values-into-the-sidebar}
+
+*デモ担当者: [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=899" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまで、検索ページのフィルタサイドバーでは、すべてのフィルタクエリが完了するまでスピナーが 1 つ表示されるだけでした。クエリ自体は結果をストリーミングしていたものの、フィルタを使うには最も遅いクエリの完了を待たなければなりませんでした。
+
+現在は、まずキーが個別の読み込みインジケーター付きで表示され、各クエリが結果を返すたびに値が埋まっていきます。クエリ自体に変更はなく、サイドバーが結果を受け取った順に表示するようになっただけです。この違いは、2日間の検索など長い時間範囲で特に実感できます。
+
+また、サイドバーが直前の状態を保持しない問題も修正しました。ブラウザの応答性を保つため、フィルタグループは画面外にスクロールされると DOM から削除されます。以前はスクロールして戻ると、展開していたグループが折りたたまれ、読み込み済みの値の分布も消えていました。現在は、どちらも元の状態のまま保持されます。
+
+**関連 プルリクエスト:** [#3348](https://github.com/hyperdxio/hyperdx/pull/3348) フィルタのキーと値の結果を UI にストリーミング、[#3377](https://github.com/hyperdxio/hyperdx/pull/3377) スクロール時にフィルタの展開状態を保持

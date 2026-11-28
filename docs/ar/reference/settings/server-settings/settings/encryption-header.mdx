@@ -14,16 +14,16 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 ## encryption_header_cache_policy {#encryption_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />سياسة الإخلاء لذاكرة التخزين المؤقت لترويسات التشفير المستخدمة في مسار القراءة الخاص بـ ReaderExecutor. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`. راجع [`encryption_header_cache_size`](/ar/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size) لمعرفة سعة ذاكرة التخزين المؤقت، و[`encryption_header_cache_size_ratio`](/ar/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio) لمعرفة حجم قائمة الانتظار المحمية في سياسة SLRU.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />سياسة الإخلاء لذاكرة التخزين المؤقت لترويسات التشفير. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`. راجع [`encryption_header_cache_size`](/ar/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size) لمعرفة سعة ذاكرة التخزين المؤقت، و[`encryption_header_cache_size_ratio`](/ar/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio) لمعرفة حجم قائمة الانتظار المحمية في سياسة SLRU.
 
 ## encryption_header_cache_size {#encryption_header_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="52428800" changeable_without_restart="Yes" />
 
-الحد الأقصى لحجم ذاكرة التخزين المؤقت لترويسات التشفير المقروءة من الملفات المشفّرة. يُستخدم فقط مع مسار القراءة التجريبي ReaderExecutor.
+الحد الأقصى لحجم ذاكرة التخزين المؤقت لترويسات التشفير المقروءة من الملفات المشفّرة على الأقراص التي تستخدم مسارات عشوائية للكائنات الثنائية الكبيرة، مثل أقراص `s3`. تُغني ذاكرة التخزين المؤقت عن إعادة قراءة ترويسة الملف من التخزين الكائني.
 
 <Note>
-  يمكن تعديل هذا الإعداد أثناء التشغيل، ويُطبَّق مفعوله فورًا.
+  يمكن تعديل هذا الإعداد أثناء التشغيل، ويُطبَّق مفعوله فورًا.
 </Note>
 
 ## encryption_header_cache_size_ratio {#encryption_header_cache_size_ratio}

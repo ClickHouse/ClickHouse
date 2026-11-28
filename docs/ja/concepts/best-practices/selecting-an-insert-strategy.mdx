@@ -44,11 +44,11 @@ import BulkInserts from '/snippets/ja/_bulk_inserts.mdx';
 
 ClickHouse は、挿入されたデータをテーブルの主キーカラムに従って[順序付けし](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns)、ディスクに保存します。**2 つ目の判断**は、②サーバーへ送信する前にデータを事前にソートするかどうかです。バッチが主キーカラムで事前にソートされた状態で到着すれば、ClickHouse は⑩のソート手順を[省略](https://github.com/ClickHouse/ClickHouse/blob/94ce8e95404e991521a5608cd9d636ff7269743d/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L595)でき、インジェストを高速化できます。
 
-取り込むデータに事前定義されたフォーマットがない場合、**重要な判断**はフォーマットを選ぶことです。ClickHouse は[70 を超えるフォーマット](/ja/reference/formats/index)でのデータ挿入をサポートしています。ただし、ClickHouse のコマンドラインクライアントや各種プログラミング言語クライアントを使う場合、この選択は自動的に処理されることがよくあります。必要であれば、この自動選択を明示的に上書きすることもできます。
+取り込むデータに事前定義されたフォーマットがない場合、**重要な判断**はフォーマットを選ぶことです。ClickHouse は[70 を超えるフォーマット](/ja/reference/formats/index)でのデータ挿入をサポートしています。ただし、ClickHouse のコマンドラインクライアントや各種プログラミング言語別クライアントを使う場合、この選択は自動的に処理されることがよくあります。必要であれば、この自動選択を明示的に上書きすることもできます。
 
 次の**大きな判断**は、④ClickHouse サーバーへ送信する前にデータを圧縮するかどうかです。圧縮により転送サイズが小さくなり、ネットワーク効率が向上するため、特に大規模なデータセットでは、データ転送の高速化と帯域幅使用量の削減につながります。
 
-データは⑤ClickHouse のネットワークインターフェイス、つまり[ネイティブ](/ja/concepts/features/interfaces/tcp)または[HTTP](/ja/concepts/features/interfaces/http)インターフェイスを通じて送信されます (これらはこの投稿の後半で[比較](https://clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient#clickhouse-client-defaults)します) 。
+データは⑤ClickHouse のネットワークインターフェイス、つまり[ネイティブ](/ja/concepts/features/connect-to-clickhouse/protocols/native-tcp)または[HTTP](/ja/concepts/features/connect-to-clickhouse/protocols/http)インターフェイスを通じて送信されます (これらはこの投稿の後半で[比較](https://clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient#clickhouse-client-defaults)します) 。
 
 <div id="server-side-steps">
   #### サーバー側のステップ {#server-side-steps}
@@ -133,9 +133,9 @@ CPU とメモリに対する圧縮の影響は、LZ4 では小さく、ZSTD で�
 
 **圧縮をバッチ化と効率的な入力フォーマット (Native など) と組み合わせると、最適なインジェスト性能が得られます。**
 
-ネイティブインターフェイス (例: [clickhouse-client](/ja/concepts/features/interfaces/client)) を使用する場合、LZ4 圧縮はデフォルトで有効です。必要に応じて、設定で ZSTD に切り替えることもできます。
+ネイティブインターフェイス (例: [clickhouse-client](/ja/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client)) を使用する場合、LZ4 圧縮はデフォルトで有効です。必要に応じて、設定で ZSTD に切り替えることもできます。
 
-[HTTPインターフェイス](/ja/concepts/features/interfaces/http)では、Content-Encoding ヘッダーを使用して圧縮を適用します (例: Content-Encoding: lz4) 。送信前にペイロード全体を圧縮しておく必要があります。
+[HTTPインターフェイス](/ja/concepts/features/connect-to-clickhouse/protocols/http)では、Content-Encoding ヘッダーを使用して圧縮を適用します (例: Content-Encoding: lz4) 。送信前にペイロード全体を圧縮しておく必要があります。
 
 <div id="pre-sort-if-low-cost">
   ### コストが低い場合は事前にソートする {#pre-sort-if-low-cost}
@@ -159,11 +159,9 @@ CPU とメモリに対する圧縮の影響は、LZ4 では小さく、ZSTD で�
   ## インターフェイスの選択—HTTP またはネイティブ {#choose-an-interface}
 </div>
 
-<div id="choose-an-interface-native">
-  ### ネイティブ {#choose-an-interface-native}
-</div>
+### ネイティブ {#choose-an-interface-native}
 
-ClickHouse では、データをインジェストするための主要なインターフェイスとして、**ネイティブインターフェイス** と **HTTPインターフェイス** の 2 つを利用できます。両者にはそれぞれ、パフォーマンスと柔軟性の面でトレードオフがあります。[clickhouse-client](/ja/concepts/features/interfaces/client) や Go、C++ などの一部の言語クライアントで使用されるネイティブインターフェイスは、パフォーマンスを重視して設計されています。データは常に ClickHouse の非常に効率的な Native フォーマットで送信され、LZ4 または ZSTD によるブロック単位の圧縮をサポートします。また、パースやフォーマット変換などの処理をクライアント側にオフロードすることで、サーバー側の処理を最小限に抑えます。
+ClickHouse では、データをインジェストするための主要なインターフェイスとして、**ネイティブインターフェイス** と **HTTPインターフェイス** の 2 つを利用できます。両者にはそれぞれ、パフォーマンスと柔軟性の面でトレードオフがあります。[clickhouse-client](/ja/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client) や Go、C++ などの一部の言語別クライアントで使用されるネイティブインターフェイスは、パフォーマンスを重視して設計されています。データは常に ClickHouse の非常に効率的なネイティブ形式で送信され、LZ4 または ZSTD によるブロック単位の圧縮をサポートします。また、パースやフォーマット変換などの処理をクライアント側にオフロードすることで、サーバー側の処理を最小限に抑えます。
 
 さらに、MATERIALIZED および DEFAULT のカラム値をクライアント側で計算できるため、サーバーはこれらの処理を完全に省略できます。そのため、効率が重要となる高スループットなインジェストの用途では、ネイティブインターフェイスが最適です。
 
@@ -173,6 +171,6 @@ ClickHouse では、データをインジェストするための主要なイン
 
 これは、ロードバランサーによってトラフィックを簡単に切り替えられるため、ClickHouse のネイティブプロトコルより好まれることがよくあります。ネイティブプロトコルのほうがオーバーヘッドがやや少ないため、挿入パフォーマンスにはわずかな差が生じることが想定されます。
 
-ただし、ネイティブプロトコルほど深く統合されているわけではなく、マテリアライズされた値の計算や Native フォーマットへの自動変換といったクライアント側の最適化は実行できません。HTTP による挿入でも、標準的な HTTP ヘッダー (例: `Content-Encoding: lz4`) を使って圧縮できますが、圧縮は個々のデータブロックではなくペイロード全体に適用されます。このインターフェイスは、生のパフォーマンスよりも、プロトコルの単純さ、ロードバランシング、または幅広いフォーマット互換性が重要な環境で好まれることがよくあります。
+ただし、ネイティブプロトコルほど深く統合されているわけではなく、マテリアライズされた値の計算やネイティブ形式への自動変換といったクライアント側の最適化は実行できません。HTTP による挿入でも、標準的な HTTP ヘッダー (例: `Content-Encoding: lz4`) を使って圧縮できますが、圧縮は個々のデータブロックではなくペイロード全体に適用されます。このインターフェイスは、生のパフォーマンスよりも、プロトコルの単純さ、負荷分散、または幅広いフォーマット互換性が重要な環境で好まれることがよくあります。
 
-これらのインターフェイスのより詳しい説明については、[こちら](/ja/concepts/features/interfaces/overview)を参照してください。
+これらのインターフェイスのより詳しい説明については、[ClickHouse への接続](/ja/concepts/features/connect-to-clickhouse)を参照してください。

@@ -19,18 +19,18 @@ dbt 正在基于全新引擎重构，而 ClickHouse 从一开始就参与其中�
 ClickHouse 是 dbt OSS、dbt v2 和 dbt 平台上的首个社区 adapter。dbt 官方的第一方 adapter 与我们同步发布，而我们是 dbt Labs 之外的第一个。dbt Core 1.x 的 Python adapter `dbt-clickhouse` 不会被弃用：我们会持续跟进 dbt 1.x 的 发行版，并同时维护这两个 adapter。
 
 <Warning>
-  **目前为 Beta 阶段，尚未正式可用 (GA) 。** 面向 dbt OSS 和 dbt v2 的 ClickHouse adapter 目前处于 Beta 阶段，dbt 平台连接则处于私有 Beta 阶段。dbt Core 1.x adapter `dbt-clickhouse` 已正式可用 (GA) ，可用于生产环境；本页内容不会改变这一点。
+  **目前为 Beta 阶段，尚未正式可用 (GA) 。** 面向 dbt OSS 和 dbt v2 的 ClickHouse 适配器目前处于 Beta 阶段，dbt 平台连接则处于私有 Beta 阶段。dbt Core 1.x adapter `dbt-clickhouse` 已正式可用 (GA) ，可用于生产环境；本页内容不会改变这一点。
 </Warning>
 
 <Note>
-  **dbt Core 1.x 的文档同样适用于 dbt OSS 和 dbt v2。** 新 adapter 在两种引擎上的行为一致：其他 dbt 页面中描述的 profiles、模型配置、物化类型和 macros，在 dbt OSS、dbt v2 和 dbt 平台上均可原样使用。例外情况记录在下方的 [v1 与 v2 parity](#parity) 表中。
+  **dbt Core 1.x 的文档同样适用于 dbt OSS 和 dbt v2。** 新 adapter 在两种引擎上的行为一致：其他 dbt 页面中描述的 profiles、模型配置、物化类型和 宏，在 dbt OSS、dbt v2 和 dbt 平台上均可原样使用。例外情况记录在下方的 [v1 与 v2 一致性](#parity) 表中。
 </Note>
 
 <Note>
-  **dbt OSS** 是 v2 引擎的 open-source (Apache 2.0) build。有关它与 dbt v2 和 dbt 平台的关系，请参阅[术语与 availability](#terminology)。
+  **dbt OSS** 是 v2 引擎的 open-source (Apache 2.0) build。有关它与 dbt v2 和 dbt 平台的关系，请参阅[术语与 可用性](#terminology)。
 </Note>
 
-实时状态可在 [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) (v2 与 v1 的 parity，每个领域一个子 issue) 和 [ClickHouse/dbt-clickhouse#555](https://github.com/ClickHouse/dbt-clickhouse/issues/555) (dbt v2) 中查看。
+dbt v2 adapter 在功能上已与 `dbt-clickhouse` 1.10.3 (即 2026 年 9 月发布的 dbt Core 1.x 版本 adapter) 保持一致，少数例外情况列于 [v1 与 v2 一致性](#parity) 部分。
 
 #### 在 dbt 平台中体验 ClickHouse {#request-access}
 
@@ -49,37 +49,35 @@ dbt 有多种形态，同一个 adapter 可以在其中多种形态下运行。�
 
 ## 当前状态详情 {#v2-adapter-status}
 
-Beta 意味着几乎所有 v1 功能都可以在已记录的限制范围内正常使用。尚待支持的功能列于 [v1 与 v2 对等情况](#parity) 中，且该列表会随每个发行版不断缩短。我们建议先在开发或暂存环境中评估 dbt v2；如果您的项目依赖任何尚待支持的功能，或者需要正式可用版本所提供的保障，请在生产环境中继续使用 dbt Core 1.x。
+Beta 意味着 v2 adapter 已与 `dbt-clickhouse` 1.10.3 实现功能一致性，少数例外情况列于 [v1 与 v2 一致性](#parity) 部分。我们建议先在开发或暂存环境中评估 dbt v2；如果您的项目依赖任何尚待支持的功能，或者需要正式可用版本所提供的保障，请在生产环境中继续使用 dbt Core 1.x。
 
-我们使用 `dbt-clickhouse` 的 dbt Core 1.x 集成测试套件来检验 dbt v2 adapter。**目前**，该 adapter 通过了 v1 套件中约 98% 的测试 (在适用于 dbt v2 的 276 项测试中通过 270 项) 。剩余的失败项均源于引擎侧差异，而非 ClickHouse 本身：查询注释、运行结果中的 `query_id`，以及针对同时在 `pre-hook` 和 `pre_hook` 下配置钩子的检查。逐项功能对比请参见 [v1 与 v2 对等情况](#parity)。
+**后续计划**：解决剩余的例外情况，并使 v2 与 `dbt-clickhouse` 的新发行版保持同步。Beta 阶段之后，我们将继续开发其余的 [dbt v2 专属功能](#v2-functionality)。
 
-**后续计划**：查询注释、运行结果中的 `query_id`、基于表元数据的 `dbt source freshness`，修复剩余缺陷，并通过完整的 v1 测试套件以实现完全对等。以上各项的进展均在 [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) 中跟踪，每个领域对应一个子 issue。
-
-GA 已列入路线图。我们正在与 dbt Labs 协商时间表，准备就绪后将更新本页面。
+正式可用已列入路线图。我们正在与 dbt Labs 协商时间表，准备就绪后将更新本页面。
 
 ### Beta 范围之外的内容 {#out-of-scope}
 
 v2 独有的功能，例如 ClickHouse SQL 智能功能 (静态分析、LSP、列感知) 、Semantic Layer 以及更多 dbt 平台认证方式，均不在 Beta 范围内。这些功能的当前状态请参见 [dbt v2 专属功能](#v2-functionality)。
 
-### v1 与 v2 的功能对等情况 {#parity}
+### v1 与 v2 的功能一致性 {#parity}
 
-下表将 `dbt-clickhouse` (v1) 中可用的功能与其在 dbt v2 adapter 中的状态进行对比。除备注另有说明外，所列的每项功能在 v1 中均受支持；状态列对应的是 dbt v2，并同样适用于 dbt OSS。每个待处理项的进展都在 [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) 中跟踪。
+下表将 `dbt-clickhouse` (v1) 中可用的功能与其在 dbt v2 adapter 中的状态进行对比。除备注另有说明外，所列的每项功能在 v1 中均受支持；状态列对应的是 dbt v2，并同样适用于 dbt OSS。对比基准为 `dbt-clickhouse` 1.10.3：除标记为“部分支持”或“尚未支持”的行，以及 [v2 中不计划支持的选项](#not-planned) 中列出的行为外，该版本提供的所有功能在 v2 中均可正常使用。
 
 <Badge color="green">已支持</Badge> 目前已可用 · <Badge color="yellow">部分支持</Badge> 在一定限制下可用 · <Badge color="red">尚未支持</Badge> 尚未实现。
 
 #### 物化类型 {#parity-materializations}
 
-| 特性                                            | 作用                           | dbt v2                           | 说明                                                                         |
-| --------------------------------------------- | ---------------------------- | -------------------------------- | -------------------------------------------------------------------------- |
-| `view`                                        | 标准 dbt 视图。                   | <Badge color="green">已支持</Badge> |                                                                            |
-| `table`                                       | 支持 engine 与 DDL 选项的全量重建。     | <Badge color="green">已支持</Badge> |                                                                            |
-| `incremental`                                 | 追加或合并新行。                     | <Badge color="green">已支持</Badge> |                                                                            |
-| `materialized_view`                           | 在写入时完成转换的 ClickHouse MV。     | <Badge color="green">已支持</Badge> |                                                                            |
-| `dictionary`                                  | 用于键查找和 join 的 ClickHouse 字典。 | <Badge color="green">已支持</Badge> |                                                                            |
-| `snapshot`                                    | 类型 2 缓慢变化维度。                 | <Badge color="green">已支持</Badge> |                                                                            |
-| `seed`                                        | 将 CSV 加载为表。                  | <Badge color="green">已支持</Badge> | 数值列类型会被推断为 `Int64`/`Float64`，而非 `Int32`/`Float32`；可使用 `column_types` 显式指定。 |
-| `ephemeral`                                   | 内联 CTE，不创建任何对象。              | <Badge color="green">已支持</Badge> |                                                                            |
-| `distributed_table`、`distributed_incremental` | 由 Distributed 引擎承载的分片表。      | <Badge color="green">已支持</Badge> | 适用于在 profile 中设置了 `cluster` 的自管理集群，与 v1 一致。                                |
+| 功能                                            | 作用                           | dbt v2                             | 说明                                                                                                                                                                                                                                                                         |
+| --------------------------------------------- | ---------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `view`                                        | 标准 dbt 视图。                   | <Badge color="green">已支持</Badge>   |                                                                                                                                                                                                                                                                            |
+| `table`                                       | 支持 引擎 与 DDL 选项的全量重建。     | <Badge color="green">已支持</Badge>   |                                                                                                                                                                                                                                                                            |
+| `incremental`                                 | 追加或合并新行。                     | <Badge color="green">已支持</Badge>   |                                                                                                                                                                                                                                                                            |
+| `materialized_view`                           | 在写入时完成转换的 ClickHouse MV。     | <Badge color="green">已支持</Badge>   |                                                                                                                                                                                                                                                                            |
+| `dictionary`                                  | 用于键查找和 join 的 ClickHouse 字典。 | <Badge color="green">已支持</Badge>   |                                                                                                                                                                                                                                                                            |
+| `snapshot`                                    | 类型 2 缓慢变化维度。                 | <Badge color="green">已支持</Badge>   |                                                                                                                                                                                                                                                                            |
+| `seed`                                        | 将 CSV 加载为表。                  | <Badge color="yellow">部分支持</Badge> | 数值列类型会被推断为 `Int64`/`Float64`，而非 `Int32`/`Float32`；可使用 `column_types` 显式指定。数据行通过分批的 `INSERT ... VALUES` 语句加载，而非单条 `insert ... format CSV` 语句。在 seed 上设置的 `query_settings` 会被忽略 ([ClickHouse/dbt-clickhouse#812](https://github.com/ClickHouse/dbt-clickhouse/issues/812)) 。 |
+| `ephemeral`                                   | 内联 CTE，不创建任何对象。              | <Badge color="green">已支持</Badge>   |                                                                                                                                                                                                                                                                            |
+| `distributed_table`、`distributed_incremental` | 由 Distributed 引擎承载的分片表。      | <Badge color="green">已支持</Badge>   | 适用于在 profile 中设置了 `cluster` 的自管理集群，与 v1 一致。                                                                                                                                                                                                                                |
 
 #### 模型配置 {#parity-model-configuration}
 
@@ -104,55 +102,59 @@ v2 独有的功能，例如 ClickHouse SQL 智能功能 (静态分析、LSP、�
 
 #### 集群与 Cloud {#parity-cluster-and-cloud}
 
-| 特性                           | 作用                                         | dbt v2                           | 说明                                                                                                    |
+| 功能                           | 作用                                         | dbt v2                           | 说明                                                                                                    |
 | ---------------------------- | ------------------------------------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | ClickHouse Cloud             | 推荐的 Beta 配置。                               | <Badge color="green">已支持</Badge> |                                                                                                       |
 | 多副本一致性                       | `select_sequential_consistency` 及相关的写后读设置。 | <Badge color="green">已支持</Badge> |                                                                                                       |
 | `ON CLUSTER` 与 Replicated 引擎 | 在自管理集群上实现 DDL 分发。                          | <Badge color="green">已支持</Badge> | 在 profile 中设置 `cluster`。DDL 会分发到每个节点，但 `Replicated` 数据库无需分发，因此除外；可通过 `disable_on_cluster` 为单个模型关闭此行为。 |
 | `EXCHANGE TABLES`            | 重建时的原子交换。                                  | <Badge color="green">已支持</Badge> |                                                                                                       |
 | 自定义连接设置                      | profile 级别的 `custom_settings`。             | <Badge color="green">已支持</Badge> |                                                                                                       |
-| ClickHouse 服务器版本             | 最低服务器版本。                                   | <Badge color="green">已支持</Badge> | 两种引擎均需 25.3+。在 v2 上读取 `UUID` 列需要 26.7+ (较早版本的服务器无法将 `UUID` 转换为 Arrow) 。                               |
+| ClickHouse 服务器版本             | 最低服务器版本。                                   | <Badge color="green">已支持</Badge> | 两种引擎均需 25.3+。在 v2 上读取 `UUID` 列需要 26.7+，参见 [v2 中不计划支持的选项](#not-planned)。                               |
 
 #### 宏与操作 {#parity-macros-and-operations}
 
-| 功能              | 作用                                                          | dbt v2                           | 说明                                                            |
-| --------------- | ----------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------- |
-| S3 表函数宏         | `clickhouse_s3source()` 可在模型中直接读取 S3。                       | <Badge color="green">已支持</Badge> |                                                               |
-| 跨数据库宏           | 例如 `dbt-utils` 中提供的辅助宏。                                     | <Badge color="green">已支持</Badge> |                                                               |
-| 授权              | 通过模型配置生成 `GRANT` 语句。                                        | <Badge color="green">已支持</Badge> |                                                               |
-| `dbt clone`     | 在不同环境之间执行 zero-copy 的 `CLONE AS`。                           | <Badge color="green">已支持</Badge> | MergeTree 表、种子、快照和增量模型通过 `CLONE AS` 克隆；视图和其他引擎则与 v1 相同，回退为视图。 |
-| 运行结果中的 Query ID | `adapter_response` 中的 `query_id`，用于与 `system.query_log` 关联。 | <Badge color="red">尚未支持</Badge>  |                                                               |
-| `query-comment` | 查询注释配置。                                                     | <Badge color="red">尚未支持</Badge>  | 目前尚不支持 `query-comment: null`。                                 |
+| 功能                                                        | 作用                                                          | dbt v2                           | 说明                                                                                                                                                                                                              |
+| --------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S3 表函数宏                                                   | `clickhouse_s3source()` 可在模型中直接读取 S3。                       | <Badge color="green">已支持</Badge> |                                                                                                                                                                                                                 |
+| 跨数据库宏                                                     | 例如 `dbt-utils` 中提供的辅助宏。                                     | <Badge color="green">已支持</Badge> |                                                                                                                                                                                                                 |
+| 授权                                                        | 通过模型配置生成 `GRANT` 语句。                                        | <Badge color="green">已支持</Badge> |                                                                                                                                                                                                                 |
+| `dbt clone`                                               | 在不同环境之间执行 zero-copy 的 `CLONE AS`。                           | <Badge color="green">已支持</Badge> | MergeTree 表、种子、快照和增量模型通过 `CLONE AS` 克隆；视图和其他引擎则与 v1 相同，回退为视图。                                                                                                                                                   |
+| 运行结果中的 Query ID                                           | `adapter_response` 中的 `query_id`，用于与 `system.query_log` 关联。 | <Badge color="green">已支持</Badge> |                                                                                                                                                                                                                 |
+| 使用 `loaded_at_field` 或 `loaded_at_query` 的 source 数据新鲜度检查 | 基于时间戳列或自定义查询执行 `dbt source freshness`。                      | <Badge color="red">尚未支持</Badge>  | 执行失败并报错 `should have a timestamp type, but got UInt32`。如果某个 source 两项设置均未配置，整个命令都会中止，而不是像 v1 那样仅该 source 单独失败。相关跟踪议题见 [ClickHouse/dbt-clickhouse#813](https://github.com/ClickHouse/dbt-clickhouse/issues/813)。 |
 
 #### 连接与认证 {#parity-connectivity-and-auth}
 
-| 特性         | 作用                                                                                                        | dbt v2                           | 说明                                                    |
-| ---------- | --------------------------------------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------- |
-| Protocol   | dbt 与 ClickHouse 通信的方式。                                                                                   | <Badge color="green">已支持</Badge> | v2 使用 ADBC (基于 HTTP 的 Arrow) ；v1 使用 HTTP 和 native 协议。 |
-| 用户名与密码、TLS | 标准认证方式。                                                                                                   | <Badge color="green">已支持</Badge> |                                                       |
-| mTLS 客户端证书 | `client_cert`、`client_cert_key`。                                                                          | <Badge color="red">尚未支持</Badge>  | 有待 driver 层支持；这些参数可以配置，但会被忽略。                         |
-| HTTP 客户端选项 | `connect_timeout`、`send_receive_timeout`、`sync_request_timeout`、`compress_block_size`、`server_host_name`。 | <Badge color="red">尚未支持</Badge>  | 可以配置，但会被忽略；`server_host_name` 不可用。                    |
+| 功能         | 作用                                                           | dbt v2                           | 说明                                                                                                                        |
+| ---------- | ------------------------------------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Protocol   | dbt 与 ClickHouse 通信的方式。                                      | <Badge color="green">已支持</Badge> | v2 使用 ADBC (基于 HTTP 的 Arrow) ；v1 使用 HTTP 和 Native 协议。                                                                     |
+| 用户名与密码、TLS | 标准认证方式。                                                      | <Badge color="green">已支持</Badge> |                                                                                                                           |
+| mTLS 客户端证书 | `client_cert`、`client_cert_key`。                             | <Badge color="red">尚未支持</Badge>  | 有待 驱动程序 层支持；这些参数可以配置，但会被忽略 ([ClickHouse/dbt-clickhouse#794](https://github.com/ClickHouse/dbt-clickhouse/issues/794)) 。 |
+| HTTP 客户端选项 | `connect_timeout`、`send_receive_timeout`、`server_host_name`。 | <Badge color="red">尚未支持</Badge>  | 有待 驱动程序 层支持；这些参数可以配置，但会被忽略 ([ClickHouse/dbt-clickhouse#795](https://github.com/ClickHouse/dbt-clickhouse/issues/795)) 。 |
+| 连接复用       | `reuse_connections: false` 会为每个模型新建一个连接。                     | <Badge color="red">尚未支持</Badge>  | 该参数可以配置，但会被忽略 ([ClickHouse/dbt-clickhouse#815](https://github.com/ClickHouse/dbt-clickhouse/issues/815)) 。                |
 
 #### v2 中不计划支持的选项 {#not-planned}
 
-部分 v1 选项有意未迁移到 v2。此处单独列出这些选项，以确保上方的一致性表格只包含已在计划中的工作。
+部分 v1 行为不会迁移到 v2，今后也不会迁移。此处单独列出这些行为及可行的替代方案，以确保上方的一致性表格只包含已在计划中的工作。
 
-| 功能              | 在 v1 中的作用    | 不计划支持的原因                                                                                                |
-| --------------- | ------------ | ------------------------------------------------------------------------------------------------------- |
-| `verify: false` | 跳过 TLS 证书校验。 | 该选项虽保留了加密，却放弃了身份验证，因此通信路径上的任何人都可以冒充服务器并窃取凭证。v2 始终校验证书，并忽略此键。请使用由客户端信任的 CA 签发的证书。如果您需要在 v2 中使用此功能，请提交议题。 |
+| 功能                                           | 在 v1 中的作用                                               | 不计划支持的原因                                                                                                                                                                                                           |
+| -------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `verify: false`                              | 跳过 TLS 证书校验。                                            | 该选项虽保留了加密，却放弃了身份验证，因此通信路径上的任何人都可以冒充服务器并窃取凭证。v2 始终校验证书，并忽略此键。请使用由客户端信任的 CA 签发的证书。如果您需要在 v2 中使用此功能，请提交议题。                                                                                                            |
+| `sync_request_timeout`、`compress_block_size` | 配置原生协议客户端。                                              | 原生协议客户端仅存在于 v1 中。v2 通过仅支持 HTTP 的 ADBC 驱动程序进行连接，因此这些键没有可配置的对象。                                                                                                                                                      |
+| source 上的 `database:`                        | 当 source 未设置 `schema:` 时，设置该 source 所属的 ClickHouse 数据库。 | v2 会忽略此键，并将 source 解析为 `<source name>.<table>`，导致模型运行失败并报错 `Database <source name> does not exist`。请改为在 source 上设置 `schema: <database>`，该写法在两种引擎上均可使用。                                                             |
+| 版本低于 26.7 的 ClickHouse 服务器上的 `UUID` 列        | 任何查询都可以返回 `UUID` 列。                                     | v2 以 Arrow 格式接收查询结果，而 26.7 之前的服务器无法将 `UUID` 转换为 Arrow，因此返回 `UUID` 列的 `SELECT` 会失败并报错 `The type 'UUID' ... is not supported for conversion into Arrow data format`。这是服务端的限制，adapter 无法绕过。请使用 ClickHouse 26.7 或更高版本。 |
 
-### dbt v2 特有功能 {#v2-functionality}
+### dbt v2 专属功能 {#v2-functionality}
 
 dbt v2 新增了一些在 dbt Core 1.x 中没有等价实现的能力。这些能力不在 Beta 范围内，将在后续推出：其中大多数依赖于引擎对 SQL 方言的理解，而引擎目前尚不支持 ClickHouse 方言，我们正在推进相关工作。图例与上文相同，另增加 <Badge color="blue">进行中</Badge> 表示正在开发中的工作。相关进展可在 [ClickHouse/dbt-clickhouse#736](https://github.com/ClickHouse/dbt-clickhouse/issues/736) 中跟踪。
 
-| 功能                          | 作用                                                        | dbt v2                             | 备注                                                                                                                             |
-| --------------------------- | --------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| 引擎中的 ClickHouse SQL 方言      | 感知方言的 SQL 解析，是下列静态功能的基础。                                  | <Badge color="red">尚未支持</Badge>    | 已列入计划。                                                                                                                         |
-| 静态分析                        | 在编译时进行 SQL 校验和类型检查，无需查询仓库。                                | <Badge color="red">尚未支持</Badge>    | 在方言可用之前，ClickHouse 项目中会被强制设为 `off`。                                                                                            |
-| dbt 平台中的列级血缘关系              | 基于运行产物构建的列级血缘关系视图。                                        | <Badge color="yellow">部分支持</Badge> | 仅在 `dbt_project.yml` 中禁用标识符引用时才能渲染；平台的回退解析器不接受用反引号引用的名称 ([dbt-labs/dbt#16646](https://github.com/dbt-labs/dbt/issues/16646)) 。 |
-| 由引擎生成的列级血缘关系                | 由 `dbt docs generate` 为本地文档站点生成的血缘关系。                     | <Badge color="red">尚未支持</Badge>    | 依赖静态分析。                                                                                                                        |
-| LSP 与 VS Code 扩展            | 编辑时提供感知方言的自动补全和列感知。                                       | <Badge color="red">尚未支持</Badge>    | 依赖方言支持。                                                                                                                        |
-| 基于表元数据的 source 数据新鲜度        | 无需 `loaded_at_field`，根据表的最后修改时间执行 `dbt source freshness`。 | <Badge color="blue">进行中</Badge>    | 正在实现。目前对于未设置 `loaded_at_field` 的 source，该命令会执行失败。                                                                              |
-| Semantic Layer / MetricFlow | 在 dbt 中定义指标，并通过 Semantic Layer 进行查询。                      | <Badge color="red">尚未支持</Badge>    | MetricFlow 已合并对 ClickHouse 的支持；我们正与 dbt Labs 合作，在 Semantic Layer 中启用该支持。                                                       |
-| adapter 调用的录制与重放            | 使用 `--fs-record` / `--fs-replay` 在没有仓库的情况下重新运行作业。         | <Badge color="yellow">部分支持</Badge> | ClickHouse 目录细节 (`ON CLUSTER`、`EXCHANGE`、物化视图关联) 不会被录制，因此重放时渲染出的 DDL 可能有所不同。                                                   |
-| dbt 平台中更多的身份验证方法            | 平台连接 ClickHouse 的方式。                                      | <Badge color="yellow">部分支持</Badge> | 目前仅支持用户名和密码；更多方法已列入计划。                                                                                                         |
+| 功能                          | 作用                                                                                            | dbt v2                             | 备注                                                                                                                                           |
+| --------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 引擎中的 ClickHouse SQL 方言      | 感知方言的 SQL 解析，是下列静态功能的基础。                                                                      | <Badge color="red">尚未支持</Badge>    | 已列入计划。                                                                                                                                       |
+| 静态分析                        | 在编译时进行 SQL 校验和类型检查，无需查询仓库。                                                                    | <Badge color="red">尚未支持</Badge>    | 在方言可用之前，ClickHouse 项目中会被强制设为 `off`。                                                                                                          |
+| dbt 平台中的列级血缘关系              | 基于运行产物构建的列级血缘关系视图。                                                                            | <Badge color="yellow">部分支持</Badge> | 仅在 `dbt_project.yml` 中禁用标识符引用时才能渲染；平台的回退解析器不接受用反引号引用的名称 ([dbt-labs/dbt#16646](https://github.com/dbt-labs/dbt/issues/16646)) 。               |
+| 由引擎生成的列级血缘关系                | 由 `dbt docs generate` 为本地文档站点生成的血缘关系。                                                         | <Badge color="red">尚未支持</Badge>    | 依赖静态分析。                                                                                                                                      |
+| LSP 与 VS Code 扩展            | 编辑时提供感知方言的自动补全和列感知。                                                                           | <Badge color="yellow">部分支持</Badge> | 项目可以在官方 [dbt VS Code 扩展](https://marketplace.visualstudio.com/items?itemName=dbtLabsInc.dbt) 中打开和运行，但其 LSP 功能 (自动补全、列感知等) 目前尚不支持 ClickHouse。 |
+| 基于表元数据的 source 数据新鲜度        | 对于既未设置 `loaded_at_field` 也未设置 `loaded_at_query` 的 source，根据表的最后修改时间执行 `dbt source freshness`。 | <Badge color="blue">进行中</Badge>    | 正在实现 ([ClickHouse/dbt-clickhouse#814](https://github.com/ClickHouse/dbt-clickhouse/issues/814)) 。                                            |
+| Semantic Layer / MetricFlow | 在 dbt 中定义指标，并通过 Semantic Layer 进行查询。                                                          | <Badge color="red">尚未支持</Badge>    | MetricFlow 已合并对 ClickHouse 的支持；我们正与 dbt Labs 合作，在 Semantic Layer 中启用该支持。                                                                     |
+| adapter 调用的录制与重放            | 使用 `--fs-record` / `--fs-replay` 在没有仓库的情况下重新运行作业。                                             | <Badge color="yellow">部分支持</Badge> | ClickHouse 目录细节 (`ON CLUSTER`、`EXCHANGE`、物化视图关联) 不会被录制，因此重放时渲染出的 DDL 可能有所不同。                                                                 |
+| dbt 平台中更多的身份验证方法            | 平台连接 ClickHouse 的方式。                                                                          | <Badge color="yellow">部分支持</Badge> | 目前仅支持用户名和密码；更多方法已列入计划。                                                                                                                       |

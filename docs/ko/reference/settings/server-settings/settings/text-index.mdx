@@ -14,7 +14,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 ## text_index_header_cache_max_entries {#text_index_header_cache_max_entries}
 
-<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />text index header 캐시의 크기(엔트리 수)입니다. 0이면 비활성화됩니다.
+<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="Yes" />텍스트 인덱스 헤더 캐시의 크기(엔트리 수)입니다. 0이면 비활성화됩니다.
 
 ## text_index_header_cache_policy {#text_index_header_cache_policy}
 
@@ -34,7 +34,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 ## text_index_postings_cache_max_entries {#text_index_postings_cache_max_entries}
 
-<SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />text index 포스팅 리스트 캐시의 크기입니다. 단위는 항목 수이며, 0이면 비활성화됩니다.
+<SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="Yes" />텍스트 인덱스 포스팅 리스트 캐시의 크기입니다. 단위는 엔트리 수이며, 0이면 비활성화됩니다.
 
 ## text_index_postings_cache_policy {#text_index_postings_cache_policy}
 
@@ -54,7 +54,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 ## text_index_tokens_cache_max_entries {#text_index_tokens_cache_max_entries}
 
-<SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />text index 토큰 캐시의 크기(엔트리 수)입니다. 0이면 비활성화됩니다.
+<SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="Yes" />텍스트 인덱스 토큰 캐시의 크기(엔트리 수)입니다. 0이면 비활성화됩니다.
 
 ## text_index_tokens_cache_policy {#text_index_tokens_cache_policy}
 

@@ -1,0 +1,145 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-10-15
+title: 'Demo days - 2026-10-15'
+sidebarTitle: '2026-10-15'
+description: 'أيام العروض التوضيحية لـ ClickStack بتاريخ 2026-10-15'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-10-15"
+---
+
+## التحقق من صحة قوالب متن webhook قبل حفظها {#validating-webhook-body-templates-before-they-save}
+
+*عرض توضيحي يقدّمه [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+في السابق، كان بإمكانك حفظ webhook من نوع Generic أو incident.io بقالب متن معطوب دون أن يظهر أي تحذير. ونتيجة لذلك، كان إرسال كل تنبيه يفشل، ولا يظهر الخطأ إلا في بيانات التتبّع وسجلات الخادم في ClickStack. ومن الأسباب الشائعة لذلك إفلات علامات الاقتباس بأسلوب JSON داخل تعبير Handlebars، مثل `{{#if (eq state \"ALERT\")}}`: فهو JSON صالح، لكنه قالب غير صالح.
+
+أصبح نموذج webhook الآن يفحص القالب أثناء التعديل ويعرض الأخطاء أسفل المحرر، مع رقم السطر والعمود، مثل `Template error on line 1, column 29`. وينتظر حتى تتوقف عن الكتابة مدة 300 ms، فلا يُظهر اعتراضًا وأنت في منتصف كتابة تعبير `{{ … }}`. ويتجاهل الفحص المتون الفارغة لأنها تستخدم القالب الافتراضي للخدمة، وكذلك متون Slack لأنها لا تخضع للتصيير. وستجد أيضًا أسفل المحرر المتغيرات المدعومة، ومنها `{{alertId}}` و`{{status}}` و`{{value}}` و`{{groupKey}}`، مع وصف موجز لكل منها.
+
+يجري التحقق من الصحة نفسه الآن على جانب الخادم عبر واجهة برمجة التطبيقات الداخلية، وواجهة API الخارجية، الإصدار الثاني، وأداة MCP `clickstack_save_webhook`. وتُعيد القوالب غير الصالحة الرمز 400 عند الإنشاء أو التحديث أو الاختبار، مع خطأ Handlebars ورقم السطر والعمود اللذين وقع فيهما. وتفشل الاختبارات قبل إرسال أي شيء. ويقتصر التحقق على التأكد من أن القالب قابل للتصريف؛ فهو لا يُصيِّر النتيجة ولا يتحقق مما إذا كان الإخراج JSON صالحًا.
+
+أما لسير العمل المؤتمت، فتتيح نقطة النهاية الجديدة `POST /api/v2/webhooks/validate` لأداة Terraform فحص تهيئة webhook في مرحلة التخطيط (plan). وعلى غرار `POST /api/v2/dashboards/validate`، تتحقق نقطة النهاية هذه من الصحة دون حفظ. وتُجري فحوص عنوان URL والمتن نفسها التي تُجرى عند الإنشاء، وتُعيد دائمًا الرمز 200 مع `{ valid, errors, normalized }`. ولا تتحقق من تفرّد الاسم.
+
+**طلبات السحب ذات الصلة:** [#3350](https://github.com/hyperdxio/hyperdx/pull/3350) عرض أخطاء تصريف قالب متن webhook في المحرر، [#3365](https://github.com/hyperdxio/hyperdx/pull/3365) رفض قوالب متن webhook غير القابلة للتصريف، وإضافة /api/v2/webhooks/validate
+
+## الاكتشاف التلقائي لمصدر PromQL أثناء الإعداد الأولي {#auto-detecting-a-promql-source-during-onboarding}
+
+*عرض توضيحي يقدّمه [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=96" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+عندما لا يحتوي اتصال على أي مصادر، يبحث ClickStack عن جداول OpenTelemetry وينشئ تلقائيًا مصادر Logs وTraces وMetrics وSessions. ومع تفعيل PromQL (`NEXT_PUBLIC_ENABLE_PROMQL=true`)، صار ينشئ أيضًا مصدر PromQL إذا عثر على جدول ClickHouse من نوع `TimeSeries`.
+
+تبحث آلية الاكتشاف عن الجداول التي تستخدم `engine = 'TimeSeries'`، متجاهلةً جداول MergeTree الداخلية التي تُنشئها هذه الجداول. وإذا وُجد أكثر من مرشّح، فإنها تفحصها بالترتيب التالي:
+
+* `prometheus.metrics`، وهو الجدول المستخدم في [توثيق ClickHouse الخاص بـ Prometheus](https://clickhouse.com/docs/concepts/features/interfaces/prometheus#create-a-timeseries-table).
+* `metrics_ts` في قاعدة البيانات نفسها التي تضم جداول OpenTelemetry، وهو الجدول الذي ينشئه ترحيل PromQL الخاص بجامع البيانات.
+* `metrics_ts` في أي قاعدة بيانات.
+
+إذا لم يوجد سوى جدول `TimeSeries` واحد، يستخدمه ClickStack بغض النظر عن اسمه.
+
+أصبحت الاتصالات التي لا تحتوي إلا على جدول `TimeSeries` تحصل الآن على مصدر PromQL دون إحالتها إلى الإعداد اليدوي. وإذا فشل الاكتشاف أو إنشاء مصدر PromQL، تبقى المصادر الأخرى على حالها.
+
+**طلبات السحب ذات الصلة:** [#3310](https://github.com/hyperdxio/hyperdx/pull/3310) الاكتشاف التلقائي لمصدر PromQL أثناء الإعداد الأولي، [#3311](https://github.com/hyperdxio/hyperdx/pull/3311) تجهيز مصدر PromQL ضمن المصادر الافتراضية لبيئة التطوير
+
+## حدود سلاسل البيانات والحد الأدنى لمستوى التجزئة في مخططات PromQL {#series-limits-and-minimum-granularity-for-promql-charts}
+
+*عرض توضيحي يقدّمه [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=176" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+أصبحت المخططات الخطية ومخططات الأعمدة المتراكمة في PromQL تتضمن الآن إعداد العرض **حد سلاسل البيانات** نفسه المتوفر في مخططات المنشئ ومخططات SQL المباشر. وكانت هذه المخططات في السابق تقتصر على تصيير 250 سلسلة بيانات في المتصفح مع خيار لتحميل البقية، لكن الإعداد كان مخفيًا ولم يكن يُحفظ مع المربع.
+
+يُطبَّق الحد في المتصفح، كما هو الحال في مخططات SQL المباشر؛ إذ إن مَعلمة `limit` الخاصة بـ Prometheus تُعيد مجموعة جزئية مرتّبة حسب الوسوم لا سلاسل البيانات الأعلى قيمةً، كما أن الآلية الاحتياطية القائمة على دالة جدول ClickHouse تتجاهلها. ويقدّم تلميح سلاسل البيانات المخفية أيضًا نصائح خاصة بـ PromQL، وهي تضييق نطاق شروط مطابقة التسميات أو إضافة `sum by (...)`، بدلًا من استخدام `GROUP BY` أو `WHERE`.
+
+كذلك أصبحت مصادر PromQL تتضمن الآن إعداد **الحد الأدنى لدقة التجميع التلقائية**، على غرار مصادر المقاييس. ويحدد هذا الإعداد أصغر حجم للحاوية الزمنية يمكن أن يختاره مستوى التجزئة التلقائي في المخططات الخطية ومخططات الأرقام والجداول والمخططات الدائرية والمخططات الشريطية، بما في ذلك معاينات PromQL المُولَّدة لها. ويستخدم `$__rate_interval` هذه القيمة أيضًا فاصلًا زمنيًا للسحب، مع اللجوء إلى القيمة البديلة 15s عند عدم تعيينها. أما إعدادات مستوى التجزئة المحددة صراحةً للمربعات فتبقى دون تغيير.
+
+**طلبات السحب ذات الصلة:** [#3292](https://github.com/hyperdxio/hyperdx/pull/3292) دعم الحد الأدنى لدقة التجميع التلقائية في مصادر PromQL، [#3294](https://github.com/hyperdxio/hyperdx/pull/3294) دعم حد سلاسل البيانات في المخططات الزمنية لـ PromQL
+
+## التحكم في الوصول على مستوى المصدر لمصادر PromQL {#source-level-access-control-for-promql-sources}
+
+*عرض توضيحي يقدّمه [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=301" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**تقتصر هذه الميزة على Managed ClickStack.**
+
+أصبح التحكم في الوصول المستند إلى الأدوار يشمل الآن مصادر PromQL، تمامًا كما هو الحال مع السجلات والتتبّعات والمقاييس. ويمكن لدور مصدر دقيق المستوى أن يمنح صلاحية الوصول **قراءة** إلى أحد مصادر PromQL مع تقييد الوصول إلى مصدر آخر.
+
+يتحقق كل مسار `/v1/prometheus/*` الآن من صلاحية الوصول **قراءة** إلى المصدر، ويُرجع الرمز 403 `RBAC_PERMISSION_DENIED` عند غيابها. وإذا كانت قواعد الوصول إلى المصادر الخاصة بالمُستدعي تُخفي المصدر بالكامل، فتكون الاستجابة 404 `Source not found`، على غرار واجهة برمجة تطبيقات المصادر. ولا يضيف هذا التغيير فرضًا للأدوار من جانب ClickHouse، إذ تستخدم استعلامات PromQL في ClickStack Cloud بالفعل الرمز المميز الخاص بالمستخدم نفسه.
+
+## عوامل التصفية المخصصة للوحات المعلومات {#ad-hoc-filters-for-dashboards}
+
+*عرض توضيحي يقدّمه [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=401" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+أصبحت لوحات المعلومات تتضمن الآن نوع عامل تصفية جديدًا باسم **المفاتيح والقيم المخصصة**، إلى جانب المتغيرات وعوامل التصفية الحالية. يعتمد كل عامل تصفية مخصص على مصدر واحد أو أكثر من مصادر ClickHouse، مثل السجلات والتتبعات، أو على مصدر Prometheus لاقتراح المفاتيح والقيم المتاحة. تُطبَّق الشروط افتراضيًا على كل مربع يستخدم تلك المصادر، ولكن يمكنك تحديد المصادر التي تُطبَّق عليها. هذه الميزة متاحة عبر `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS`، وقد اكتمل نحو نصف العمل المخطط له.
+
+انقر على حقل إدخال عامل التصفية في شريط عوامل التصفية بلوحة المعلومات لاختيار مفتاح ومشغّل وقيمة، مع اقتراحات للمفاتيح والقيم على حدٍّ سواء. تدعم مصادر SQL عوامل المقارنة: يساوي، ولا يساوي، والتعبير النمطي، ونفي التعبير النمطي، و`LIKE`، و`NOT LIKE`. أما مصادر PromQL فتعتمد على وسوم Prometheus بدلًا من مفاتيح الأعمدة. تظهر الشروط المطبَّقة على هيئة شارات يمكنك تعديلها أو تحويلها إلى استثناءات أو مسحها. تُحفَظ التحديدات في عنوان URL، ويمكن حفظها ضمن حالة عوامل التصفية الافتراضية للوحة المعلومات.
+
+تختلف طريقة وصول الشروط إلى المربع باختلاف نوعه:
+
+* تستخدم مربعات المنشئ خاصية التهيئة `filter` الحالية، فلا حاجة إلى إضافة متغير إلى عبارة `WHERE`.
+* تستخدم مربعات SQL المباشر `$__filters`. يجب أن يتضمن استعلامك هذا الماكرو، وسيظهر لك تحذير إن لم يكن موجودًا. وعند عدم تطبيق أي شروط، يُستبدَل بـ `1 = 1`.
+* تستخدم مربعات PromQL مكتبة التحليل نفسها المستخدمة في Grafana لإضافة الشروط بوصفها شروط مطابقة الوسوم إلى كل محدِّد مقاييس.
+
+يمكنك الاطلاع على الشروط المطبَّقة في معاينات SQL المُولَّد وPromQL.
+
+يمكنك أيضًا التصفية مباشرةً من **مربعات البحث**. مرِّر المؤشر فوق أي خلية لعرض خيارات النسخ والتصفية والاستبعاد نفسها المتوفرة في صفحة البحث. تضيف التصفية القيمة إلى عامل التصفية المخصص المعني، ويؤدي النقر على القيمة نفسها مرة أخرى إلى إزالتها. وعند فتح صف في اللوحة الجانبية، تُطبَّق أزرار التصفية الخاصة به على لوحة المعلومات أيضًا. تقتصر التصفية بالنقر حاليًا على مربعات البحث.
+
+عند استيراد لوحة معلومات، يمكنك إعادة تعيين المصادر التي يستعلم منها عامل التصفية المخصص والمصادر التي يُطبَّق عليها على حدٍّ سواء. لا تدعم واجهة API الخارجية وMCP عوامل التصفية المخصصة حتى الآن.
+
+**طلبات السحب ذات الصلة:** [#3335](https://github.com/hyperdxio/hyperdx/pull/3335) إضافة المخططات والأنواع لعوامل تصفية لوحات المعلومات المخصصة، [#3317](https://github.com/hyperdxio/hyperdx/pull/3317) استخراج FilterPill وإضافة مكونات محرر عوامل التصفية، [#3341](https://github.com/hyperdxio/hyperdx/pull/3341) إضافة UI لتهيئة عوامل تصفية لوحات المعلومات المخصصة، [#3343](https://github.com/hyperdxio/hyperdx/pull/3343) عرض حقول إدخال عوامل تصفية لوحات المعلومات المخصصة، [#3366](https://github.com/hyperdxio/hyperdx/pull/3366) بث شروط عوامل تصفية لوحات المعلومات المخصصة، [#3367](https://github.com/hyperdxio/hyperdx/pull/3367) دعم إعادة تعيين المصادر أثناء استيراد عوامل التصفية المخصصة، [#3380](https://github.com/hyperdxio/hyperdx/pull/3380) دعم التصفية المخصصة بالنقر في مربعات البحث
+
+## نقل SELECT وORDER BY إلى جدول النتائج {#moving-select-and-order-by-into-the-results-table}
+
+*عرض توضيحي يقدّمه [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=636" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**هذا عمل استكشافي، دون أي التزام بإطلاقه.**
+
+تضع صفحة البحث حاليًا `SELECT` و`ORDER BY` بجوار `WHERE`، رغم أنهما لا يؤثران إلا في جدول النتائج. وعند التبديل إلى أنماط الأحداث أو فروق الأحداث، يظلان ظاهرين، لكن تغييرهما لا يُحدث أي أثر. كما أن المستخدمين الذين تحدثنا إليهم لم يدركوا أن `SELECT` هو المكان الذي يمكنهم فيه اختيار الأعمدة، إذ كانوا يبحثون عن عناصر تحكم للأعمدة والفرز.
+
+ينقل هذا النموذج الأولي كليهما إلى شريط أدوات جدول النتائج باسم **Columns** و**Sort**، مع إخفائهما في فروق الأحداث وأنماط الأحداث. تعرض **Columns** عناصر `SELECT` الحالية، مع إمكانية سحبها لإعادة ترتيبها أو إزالتها. اختر أحد الاقتراحات أو اكتب تعبيرًا مثل `upper(Body) as message`، ثم انقر على **Add**. وتتيح لك علامة التبويب **SQL** تعديل عبارة `SELECT` كاملةً مباشرةً.
+
+تعرض **Sort** كل حقل من حقول `ORDER BY` واتجاهه، بما في ذلك الصفوف المرتبة مثل `(toDateTime(Timestamp), Timestamp) DESC`. ويمكنك أيضًا تعديل العبارة الأصلية مباشرةً ضمن **SQL**. أما التعابير التي يتعذّر على عناصر التحكم تجزئتها، مثل `Timestamp DESC NULLS LAST`، فتُفتح في علامة التبويب SQL. وتُنشئ عناصر التحكم استعلام SQL تلقائيًا بناءً على تغييراتك، مع بقاء إمكانية كتابته بنفسك.
+
+يحدّث **Apply** العبارة ويشغّل البحث، ويتجاهل **Cancel** تغييراتك، ويستعيد **Reset to default** القيمة الافتراضية للمصدر. وتنتقل إجراءات الجدول الخاصة بإعادة ضبط عرض الأعمدة، وتغليف الأسطر، وعرض SQL المُولَّد، وتصدير CSV إلى أزرار أيقونات على يمين شريط الأدوات.
+
+ويمنح ذلك أيضًا نموذج البحث مساحة أكبر قليلًا؛ إذ يقع المصدر على يسار السطر الأول، ويقع **Update** و**Alerts** على اليمين. وتحظى عبارة `WHERE` بسطر مستقل بكامل العرض إلى جانب Live Tail وفاصل التحديث الزمني و**Run**.
+
+لا يزال طلب السحب مسودة، ويسعدنا أن نسمع رأيكم في تجربة استخدامه.
+
+**طلبات السحب ذات الصلة:** [#3387](https://github.com/hyperdxio/hyperdx/pull/3387) تعديل أعمدة البحث والفرز من جدول النتائج (مفتوح)
+
+## صفحة بحث قابلة للاستخدام على الهاتف {#a-usable-search-page-on-a-phone}
+
+*عرض توضيحي يقدّمه [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=843" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+عند فتح تنبيه على هاتفك، ينبغي أن تصل مباشرةً إلى السجلات. في السابق، لم يكن بالإمكان تصغير الشريط الجانبي لعوامل التصفية إلى أقل من 200px، ولم يكن صف الاستعلام يلتف إلى سطر جديد، وكانت النتائج مقتطعة داخل إطار بارتفاع `100vh`. بل لم يكن بإمكانك حتى التمرير للوصول إلى السجلات.
+
+أصبحت صفحة البحث الآن تنتقل إلى تخطيط مدمج عندما يقل العرض عن 900px، وهو الحد الذي تنطوي عنده قائمة التنقل أصلًا. تكون عوامل التصفية مغلقة افتراضيًا، وتُفتح في لوحة جانبية منزلقة عبر **Show filters**، فيبقى العرض الكامل متاحًا لجدول السجلات. ويُخفى `SELECT` و`ORDER BY` خلف مفتاح تبديل **Columns**، بينما يظل مربع البحث ظاهرًا. ويبقى المُدرَّج التكراري ظاهرًا كذلك بعد تقصيره إلى 72px، وتُعرض النتائج مع إمكانية التمرير في المساحة الواقعة أسفل شريط الأدوات. ولن يؤثر فتح اللوحة الجانبية المنزلقة لعوامل التصفية في تفضيلاتك على سطح المكتب، كما أن توسيع النافذة إلى ما يتجاوز 900px يعيد تخطيط سطح المكتب.
+
+يوجد الخطاف الخاص بمنطقة العرض المدمجة واللوحة الجانبية المتجاوبة في `packages/app/src/components/CompactViewport/`، وهما جاهزان لإعادة استخدامهما في صفحات أخرى، وصفحة البحث هي أولى الصفحات التي تستخدمهما. وقد دُمج هذا التغيير قبل النموذج الأولي للأعمدة والفرز الذي يتناوله هذا المنشور، والذي سينقل `SELECT` و`ORDER BY` إلى جدول النتائج على جميع أحجام الشاشات.
+
+**طلبات السحب ذات الصلة:** [#3376](https://github.com/hyperdxio/hyperdx/pull/3376) الحفاظ على قابلية استخدام البحث المحفوظ على الهاتف
+
+## بث مفاتيح وقيم عوامل التصفية إلى الشريط الجانبي {#streaming-filter-keys-and-values-into-the-sidebar}
+
+*عرض توضيحي يقدّمه [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=899" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+في السابق، كان الشريط الجانبي لعوامل التصفية في صفحة البحث يعرض مؤشر تحميل واحدًا إلى أن تنتهي جميع استعلامات عوامل التصفية. ومع أن الاستعلامات كانت تبث نتائجها أصلًا، كان عليك انتظار أبطئها قبل أن تتمكن من استخدام أي عامل تصفية.
+
+أما الآن، فتظهر المفاتيح أولًا مع مؤشر تحميل مستقل لكل منها، ثم تُملأ القيم تباعًا مع اكتمال كل استعلام. لم تتغير الاستعلامات نفسها، وإنما أصبح الشريط الجانبي يعرض النتائج فور وصولها. ويتضح ذلك بشكل خاص في النطاقات الزمنية الأطول، كالبحث على مدى يومين.
+
+كما أصلحنا مشكلة عدم احتفاظ الشريط الجانبي بالحالة التي تركته عليها. إذ تُزال مجموعات عوامل التصفية من DOM عند خروجها من نطاق العرض أثناء التمرير، حفاظًا على سرعة استجابة المتصفح. وفي السابق، كنت تجد عند التمرير إليها مجددًا أن المجموعات الموسّعة قد طُويت وأن التوزيعات المحمّلة قد اختفت. أما الآن فتبقى كلتاهما على الحالة التي تركتها عليها.
+
+**طلبات السحب ذات الصلة:** [#3348](https://github.com/hyperdxio/hyperdx/pull/3348) بث نتائج مفاتيح وقيم عوامل التصفية إلى UI، [#3377](https://github.com/hyperdxio/hyperdx/pull/3377) حفظ حالة توسيع عوامل التصفية بشكل دائم عند التمرير

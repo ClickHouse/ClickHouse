@@ -27,7 +27,7 @@ No Postgres, cada linha de uma tabela tem um identificador exclusivo chamado CTI
 
 ### Particionamento lógico {#logical-partitioning-pg-snapshot}
 
-O ClickPipe do Postgres usa a coluna CTID para particionar logicamente as tabelas de origem. Ele obtém as partições primeiro executando um COUNT(*) na tabela de origem e, em seguida, uma consulta com função de janela para particionamento, a fim de determinar os intervalos de CTID de cada partição. Isso permite que o ClickPipe leia a tabela de origem em paralelo, com cada partição sendo processada por uma thread separada.
+O ClickPipe do Postgres usa a coluna CTID para particionar logicamente as tabelas de origem. Ele obtém as partições estimando primeiro a contagem de linhas da tabela de origem a partir das estatísticas da tabela e, em seguida, dividindo os blocos da tabela em intervalos de CTID de tamanho igual, um intervalo por partição. Isso permite que o ClickPipe leia a tabela de origem em paralelo, com cada partição sendo processada por uma thread separada.
 
 Veja as configurações abaixo:
 
@@ -50,20 +50,11 @@ Esta configuração controla quantas linhas compõem uma partição. O ClickPipe
 Essa configuração controla quantas partições são processadas em paralelo. O valor padrão é 4, o que significa que o ClickPipe lerá 4 partições da tabela de origem em paralelo. Esse valor pode ser aumentado para acelerar a carga inicial, mas recomenda-se mantê-lo em um nível razoável, de acordo com as especificações da instância de origem, para evitar sobrecarregar o banco de dados de origem. O ClickPipe ajustará automaticamente o número de partições com base no tamanho da tabela de origem e no número de linhas por partição.
 
 <div id="tables-parallel-pg-snapshot">
-  #### Número de tabelas no snapshot em paralelo {#tables-parallel-pg-snapshot}
+  #### Número de tabelas no snapshot paralelo {#tables-parallel-pg-snapshot}
 </div>
 
-Não está diretamente relacionado ao snapshot em paralelo, mas esta configuração controla quantas tabelas são processadas em paralelo durante a carga inicial. O valor padrão é 1. Observe que isso se soma ao paralelismo das partições; portanto, se você tiver 4 partições e 2 tabelas, o ClickPipe lerá 8 partições em paralelo.
+Não está diretamente relacionado ao snapshot paralelo, mas esta configuração controla quantas tabelas são processadas em paralelo durante a carga inicial. O valor padrão é 1. Observe que isso se soma ao paralelismo das partições; portanto, se o paralelismo da carga inicial for 4 e você tiver 2 tabelas, o ClickPipe lerá 8 partições em paralelo.
 
-<div id="monitoring-parallel-pg-snapshot">
-  ### Monitoramento do snapshot paralelo no Postgres {#monitoring-parallel-pg-snapshot}
-</div>
+### Monitoramento do snapshot paralelo no Postgres {#monitoring-parallel-pg-snapshot}
 
-Você pode analisar **pg&#95;stat&#95;activity** para ver o snapshot paralelo em ação. O ClickPipe criará várias conexões com o banco de dados de origem, cada uma lendo uma partição diferente da tabela de origem. Se você vir consultas **FETCH** com diferentes intervalos de CTID, isso significa que o ClickPipe está lendo as tabelas de origem. Aqui, você também pode ver o COUNT(*) e a consulta de particionamento.
-
-<div id="limitations-parallel-pg-snapshot">
-  ### Limitações {#limitations-parallel-pg-snapshot}
-</div>
-
-* Os parâmetros do snapshot não podem ser editados após a criação do ClickPipe. Se você quiser alterá-los, terá que criar um novo ClickPipe.
-* Ao adicionar tabelas a um ClickPipe existente, você não pode alterar os parâmetros do snapshot. O ClickPipe usará os parâmetros existentes para as novas tabelas.
+Você pode analisar **pg&#95;stat&#95;activity** para ver o snapshot paralelo em ação. O ClickPipe criará várias conexões com o banco de dados de origem, cada uma lendo uma partição diferente da tabela de origem. Cada conexão declara um cursor para o seu intervalo de CTID e, em seguida, faz a leitura a partir dele; portanto, se você vir consultas **FETCH** no formato `FETCH <n> FROM peerdb_cursor_<id>`, isso significa que o ClickPipe está lendo as tabelas de origem.

@@ -13,18 +13,14 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.merge&#95;tree&#95;settings](/pt-BR/reference/system-tables/merge_tree_settings) e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="compress_marks">
-  ## compress_marks
-</div>
+## compress_marks {#compress_marks}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 As marcas podem ser comprimidas, reduzindo o tamanho do arquivo de marcas e acelerando a
 transmissão pela rede.
 
-<div id="compress_per_column_in_compact_parts">
-  ## compress_per_column_in_compact_parts
-</div>
+## compress_per_column_in_compact_parts {#compress_per_column_in_compact_parts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -36,9 +32,21 @@ do disco. Se false, todas as colunas dentro de um grânulo são armazenadas no m
 melhorando a taxa de compressão, mas exigindo que mais dados sejam descomprimidos durante as leituras.
 Isso é benéfico para cargas de trabalho que sempre leem todas as colunas (por exemplo, projeções).
 
-<div id="compress_primary_key">
-  ## compress_primary_key
-</div>
+## compress_per_substream_in_compact_parts {#compress_per_substream_in_compact_parts}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nova configuração: inicia um novo bloco comprimido nos limites de subfluxo de coluna em partes compactas, para leituras mais rápidas de subcolunas"}]}]} />
+
+Controla o layout físico das partes compactas. Se true (padrão), um subfluxo de coluna em um granule inicia
+um novo bloco comprimido assim que o bloco atual atinge `min_compress_block_size`. Assim, a leitura de uma única
+subcoluna (por exemplo, o tamanho de um `Array`, um elemento de `Tuple` ou um caminho JSON) descomprime apenas esse subfluxo,
+enquanto subfluxos pequenos continuam compartilhando um bloco. Se false, todos os subfluxos de uma coluna em um granule são empacotados
+no mesmo bloco comprimido, o que melhora a taxa de compressão, mas exige descomprimir mais dados
+ao ler uma subcoluna. Só tem efeito quando `write_marks_for_substreams_in_compact_parts` e
+`compress_per_column_in_compact_parts` estão habilitadas.
+
+## compress_primary_key {#compress_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

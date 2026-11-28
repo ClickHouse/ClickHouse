@@ -12,6 +12,8 @@ doc_type: 'reference'
 
 Bien que `clickhouse-local` soit un excellent outil pour le développement, les tests et le traitement de fichiers, il n’est pas adapté aux utilisateurs finaux ni aux applications. Dans ces cas, il est recommandé d’utiliser [ClickHouse](/fr/get-started/setup/install) open-source. ClickHouse est une puissante base de données OLAP conçue pour prendre en charge des charges de travail analytiques à grande échelle. Elle permet de traiter rapidement et efficacement des requêtes complexes sur de grands jeux de données, ce qui en fait une solution idéale pour les environnements de production où les hautes performances sont essentielles. De plus, ClickHouse offre un large éventail de fonctionnalités telles que la réplication, le sharding et la haute disponibilité, indispensables pour passer à l’échelle, gérer de grands jeux de données et servir des applications. Si vous devez traiter des jeux de données plus volumineux ou servir des utilisateurs finaux ou des applications, nous vous recommandons d’utiliser ClickHouse open-source plutôt que `clickhouse-local`.
 
+Bien que `clickhouse-local` puisse [accepter des connexions réseau](#starting-listeners), il accorde à chaque client connecté un accès illimité aux fichiers locaux, la possibilité d’exécuter des commandes ainsi que des privilèges d’administration : il ne doit donc pas être utilisé dans des contextes multi-utilisateurs (voir [Scénarios multi-utilisateurs](#multi-user-scenarios)).
+
 Veuillez consulter la documentation ci-dessous, qui présente des exemples de cas d’usage de `clickhouse-local`, comme [interroger un fichier local](#query_data_in_file) ou [lire un fichier Parquet dans S3](#query-data-in-a-parquet-file-in-aws-s3).
 
 ## Télécharger clickhouse-local {#download-clickhouse-local}
@@ -407,11 +409,11 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
-## Démarrer les écouteurs TCP et HTTP {#starting-listeners}
+## Démarrer les points d’écoute TCP et HTTP {#starting-listeners}
 
-`clickhouse-local` peut être utilisé comme un serveur léger qui accepte les connexions TCP (protocole natif) et HTTP. C&#39;est utile si vous souhaitez permettre à d&#39;autres outils ou applications ClickHouse d&#39;accéder aux bases de données et aux tables d&#39;une instance `clickhouse-local` active. Notez que chaque connexion entrante dispose de sa propre session : les tables temporaires et les paramètres de session de la session interactive `clickhouse-local` ne sont pas visibles depuis les connexions externes.
+`clickhouse-local` peut être utilisé comme un serveur léger qui accepte les connexions TCP (protocole natif) et HTTP. C&#39;est utile si vous souhaitez permettre à d&#39;autres outils ou applications ClickHouse d&#39;accéder aux bases de données et aux tables d&#39;une instance `clickhouse-local` active. Notez que chaque connexion entrante dispose de sa propre session : les tables temporaires et les paramètres de session de la session interactive `clickhouse-local` ne sont pas visibles depuis les connexions externes.
 
-Utilisez `SYSTEM START LISTEN` pour ouvrir un écouteur et `SYSTEM STOP LISTEN` pour le fermer :
+Utilisez `SYSTEM START LISTEN` pour ouvrir un point d’écoute et `SYSTEM STOP LISTEN` pour le fermer :
 
 ```bash
 clickhouse-local \
@@ -429,15 +431,35 @@ clickhouse-local \
 
 Les options `--listen_host`, `--tcp_port` et `--http_port` configurent l’adresse de liaison et les ports. Les ports par défaut sont `9000` pour TCP et `8123` pour HTTP.
 
-L’écouteur HTTP répond aux requêtes préliminaires CORS avec les mêmes en-têtes permissifs que la configuration `clickhouse-server` par défaut, de sorte qu’une application web peut l’interroger depuis le navigateur sans configuration supplémentaire, y compris l’interface web ouverte depuis une URL `file://`, dont l’origine est `null`. Pour restreindre cela, définissez votre propre section `http_options_response` dans un fichier de configuration transmis avec `--config-file` ; elle remplace entièrement les valeurs par défaut.
+Le point d’écoute HTTP répond aux requêtes préliminaires CORS avec les mêmes en-têtes permissifs que la configuration `clickhouse-server` par défaut, de sorte qu’une application web peut l’interroger depuis le navigateur sans configuration supplémentaire, y compris l’interface web ouverte depuis une URL `file://`, dont l’origine est `null`. Pour restreindre cela, définissez votre propre section `http_options_response` dans un fichier de configuration transmis avec `--config-file` ; elle remplace entièrement les valeurs par défaut.
 
 <Warning>
   **Sécurité**
 
-  Par défaut, `clickhouse-local` s’exécute avec une configuration temporaire des utilisateurs ; tout port d’écoute qu’il ouvre est donc non authentifié. Utilisez une adresse de bouclage (`127.0.0.1` ou `::1`), sauf si vous avez explicitement configuré des utilisateurs et le contrôle d’accès en faisant pointer le paramètre `users_config` vers un fichier `users.xml` personnalisé (par exemple via `--config-file`). Écouter sur une adresse autre que de bouclage sans authentification expose les données de l’instance locale à toute personne pouvant atteindre le port choisi.
+  Par défaut, `clickhouse-local` s’exécute avec une configuration temporaire des utilisateurs ; tout point d’écoute qu’il ouvre est donc non authentifié. Utilisez une adresse de bouclage (`127.0.0.1` ou `::1`), sauf si vous avez explicitement configuré des utilisateurs et le contrôle d’accès en faisant pointer le paramètre `users_config` vers un fichier `users.xml` personnalisé (par exemple via `--config-file`). Écouter sur une adresse autre que de bouclage sans authentification permet à toute personne pouvant joindre le port choisi d’accéder non seulement aux données de l’instance locale, mais aussi aux fichiers, et d’exécuter des commandes avec les privilèges de l’utilisateur de l’OS qui exécute `clickhouse-local` ; voir [Scénarios multi-utilisateurs](#multi-user-scenarios).
 
-  Notez qu’une adresse de bouclage reste accessible depuis le navigateur : tant qu’un écouteur HTTP est ouvert, toute page web que vous consultez peut interroger l’instance locale et, grâce aux en-têtes CORS par défaut, lire les résultats.
+  Notez qu’une adresse de bouclage reste accessible depuis le navigateur : tant qu’un point d’écoute HTTP est ouvert, toute page web que vous consultez peut interroger l’instance locale et, grâce aux en-têtes CORS par défaut, lire les résultats.
 </Warning>
+
+### Scénarios multi-utilisateurs {#multi-user-scenarios}
+
+<Note>
+  Les points d’écoute de `clickhouse-local` sont destinés à un seul utilisateur : celui qui l’a démarré et qui s’y connecte avec ses propres outils. Pour les scénarios multi-utilisateurs, par exemple plusieurs personnes ou applications disposant de privilèges différents, ou tout client que vous ne laisseriez pas se connecter à votre compte OS, utilisez plutôt [`clickhouse-server`](/fr/get-started/setup/install).
+</Note>
+
+`clickhouse-local` est un outil conçu pour travailler dans l’environnement local de l’utilisateur qui l’exécute ; il lève donc les restrictions que `clickhouse-server` impose aux requêtes. Cela vaut pour l’ensemble du processus : chaque connexion acceptée par un point d’écoute obtient les mêmes capacités que la session de `clickhouse-local` elle-même. Un client connecté peut notamment :
+
+* **Lire et écrire n’importe quel fichier.** `clickhouse-server` limite l’accès aux fichiers au répertoire [`user_files_path`](/fr/reference/settings/server-settings/settings/user#user_files_path). `clickhouse-local` ne dispose d’aucun répertoire de ce type : une requête peut lire, lister, créer et écraser tous les fichiers accessibles à l’utilisateur OS qui exécute `clickhouse-local`. Cela fonctionne avec les fonctions de table [`file`](/fr/reference/functions/table-functions/file) et [`filesystem`](/fr/reference/functions/table-functions/filesystem), la fonction [`file`](/fr/reference/functions/regular-functions/files#file), le moteur de table [`File`](/fr/reference/engines/table-engines/special/file), les moteurs de base de données [`Filesystem`](/fr/reference/engines/database-engines/filesystem) et [`SQLite`](/fr/reference/engines/database-engines/sqlite), ou tout simplement en utilisant un chemin comme nom de table, comme dans `SELECT * FROM '/path/to/data.csv'`. Les fichiers accessibles incluent les clés privées, les identifiants de services cloud, les fichiers de configuration du shell et les variables d’environnement du processus (`/proc/self/environ`).
+* **Exécuter des commandes.** `clickhouse-server` n’accepte les dictionnaires utilisant les sources [`EXECUTABLE`](/fr/reference/statements/create/dictionary/sources/executable-file) et [`EXECUTABLE_POOL`](/fr/reference/statements/create/dictionary/sources/executable-pool) que s’ils sont définis dans les fichiers de configuration rédigés par l’administrateur, et refuse de les créer via une requête. `clickhouse-local` autorise `CREATE DICTIONARY ... SOURCE(EXECUTABLE(COMMAND '...'))`, et la commande est exécutée par le shell : une requête peut donc lancer un programme arbitraire.
+* **Agir en tant qu’administrateur.** À moins que des utilisateurs ne soient configurés avec `users_config`, le seul utilisateur est `default` : il n’a pas de mot de passe, peut se connecter depuis n’importe quelle adresse et dispose des privilèges d’un administrateur, y compris la gestion des accès. Chaque connexion peut lire, modifier et supprimer toutes les données de l’instance, modifier n’importe quel paramètre (il n’existe ni contraintes sur les paramètres ni quotas), voir les requêtes des autres sessions dans `system.processes` et les interrompre, fermer les points d’écoute et arrêter le processus avec `SYSTEM SHUTDOWN`. Elle peut également créer des utilisateurs, qui sont enregistrés dans le répertoire de données lorsque celui-ci est persistant, et qui sont conservés après un redémarrage.
+* **Se connecter à n’importe quel hôte.** La restriction [`remote_url_allow_hosts`](/fr/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) ne s’applique pas dans `clickhouse-local` ; les fonctions de table et les moteurs dédiés aux sources externes, tels que `url`, `s3`, `remote`, `mysql` et `postgresql`, peuvent donc envoyer des requêtes depuis votre machine vers n’importe quelle adresse, y compris les services de l’interface de bouclage et du réseau interne.
+* **Utiliser les fonctions d’introspection.** Les [fonctions d’introspection](/fr/reference/functions/regular-functions/introspection) sont activées par défaut (voir [`allow_introspection_functions`](/fr/reference/settings/session-settings/allow#allow_introspection_functions)) ; un client peut donc résoudre les traces d’appels du processus, comme celles de `system.stack_trace`, en noms de symboles et en emplacements dans le code source.
+
+Configurer des utilisateurs avec des mots de passe et des privilèges limités ajoute une authentification, mais ne rétablit pas ces restrictions. Un utilisateur disposant de l’accès aux fichiers (`READ` et `WRITE` sur `FILE`) obtient l’accès à l’ensemble du système de fichiers au lieu d’un répertoire dédié et, combiné au grant `CREATE DICTIONARY`, la possibilité d’exécuter des commandes. La fonction `file` ne vérifie aucun grant : même un utilisateur sans aucun grant sur les fichiers peut donc lire tous les fichiers.
+
+Les points d’écoute ne prennent pas non plus en charge TLS : `SYSTEM START LISTEN` dans `clickhouse-local` n’ouvre que des points d’écoute `TCP` et `HTTP` en clair ; les mots de passe, les requêtes et les données transitent donc sur le réseau sans chiffrement.
+
+Tout cela s’exécute avec les privilèges de l’utilisateur OS qui lance `clickhouse-local`, c’est-à-dire généralement votre compte personnel, alors que `clickhouse-server` s’exécute habituellement sous un compte dédié qui ne possède rien d’autre que ses propres données. Sur une machine partagée par plusieurs utilisateurs OS, une adresse de bouclage (loopback) est accessible à tous : avec la configuration par défaut, sans authentification, tout autre utilisateur de la machine qui se connecte au point d’écoute peut lire vos fichiers et exécuter des commandes sous votre compte.
 
 ## Contenus associés {#related-content-1}
 

@@ -157,6 +157,17 @@ Cloud
 Максимальный интервал для повторной проверки лидерства при обновлении частей. Доступно только в
 ClickHouse Cloud
 
+## shared_merge_tree_max_noop_updates_from_leader {#shared_merge_tree_max_noop_updates_from_leader}
+
+<SettingsInfoBlock type="UInt64" default_value="16" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "16"},{"label": "Новая настройка: после указанного числа последовательных обновлений метаданных, не имеющих эффекта, follower читает метаданные из Keeper, а не у лидера обновления частей"}]}]} />
+
+Число последовательных обновлений метаданных, не изменивших ни виртуальные части, ни
+мутации, после которого follower читает метаданные из Keeper, а не у
+лидера обновления частей, пока что-либо снова не изменится. Значение 0 отключает это переключение. Доступно
+только в ClickHouse Cloud.
+
 ## shared_merge_tree_max_outdated_parts_to_process_at_once {#shared_merge_tree_max_outdated_parts_to_process_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
@@ -341,6 +352,14 @@ partitions for mutations>` превышает значение этой наст
 
 Количество одновременно планируемых задач по получению метаданных частей. Доступно только в
 ClickHouse Cloud
+
+## shared_merge_tree_parts_update_leader_tables_budget_factor {#shared_merge_tree_parts_update_leader_tables_budget_factor}
+
+<SettingsInfoBlock type="Float" default_value="2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "2"},{"label": "Новая настройка"}]}]} />
+
+Реплика перестаёт брать новые блокировки лидера обновления частей, как только удерживает `factor * attached SharedMergeTree tables * shared_merge_tree_max_parts_update_leaders_per_az / active replicas in its AZ` таких блокировок. Значение 0 отключает ограничение. Доступно только в ClickHouse Cloud.
 
 ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms {#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms}
 

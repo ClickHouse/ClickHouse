@@ -96,6 +96,60 @@ ORDER BY name ASC
 * يحتاج `SourceFromSingleChunk` إلى الانتظار، لأن `ExpressionTransform` لا يقبل أي بيانات أثناء تنفيذ `sleep(1)`، لذا سيبقى في الحالة `PortFull` لمدة 1e6 us، وبالتالي `output_wait_elapsed_us` &gt; 1e6.
 * تحتاج `LimitsCheckingTransform`/`NullSource`/`LazyOutputFormat` إلى الانتظار إلى أن ينفّذ `ExpressionTransform` الدالة `sleep(1)` لمعالجة النتيجة، لذا فإن `input_wait_elapsed_us` &gt; 1e6.
 
+### تنميط عملية ربط {#profiling-a-join}
+
+عندما يقرأ استعلام من عدة جداول، يكون لكل جدول مسار تنفيذ الاستعلام الخاص بقراءته، وتمر الصفوف عبر العديد من المعالجات في طريقها إلى النتيجة.
+ولذلك فإن جمع قيم `input_rows` أو `output_rows` لجميع المعالجات يحتسب الصفوف نفسها عدة مرات، ولا يبيّن حجم البيانات المقروءة من كل جدول.
+يستخدم المثال التالي جدولين من نوع `MergeTree` مختلفين في الحجم على خادم واحد.
+
+```sql title="Query"
+CREATE TABLE big (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE small (id UInt64, w UInt64) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO big SELECT number, number FROM numbers(1000000);
+INSERT INTO small SELECT number, number FROM numbers(1000);
+
+EXPLAIN PIPELINE
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0;
+```
+
+يعرض `EXPLAIN PIPELINE` مسار تنفيذ الاستعلام الخاص بالقراءة واحدًا لكل طرف من طرفي عملية الربط (`ReadFromMergeTree`، وتحته المصادر `MergeTreeSelect`)، وتصل بينهما معالجات الربط. ويضمن الإعدادان `join_algorithm = 'hash'` و`enable_join_runtime_filters = 0` إمكانية إعادة إنتاج هذا المثال، إذ لا يمكن لمرشّح JOIN أثناء التنفيذ استبعاد `big` قبل أن يُخرج مصدره الصفوف.
+
+```sql title="Query"
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0, log_processors_profiles = 1;
+-- Note the query ID printed by the client, or look it up in `system.query_log`.
+
+SYSTEM FLUSH LOGS;
+
+SELECT
+    id,
+    parent_ids,
+    plan_step,
+    name,
+    plan_step_name,
+    plan_step_description,
+    input_rows,
+    output_rows,
+    elapsed_us
+FROM system.processors_profile_log
+WHERE query_id = '<query_id>'
+ORDER BY plan_step, id;
+```
+
+لتفسير النتيجة:
+
+* ابحث عن معالجات المصدر التي تكون قيمة `name` فيها `MergeTreeSelect(...)` (أو `MergeTreeSource`) وقيمة `plan_step_name` فيها `ReadFromMergeTree`. تمثّل قيمة `output_rows` لكل منها عدد الصفوف التي أنتجها ذلك المصدر. اجمع هذه القيمة لكل خطوة قراءة (`plan_step`) على حدة، لا على مستوى الاستعلام بأكمله. يمثّل الناتج عدد الصفوف التي مرّرتها خطوة القراءة إلى بقية مسار تنفيذ الاستعلام.
+* لكل جانب من جانبي عملية الربط خطوة `ReadFromMergeTree` خاصة به بقيمة `plan_step` مختلفة. في الصفوف الخاصة بهذا التنفيذ، يسرد `parent_ids` معرّفات المعالجات اللاحقة. ابدأ من أحد المصادر، ثم طابِق بشكل تعاودي كل قيمة في `parent_ids` مع قيمة `id` ضمن `query_id` نفسه لتتبّع الفرع وصولًا إلى عملية الربط. يتيح لك ذلك، على سبيل المثال، تحديد الفرع الذي يغذّي `FillingRightJoinSide`.
+* تستهلك المعالجات الواقعة فوق المصادر (مثل `ExpressionTransform` و`FillingRightJoinSide` و`ConcatProcessor`، أو معالج تحويل الربط نفسه) صفوفًا مشتقة من المصادر وتُنتجها. لا تُضِف عداداتها إلى عدادات المصادر، لأن ذلك يؤدي إلى احتساب الصفوف نفسها مرة أخرى.
+* لا تكفي معلومات الخطوة دائمًا لتحديد المصدر. فـ`EXPLAIN PIPELINE` خطة منفصلة: تساعد على مقارنة أسماء المعالجات وأشكال الفروع، لكن إخراجها النصي العادي لا يتضمن قيم `id` المُسجَّلة ولا `parent_ids`. إذا تشابهت أوصاف الخطوات في كلا الجدولين، فاستخدم الرسم البياني للاستعلام المُنفَّذ وأعداد الصفوف المعروفة. في هذا المثال، يبلغ مجموع مصادر القراءة للجدول `big` ‏1,000,000 صف، ومجموع مصادر القراءة للجدول `small` ‏1,000 صف.
+* تصف عدادات الصفوف والبايتات الخاصة بالمعالجات البيانات المارّة عبر مسار تنفيذ الاستعلام، لا عمليات القراءة الفعلية من التخزين. فهي لا تتضمن حبيبات البيانات أو العلامات التي قُرئت ثم استُبعدت بالتصفية، وتتأثر بالمفتاح الأساسي وبالتصفية عبر الفهارس الأخرى و`PREWHERE` واستبعاد الأعمدة، ولا تعكس البايتات المضغوطة المقروءة من القرص. أما `SelectedRows` و`SelectedBytes` و`SelectedMarks` في `system.query_log` فهي إحصاءات اختيار منطقية، إذ قد تكون قيمها غير صفرية حتى عندما تأتي جميع البيانات من ذاكرة التخزين المؤقت. لفحص عمليات قراءة الملفات، استخدم `ReadBufferFromFileDescriptorReadBytes`، الذي يشمل عمليات القراءة المُلبّاة من ذاكرة التخزين المؤقت لصفحات نظام التشغيل. ولفحص عمليات القراءة من القرص المحلي أو من جهاز الكتل دون احتساب ذاكرة التخزين المؤقت لصفحات نظام التشغيل، استخدم `OSReadBytes`.
+
 ## راجع أيضًا {#see-also}
 
 * [`EXPLAIN PIPELINE`](/ar/reference/statements/explain#explain-pipeline)

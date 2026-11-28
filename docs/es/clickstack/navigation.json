@@ -63,18 +63,25 @@
                   "group": "2026",
                   "pages": [
                     {
+                      "group": "November",
+                      "pages": [
+                        "es/clickstack/observability/demo-days/2026/2026-11-20",
+                        "es/clickstack/observability/demo-days/2026/2026-11-12"
+                      ]
+                    },
+                    {
                       "group": "October",
                       "pages": [
-                        "es/clickstack/demo-days/2026/2026-10-22",
-                        "es/clickstack/demo-days/2026/2026-10-15",
-                        "es/clickstack/demo-days/2026/2026-10-08",
-                        "es/clickstack/demo-days/2026/2026-10-01"
+                        "es/clickstack/observability/demo-days/2026/2026-10-22",
+                        "es/clickstack/observability/demo-days/2026/2026-10-15",
+                        "es/clickstack/observability/demo-days/2026/2026-10-08",
+                        "es/clickstack/observability/demo-days/2026/2026-10-01"
                       ]
                     },
                     {
                       "group": "September",
                       "pages": [
-                        "es/clickstack/demo-days/2026/2026-09-24",
+                        "es/clickstack/observability/demo-days/2026/2026-09-24",
                         "es/clickstack/observability/demo-days/2026/2026-09-17",
                         "es/clickstack/observability/demo-days/2026/2026-09-10",
                         "es/clickstack/observability/demo-days/2026/2026-09-04"
@@ -474,6 +481,13 @@
                   "group": "2026",
                   "pages": [
                     {
+                      "group": "November",
+                      "pages": [
+                        "es/clickstack/demo-days/2026/2026-11-20",
+                        "es/clickstack/demo-days/2026/2026-11-12"
+                      ]
+                    },
+                    {
                       "group": "October",
                       "pages": [
                         "es/clickstack/demo-days/2026/2026-10-22",
@@ -589,6 +603,7 @@
                     "es/clickstack/integration-examples/jvm-metrics",
                     "es/clickstack/integration-examples/kafka-metrics",
                     "es/clickstack/integration-examples/kubernetes",
+                    "es/clickstack/integration-examples/loom",
                     "es/clickstack/integration-examples/mysql",
                     "es/clickstack/integration-examples/nodejs-traces",
                     "es/clickstack/integration-examples/postgres-logs",

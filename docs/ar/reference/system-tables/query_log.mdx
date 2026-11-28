@@ -51,6 +51,8 @@ ORDER BY event_time_microseconds;
 
 إذا كان يمكن للاستعلامات الفرعية المترابطة أن تعمل على عقد أخرى، فاستعلم من `system.query_log` على كل عقدة، مثلًا باستخدام [`clusterAllReplicas`](/ar/reference/functions/table-functions/cluster).
 
+يُسجَّل ما يشغّله الاستعلام بهوية عرض أو عرض مُجسَّد من نوع `SQL SECURITY DEFINER` أو `NONE` كصف فرعي للاستعلام: قراءة العرض، أو القراءة عبر العرض المُجسَّد، أو الإدراج فيه، أو تشغيل استعلامه عند تنفيذ `INSERT` في الجدول المصدر الخاص به. وفي مثل هذا الصف، تكون `is_initial_query = 0`، وتكون `initial_query_id` هي الاستعلام، و`user` هو المستخدم المُعرِّف (definer) (فارغ في حالة `NONE`)، و`query` هو ما جرى تشغيله (استعلام العرض، أو القراءة من هدف العرض المُجسَّد أو الكتابة فيه)، بينما تمثل `tables` و`columns` و`partitions` و`projections` و`used_row_policies` ما جرى الوصول إليه. ويوجد صف واحد لكل نص استعلام مميز ولكل موضع جرى تشغيله فيه، بنوع الصف النهائي للاستعلام ودون أي مقاييس.
+
 ينشئ كل استعلام صفًا واحدًا أو صفين في جدول `query_log`، وذلك بحسب حالة الاستعلام (راجع العمود `type`):
 
 1. إذا نجح تنفيذ الاستعلام، يُنشأ صفّان بالنوعين `QueryStart` و`QueryFinish`.
@@ -92,6 +94,7 @@ ORDER BY event_time_microseconds;
 * `columns` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — أسماء الأعمدة الموجودة في الاستعلام.
 * `partitions` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — أسماء التقسيمات الموجودة في الاستعلام.
 * `projections` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — أسماء الإسقاطات المستخدمة أثناء تنفيذ الاستعلام.
+* `used_data_skipping_indices` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — أسماء فهارس تخطي البيانات التي استبعدت حبيبات من القراءة، بالصيغة `database.table.index`.
 * `views` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — أسماء العروض (المجسّدة أو الحية) الموجودة في الاستعلام.
 * `exception_code` ([Int32](/ar/reference/data-types/int-uint)) — رمز الاستثناء.
 * `exception` ([String](/ar/reference/data-types/string)) — رسالة الاستثناء.
@@ -103,62 +106,63 @@ ORDER BY event_time_microseconds;
 * `query_id` ([String](/ar/reference/data-types/string)) — معرّف الاستعلام.
 * `address` ([IPv6](/ar/reference/data-types/ipv6)) — عنوان IP الذي استُخدم لإجراء الاستعلام. عند الاتصال عبر proxy وعند تعيين `auth_use_forwarded_address`، سيكون هذا عنوان العميل بدلًا من الـ proxy.
 * `port` ([UInt16](/ar/reference/data-types/int-uint)) — منفذ العميل الذي استُخدم لإجراء الاستعلام. عند الاتصال عبر proxy وعند تعيين `auth_use_forwarded_address`، سيكون هذا منفذ العميل بدلًا من الـ proxy.
-* `initial_user` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم المستخدم الذي شغّل الاستعلام الأولي في سلسلة الاستعلامات نفسها.
-* `initial_query_id` ([String](/ar/reference/data-types/string)) — معرّف الاستعلام الأولي في سلسلة الاستعلامات نفسها.
-* `initial_address` ([IPv6](/ar/reference/data-types/ipv6)) — عنوان IP الذي أُطلق منه الاستعلام الأولي في سلسلة الاستعلامات نفسها.
-* `initial_port` ([UInt16](/ar/reference/data-types/int-uint)) — منفذ العميل الذي أُطلق منه الاستعلام الأولي في سلسلة الاستعلامات نفسها.
-* `initial_query_start_time` ([DateTime](/ar/reference/data-types/datetime)) — وقت بدء الاستعلام الأولي في سلسلة الاستعلامات نفسها.
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/ar/reference/data-types/datetime64)) — وقت بدء الاستعلام الأولي في سلسلة الاستعلامات نفسها، بدقة الميكروثانية.
-* `authenticated_user` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم المستخدم الذي تمت المصادقة عليه في الجلسة.
-* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10, &#39;IcebergRESTCatalog&#39; = 11)](/ar/reference/data-types/enum)) — الواجهة التي بدأ منها الاستعلام، كما أبلغ عنها العميل. تكون `Unknown` إذا لم تكن الواجهة المُبلَّغ عنها من الواجهات التي يتعرّف عليها هذا الخادم.
-* `is_secure` ([UInt8](/ar/reference/data-types/int-uint)) — علامة تشير إلى ما إذا كان الاستعلام قد نُفِّذ عبر واجهة آمنة.
+* `initial_user` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم المستخدم الذي شغّل الاستعلام الأولي ضمن سلسلة الاستعلامات نفسها.
+* `initial_query_id` ([String](/ar/reference/data-types/string)) — معرّف (ID) الاستعلام الأولي ضمن سلسلة الاستعلامات نفسها.
+* `initial_address` ([IPv6](/ar/reference/data-types/ipv6)) — عنوان IP الذي أُطلق منه الاستعلام الأولي ضمن سلسلة الاستعلامات نفسها.
+* `initial_port` ([UInt16](/ar/reference/data-types/int-uint)) — منفذ العميل الذي أُطلق منه الاستعلام الأولي ضمن سلسلة الاستعلامات نفسها.
+* `initial_query_start_time` ([DateTime](/ar/reference/data-types/datetime)) — وقت بدء الاستعلام الأولي ضمن سلسلة الاستعلامات نفسها.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/ar/reference/data-types/datetime64)) — وقت بدء الاستعلام الأولي ضمن سلسلة الاستعلامات نفسها، بدقة الميكروثانية.
+* `authenticated_user` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم المستخدم الذي جرى التحقق من هويته في الـ session.
+* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10, &#39;IcebergRESTCatalog&#39; = 11)](/ar/reference/data-types/enum)) — الواجهة التي بدأ منها الاستعلام، بحسب ما يُبلغ عنه العميل. تكون القيمة `Unknown` إذا لم تكن الواجهة المُبلغ عنها من الواجهات التي يتعرّف عليها هذا الخادم.
+* `is_secure` ([UInt8](/ar/reference/data-types/int-uint)) — علامة تشير إلى ما إذا كان الاستعلام قد نُفّذ عبر واجهة آمنة
 * `os_user` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم مستخدم نظام التشغيل الذي يشغّل clickhouse-client.
-* `client_hostname` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم مضيف جهاز العميل الذي يعمل عليه clickhouse-client أو عميل TCP آخر.
-* `client_name` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم clickhouse-client أو اسم عميل TCP آخر.
-* `client_agent` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — وكيل البرمجة بالذكاء الاصطناعي الذي استدعى العميل (مثل `claude-code`، `cursor`)، ويُكتشف من متغيرات البيئة. تكون القيمة فارغة إذا لم يُكتشف أي وكيل.
-* `client_revision` ([UInt32](/ar/reference/data-types/int-uint)) — المراجعة الخاصة بـ clickhouse-client أو عميل TCP آخر.
-* `client_version_major` ([UInt32](/ar/reference/data-types/int-uint)) — الإصدار الرئيسي لـ clickhouse-client أو عميل TCP آخر.
-* `client_version_minor` ([UInt32](/ar/reference/data-types/int-uint)) — الإصدار الثانوي لـ clickhouse-client أو عميل TCP آخر.
-* `client_version_patch` ([UInt32](/ar/reference/data-types/int-uint)) — مكوّن التصحيح من إصدار clickhouse-client أو عميل TCP آخر.
-* `script_query_number` ([UInt32](/ar/reference/data-types/int-uint)) — رقم الاستعلام في برنامج نصي يحتوي على عدة استعلامات لـ clickhouse-client.
-* `script_line_number` ([UInt32](/ar/reference/data-types/int-uint)) — رقم السطر الذي يبدأ عنده الاستعلام في برنامج نصي يحتوي على عدة استعلامات لـ clickhouse-client.
-* `http_method` ([Enum8(&#39;UNKNOWN&#39; = 0, &#39;GET&#39; = 1, &#39;POST&#39; = 2, &#39;OPTIONS&#39; = 3, &#39;PUT&#39; = 4, &#39;DELETE&#39; = 5, &#39;HEAD&#39; = 6)](/ar/reference/data-types/enum)) — طريقة HTTP التي بدأ بها الاستعلام. تكون `UNKNOWN` إذا لم يصل الاستعلام عبر HTTP، أو إذا لم تكن الطريقة المُبلَّغ عنها من الطرق التي يتعرّف عليها هذا الخادم.
+* `client_hostname` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم المضيف لجهاز العميل الذي يعمل عليه clickhouse-client أو أي عميل TCP آخر.
+* `client_name` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم clickhouse-client أو أي عميل TCP آخر.
+* `client_agent` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — وكيل البرمجة بالذكاء الاصطناعي الذي استدعى العميل (مثل `claude-code` و`cursor`)، ويُكتشف من متغيرات البيئة. تكون القيمة فارغة إذا لم يُكتشف أي وكيل.
+* `client_revision` ([UInt32](/ar/reference/data-types/int-uint)) — قيمة revision الخاصة بـ clickhouse-client أو أي عميل TCP آخر.
+* `client_version_major` ([UInt32](/ar/reference/data-types/int-uint)) — الإصدار الرئيسي لـ clickhouse-client أو أي عميل TCP آخر.
+* `client_version_minor` ([UInt32](/ar/reference/data-types/int-uint)) — الإصدار الفرعي لـ clickhouse-client أو أي عميل TCP آخر.
+* `client_version_patch` ([UInt32](/ar/reference/data-types/int-uint)) — مكوّن التصحيح في إصدار clickhouse-client أو أي عميل TCP آخر.
+* `script_query_number` ([UInt32](/ar/reference/data-types/int-uint)) — رقم الاستعلام داخل برنامج نصي يتضمن استعلامات متعددة لـ clickhouse-client.
+* `script_line_number` ([UInt32](/ar/reference/data-types/int-uint)) — رقم السطر الذي يبدأ عنده الاستعلام داخل برنامج نصي يتضمن استعلامات متعددة لـ clickhouse-client.
+* `http_method` ([Enum8(&#39;UNKNOWN&#39; = 0, &#39;GET&#39; = 1, &#39;POST&#39; = 2, &#39;OPTIONS&#39; = 3, &#39;PUT&#39; = 4, &#39;DELETE&#39; = 5, &#39;HEAD&#39; = 6)](/ar/reference/data-types/enum)) — طريقة HTTP التي بدأت الاستعلام. تكون القيمة `UNKNOWN` إذا لم يصل الاستعلام عبر HTTP، أو إذا لم تكن الطريقة المُبلغ عنها من الطرق التي يتعرّف عليها هذا الخادم.
 * `http_user_agent` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — ترويسة HTTP ‏UserAgent المُمرَّرة في استعلام HTTP.
-* `http_referer` ([String](/ar/reference/data-types/string)) — ترويسة HTTP ‏Referer المُمرَّرة في استعلام HTTP (تحتوي على عنوان كامل أو جزئي للصفحة التي تُجري الاستعلام).
+* `http_referer` ([String](/ar/reference/data-types/string)) — ترويسة HTTP ‏Referer المُمرَّرة في استعلام HTTP (وتحتوي على العنوان المطلق أو الجزئي للصفحة التي أرسلت الاستعلام).
 * `forwarded_for` ([String](/ar/reference/data-types/string)) — ترويسة HTTP ‏X-Forwarded-For المُمرَّرة في استعلام HTTP.
-* `quota_key` ([String](/ar/reference/data-types/string)) — مفتاح الحصة المحدد في إعداد quotas (انظر keyed).
-* `distributed_depth` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أُعيد فيها توجيه الاستعلام بين الخوادم.
-* `revision` ([UInt32](/ar/reference/data-types/int-uint)) — مراجعة ClickHouse.
-* `http_handler_name` ([String](/ar/reference/data-types/string)) — اسم معالج HTTP المعرّف بـ SQL ‏(CREATE HANDLER) الذي استدعى الاستعلام. تكون القيمة فارغة إذا لم يُستدعَ الاستعلام عبر مثل هذا المعالج.
-* `http_request_url` ([String](/ar/reference/data-types/string)) — مسار طلب HTTP (من دون سلسلة الاستعلام) الذي استدعى الاستعلام. تُحذف سلسلة الاستعلام كي لا تُحفظ معلمات الطلب الحساسة. تكون القيمة فارغة للاستعلامات غير التابعة لـ HTTP.
-* `log_comment` ([String](/ar/reference/data-types/string)) — تعليق السجل. يمكن تعيينه إلى أي سلسلة نصية لا يزيد طولها على max&#95;query&#95;size. وتكون القيمة سلسلة فارغة إذا لم يتم تعريفه.
-* `thread_ids` ([Array(UInt64)](/ar/reference/data-types/array)) — معرّفات الخيوط المشاركة في تنفيذ الاستعلام. وقد لا تكون هذه الخيوط قد عملت في الوقت نفسه.
-* `peak_threads_usage` ([UInt64](/ar/reference/data-types/int-uint)) — الحد الأقصى لعدد الخيوط المتزامنة التي تنفذ الاستعلام.
-* `ProfileEvents` ([Map(LowCardinality(String), UInt64)](/ar/reference/data-types/map)) — قيم ProfileEvents التي تقيس مقاييس مختلفة. ويمكن العثور على وصفها في الجدول system.events.
-* `Settings` ([Map(LowCardinality(String), LowCardinality(String))](/ar/reference/data-types/map)) — الإعدادات التي غُيّرت عند تشغيل العميل للاستعلام. ولتمكين تسجيل تغييرات الإعدادات، اضبط المعلمة log&#95;query&#95;settings على 1.
-* `used_aggregate_functions` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء المعيارية للدوال التجميعية التي استُخدمت أثناء تنفيذ الاستعلام.
-* `used_aggregate_function_combinators` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية لمُركِّبات الدوال التجميعية التي استُخدمت أثناء تنفيذ الاستعلام.
+* `quota_key` ([String](/ar/reference/data-types/string)) — مفتاح الحصة المحدد في إعداد الحصص (راجع keyed).
+* `distributed_depth` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي مُرِّر فيها الاستعلام بين الخوادم.
+* `revision` ([UInt32](/ar/reference/data-types/int-uint)) — revision الخاص بـ ClickHouse.
+* `http_handler_name` ([String](/ar/reference/data-types/string)) — اسم معالج HTTP المعرَّف عبر SQL ‏(CREATE HANDLER) الذي استدعى الاستعلام. تكون القيمة فارغة إذا لم يُستدعَ الاستعلام عبر معالج من هذا النوع.
+* `http_request_url` ([String](/ar/reference/data-types/string)) — مسار طلب HTTP (من دون سلسلة الاستعلام) الذي استدعى الاستعلام. تُحذف سلسلة الاستعلام كي لا تُحفظ معلمات الطلب الحساسة. تكون القيمة فارغة للاستعلامات غير المرسلة عبر HTTP.
+* `log_comment` ([String](/ar/reference/data-types/string)) — تعليق السجل. يمكن تعيينه إلى أي string لا يتجاوز طوله max&#95;query&#95;size. تكون القيمة string فارغًا إذا لم يُحدَّد.
+* `thread_ids` ([Array(UInt64)](/ar/reference/data-types/array)) — معرّفات خيوط التنفيذ المشاركة في تنفيذ الاستعلام. ليس بالضرورة أن تكون هذه الخيوط قد عملت في الوقت نفسه.
+* `peak_threads_usage` ([UInt64](/ar/reference/data-types/int-uint)) — الحد الأقصى لعدد خيوط التنفيذ التي تنفّذ الاستعلام في آنٍ واحد.
+* `ProfileEvents` ([Map(LowCardinality(String), UInt64)](/ar/reference/data-types/map)) — ProfileEvents التي تقيس مقاييس مختلفة. يمكن الاطلاع على وصفها في الجدول system.events
+* `Settings` ([Map(LowCardinality(String), LowCardinality(String))](/ar/reference/data-types/map)) — الإعدادات التي جرى تغييرها عندما نفّذ العميل الاستعلام. لتفعيل تسجيل التغييرات على الإعدادات، اضبط المعلمة log&#95;query&#95;settings على 1.
+* `used_aggregate_functions` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية للدوال التجميعية التي استُخدمت أثناء تنفيذ الاستعلام.
+* `used_aggregate_function_combinators` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية لمُعدِّلات دوال التجميع التي استُخدمت أثناء تنفيذ الاستعلام.
 * `used_database_engines` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية لمحركات قواعد البيانات التي استُخدمت أثناء تنفيذ الاستعلام.
 * `used_data_type_families` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية لعائلات أنواع البيانات التي استُخدمت أثناء تنفيذ الاستعلام.
 * `used_dictionaries` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية للقواميس التي استُخدمت أثناء تنفيذ الاستعلام.
-* `used_formats` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية للتنسيقات التي استُخدمت أثناء تنفيذ الاستعلام.
+* `used_formats` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية للصيغ التي استُخدمت أثناء تنفيذ الاستعلام.
 * `used_functions` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية للدوال التي استُخدمت أثناء تنفيذ الاستعلام.
-* `used_storages` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية لوحدات التخزين التي استُخدمت أثناء تنفيذ الاستعلام.
+* `used_storages` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية لمكونات التخزين التي استُخدمت أثناء تنفيذ الاستعلام.
 * `used_table_functions` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية لدوال الجداول التي استُخدمت أثناء تنفيذ الاستعلام.
-* `used_executable_user_defined_functions` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية للدوال التنفيذية المعرّفة من المستخدم التي استُخدمت أثناء تنفيذ الاستعلام.
-* `used_sql_user_defined_functions` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية لدوال SQL المعرّفة من المستخدم التي استُخدمت أثناء تنفيذ الاستعلام.
+* `used_executable_user_defined_functions` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية للدوال القابلة للتنفيذ المعرّفة من قِبل المستخدم التي استُخدمت أثناء تنفيذ الاستعلام.
+* `used_sql_user_defined_functions` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الأسماء القياسية لدوال SQL المعرّفة من قِبل المستخدم التي استُخدمت أثناء تنفيذ الاستعلام.
 * `used_row_policies` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — قائمة أسماء سياسات الصفوف التي استُخدمت أثناء تنفيذ الاستعلام.
 * `used_privileges` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الامتيازات التي جرى التحقق منها بنجاح أثناء تنفيذ الاستعلام.
-* `missing_privileges` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الامتيازات الناقصة أثناء تنفيذ الاستعلام.
+* `missing_privileges` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — الامتيازات المفقودة أثناء تنفيذ الاستعلام.
 * `used_number_of_joins` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات الربط الفعلية المنفَّذة لهذا الاستعلام. يُجمَع هذا العدد من مسارات التنفيذ أثناء بنائها، لذا فهو يعكس عمليات الربط المتبقية بعد تطبيق جميع التحسينات، لا عدد عبارات JOIN في نص الاستعلام. تُحتسب عملية الربط مهما كان عمق تداخلها: فالاستعلامات الفرعية، وتعبيرات الجدول الشائعة، والعروض، والعروض المبنية على عروض أخرى، واستعلام SELECT الخاص بعرض مُجسَّد يُشغِّله INSERT، كلها تُسجَّل في صف الاستعلام المُرسَل، ولذلك قد تكون هذه القيمة غير صفرية لاستعلام لا يتضمن نصه أي JOIN إطلاقًا. أما الاستعلام الذي يبني مسار تنفيذ دون تشغيله، مثل EXPLAIN PIPELINE، فيُبلغ عن عمليات الربط في الاستعلام الذي يشرحه. تُجمَّع بعض مسارات التنفيذ أكثر من مرة أثناء تشغيل استعلام واحد: إذ يُجمَّع استعلام SELECT الخاص بالعرض المُجسَّد لكل كتلة من كتل INSERT الذي يُشغّله ولكل تدفق إدراج، ويُجمَّع العضو التعاودي في تعبير الجدول الشائع التعاودي في كل تكرار، وتُجمَّع علاقة الحلقة من جديد في كل مرة يُعاد تشغيلها. ومع ذلك تُحتسب عمليات الربط في مثل هذا المسار مرة واحدة فقط، لذا يصف هذا العدد الاستعلام نفسه لا عدد مرات تجميع مسارات تنفيذه.
-* `used_join_algorithms` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — خوارزميات عمليات الربط المحتسبة في used&#95;number&#95;of&#95;joins: &#39;HASH&#39;، &#39;GRACE&#95;HASH&#39;، &#39;PARTIAL&#95;MERGE&#39;، &#39;FULL&#95;SORTING&#95;MERGE&#39;، &#39;PARALLEL&#95;FULL&#95;SORTING&#95;MERGE&#39;، &#39;IE&#95;JOIN&#39;، &#39;DIRECT&#39;، &#39;PASTE&#39; و&#39;CONSTANT&#39;، مرتبةً ومن دون تكرار، بحيث تظهر الخوارزمية المشتركة بين عدة عمليات ربط مرة واحدة فقط. وهي الخوارزمية التي اختيرت فعليًا لتنفيذ كل عملية ربط، لا الخوارزميات التي يسمح بها الإعداد join&#95;algorithm. ويُسجَّل ربط التجزئة بالقيمة &#39;HASH&#39; سواء بُني جدول التجزئة الخاص به على خيط واحد أو على عدة خيوط. وقد تُستبدل خوارزمية بأخرى في منتصف التنفيذ، وفي هذه الحالة يُبلَّغ عن كلتيهما.
-* `used_join_kinds` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — أنواع عمليات الربط المحتسبة في used&#95;number&#95;of&#95;joins، بعنصر واحد لكل عملية ربط، بحيث يظهر النوع المشترك بين عدة عمليات ربط عدة مرات. وتكون العناصر مرتبة، لا وفق ترتيب التنفيذ. وكل نوع هو النوع الذي نُفِّذ فعليًا، وقد يختلف عمّا في نص الاستعلام، لأن المُحسِّن قد ينفّذ عملية الربط بعد تبديل طرفيها فيتحوّل LEFT إلى RIGHT.
-* `used_join_strictness` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — صرامة عمليات الربط المحتسبة في used&#95;number&#95;of&#95;joins، بعنصر واحد لكل عملية ربط، وبالترتيب نفسه المتبع في used&#95;join&#95;kinds: أي أن العنصر عند فهرس معيّن يصف عملية الربط نفسها في كلتا المصفوفتين.
-* `spilled_to_disk` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — العوامل التي كتبت بيانات إلى ملفات مؤقتة على القرص (المعالجة في الذاكرة الخارجية) أثناء تنفيذ الاستعلام، مرتبةً ومن دون تكرار. وتعني المصفوفة الفارغة أن الاستعلام نُفِّذ بالكامل في الذاكرة.
+* `used_join_algorithms` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — خوارزميات عمليات الربط المحتسبة في used&#95;number&#95;of&#95;joins: &#39;HASH&#39;، و&#39;GRACE&#95;HASH&#39;، و&#39;PARTIAL&#95;MERGE&#39;، و&#39;FULL&#95;SORTING&#95;MERGE&#39;، و&#39;PARALLEL&#95;FULL&#95;SORTING&#95;MERGE&#39;، و&#39;INEQUALITY&#39;، و&#39;BLOCK&#95;NESTED&#95;LOOP&#39;، و&#39;DIRECT&#39;، و&#39;PASTE&#39;، و&#39;CONSTANT&#39;، مرتّبةً ومُزالةً تكراراتها، بحيث تظهر الخوارزمية المشتركة بين عدة عمليات ربط مرة واحدة فقط. وهذه هي الخوارزمية التي اختيرت فعلًا لتنفيذ كل عملية ربط، لا الخوارزميات التي يسمح بها الإعداد join&#95;algorithm. ويُصنَّف ربط التجزئة على أنه &#39;HASH&#39; سواء بُني جدول التجزئة الخاص به على خيط واحد أو على عدة خيوط. وقد تُستبدل خوارزمية بأخرى أثناء التنفيذ، وفي هذه الحالة يُبلَّغ عن كلتيهما.
+* `used_join_kinds` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — أنواع عمليات الربط المحتسبة في used&#95;number&#95;of&#95;joins، بعنصر واحد لكل عملية ربط، بحيث يتكرر ظهور النوع المشترك بين عدة عمليات ربط. وتكون العناصر مرتّبة، لا وفق ترتيب التنفيذ. وكل نوع هو النوع الذي نُفِّذ فعلًا، وقد يختلف عمّا ورد في نص الاستعلام، لأن المُحسِّن قد ينفّذ عملية الربط بعد تبديل طرفيها، فيتحوّل LEFT إلى RIGHT.
+* `used_join_strictness` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — صرامة عمليات الربط المحتسبة في used&#95;number&#95;of&#95;joins، بعنصر واحد لكل عملية ربط، وبالترتيب نفسه المتبع في used&#95;join&#95;kinds: فالعنصر عند فهرس معيّن يصف عملية الربط نفسها في كلتا المصفوفتين.
+* `spilled_to_disk` ([Array(LowCardinality(String))](/ar/reference/data-types/array)) — العوامل التي كتبت بيانات إلى ملفات مؤقتة على القرص (المعالجة في الذاكرة الخارجية) أثناء تنفيذ الاستعلام، مرتّبةً ومُزالةً تكراراتها. وتعني المصفوفة الفارغة أن الاستعلام نُفِّذ بالكامل في الذاكرة.
 * `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/ar/reference/data-types/tuple)) — معرّف المعاملة التي نُفِّذ هذا الاستعلام ضمن نطاقها.
 * `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/ar/reference/data-types/enum)) — استخدام ذاكرة التخزين المؤقت للاستعلامات أثناء تنفيذ الاستعلام. القيم: &#39;Unknown&#39; = الحالة غير معروفة، &#39;None&#39; = لم تُكتب نتيجة الاستعلام في ذاكرة التخزين المؤقت لنتائج الاستعلام ولم تُقرأ منها، &#39;Write&#39; = كُتبت نتيجة الاستعلام في ذاكرة التخزين المؤقت لنتائج الاستعلام، &#39;Read&#39; = قُرئت نتيجة الاستعلام من ذاكرة التخزين المؤقت لنتائج الاستعلام.
-* `asynchronous_read_counters` ([Map(LowCardinality(String), UInt64)](/ar/reference/data-types/map)) — المقاييس الخاصة بالقراءة غير المتزامنة.
-* `is_internal` ([UInt8](/ar/reference/data-types/int-uint)) — يشير إلى ما إذا كان هذا استعلامًا مساعدًا يُنفَّذ داخليًا.
+* `asynchronous_read_counters` ([Map(LowCardinality(String), UInt64)](/ar/reference/data-types/map)) — مقاييس القراءة غير المتزامنة.
+* `is_internal` ([UInt8](/ar/reference/data-types/int-uint)) — يشير إلى ما إذا كان الاستعلام استعلامًا مساعدًا يُنفَّذ داخليًا.
+* `query_plan` (`JSON`) — خطة تنفيذ الاستعلام الذي يصفه هذا الصف، مُسلسَلة بتنسيق JSON، مع إحصاءات بيئة التشغيل لكل خطوة. لا يُملأ هذا العمود إلا عند تفعيل الإعداد `log_query_plans`، ويكون فارغًا في صفوف `QueryStart`، إذ لا تكون الخطة قد أُنشئت بعد في تلك المرحلة. أما في صف استعلام أطلق استثناءً، فتكون الخطة هي التي بناها الاستعلام حتى لحظة إطلاق الاستثناء، ولا تتضمن أي إحصاءات: فالاستعلام الذي فشل أثناء تشغيله نُفِّذت خطته جزئيًا، والذي فشل قبل تشغيله لم تُنفَّذ خطته إطلاقًا. تخضع الخطة لإخفاء البيانات وفق `query_masking_rules`؛ ولا تُخزَّن أي خطة للاستعلام الذي تنطبق عليه إحدى القواعد، أو الذي يحتوي على وسيطات سرية.
 
 **الأسماء المستعارة:**
 

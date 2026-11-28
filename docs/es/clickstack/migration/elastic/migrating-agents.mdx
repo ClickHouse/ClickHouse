@@ -385,7 +385,7 @@ Elastic Agent incluye un EDOT Collector integrado que le permite instrumentar su
   Los usuarios que ejecuten el EDOT Collector distribuido con Elastic Agent no podrán aprovechar las [integraciones existentes que ofrece el agente](https://www.elastic.co/docs/reference/fleet/manage-integrations). Además, Fleet no puede gestionar el collector de forma centralizada, lo que obliga al usuario a ejecutar el [agente en modo standalone](https://www.elastic.co/docs/reference/fleet/configure-standalone-elastic-agents) y a administrar la configuración por su cuenta.
 </Info>
 
-Para ejecutar Elastic Agent con el EDOT Collector, consulte la [guía oficial de Elastic](https://www.elastic.co/docs/reference/fleet/otel-agent-transform). En lugar de configurar el endpoint de Elastic, como se indica en la guía, elimine los `exporters` existentes y configure la salida OTLP para enviar datos al Colector de OpenTelemetry de ClickStack. Por ejemplo, la configuración de los exportadores quedaría así:
+Para ejecutar Elastic Agent con el EDOT Collector, consulte la [guía oficial de Elastic](https://www.elastic.co/docs/reference/fleet/otel-agent-transform). En lugar de configurar el endpoint de Elastic, como se indica en la guía, elimine los `exporters` existentes y configure la salida OTLP para enviar datos al Recopilador de OpenTelemetry de ClickStack. Por ejemplo, la configuración de los exportadores quedaría así:
 
 ```yaml
 exporters:
@@ -397,12 +397,6 @@ exporters:
     tls:
       insecure: true
 ```
-
-<Info>
-  **Managed ClickStack**
-
-  De forma predeterminada, no se requiere una clave de API para ingestión si se ejecuta un Colector de OpenTelemetry en modo standalone para Managed ClickStack. No obstante, la ingestión puede protegerse especificando un token de autenticación OTLP. Consulte [&quot;Cómo proteger el collector&quot;](/es/clickstack/ingesting-data/collector#securing-the-collector).
-</Info>
 
 ClickStack genera `YOUR_INGESTION_API_KEY`. Puede encontrar la clave en la UI de ClickStack, en `Team Settings → API Keys`.
 

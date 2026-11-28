@@ -111,26 +111,37 @@ hyperdx:
     MONGODB_PASSWORD: "your-mongodb-password"
 ```
 
-### 外部シークレットを使用する {#using-external-secret}
+### 外部 Secret の使用 {#using-external-secret}
 
-本番環境へのデプロイで、認証情報を Helm の値とは分けて管理したい場合は、外部の Kubernetes Secret を使用します。
+HyperDX の APIキーを Helm の設定値に含めないようにするには、独自に作成した Kubernetes Secret に保存します。
 
 ```bash
-# Secretを作成する
 kubectl create secret generic my-clickstack-secrets \
-  --from-literal=HYPERDX_API_KEY=my-secret-api-key \
-  --from-literal=CLICKHOUSE_PASSWORD=my-ch-password \
-  --from-literal=CLICKHOUSE_APP_PASSWORD=my-ch-app-password \
-  --from-literal=MONGODB_PASSWORD=my-mongo-password
+  --from-literal=HYPERDX_API_KEY=my-secret-api-key
 ```
 
-次に、それをvaluesで参照します：
+次に、その値をチャートのSecretから削除し、ご自身で用意したSecretから読み込むようにします:
 
 ```yaml
 hyperdx:
-  useExistingConfigSecret: true
-  existingConfigSecret: "my-clickstack-secrets"
+  secrets:
+    HYPERDX_API_KEY: null
+  deployment:
+    env:
+      - name: HYPERDX_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: my-clickstack-secrets
+            key: HYPERDX_API_KEY
 ```
+
+その他の HyperDX の環境変数も、同じ方法でSecretから読み取れます。
+
+バンドルされたコンポーネントを有効にしている間は、ClickHouse と MongoDB のパスワードを `hyperdx.secrets` に残しておく必要があります。チャートはこれらのパスワードを使用してバンドル版の ClickHouse と MongoDB のユーザーをセットアップし、OTel collector はチャートのSecretからこれらを読み取ります。
+
+<Note>
+  `hyperdx.deployment.useExistingConfigSecret` がSecretから読み込むのは、デフォルトの接続とソース (`connections.json` と `sources.json`) のみです。APIキーやパスワードは読み取りません。詳しくは [外部 ClickHouse](/ja/clickstack/deployment/helm-deployment-options#external-clickhouse-secret) を参照してください。
+</Note>
 
 ## イングレスの設定 {#ingress-setup}
 

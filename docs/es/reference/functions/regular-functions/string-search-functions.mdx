@@ -430,6 +430,68 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 ['Server','nginx']
 ```
 
+## fullMatch {#fullMatch}
+
+Introducido en: v26.11.0
+
+Comprueba si una cadena dada coincide en su totalidad con el patrón de expresión regular proporcionado.
+
+A diferencia de [`match`](#match), que busca una coincidencia en cualquier parte de la cadena, esta función
+devuelve `1` solo si el patrón coincide con toda la cadena, como si el patrón estuviera anclado en
+ambos extremos con `^` y `$`. Esto corresponde a `RE2::FullMatch` de la biblioteca RE2, a
+`re.fullmatch` en Python y a `regexp_full_match` en DuckDB.
+
+Esta función utiliza la biblioteca de expresiones regulares RE2. Consulta [re2](https://github.com/google/re2/wiki/Syntax) para ver la sintaxis admitida.
+
+La coincidencia funciona asumiendo UTF-8; por ejemplo, `¥` usa dos bytes internamente, pero la coincidencia lo trata como un único punto de código.
+La expresión regular no debe contener bytes NULL.
+Si el haystack o el patrón no son UTF-8 válidos, el comportamiento no está definido.
+
+A diferencia del comportamiento predeterminado de re2, `.` coincide con los saltos de línea. Para desactivarlo, antepón `(?-s)` al patrón.
+
+**Sintaxis**
+
+```sql
+fullMatch(haystack, pattern)
+```
+
+**Alias**: `regexp_full_match`
+
+**Argumentos**
+
+* `haystack` — Cadena en la que se busca el patrón. [`String`](/es/reference/data-types/string)
+* `pattern` — Patrón de expresión regular. Puede ser una constante o provenir de una columna. [`String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Devuelve `1` si el patrón coincide con toda la cadena, `0` en caso contrario. [`UInt8`](/es/reference/data-types/int-uint)
+
+**Ejemplos**
+
+**Coincidencia con toda la cadena**
+
+```sql title=Query
+SELECT fullMatch('abcde', 'a.*e'), fullMatch('abcde', 'b.*d'), match('abcde', 'b.*d')
+```
+
+```response title=Response
+┌─fullMatch('abcde', 'a.*e')─┬─fullMatch('abcde', 'b.*d')─┬─match('abcde', 'b.*d')─┐
+│                          1 │                          0 │                      1 │
+└────────────────────────────┴────────────────────────────┴────────────────────────┘
+```
+
+**Patrón con una alternancia de nivel superior**
+
+```sql title=Query
+SELECT fullMatch('gold-1', 'zzz|gold.*'), fullMatch('app-gold-1', 'zzz|gold.*')
+```
+
+```response title=Response
+┌─fullMatch('gold-1', 'zzz|gold.*')─┬─fullMatch('app-gold-1', 'zzz|gold.*')─┐
+│                                 1 │                                     0 │
+└───────────────────────────────────┴───────────────────────────────────────┘
+```
+
 ## hasAllTokens {#hasAllTokens}
 
 Introducido en: v25.10.0
@@ -915,7 +977,7 @@ Antes de realizar la búsqueda, la función tokeniza `input` y, cuando es de tip
 Si la columna no tiene definido ningún índice de texto, se usará en su lugar el tokenizador `splitByNonAlpha`, a menos que se proporcione un tokenizador como tercer argumento opcional.
 El argumento `tokenizer` debe ser uno de `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK` o `icu`.
 
-Si `input` es un [Array(String)](/es/reference/data-types/array), sus elementos se tokenizan como cualquier otra entrada y sus tokens forman una única secuencia por fila, por lo que una frase puede abarcar dos elementos. Con el tokenizador `array`, cada elemento es un token; así es como se busca en una columna de valores ya tokenizados.
+Si `input` es un [Array(String)](/es/reference/data-types/array), sus elementos se tokenizan como cualquier otra entrada y una frase debe estar contenida dentro de un único elemento. Con el tokenizador `array`, cada elemento es un token y una frase abarca elementos consecutivos; así es como se busca en una columna de valores ya tokenizados.
 Si `phrase` es un [Array(String)](/es/reference/data-types/array), sus elementos son los tokens que se deben buscar, en orden e
 incluyendo los duplicados. Los elementos vacíos de la frase se ignoran, ya que ningún tokenizador produce un token vacío.
 
@@ -972,28 +1034,28 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 └─────────────────────────────────────────────────────┘
 ```
 
-**Secuencia de tokens como arrays**
+**Valores ya tokenizados con el tokenizador `array`**
 
 ```sql title=Query
-SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')
 ```
 
 ```response title=Response
-┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
-│                                                               1 │
-└─────────────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')─┐
+│                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Frase que abarca dos elementos**
+**Una frase no se extiende entre dos elementos**
 
 ```sql title=Query
-SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+SELECT hasPhrase(['the quick', 'brown fox'], 'quick brown')
 ```
 
 ```response title=Response
-┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
-│                                                         1 │
-└───────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the quick', 'brown fox'], 'quick brown')─┐
+│                                                    0 │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}
@@ -1534,7 +1596,7 @@ Si el haystack o el patrón no son UTF-8 válidos, el comportamiento no está de
 
 A diferencia del comportamiento predeterminado de re2, `.` coincide con los saltos de línea. Para desactivarlo, antepón `(?-s)` al patrón.
 
-El patrón no está anclado. Para hacer coincidir toda la cadena, ancla tú mismo el patrón con `^` y `$`.
+El patrón no está anclado. Para hacer coincidir toda la cadena, ancla tú mismo el patrón con `^` y `$`, o usa la función [`fullMatch`](#fullMatch).
 
 Si solo quieres buscar subcadenas, puedes usar en su lugar las funciones [`like`](#like) o [`position`](#position), que son mucho más rápidas que esta función.
 

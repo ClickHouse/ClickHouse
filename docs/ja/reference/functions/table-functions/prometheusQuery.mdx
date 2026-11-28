@@ -57,13 +57,21 @@ TimeSeries テーブル内の値の型にかかわらず、返される値の型
 | ラベル      | `label_replace`, `label_join`                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 型        | `scalar`, `vector`                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ヒストグラム   | `histogram_quantile`                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ソート      | `sort`, `sort_desc`, `sort_by_label`, `sort_by_label_desc`                                                                                                                                                                                                                                                                                                                                                                                        |
 | その他      | `time`, `step`, `range`, `pi`, `absent`, `timestamp`                                                                                                                                                                                                                                                                                                                                                                                              |
 
 **注記**: `histogram_quantile` は、従来のヒストグラムのバケット (`le` ラベルで識別) に対して線形補間を使用します。ネイティブヒストグラムはサポートされていません。`phi` (分位点レベル) 引数は定数スカラーである必要があります。`histogram_quantile(time() / 1000, ...)` のようにステップごとに変化する式は、`NOT_IMPLEMENTED` 例外で拒否されます。
 
 **注記**: `min_of(a, b)` と `max_of(a, b)` は、2 つのスカラー値のうち小さい方または大きい方を返します。どちらの引数もスカラーである必要があります。
 
-**注記**: `step`、`range`、`min_of`、`max_of`、`ts_of_min_over_time`、`ts_of_max_over_time`、`ts_of_last_over_time`、`ts_of_first_over_time`、`mad_over_time` は Prometheus では実験的な関数であり (Prometheus では `--enable-feature=promql-experimental-functions` で有効化します)、ClickHouse はそのフラグを必要とせずにこれらを評価します。
+**注記**: ソート関数が結果を並べ替えるのは、クエリの最も外側の関数である場合のみです。それ以外の位置ではソート関数は何の効果もありませんが、Prometheus では `abs(sort_desc(x))` のようにネストされたソート関数の順序も維持されます。
+
+* `sort` と `sort_desc` は、結果をサンプル値で並べ替えます (`NaN` は末尾)。値が等しい系列は、ラベルで並べ替えられます。
+* `sort_by_label` と `sort_by_label_desc` は、指定したラベルの値を自然順 (`host2` が `host10` より前) で比較して結果を並べ替えます。指定したラベルを持たない系列は、そのラベルが空であるものとして並べ替えられます。これらのラベルの値が等しい系列は、すべてのラベルで並べ替えられます。
+
+この順序は、次の 3 つの場合に Prometheus と異なります。先頭のゼロのみが異なる数値 (`7` と `007`) は等しいものとして扱われます。数値は長さにかかわらず数値として比較されます (Prometheus は `Int64` の範囲を超える数値をテキストとして比較します)。また、指定したラベルを持たない系列は、常にそのラベルを持つ系列より前になります (Prometheus では、その位置は入力の順序に依存します)。
+
+**注記**: `step`、`range`、`min_of`、`max_of`、`ts_of_min_over_time`、`ts_of_max_over_time`、`ts_of_last_over_time`、`ts_of_first_over_time`、`mad_over_time`、`sort_by_label`、`sort_by_label_desc` は Prometheus では実験的な関数であり (Prometheus では `--enable-feature=promql-experimental-functions` で有効化します)、ClickHouse はそのフラグを必要とせずにこれらを評価します。
 
 ### 演算子 {#operators}
 

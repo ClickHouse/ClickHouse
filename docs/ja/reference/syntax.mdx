@@ -344,7 +344,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
   hello
   ```
 
-  クエリパラメータが database、table、function、またはその他の識別子の名前を表す場合は、型として `Identifier` を使用してください。たとえば、次のクエリは `uk_price_paid` という名前のテーブルから行を返します。
+  クエリパラメータが データベース、テーブル、関数、またはその他の識別子の名前を表す場合は、型として `Identifier` を使用してください。たとえば、次のクエリは `uk_price_paid` という名前のテーブルから行を返します。
 
   ```sql
   SET param_mytablename = "uk_price_paid";
@@ -369,6 +369,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
 <Note>
   クエリパラメータは、任意の SQL クエリの任意の場所で使える汎用的なテキスト置換ではありません。
   主に、識別子またはリテラルの代わりとして `SELECT` ステートメント内で使用することを想定して設計されています。
+  また、DDL 文ではデータベース名やテーブル名の代わりとしても使用できます (例: `CREATE TABLE {db:Identifier}.{tbl:Identifier}`)。`ALTER TABLE` では、`DROP`、`CLEAR`、`MATERIALIZE`、`COMMENT`、`RENAME COLUMN`、`AFTER` でも使用できます (例: `ALTER TABLE t RENAME COLUMN {c:Identifier} TO {c2:Identifier}`)。
 </Note>
 
 ## 関数 {#functions}

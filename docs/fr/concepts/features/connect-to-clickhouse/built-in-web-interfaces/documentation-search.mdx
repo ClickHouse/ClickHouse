@@ -1,0 +1,42 @@
+---
+description: 'Documentation de l’interface utilisateur web intégrée de recherche dans la documentation, servie au chemin `/docs` de l’interface HTTP et s’appuyant sur la table `system.documentation`'
+sidebarTitle: 'Recherche dans la documentation'
+slug: /concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search
+title: 'Recherche dans la documentation'
+doc_type: 'reference'
+---
+
+La page de recherche dans la documentation est une interface utilisateur web légère et autonome qui permet d’effectuer des recherches instantanées dans la documentation de référence intégrée. Elle est accessible au chemin `/docs` sur n’importe quel port HTTP de ClickHouse.
+
+Pour l’ouvrir, accédez à `/docs` sur n’importe quel port HTTP de ClickHouse (par exemple, `http://localhost:8123/docs`).
+
+## Fonctionnement {#what-it-does}
+
+Au fil de la saisie, la page interroge la table [`system.documentation`](/fr/reference/system-tables/documentation) via HTTP, puis génère le rendu Markdown de l’entité sélectionnée. Comme elle lit `system.documentation`, elle couvre toutes les entités exposées par cette table — fonctions, fonctions d’agrégation, fonctions de table, moteurs de table, moteurs de base de données, types de données, paramètres, formats, codecs de compression, événements de profilage, métriques, les tables système elles-mêmes, etc. — et correspond toujours à la documentation intégrée au serveur en cours d’exécution.
+
+Saisissez du texte dans la zone de recherche : les correspondances s’affichent dans une liste avec un code couleur par type. Sélectionnez une correspondance pour afficher sa documentation. Le rendu comprend :
+
+* une icône de crayon à côté du titre de l’entité, qui ouvre son fichier source sur GitHub (indiqué dans la colonne `source` de `system.documentation`) ;
+* la coloration syntaxique SQL ClickHouse des blocs de code, assurée par le même analyseur lexical intégré (`Lexer.wasm`) que l’interface [`/play`](/fr/concepts/features/connect-to-clickhouse/protocols/http) ;
+* les formules mathématiques TeX via [KaTeX](https://katex.org/) (par exemple, la formule de la page `corr`) ;
+* les encadrés `:::note`/`:::tip`/…, les ancres de titres avec liens partageables, ainsi qu’un bouton « Copier » au survol des blocs de code ;
+* la résolution des liens relatifs vers une autre entité documentée dans l’application lorsqu’elle existe, ou à défaut vers `https://clickhouse.com/docs` ; les références « Related » et « Alias of » deviennent des liens internes à l’application.
+
+Le terme de recherche en cours, l’entité ouverte et la section sont répercutés dans le fragment de l’URL : il est ainsi possible de créer un lien direct vers une page ou une section précise, qui est restaurée lors de la navigation précédent/suivant du navigateur. Un sélecteur de thème clair/sombre (avec détection automatique) reprend celui de `/play`.
+
+## Connexion {#connecting}
+
+L&#39;en-tête comporte les champs `URL`, `user` et `password`, exactement comme `/play`. Lorsque la page est servie par ClickHouse, l&#39;`URL` correspond par défaut à l&#39;origine actuelle ; lorsque la page est ouverte en tant que fichier local, elle vaut par défaut `http://localhost:8123/`, ce qui permet aussi d&#39;ouvrir la page en local tout en se connectant à un serveur distant. Le cache des noms utilisés pour les liens croisés est reconstruit automatiquement à chaque changement de connexion.
+
+## Ressources {#assets}
+
+Toutes les ressources — y compris le moteur de rendu Markdown ([Marked](https://marked.js.org/)), le moteur de rendu mathématique (KaTeX et ses polices) et l’analyseur lexical SQL — sont fournies directement par le binaire ClickHouse lorsque la page est servie via HTTP. Aucun CDN tiers n’est chargé dans l’origine HTTP de ClickHouse : la page est donc autonome, fonctionne hors ligne et n’exécute aucun code réseau tiers à proximité des identifiants qu’elle manipule.
+
+## Considérations de sécurité {#security}
+
+La page envoie des requêtes à l&#39;endpoint HTTP de ClickHouse avec les identifiants saisis dans l&#39;en-tête ; les mises en garde applicables au protocole HTTP valent donc également ici :
+
+* Servez toujours `/docs` via HTTPS dans les environnements non fiables afin de protéger les identifiants.
+* Restreignez l&#39;accès au niveau du réseau (pare-feu, proxy inverse ou configuration `listen_host`), de la même manière que pour le protocole HTTP.
+
+`system.documentation` contient uniquement la documentation de référence statique intégrée au serveur ; la page n&#39;expose donc aucune donnée de vos tables.

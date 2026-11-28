@@ -22,7 +22,7 @@ ClickStack prend en charge deux façons complémentaires de créer des alertes :
 Chaque alerte utilise l’un des deux modes de détection, à sélectionner sous **Alert type** dans l’éditeur d’alerte :
 
 * **Static threshold** : se déclenche lorsque la valeur franchit un seuil numérique que vous définissez. Il s’agit du mode par défaut, décrit sur cette page.
-* **Anomaly detection** (Managed ClickStack uniquement) : se déclenche lorsque la valeur sort de sa plage attendue, déterminée à partir de l’historique récent. Consultez [Alertes de détection d’anomalies](/fr/clickstack/features/anomaly-detection).
+* **Détection d’anomalies** (ClickHouse Observability uniquement) : se déclenche lorsque la valeur sort de sa plage attendue, déterminée à partir de l’historique récent. Consultez [Alertes de détection d’anomalies](/fr/clickstack/features/anomaly-detection).
 
 ### 1. Alertes de recherche {#search-alerts}
 
@@ -172,6 +172,7 @@ Selon le type de service, vous devrez fournir des informations différentes, à 
 **Slack (API)**
 
 * Jeton du bot Slack. Consultez la [documentation Slack](https://docs.slack.dev/authentication/tokens/#bot/) pour plus de détails.
+* Les Bot Token Scopes de l’application Slack doivent inclure `groups:read`, `channels:read` et `chat:write`. Les portées en lecture permettent à ClickStack de lister les canaux Slack lorsque vous modifiez une alerte.
 
 **API PagerDuty**
 
@@ -181,7 +182,7 @@ Selon le type de service, vous devrez fournir des informations différentes, à 
 
 * URL du webhook
 * En-têtes du webhook (facultatif)
-* Corps du webhook (facultatif). Le corps est un modèle Handlebars. Outre `{{title}}`, `{{body}}` et `{{link}}`, il peut utiliser des variables décrivant l’alerte et son déclenchement, telles que `{{alertId}}`, `{{status}}`, `{{value}}`, `{{threshold}}` et `{{groupKey}}`. Consultez [Variables de modèle des webhooks d’alerte](https://github.com/ClickHouse/ClickStack/blob/main/docs/alert-webhook-template-variables.md) pour obtenir la liste complète.
+* Corps du webhook (facultatif). Le corps est un Template Handlebars. Outre `{{title}}`, `{{body}}` et `{{link}}`, il peut utiliser des variables décrivant l’alerte et son déclenchement, telles que `{{alertId}}`, `{{status}}`, `{{value}}`, `{{threshold}}` et `{{groupKey}}`. Consultez [Variables de Template des webhooks d’alerte](https://github.com/ClickHouse/ClickStack/blob/main/docs/alert-webhook-template-variables.md) pour obtenir la liste complète.
 
 ## Gérer les alertes {#managing-alerts}
 
@@ -356,7 +357,7 @@ Dans cette requête, `ServiceName` est une colonne qui n’est ni numérique ni 
 Déclenchez une alerte lorsque le nombre d’erreurs dépasse une moyenne mobile de plus de deux écarts-types. Cela permet de détecter des pics par rapport à la valeur de référence récente plutôt qu’en fonction d’un seuil fixe.
 
 <Tip>
-  Sur Managed ClickStack, les [alertes de détection d’anomalies](/fr/clickstack/features/anomaly-detection) offrent cette fonctionnalité sans SQL personnalisé, avec en plus une préversion, un backtest et des valeurs de référence par groupe. Utilisez l’approche SQL ci-dessous si vous avez besoin d’un contrôle total sur le calcul de la valeur de référence, ou si vous utilisez ClickStack Open Source.
+  Sur ClickHouse Observability, les [alertes de détection d’anomalies](/fr/clickstack/features/anomaly-detection) offrent cette fonctionnalité sans SQL personnalisé, avec en plus une préversion, un backtest et des valeurs de référence par groupe. Utilisez l’approche SQL ci-dessous si vous avez besoin d’un contrôle total sur le calcul de la valeur de référence, ou si vous utilisez ClickStack Open Source.
 </Tip>
 
 ```sql

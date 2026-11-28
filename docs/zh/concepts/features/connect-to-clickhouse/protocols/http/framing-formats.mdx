@@ -1,0 +1,114 @@
+---
+description: '帧信息格式可在基于 HTTP 的单个响应流中多路复用数据、汇总、极值、进度、profile events 和服务器日志'
+sidebarTitle: '帧信息格式'
+slug: /concepts/features/connect-to-clickhouse/protocols/http/framing-formats
+title: '帧信息格式'
+doc_type: 'reference'
+---
+
+帧信息格式将查询响应的各个部分多路复用到单个流中：数据块、汇总和极值、进度数据包、profile events (指标) 以及服务器日志——即原生协议所支持的全部内容。这样一来，HTTP 协议也能支持丰富的数据交换。
+
+帧信息格式独立于[输出格式](/zh/reference/formats)：它对任意输出格式产生的字节进行封装，将这些字节块分隔开，并可能对其进行编码。将所有 `data`、`totals` 和 `extremes` 数据包的载荷拼接起来，结果与该输出格式在不使用帧信息时的输出完全一致。辅助数据包 (进度、日志、profile events、异常) 以 JSON 表示。
+
+帧信息还能增强输出格式的表达能力——这是上述规则唯一一个有意为之的例外。`JSONCompactEachRow` 系列格式在普通输出中会丢弃汇总和极值，因为这些行与普通数据行无法区分。而在帧信息格式下，可以通过数据包类型加以区分，因此这些格式会将汇总行和极值行 (使用其常规的行语法) 输出到 `totals` 和 `extremes` 数据包中。对于这些格式，仅将 `data` 数据包的载荷拼接起来，结果就与该输出格式在不使用帧信息时的输出完全一致；`totals` 和 `extremes` 数据包携带的则是未分帧输出中所没有的额外行。因此，客户端若要从此类流中重建未分帧输出，应只拼接 `data` 载荷。
+
+帧信息格式由查询级设置 `framing_output_format` 指定。目前它仅适用于 HTTP 协议，在其他接口中会被忽略。
+
+如果设置了 `send_logs_level`，服务器日志将以数据包形式包含在流中。如果启用了 `send_profile_events` 设置 (默认启用) ，则会包含 profile events。进度和 profile events 数据包每 `interactive_delay` 微秒最多发送一次。
+
+成功的流以一个最终 `progress` 数据包结束，其中携带最终计数器 (`result_rows`、`result_bytes`、`memory_usage`) ，与原生协议的最终进度数据包类似。这些计数器只有在查询完成后才能得知，因此之前的 `progress` 数据包都不会携带它们。查询结束时的日志记录会产生尾随的 `log` 和 `profile_events` 数据包 (例如 &quot;peak memory usage&quot; 日志条目) ，最终 `progress` 数据包写在这些数据包之后，因此它确实是流中的最后一个数据包。失败时，最后一个数据包则是 `exception` 数据包，且根本不会写入携带最终计数器的 `progress` 数据包——它是流成功结束的标志。即使失败发生在查询本身已完成、最终计数器已知之后 (例如写入查询日志时失败) ，也是如此。
+
+由于流的这段尾部是在 `system.query_log` 记录 `QueryFinish` 条目之后才写入的，查询的网络发送 profile events (`NetworkSendBytes`、`NetworkSendElapsedMicroseconds`) 并不包含发送尾随数据包和关闭响应的开销；当响应被缓冲时 (`http_response_buffer_size` 或 `wait_end_of_query`) ，也不包含发送已缓冲响应体的开销，因为该响应体要到查询完成后才会传输。这与原生协议的行为一致：原生协议同样在查询日志条目之后才发送尾随的日志和 profile events。
+
+凡是查询仅通过自身 `SETTINGS` 子句启用的内容——帧信息格式、`send_logs_level` 或 `send_profile_events`——都要等查询解析完成后才能得知，因此相应的日志和 profile events 只能从查询执行阶段开始捕获。只有当设置来自会话或 URL 时，才会捕获解析、执行计划和分析阶段的日志和 profile events。具体而言，如果某个查询在分析期间 (管道执行之前) 失败 (例如引用了不存在的表) ，且仅在其 `SETTINGS` 子句中启用了 `send_logs_level`，则只会返回 `exception` 数据包，而不会返回分析阶段的日志。如需捕获这些日志，请在会话或 URL 中设置 `send_logs_level`。
+
+同样的“延迟发现”注意事项也适用于 `send_logs_source_regexp`：日志队列会在捕获每个条目时按来源过滤条目，因此仅在查询自身的 `SETTINGS` 子句中设置的正则表达式，要到查询执行阶段才会生效。解析、执行计划和分析阶段的 `log` 数据包按该设置在会话或 URL 中的值进行过滤 (若未在会话或 URL 中设置，则不做过滤) ，因此其中可能包含与查询级别正则表达式不匹配的来源。反之，被范围更窄的会话或 URL 正则表达式丢弃的条目将彻底丢失，无法通过范围更宽的查询级别正则表达式找回。若要过滤整个查询生命周期，请在会话或 URL 上设置 `send_logs_source_regexp`。
+
+如果在查询执行期间发生异常，无论 `http_write_exception_in_output_format` 设置为何值，该异常都会以 `exception` 数据包的形式发送 (作为流中的最后一个数据包) ，因此客户端始终可以将响应解析为数据包流。一旦记录了异常，输出格式便不再产生任何载荷字节：在产生任何输出之前就失败的查询根本不会发送 `data` 数据包 (连该格式的空文档骨架也没有) ；而在流式输出中途失败的查询，其拼接后的载荷会在失败点处截断，且不带该格式的后缀——失败查询的载荷不能看起来像一个完整的文档。
+
+此规则有一个例外：如果某个数据包在写入过程中失败 (例如，某个数据包的部分字节已到达客户端后连接中断) ，帧信息处理将采取失败即关闭 (fail-closed) 策略，直接终止流，而不发送最终的 `exception` 数据包。系统绝不会重试写入了一半的数据包，因为重新发送会在已截断的字节之后追加一份重复内容，从而破坏流。此时，客户端看到的是一个已截断的响应和一个中止的 HTTP 连接，而不是格式正确的终止数据包。同样的规则也适用于关闭响应流本身时发生的失败 (刷新缓冲的结果、完成 HTTP 压缩、关闭套接字) ：此时部分或全部成功流已发送到网络上，因此不会再向其追加任何内容——既不追加 `exception` 数据包，也不追加通用的 HTTP 错误块——客户端看到的是一个已截断的响应和一个中止的连接。该规则同样适用于异常投递本身失败的情况：如果在数据包流的任何部分已经产生之后 (无论这些部分已经传输，还是仍停留在服务器端响应缓冲区 (`http_response_buffer_size`) 中) ，写入终止 `exception` 数据包失败 (例如在排空尾部日志时) ，流同样会直接终止而不追加任何内容，因此纯 HTTP 错误正文绝不会混入不完整的数据包流。写入辅助 `log`、`profile_events` 和 `exception` 数据包的字符串字段时发生的失败 (包括写入此类字符串最后几个字节时的失败) 也视为数据包写入了一半：此时流以该已截断的数据包结束，且完全不带终止符——既没有 `exception` 数据包，也没有携带最终计数器的 `progress` 数据包——因此即使查询本身成功，要求终止符的客户端也能检测到该失败。
+
+帧信息格式同样适用于不产生结果流的查询——成功的 `INSERT`、DDL 查询或任何其他没有输出的查询。此类响应不包含 `data` 数据包，但仍会将响应的 `Content-Type` 切换为帧信息格式，并以流式方式发送 `progress`、`log` 和 `profile_events` 数据包，与原生协议保持一致。流以一个携带最终计数器的 `progress` 数据包结束 (例如，对于 `INSERT`，`result_rows` 和 `result_bytes` 中为已写入的行数) 。由于不会格式化任何载荷，输出格式对此类查询并无作用，也不会影响帧化后的流。
+
+## 可用的帧格式 {#available-framing-formats}
+
+| 名称                                                       | 描述                                       |
+| -------------------------------------------------------- | ---------------------------------------- |
+| [`None`](#framing-format-none)                           | 不使用帧信息：一切保持默认行为。                         |
+| [`EventStream`](#framing-format-eventstream)             | HTTP 服务器发送事件 (`text/event-stream`) 。     |
+| [`JSONEachPacketBase64`](#framing-format-jsoneachpacket) | 每个数据包对应一个 JSON 对象；格式化后的数据经 Base64 编码。    |
+| [`JSONEachPacketString`](#framing-format-jsoneachpacket) | 每个数据包对应一个 JSON 对象；格式化后的数据以 JSON 字符串形式存放。 |
+
+## None {#framing-format-none}
+
+默认值。将所有适用的内容 (数据、汇总、极值、进度) 透明地路由到输出格式，并忽略所有不适用的内容 (指标、日志) 。因此，在默认情况下一切都能照常工作，包括自身即可呈现进度的格式，例如 `JSONEachRowWithProgress`。
+
+## EventStream {#framing-format-eventstream}
+
+将数据包封装为 [HTTP 服务器发送事件](https://html.spec.whatwg.org/multipage/server-sent-events.html)，并将响应的 `Content-Type` 设置为 `text/event-stream; charset=UTF-8; payload=base64`。每个数据包都作为一个事件发送，事件以数据包类型命名：`data`、`totals`、`extremes`、`progress`、`log`、`profile_events`、`exception`。进度数据包及其他辅助数据包以 JSON 形式发送。
+
+服务器发送事件是一种文本协议，会将换行符 (包括回车符 `\r`) 视为字段分隔符，因此输出格式生成的字节不会被原样嵌入：每个已格式化的数据块都会经 Base64 编码后放入单个 `data:` 字段，解码后即可得到完整的格式化载荷，其中保留所有换行符。这正是 `Content-Type` 中 `payload=base64` 参数的含义。无论是文本格式、二进制格式 (`Native`、`RowBinary`) ，还是原始数据透传格式 (`RawBLOB`、`TSVRaw`) ，对于任意输出格式，将 `data`、`totals` 和 `extremes` 数据包解码后的载荷拼接起来，结果都与不使用帧信息格式时该输出格式生成的内容逐字节完全一致。
+
+辅助 JSON 数据包 (`progress`、`log`、`profile_events`、`exception`) 从不进行编码：它们以单个 `data:` 字段的形式写入，字段内容为 JSON，其中不包含任何换行符。
+
+`*WithProgress` 输出格式 (`JSONEachRowWithProgress`、`JSONCompactEachRowWithProgress`) 会将进度作为带内行写入，使其成为自身输出的一部分。而帧信息格式会通过单独的 `progress` 数据包传递进度，因此与这些输出格式不兼容，并会拒绝使用它们。请将基础输出格式 (例如 `JSONEachRow`) 与帧信息格式搭配使用，或将 `None` 帧信息格式与 `*WithProgress` 格式搭配使用。
+
+```bash
+curl "http://localhost:8123/?framing_output_format=EventStream" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+```text
+event: data
+data: eyJudW1iZXIiOiIwIn0KeyJudW1iZXIiOiIxIn0KeyJudW1iZXIiOiIyIn0K
+
+event: profile_events
+data: [{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"},{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedBytes","value":"24"}]
+
+event: progress
+data: {"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1174415"}
+
+```
+
+`EventStream` 与 HTTP 协议集成，在不适用时会抛出异常。
+
+## JSONEachPacketBase64 和 JSONEachPacketString {#framing-format-jsoneachpacket}
+
+每个数据包都是单独一行的 JSON 对象 (以换行分隔的 JSON，`application/x-ndjson`) ，其中包含该数据包的相关信息。输出格式生成的字节会放入 `data` 字段：在 `JSONEachPacketBase64` 中以 base64 编码形式存放 (适用于二进制输出格式) ，在 `JSONEachPacketString` 中则以 JSON 字符串形式存放。
+
+这两种变体对 `data` 字段的编码方式不同，因此与 `EventStream` 一样，可以通过响应的 `Content-Type` 加以区分：`JSONEachPacketBase64` 设置为 `application/x-ndjson; charset=UTF-8; payload=base64`，而 `JSONEachPacketString` 设置为 `application/x-ndjson; payload=string`。因此，客户端仅凭响应元数据即可判断 `data` 字段是否需要进行 base64 解码。只有 `JSONEachPacketBase64` 承诺 `charset=UTF-8`，因为只有 base64 编码才能保证无论载荷字节内容如何，整个流都是有效的 UTF-8——详见下文。
+
+由于 `JSONEachPacketString` 会将载荷字节放入 JSON 字符串中，它适用于生成有效 UTF-8 文本的输出格式。`String` 和 `FixedString` 列可以包含任意字节，因此对于此类值，`JSONEachRow`、`TSV` 或 `CSV` 等文本输出格式可能会输出无效的 UTF-8——这与 ClickHouse 自身的 `JSONEachRow` 在默认 `output_format_json_validate_utf8 = 0` 时的行为相同。在这种情况下，生成的 JSON 字符串乃至整个 NDJSON 流都无法保证是有效的 UTF-8。`JSONEachPacketString` 不会验证或重新编码载荷；如需逐字节精确地传输任意字节，请使用 `JSONEachPacketBase64`。
+
+对于已知会生成非 UTF-8 字节的输出格式，`JSONEachPacketString` 会在查询执行前直接报错拒绝，包括：二进制格式 (`Native`、`RowBinary`) ；原始数据透传格式 (`RawBLOB`、`TSVRaw`) ；会将查询头中非 UTF-8 的列名、数据类型名称或 `Tuple` 元素名称写入输出的格式；以及由设置决定的字面量会被序列化逻辑原样写出、且这些字面量不是有效 UTF-8 的配置——即 `format_csv_delimiter`、`format_tsv_null_representation` / `format_csv_null_representation` 以及 `bool_true_representation` / `bool_false_representation` 设置。
+
+```bash
+curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+```text
+{"packet":"data","data":"{\"number\":\"0\"}\n{\"number\":\"1\"}\n{\"number\":\"2\"}\n"}
+{"packet":"profile_events","profile_events":[{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"}]}
+{"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
+```
+
+使用 `JSONEachPacketBase64` 时，同一个 `data` 数据包如下所示：
+
+```text
+{"packet":"data","data":"eyJudW1iZXIiOiIwIn0KeyJudW1iZXIiOiIxIn0KeyJudW1iZXIiOiIyIn0K"}
+```
+
+## 数据包类型 {#framing-format-packet-kinds}
+
+| 数据包              | 内容                                                                                                                                 |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `data`           | 输出格式为主结果生成的字节 (包括格式前缀和后缀) 。                                                                                                        |
+| `totals`         | 输出格式为汇总行 (`WITH TOTALS`) 生成的字节。                                                                                                    |
+| `extremes`       | 输出格式为极值 (`extremes` 设置) 生成的字节。                                                                                                     |
+| `progress`       | JSON 格式的查询进度：`read_rows`、`read_bytes`、`total_rows_to_read`、`result_rows`、`result_bytes`、`elapsed_ns`、`memory_usage` (值为零的字段会被省略) 。 |
+| `log`            | JSON 格式的服务器日志条目：`event_time`、`host_name`、`query_id`、`thread_id`、`priority`、`source`、`text`。                                        |
+| `profile_events` | JSON 格式的 profile events 数组：`host_name`、`current_time`、`thread_id`、`type` (`increment` 或 `gauge`) 、`name`、`value`。                  |
+| `exception`      | JSON 格式的异常消息。                                                                                                                      |
+
+与 `data`、`totals` 和 `extremes` 载荷不同 (参见上文关于字节精确性的说明) ，辅助数据包中的字符串字段 (`log` 的 `query_id`、`text` 和 `source`，`profile_events` 的 `name`，以及 `exception` 消息) 无法借助 base64 进行转义，而其中部分字段 (例如取自查询的 `query_id`) 可能包含任意字节。因此，这些字段始终会被清理为有效的 UTF-8，无效序列会被替换为替换字符 (`U+FFFD`) ，从而确保辅助数据包始终是有效的 JSON。
+
+目前尚未支持同时处理多个查询，但现有设计已为此预留空间：每个数据包都可以扩展，以携带该查询在多个查询中的索引信息。

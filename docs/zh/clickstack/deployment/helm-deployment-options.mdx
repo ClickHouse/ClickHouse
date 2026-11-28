@@ -27,6 +27,8 @@ ClickStack 的 Helm 图表支持多种部署配置：
 
 如果你已有现成的 ClickHouse 集群 (包括 ClickHouse Cloud) ，可以禁用内置的 ClickHouse，并连接到外部实例。
 
+内置的 OTel collector 仍保持启用。请为其单独配置原生协议端点和凭证，与 HyperDX 的 HTTP 查询连接分开。采集器使用的用户需要具备创建遥测数据 schema 和插入数据的权限。
+
 ### 选项 1：内联配置 (开发/测试) {#external-clickhouse-inline}
 
 这种方式适用于快速测试或非生产环境。通过 `hyperdx.config` 和 `hyperdx.secrets` 提供连接信息：
@@ -34,24 +36,29 @@ ClickStack 的 Helm 图表支持多种部署配置：
 ```yaml
 # values-external-clickhouse.yaml
 clickhouse:
-  enabled: false  # 禁用由 operator 管理的 ClickHouse
+  enabled: false  # Disable the operator-managed ClickHouse
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-clickhouse-server:9000?dial_timeout=10s"
+    CLICKHOUSE_USER: "your-username"
   secrets:
     CLICKHOUSE_PASSWORD: "your-password"
     CLICKHOUSE_APP_PASSWORD: "your-password"
 
-  defaultConnections: |
-    [
-      {
-        "name": "External ClickHouse",
-        "host": "http://your-clickhouse-server:8123",
-        "port": 8123,
-        "username": "your-username",
-        "password": "your-password"
-      }
-    ]
+  deployment:
+    defaultConnections: |
+      [
+        {
+          "name": "Local ClickHouse",
+          "host": "http://your-clickhouse-server:8123",
+          "username": "your-username",
+          "password": "your-password"
+        }
+      ]
 ```
+
+请保留连接名称 `Local ClickHouse`，因为 图表 的默认数据源会引用该名称；即使使用的是外部服务器，也是如此。
 
 使用以下配置安装：
 
@@ -65,21 +72,22 @@ helm install my-clickstack clickstack/clickstack -f values-external-clickhouse.y
 
 #### 创建配置文件 {#create-configuration}
 
+在每个连接的 `host` URL 中包含 HTTP(S) 端口。本示例使用 HTTPS 端口 `8443`；请使用服务器上已配置的端口。
+
 ```bash
-# 创建 connections.json
+# Create connections.json
 cat <<EOF > connections.json
 [
   {
     "name": "Production ClickHouse",
-    "host": "https://your-production-clickhouse.com",
-    "port": 8123,
+    "host": "https://your-production-clickhouse.com:8443",
     "username": "hyperdx_user",
     "password": "your-secure-password"
   }
 ]
 EOF
 
-# 创建 sources.json
+# Create sources.json
 cat <<EOF > sources.json
 [
   {
@@ -97,6 +105,7 @@ cat <<EOF > sources.json
     "bodyExpression": "Body",
     "eventAttributesExpression": "LogAttributes",
     "resourceAttributesExpression": "ResourceAttributes",
+    "defaultTableSelectExpression": "Timestamp,ServiceName,SeverityText,Body",
     "severityTextExpression": "SeverityText",
     "traceIdExpression": "TraceId",
     "spanIdExpression": "SpanId"
@@ -115,7 +124,12 @@ cat <<EOF > sources.json
     "serviceNameExpression": "ServiceName",
     "traceIdExpression": "TraceId",
     "spanIdExpression": "SpanId",
-    "durationExpression": "Duration"
+    "durationExpression": "Duration",
+    "durationPrecision": 9,
+    "defaultTableSelectExpression": "Timestamp,ServiceName,StatusCode,round(Duration/1e6),SpanName",
+    "parentSpanIdExpression": "ParentSpanId",
+    "spanNameExpression": "SpanName",
+    "spanKindExpression": "SpanKind"
   }
 ]
 EOF
@@ -134,16 +148,24 @@ rm connections.json sources.json
 
 #### 配置 Helm 使用该 Secret {#configure-helm-secret}
 
+该配置 Secret 为 HyperDX 提供查询连接和数据源。采集器的端点和凭证需在下方单独设置，并使用服务器的原生 TLS 端口 (此处示例为 `9440`) 。
+
 ```yaml
 # values-external-clickhouse-secret.yaml
 clickhouse:
   enabled: false
 
 hyperdx:
-  useExistingConfigSecret: true
-  existingConfigSecret: "hyperdx-external-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-production-clickhouse.com:9440?secure=true"
+    CLICKHOUSE_USER: "hyperdx_user"
+  secrets:
+    CLICKHOUSE_PASSWORD: "your-secure-password"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "hyperdx-external-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
 ```shell
@@ -160,14 +182,18 @@ clickhouse:
   enabled: false
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-cloud-instance.clickhouse.cloud:9440?secure=true"
+    CLICKHOUSE_USER: "default"
   secrets:
     CLICKHOUSE_PASSWORD: "your-cloud-password"
     CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
 
-  useExistingConfigSecret: true
-  existingConfigSecret: "clickhouse-cloud-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "clickhouse-cloud-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
 ## 外部 OTel collector {#external-otel-collector}
@@ -177,10 +203,11 @@ hyperdx:
 ```yaml
 # values-external-otel.yaml
 otel-collector:
-  enabled: false  # 禁用子图表 OTel collector
+  enabled: false  # Disable the subchart OTEL collector
 
 hyperdx:
-  otelExporterEndpoint: "http://your-otel-collector:4318"
+  config:
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://your-otel-collector:4318"
 ```
 
 ```shell
@@ -202,25 +229,26 @@ otel-collector:
   enabled: false
 
 hyperdx:
-  otelExporterEndpoint: "http://your-otel-collector:4318"
+  config:
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://your-otel-collector:4318"
 
-  # Option 1: Inline (for testing)
-  defaultConnections: |
-    [
-      {
-        "name": "External ClickHouse",
-        "host": "http://your-clickhouse-server:8123",
-        "port": 8123,
-        "username": "your-username",
-        "password": "your-password"
-      }
-    ]
+  deployment:
+    # Option 1: Inline (for testing)
+    defaultConnections: |
+      [
+        {
+          "name": "Local ClickHouse",
+          "host": "http://your-clickhouse-server:8123",
+          "username": "your-username",
+          "password": "your-password"
+        }
+      ]
 
-  # Option 2: External secret (production)
-  # useExistingConfigSecret: true
-  # existingConfigSecret: "my-external-config"
-  # existingConfigConnectionsKey: "connections.json"
-  # existingConfigSourcesKey: "sources.json"
+    # Option 2: External secret (production)
+    # useExistingConfigSecret: true
+    # existingConfigSecret: "my-external-config"
+    # existingConfigConnectionsKey: "connections.json"
+    # existingConfigSourcesKey: "sources.json"
 ```
 
 ```shell

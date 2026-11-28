@@ -863,16 +863,19 @@ Pour en extraire une sous-colonne de chemin, il suffit de parcourir toutes les l
 
 ### Structure de données partagée dans les parts MergeTree {#shared-data-structure-in-merge-tree-parts}
 
-Dans les tables [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree), nous stockons les données dans des parts de données qui stockent tout sur disque (local ou distant). Les données sur disque peuvent être stockées différemment des données en mémoire.
-Actuellement, il existe 4 sérialisations différentes de la structure de données partagée dans les parts de données MergeTree : `map`, `map_with_buckets`,
+Dans les tables [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree), nous stockons les données dans des parts qui stockent tout sur disque (local ou distant). Les données sur disque peuvent être stockées différemment des données en mémoire.
+Actuellement, il existe 4 sérialisations différentes de la structure de données partagée dans les parts MergeTree : `map`, `map_with_buckets`,
 `advanced` et `advanced_chunked`.
 
 La version de sérialisation est contrôlée par les paramètres MergeTree
 [object&#95;shared&#95;data&#95;serialization&#95;version](/fr/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
-et [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/fr/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
-(une part de niveau zéro est la part créée lors de l&#39;insertion de données dans la table ; lors des fusions, les parts ont un niveau plus élevé).
+et [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/fr/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts).
+Le second s&#39;applique aux petites parts : les parts créées lors des insertions (sauf si
+[use&#95;object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts&#95;on&#95;insert](/fr/reference/settings/merge-tree-settings/use#use_object_shared_data_serialization_version_for_small_parts_on_insert)
+est désactivé) et les parts dont la taille est inférieure au minimum défini par
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/fr/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version).
 
-Remarque : la modification de la sérialisation de la structure de données partagée n&#39;est prise en charge que
+Remarque : la modification de la sérialisation de la structure de données partagée n&#39;est prise en charge que
 pour `v3`, la [version de sérialisation d&#39;objet](/fr/reference/settings/merge-tree-settings/other#object_serialization_version)
 
 #### Map {#shared-data-map}

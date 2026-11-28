@@ -135,7 +135,12 @@ Os clusters são configurados no [arquivo de configuração do servidor](/pt-BR/
 <remote_servers>
     <logs>
         <!-- Inter-server per-cluster secret for Distributed queries
-             default: no secret (no authentication will be performed)
+             default: no secret (no authentication will be performed). Shards will
+             execute Distributed queries received over a remote connection as the
+             user configured for the replica. The initiator checks only the
+             privileges on the Distributed table, and the shard checks the
+             privileges of the configured user. A local replica
+             (prefer_localhost_replica) executes the query as the querying user.
 
              If set, then Distributed queries will be validated on shards, so at least:
              - such cluster should exist on the shard,
@@ -194,24 +199,24 @@ Os parâmetros `host`, `port` e, opcionalmente, `user`, `password`, `secure`, `c
 | Parâmetro     | Descrição                                                                                                                                                                                                                                                                                                                                        | Valor padrão |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------ |
 | `host`        | O endereço do servidor remoto. Você pode usar o domínio ou um endereço IPv4 ou IPv6. Se especificar o domínio, o servidor fará uma solicitação DNS ao iniciar, e o resultado será armazenado enquanto o servidor estiver em execução. Se a solicitação DNS falhar, o servidor não iniciará. Se você alterar o registro DNS, reinicie o servidor. | -            |
-| `port`        | A porta TCP para atividade de mensageria (`tcp_port` na config, geralmente definida como 9000). Não confundir com `http_port`.                                                                                                                                                                                                                   | -            |
+| `port`        | A porta TCP para atividade de mensageria (`tcp_port` na configuração, geralmente definida como 9000). Não confundir com `http_port`.                                                                                                                                                                                                                   | -            |
 | `user`        | Nome do usuário para se conectar a um servidor remoto. Esse usuário deve ter acesso para se conectar ao servidor especificado. O acesso é configurado no arquivo `users.xml`. Para mais informações, consulte a seção [Direitos de acesso](/pt-BR/concepts/features/security/access-rights).                                                           | `default`    |
 | `password`    | A senha para se conectar a um servidor remoto (não mascarada).                                                                                                                                                                                                                                                                                   | &#39;&#39;   |
 | `secure`      | Define se deve ser usada uma conexão SSL/TLS segura. Normalmente, isso também exige especificar a porta (a porta segura padrão é `9440`). O servidor deve escutar em `<tcp_port_secure>9440</tcp_port_secure>` e estar configurado com os certificados corretos.                                                                                 | `false`      |
 | `compression` | Usa compressão de dados.                                                                                                                                                                                                                                                                                                                         | `true`       |
 | `bind_host`   | O endereço de origem a ser usado ao se conectar ao servidor remoto a partir deste nó. Compatível apenas com endereço IPv4. Destina-se a casos de uso avançados de implantação em que é necessário definir o endereço IP de origem usado pelas consultas distribuídas do ClickHouse.                                                              | -            |
 
-Ao especificar réplicas, uma das réplicas disponíveis será selecionada para cada shard durante a leitura. Você pode configurar o algoritmo de balanceamento de carga (a preferência de qual réplica acessar) — veja a configuração [load&#95;balancing](/pt-BR/reference/settings/session-settings/load-balancing#load_balancing). Se a conexão com o servidor não for estabelecida, será feita uma tentativa de conexão com um timeout curto. Se a conexão falhar, a próxima réplica será selecionada, e assim por diante para todas as réplicas. Se a tentativa de conexão falhar para todas as réplicas, ela será repetida da mesma forma várias vezes. Isso favorece a resiliência, mas não fornece tolerância a falhas completa: um servidor remoto pode aceitar a conexão, mas pode não funcionar ou funcionar mal.
+Ao especificar réplicas, uma das réplicas disponíveis será selecionada para cada um dos shards durante a leitura. Você pode configurar o algoritmo de load balancing (a preferência de qual réplica acessar) – consulte a configuração [load&#95;balancing](/pt-BR/reference/settings/session-settings/load-balancing#load_balancing). Se a conexão com o servidor não for estabelecida, será feita uma tentativa de conexão com um timeout curto. Se a conexão falhar, a próxima réplica será selecionada, e assim por diante para todas as réplicas. Se a tentativa de conexão falhar para todas as réplicas, ela será repetida da mesma forma, várias vezes. Isso favorece a resiliência, mas não garante tolerância a falhas completa: um servidor remoto pode aceitar a conexão, mas não funcionar ou funcionar mal.
 
-Você pode especificar apenas um shard (nesse caso, o processamento da consulta deve ser chamado de remote, e não de distribuído) ou quantos shards quiser. Em cada shard, você pode especificar de uma a quantas réplicas quiser. Você pode especificar um número diferente de réplicas para cada shard.
+Você pode especificar apenas um dos shards (nesse caso, o processamento de consultas deve ser chamado de remoto, e não de distribuído) ou qualquer número de shards. Em cada shard, você pode especificar de uma a qualquer número de réplicas. Também é possível especificar um número diferente de réplicas para cada shard.
 
 Você pode especificar quantos clusters quiser na configuração.
 
-Para ver seus clusters, use a tabela `system.clusters`.
+Para visualizar seus clusters, use a tabela `system.clusters`.
 
-O motor `Distributed` permite trabalhar com um cluster como se fosse um servidor local. No entanto, a configuração do cluster não pode ser especificada dinamicamente; ela precisa ser definida no arquivo de configuração do servidor. Normalmente, todos os servidores em um cluster terão a mesma configuração de cluster (embora isso não seja obrigatório). Os clusters do arquivo de configuração são atualizados em tempo real, sem reiniciar o servidor.
+O motor `Distributed` permite trabalhar com um cluster como se fosse um servidor local. No entanto, a configuração do cluster não pode ser especificada dinamicamente; ela precisa ser definida no arquivo de configuração do servidor. Normalmente, todos os servidores de um cluster têm a mesma configuração de cluster (embora isso não seja obrigatório). Os clusters do arquivo de configuração são atualizados dinamicamente, sem necessidade de reiniciar o servidor.
 
-Se você precisar enviar uma consulta para um conjunto desconhecido de shards e réplicas a cada vez, não é necessário criar uma tabela `Distributed` — use a função de tabela `remote` em vez disso. Veja a seção [Funções de tabela](/pt-BR/reference/functions/table-functions/index).
+Se você precisar enviar uma consulta a um conjunto desconhecido de shards e réplicas a cada vez, não é necessário criar uma tabela `Distributed` – use a função de tabela `remote`. Consulte a seção [Funções de tabela](/pt-BR/reference/functions/table-functions/index).
 
 ## Gravação de dados {#distributed-writing-data}
 

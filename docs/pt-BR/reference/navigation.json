@@ -110,8 +110,10 @@
                 "pt-BR/reference/statements/create/masking-policy",
                 "pt-BR/reference/statements/create/function",
                 "pt-BR/reference/statements/create/handler",
+                "pt-BR/reference/statements/create/skipping-index",
                 "pt-BR/reference/statements/create/named-collection",
                 "pt-BR/reference/statements/create/quota",
+                "pt-BR/reference/statements/create/resource",
                 "pt-BR/reference/statements/create/role",
                 "pt-BR/reference/statements/create/row-policy",
                 "pt-BR/reference/statements/create/settings-profile",
@@ -127,7 +129,8 @@
                 },
                 "pt-BR/reference/statements/create/token",
                 "pt-BR/reference/statements/create/user",
-                "pt-BR/reference/statements/create/view"
+                "pt-BR/reference/statements/create/view",
+                "pt-BR/reference/statements/create/workload"
               ]
             },
             "pt-BR/reference/statements/delete",
@@ -1055,6 +1058,7 @@
         "pt-BR/reference/system-tables/blob_storage_log",
         "pt-BR/reference/system-tables/build_options",
         "pt-BR/reference/system-tables/certificates",
+        "pt-BR/reference/system-tables/changelog",
         "pt-BR/reference/system-tables/clusters",
         "pt-BR/reference/system-tables/codecs",
         "pt-BR/reference/system-tables/collations",

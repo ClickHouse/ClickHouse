@@ -31,11 +31,11 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 ## use_page_cache_for_object_storage {#use_page_cache_for_object_storage}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "オブジェクトストレージのテーブル関数にユーザー空間ページキャッシュを使用するための新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "オブジェクトストレージのテーブル関数でユーザー空間のページキャッシュを使用するための新しい設定"}]}, {"id": "row-2","items": [{"label": "26.12"},{"label": "1"},{"label": "サーバーでページキャッシュが設定されている場合、オブジェクトストレージのテーブルエンジンとテーブル関数でユーザー空間のページキャッシュをデフォルトで使用します。"}]}]} />
 
-オブジェクトストレージのテーブル関数 (s3、azure、hdfs) およびテーブルエンジン (S3、Azure、HDFS) から読み取る際に、ユーザー空間ページキャッシュを使用します。
+オブジェクトストレージのテーブル関数 (s3、azure、hdfs、Iceberg、Delta Lake など) およびテーブルエンジン (S3、Azure、HDFS、Iceberg、Delta Lake など) からの読み取り時に、ユーザー空間のページキャッシュを使用します。サーバーでユーザー空間のページキャッシュが設定されている場合 (`page_cache_max_size`) にのみ有効です。対象となるのは、強い ETag を持つオブジェクト、またはテーブルのレコードから取得した不変のアイデンティティを持つオブジェクト (Iceberg および Delta Lake のデータファイル) のみです。ファイルシステムキャッシュとは併用されません。分散キャッシュとの併用は、`use_page_cache_with_distributed_cache` も有効になっている場合に限られます。
 
 ## use_page_cache_lookahead_for_text_index {#use_page_cache_lookahead_for_text_index}
 

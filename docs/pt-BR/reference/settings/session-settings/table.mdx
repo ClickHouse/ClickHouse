@@ -18,11 +18,11 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 <CloudOnlyBadge />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "auto"},{"label": "Lê motores de tabela e funções de tabela de armazenamento de objetos por meio do distributed cache quando ele é usado para outras leituras."}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
-Só tem efeito no ClickHouse Cloud. Permite ler do cache distribuído por meio de motores de tabela / funções de tabela (s3, azure, etc). O cache usa o ETag do objeto como chave, para que um objeto sobrescrito no mesmo local não seja servido em versão inativa. Um objeto cujo ETag esteja ausente ou não seja um identificador forte de conteúdo é lido diretamente do armazenamento de objetos.
+Só tem efeito no ClickHouse Cloud. Permite ler do distributed cache por meio de motores de tabela / funções de tabela (s3, azure, Iceberg, Delta Lake etc.). `auto` (o padrão) significa ler por meio do distributed cache quando ele é usado para outras leituras, conforme definido pela configuração do servidor `enable_read_through_distributed_cache` e pela configuração `force_read_through_distributed_cache`. A chave do cache é o ETag do objeto, para que um objeto sobrescrito no mesmo local não seja servido em estado inativo, ou a identidade imutável de um arquivo de dados obtida dos registros da tabela (Iceberg, Delta Lake), dispensando assim uma requisição `HEAD`. Um objeto sem um ETag forte ou sem essa identidade é lido diretamente do armazenamento de objetos, assim como as leituras que o servidor de cache não consegue repetir: tabelas `url`, leituras `s3` com `NOSIGN` ou com `headers`, arquivos de dados com um caminho totalmente qualificado (um shallow clone do Delta Lake) e, a menos que a configuração seja `1`, leituras `azure`.
 
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 

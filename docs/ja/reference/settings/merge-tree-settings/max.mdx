@@ -52,6 +52,8 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 固定サイズの値を持つカラムでは、ブロックサイズは値のバイトサイズの倍数に切り捨てられます。ただし、値1つ分のサイズを下回ることはありません。
 
+1つの圧縮ブロックに格納できる非圧縮データは最大 256 MiB であるため、256 MiB を超える値を指定しても 256 MiB として扱われます。
+
 ## max_concurrent_queries {#max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

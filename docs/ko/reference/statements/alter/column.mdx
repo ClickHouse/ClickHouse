@@ -130,6 +130,8 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
+`MergeTree` 엔진 계열의 테이블에서는 `CLEAR COLUMN`에 가상 컬럼(virtual columns) [`_block_number` 및 `_block_offset`](/ko/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns)도 지정할 수 있습니다. 둘 중 어느 이름을 지정하더라도 두 컬럼이 모두 지워지며, 그 결과 데이터 파트(part)는 `_block_number`로 해당 파트의 블록 번호 최솟값을, `_block_offset`으로 `_part_offset`을 반환합니다.
+
 ## COMMENT COLUMN {#comment-column}
 
 ```sql

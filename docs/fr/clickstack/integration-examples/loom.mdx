@@ -1,0 +1,48 @@
+---
+title: 'Envoyer la télémétrie de Loom vers ClickStack'
+sidebarTitle: 'Loom'
+slug: /use-cases/observability/clickstack/integrations/loom
+description: 'Envoyez les traces de requêtes et les métriques de Loom vers ClickStack Open Source via OpenTelemetry.'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Loom', 'OpenTelemetry', 'OTLP']
+---
+
+Utilisez ClickStack pour analyser les traces de requêtes et les métriques de [Loom](https://github.com/ClickHouse/loom), un serveur de mémoire et de recherche de code destiné aux agents d’IA.
+
+## Avant de commencer {#before-you-begin}
+
+* Un serveur Loom en cours d’exécution.
+* Un [déploiement ClickStack Open Source](/fr/clickstack/deployment/oss) disposant d’un récepteur OTLP HTTP joignable depuis le serveur Loom.
+
+## Fonctionnement {#how-it-works}
+
+Loom exporte les données de télémétrie vers le Collecteur OpenTelemetry ClickStack via OTLP HTTP. Le collecteur écrit ensuite ces données dans ClickHouse, où elles deviennent accessibles dans ClickStack.
+
+## Configurer l’exportateur Loom {#configure-loom-exporter}
+
+Récupérez l’API key d’ingestion ClickStack dans **Paramètres de l’équipe → Clés API**. Configurez ces variables d’environnement sur le serveur Loom, remplacez l’URL et la clé d’exemple, puis redémarrez Loom :
+
+```bash
+export LOOM_OTEL_EXPORTER=otlp
+export LOOM_OTEL_EXPORTER_OTLP_ENDPOINT='http://clickstack-collector:4318'
+export LOOM_OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
+
+Utilisez une URL de base du collecteur joignable depuis Loom. Loom y ajoute `/v1/traces` et `/v1/metrics`. Si Loom envoie les données à un collecteur intermédiaire, indiquez les en-têtes attendus par ce récepteur sous forme de paires `key=value` séparées par des virgules. N&#39;utilisez pas le paramètre des en-têtes si le récepteur n&#39;en exige aucun.
+
+## Vérifier la télémétrie dans ClickStack {#verify-telemetry}
+
+Vérifiez les paramètres résolus de l&#39;exportateur de Loom. Remplacez l&#39;URL Loom donnée en exemple si le serveur se trouve sur un autre hôte ou un autre port.
+
+```bash
+curl -sS 'http://localhost:7777/v1/health?include=otel'
+```
+
+Vérifiez que `otel.mode` vaut `otlp` et que `otel.endpoint` correspond à l&#39;URL du collecteur configurée.
+
+Effectuez une requête Loom, par exemple une recherche dans la Mémoire, afin de générer une trace. Dans ClickStack, ouvrez **Recherche**, sélectionnez la source **Traces**, puis filtrez sur le nom du service `loom` (`service.name` dans OpenTelemetry). Si `LOOM_OTEL_SERVICE_NAME` est défini, filtrez plutôt sur cette valeur.
+
+## Étapes suivantes {#next-steps}
+
+* [Envoyer des données OpenTelemetry vers ClickStack](/fr/clickstack/ingesting-data/opentelemetry)
+* [Paramètres et métriques de télémétrie de Loom](https://github.com/ClickHouse/loom/blob/v1.3.0/docs/features/observability/telemetry.md)

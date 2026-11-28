@@ -2,13 +2,11 @@
 title: Estender a configuração
 ---
 
-<div id="extending-collector-config">
-  ### Estendendo a configuração do collector
-</div>
+### Estendendo a configuração do coletor {#extending-collector-config}
 
-A distribuição ClickStack do OTel collector oferece suporte à extensão da configuração básica por meio da montagem de um arquivo de configuração personalizado e da definição de uma variável de ambiente.
+A distribuição ClickStack do OTel coletor oferece suporte à extensão da configuração básica por meio da montagem de um arquivo de configuração personalizado e da definição de uma variável de ambiente.
 
-Para adicionar receivers, processors ou pipelines personalizados:
+Para adicionar receptores, processors ou pipelines personalizados:
 
 1. Crie um arquivo de configuração personalizado com as configurações adicionais
 2. Monte o arquivo em `/etc/otelcol-contrib/custom.config.yaml`
@@ -18,7 +16,7 @@ Para adicionar receivers, processors ou pipelines personalizados:
 
 ```yaml
 receivers:
-  # Coletar logs de arquivos locais
+  # Collect logs from local files
   filelog:
     include:
       - /var/log/**/*.log
@@ -26,7 +24,7 @@ receivers:
       - /var/log/messages
     start_at: beginning
 
-  # Coletar métricas do sistema host
+  # Collect host system metrics
   hostmetrics:
     collection_interval: 30s
     scrapers:
@@ -47,7 +45,7 @@ receivers:
 
 service:
   pipelines:
-    # Pipeline de logs
+    # Logs pipeline
     logs/host:
       receivers: [filelog]
       processors:
@@ -57,7 +55,7 @@ service:
       exporters:
         - clickhouse
     
-    # Pipeline de métricas
+    # Metrics pipeline
     metrics/hostmetrics:
       receivers: [hostmetrics]
       processors:
@@ -67,12 +65,11 @@ service:
         - clickhouse
 ```
 
-**Implante com o collector independente:**
+**Implante com o coletor independente:**
 
 ```bash
 docker run -d \
   -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
-  # -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} \
   -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
   -e CLICKHOUSE_USER=default \
   -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
@@ -81,14 +78,79 @@ docker run -d \
   clickhouse/clickstack-otel-collector:latest
 ```
 
+Para que o coletor seja gerenciado via OpAMP, passe também `-e OPAMP_SERVER_URL=${OPAMP_SERVER_URL}`.
+
 <Note>
-  Na configuração personalizada, você define apenas novos receivers, processors e pipelines. Os processors base (`memory_limiter`, `batch`) e os exporters (`clickhouse`) já estão definidos — referencie-os pelo nome. A configuração personalizada é mesclada à configuração base e não pode sobrescrever componentes existentes.
+  Na configuração personalizada, você define apenas novos receptores, connectors, processors e pipelines. Os processors base (`memory_limiter`, `batch`) e os exporters (`clickhouse`) já estão definidos — referencie-os pelo nome. A configuração personalizada é mesclada à configuração base e não pode sobrescrever componentes existentes.
+
+  A configuração personalizada pode substituir a lista `processors` de um pipeline padrão. A partir da versão 2.44.0, mantenha `transform/session_id` nas listas de processors dos pipelines padrão de rastros e logs; caso contrário, eventos de SDKs de navegador mais antigos ficarão sem `session.id`.
+
+  Com OpAMP (a imagem all-in-one ou qualquer coletor com `OPAMP_SERVER_URL` definido), receptores, exporters e connectors adicionados a um pipeline padrão são descartados silenciosamente, sem nenhum erro. Adicione-os em pipelines com nomes próprios, como nos exemplos abaixo.
 </Note>
 
-Para configurações mais complexas, consulte a [configuração padrão do collector do ClickStack](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml) e a [documentação do exporter do ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options).
+Para configurações mais complexas, consulte a [configuração padrão do coletor do ClickStack](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml) e a [documentação do exporter do ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options).
 
-<div id="configuration-structure">
-  #### Estrutura da configuração
-</div>
+#### Recebendo métricas StatsD {#statsd-receiver}
+
+A partir da versão 2.40.0, o Coletor do ClickStack inclui o [receptor StatsD](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/statsdreceiver), o que permite que aplicações que emitem métricas StatsD ou DogStatsD as enviem ao coletor. Os rótulos `key:value` do DogStatsD, como `|#env:prod,team:payments`, são convertidos em atributos de métrica.
+
+O receptor vem desativado por padrão. Para habilitá-lo, adicione-o por meio de uma configuração personalizada, em um pipeline com nome próprio:
+
+```yaml
+receivers:
+  statsd:
+    endpoint: 0.0.0.0:8125
+
+service:
+  pipelines:
+    metrics/statsd:
+      receivers: [statsd]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+Publique a porta UDP `8125` no contêiner do coletor, por exemplo, com `-p 8125:8125/udp`. As métricas StatsD não têm `service.name`, portanto um filtro por serviço não as encontra. O receptor agrega as métricas no processo do coletor; por isso, envie cada métrica para uma única instância do coletor. Caso contrário, os valores dela serão divididos entre as réplicas.
+
+#### Derivando métricas a partir de spans {#span-metrics}
+
+A partir da versão 2.39.0, o Coletor do ClickStack inclui o [span metrics connector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/spanmetricsconnector). Ele gera contagens de chamadas e histogramas de duração a partir dos spans recebidos pelo coletor, permitindo obter métricas de requisições, erros e duração por serviço sem a necessidade de uma instrumentação de métricas à parte.
+
+O connector vem desativado por padrão. Para habilitá-lo, use uma configuração personalizada: um pipeline de rastros exporta spans para o connector, e um pipeline de métricas recebe dele as métricas geradas. Dê a cada pipeline um nome próprio:
+
+```yaml
+connectors:
+  span_metrics:
+    namespace: traces.span.metrics
+    aggregation_temporality: AGGREGATION_TEMPORALITY_DELTA
+    histogram:
+      exponential:
+        max_size: 160
+    aggregation_cardinality_limit: 10000
+    series_expiration: 5m
+
+service:
+  pipelines:
+    traces/spanmetrics:
+      receivers: [otlp/hyperdx]
+      processors:
+        - memory_limiter
+      exporters: [span_metrics]
+    metrics/spanmetrics:
+      receivers: [span_metrics]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+O coletor grava as contagens de chamadas como `traces.span.metrics.calls` e as durações como `traces.span.metrics.duration`. Mantenha `aggregation_temporality`, `aggregation_cardinality_limit` e `series_expiration`: eles limitam a memória do connector, que o `memory_limiter` não protege, e mantêm as contagens corretas quando uma série inativa é removida.
+
+Para incluir rastros do agente Datadog, adicione `datadog` aos `receivers` de `traces/spanmetrics`. O receptor `datadog` precisa estar definido; caso contrário, o coletor rejeitará a configuração. Com OpAMP, defina a variável de ambiente `ENABLE_DATADOG_RECEIVER=true` para a Interface do ClickStack, que gera a configuração do coletor; sem OpAMP, defina um receptor `datadog` na configuração personalizada.
+
+#### Estrutura da configuração {#configuration-structure}
 
 Para saber mais sobre a configuração de OTel collectors, incluindo [`receivers`](https://opentelemetry.io/docs/collector/transforming-telemetry/), [`operators`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) e [`processors`](https://opentelemetry.io/docs/collector/configuration/#processors), recomendamos a [documentação oficial do OpenTelemetry Collector](https://opentelemetry.io/docs/collector/configuration).

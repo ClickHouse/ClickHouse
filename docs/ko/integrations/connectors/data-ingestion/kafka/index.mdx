@@ -35,8 +35,9 @@ integration:
 #### 주요 기능 {#clickpipes-for-kafka-main-features}
 
 * ClickHouse Cloud에 최적화되어 매우 뛰어난 성능 제공
-* 높은 처리량 워크로드를 위한 수평 및 수직 확장 지원
+* 고처리량 워크로드(workloads)를 위한 수평 및 수직 확장 지원
 * 구성 가능한 레플리카와 자동 재시도를 통한 기본 제공 장애 허용
+* [정확히 한 번 처리 의미 체계](/ko/integrations/clickpipes/kafka/best-practices#delivery-semantics)를 지원하도록 구성 가능
 * ClickHouse Cloud UI, [Open API](/ko/integrations/clickpipes/programmatic-access/openapi) 또는 [Terraform](/ko/integrations/clickpipes/programmatic-access/terraform)를 통한 배포 및 관리
 * 클라우드 네이티브 권한 부여(IAM) 및 프라이빗 연결(PrivateLink)을 지원하는 엔터프라이즈급 보안
 * Confluent Cloud, Amazon MSK, Redpanda Cloud, Azure Event Hubs를 포함한 다양한 [데이터 소스](/ko/integrations/clickpipes/kafka/reference) 지원
@@ -84,11 +85,11 @@ Kafka 테이블 엔진을 시작하려면 [참고 문서](/ko/integrations/conne
 
 ### 옵션 선택 {#choosing-an-option}
 
-| 제품                       | 장점                                                                                                                                                                               | 단점                                                                                                                              |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **ClickPipes for Kafka** | • 고처리량 및 낮은 지연 시간을 위한 확장 가능한 아키텍처<br />• 기본 제공 모니터링 및 스키마 관리<br />• 프라이빗 네트워크 연결 지원(PrivateLink 사용)<br />• SSL/TLS 인증 및 IAM 권한 부여 지원<br />• 프로그래밍 방식 구성 지원(Terraform, API 엔드포인트) | • Kafka로 데이터를 푸시하는 기능은 지원하지 않음<br />• 최소 한 번 처리 의미 체계                                                                           |
-| **Kafka Connect Sink**   | • 정확히 한 번 처리 의미 체계<br />• 데이터 변환, 배칭, 오류 처리를 세밀하게 제어할 수 있음<br />• 프라이빗 네트워크에 배포 가능<br />• Debezium을 통해 ClickPipes에서 아직 지원하지 않는 데이터베이스의 실시간 복제를 지원                                | • Kafka로 데이터를 푸시하는 기능은 지원하지 않음<br />• 설정 및 유지 관리의 운영 복잡성이 높음<br />• Kafka 및 Kafka Connect 전문 지식이 필요함                            |
-| **Kafka table engine**   | • [Kafka로 데이터 푸시](/ko/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka) 지원<br />• 설정이 비교적 간단함                                                    | • 최소 한 번 처리 의미 체계<br />• 컨슈머의 수평 스케일링이 제한됨. ClickHouse 서버와 독립적으로 스케일링할 수 없음<br />• 오류 처리 및 디버깅 옵션이 제한적임<br />• Kafka 전문 지식이 필요함 |
+| 제품                       | 장점                                                                                                                                                                                                                                                                           | 단점                                                                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **ClickPipes for Kafka** | • 고처리량 및 낮은 지연 시간을 위한 확장 가능한 아키텍처<br />• [정확히 한 번 처리 의미 체계](/ko/integrations/clickpipes/kafka/best-practices#delivery-semantics)<br />• 기본 제공 모니터링 및 스키마 관리<br />• 프라이빗 네트워크 연결 지원(PrivateLink 사용)<br />• SSL/TLS 인증 및 IAM 권한 부여 지원<br />• 프로그래밍 방식 구성 지원(Terraform, API 엔드포인트) | • Kafka로 데이터를 푸시하는 기능은 지원하지 않음                                                                                                  |
+| **Kafka Connect Sink**   | • 정확히 한 번 처리 의미 체계<br />• 데이터 변환, 배칭, 오류 처리를 세밀하게 제어할 수 있음<br />• 프라이빗 네트워크에 배포 가능<br />• Debezium을 통해 ClickPipes에서 아직 지원하지 않는 데이터베이스의 실시간 복제를 지원                                                                                                                            | • Kafka로 데이터를 푸시하는 기능은 지원하지 않음<br />• 설정 및 유지 관리의 운영 복잡성이 높음<br />• Kafka 및 Kafka Connect 전문 지식이 필요함                            |
+| **Kafka 테이블 엔진**   | • [Kafka로 데이터 푸시](/ko/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka) 지원<br />• 설정이 비교적 간단함                                                                                                                                                | • 최소 한 번 처리 의미 체계<br />• 컨슈머의 수평 스케일링이 제한됨. ClickHouse 서버와 독립적으로 스케일링할 수 없음<br />• 오류 처리 및 디버깅 옵션이 제한적임<br />• Kafka 전문 지식이 필요함 |
 
 ### 기타 옵션 {#other-options}
 

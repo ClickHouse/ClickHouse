@@ -140,7 +140,7 @@ Con roles de IAM gestionados por el cliente, usted:
 * Elimina los permisos de escritura de IAM del `ClickHouseManagementRole` usado para el acceso entre cuentas
 * Mantiene control total sobre los permisos de los roles y las relaciones de confianza
 
-Ambos módulos siguientes toman el `external_id` generado por la consola de ClickHouse Cloud; todas las infraestructuras de BYOC de la misma cuenta de AWS comparten el mismo ID externo. Consulte [ID externo de AWS](/es/products/bring-your-own-cloud/onboarding/standard#aws-external-id) para obtener más información, incluido el marcador de posición heredado `emptyid`.
+Ambos módulos siguientes toman el `external_id` generado por la consola de ClickHouse Cloud; todas las infraestructuras BYOC de la misma cuenta de AWS comparten el mismo ID externo. Consulte [ID externo de AWS](/es/products/bring-your-own-cloud/onboarding/standard#aws-external-id) para obtener más información, incluido el marcador de posición heredado `emptyid`.
 
 <Steps>
   <Step title="Configurar el rol de administración sin permisos de escritura de IAM" id="byo-iam-management-role">
@@ -158,7 +158,7 @@ Ambos módulos siguientes toman el `external_id` generado por la consola de Clic
   </Step>
 
   <Step title="Crear los roles de IAM por infraestructura" id="byo-iam-per-infra-roles">
-    Antes de aprovisionar cada infraestructura de BYOC, cree los roles de IAM necesarios para ella (roles de identidad de pod de EKS, el rol de acceso de ClickHouse a S3 y el rol de administración del plano de datos) con el módulo por infraestructura de [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
+    Antes de aprovisionar cada infraestructura BYOC, cree los roles de IAM necesarios para ella (roles de identidad de pod de EKS, el rol de acceso de ClickHouse a S3 y el rol de administración del plano de datos) con el módulo por infraestructura de [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
     ```hcl
     module "clickhouse_per_infra_iam" {
@@ -175,9 +175,9 @@ Ambos módulos siguientes toman el `external_id` generado por la consola de Clic
 
   <Step title="Mantener actualizados los roles por infraestructura" id="byo-iam-keep-up-to-date">
     <Warning>
-      ClickHouse añade periódicamente roles y permisos requeridos por nuevas funcionalidades de la plataforma. Cuando ClickHouse le notifique una actualización, vuelva a aplicar el módulo por infraestructura con la última versión; ejecutar una versión desactualizada puede hacer que fallen el aprovisionamiento y las actualizaciones de su infraestructura de BYOC.
+      ClickHouse añade periódicamente roles y permisos requeridos por nuevas funcionalidades de la plataforma. Cuando ClickHouse le notifique una actualización, vuelva a aplicar el módulo por infraestructura con la última versión; ejecutar una versión desactualizada puede hacer que fallen el aprovisionamiento y las actualizaciones de su infraestructura BYOC.
     </Warning>
   </Step>
 </Steps>
 
-Para obtener información sobre los roles de IAM que ClickHouse Cloud crea de forma predeterminada, consulte la [Referencia de privilegios de BYOC](/es/products/bring-your-own-cloud/reference/privilege).
+Para obtener información sobre los roles de IAM que ClickHouse Cloud crea de forma predeterminada, consulte [Privilegios de BYOC en AWS](/es/products/bring-your-own-cloud/reference/privilege-aws#additional-iam-roles-created-by-the-controller).

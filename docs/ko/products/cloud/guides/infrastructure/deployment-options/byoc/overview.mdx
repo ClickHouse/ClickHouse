@@ -44,11 +44,13 @@ BYOC는 [지원되는 리전](/ko/products/cloud/reference/supported-regions) �
 
 * **SharedMergeTree**: ClickHouse Cloud와 BYOC는 동일한 바이너리와 구성을 사용합니다. 따라서 SharedMergeTree를 비롯한 ClickHouse 핵심의 모든 기능이 BYOC에서 지원됩니다.
 * **Shared Catalog**
-* **서비스 상태 관리를 위한 Console 액세스**:
+* **서비스 상태 관리를 위한 콘솔 액세스**:
   * 시작, 중지, 종료 등의 작업을 지원합니다.
   * 서비스와 상태를 확인할 수 있습니다.
 * **관리형 백업 및 복원**
 * **수동 수직 및 수평 스케일링**
+* **자동 수평 스케일링:** 자동 스케일링이 활성화된 배포에서만 사용할 수 있습니다. 각 레플리카의 크기는 고정한 채, 구성된 한도 내에서 레플리카 수를 조정합니다. 해당 배포에서 사용할 수 있는지 확인하려면 지원팀에 문의하세요.
+* **수직 자동 확장:** 조직에서 활성화된 경우에만 사용할 수 있습니다. 사용 가능 여부를 확인하려면 지원팀에 문의하세요.
 * **자동 유휴 상태 전환/깨우기**
 * **Warehouses**: 컴퓨트-컴퓨트 분리
 * **Tailscale을 통한 Zero Trust 네트워크**
@@ -67,7 +69,6 @@ BYOC는 [지원되는 리전](/ko/products/cloud/reference/supported-regions) �
 
 * SQL 콘솔: BYOC 배포에서는 사용할 수 없지만, 로드맵에 포함되어 있습니다.
 * ClickPipes: BYOC 배포에서는 사용할 수 없지만, 로드맵에 포함되어 있습니다.
-* 자동 스케일링: 향후 릴리스에 추가될 예정이며, 현재 로드맵에 포함되어 있습니다.
 * MySQL 인터페이스
 * AWS KMS aka CMEK(고객 관리형 암호화 키)
 * Advanced Dashboard: 브라우저가 ClickHouse 서버의 엔드포인트에 직접 접근하고 직접 연결할 수 있어야 하는 클라이언트 전용 UI입니다. VPC 네트워크 정책이 ClickHouse 엔드포인트에 대한 브라우저의 인바운드 액세스를 제한하면 Advanced Dashboard는 작동하지 않습니다.

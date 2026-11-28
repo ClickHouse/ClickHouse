@@ -7,9 +7,7 @@ title: 'Vue d’ensemble des tables système'
 doc_type: 'reference'
 ---
 
-<div id="system-tables-introduction">
-  ## Vue d’ensemble des tables système
-</div>
+## Vue d’ensemble des tables système {#system-tables-introduction}
 
 Les tables système fournissent des informations sur :
 
@@ -59,9 +57,7 @@ Un exemple :
 
 Par défaut, la croissance d’une table est illimitée. Pour contrôler la taille d’une table, vous pouvez utiliser les paramètres [TTL](/fr/reference/statements/alter/ttl) afin de supprimer les anciennes entrées de journal. Vous pouvez également utiliser le partitionnement des tables utilisant le moteur `MergeTree`.
 
-<div id="system-tables-sources-of-system-metrics">
-  ## Sources des métriques système
-</div>
+## Sources des métriques système {#system-tables-sources-of-system-metrics}
 
 Pour collecter les métriques système, le serveur ClickHouse utilise :
 
@@ -87,11 +83,9 @@ Si procfs est pris en charge et activé sur le système, le serveur ClickHouse c
   Vous pouvez l&#39;activer avec `sudo sysctl kernel.task_delayacct=1` ou en créant un fichier `.conf` dans `/etc/sysctl.d/` contenant `kernel.task_delayacct = 1`
 </Note>
 
-<div id="system-tables-in-clickhouse-cloud">
-  ## Tables système dans ClickHouse Cloud
-</div>
+## Tables système dans ClickHouse Cloud {#system-tables-in-clickhouse-cloud}
 
-Dans ClickHouse Cloud, les tables système fournissent des informations essentielles sur l’état et les performances du service, tout comme dans les déploiements autogérés. Certaines tables système s’appliquent à l’ensemble du cluster, en particulier celles qui tirent leurs données des nœuds Keeper, lesquels gèrent les métadonnées distribuées. Ces tables reflètent l’état global du cluster et doivent être cohérentes lorsqu’elles sont interrogées depuis des nœuds individuels. Par exemple, les [`parts`](/fr/reference/system-tables/parts) doivent être cohérentes, quel que soit le nœud depuis lequel elles sont interrogées :
+Dans ClickHouse Cloud, les tables système fournissent des informations essentielles sur l’état et les performances du service, tout comme dans les déploiements autogérés. Certaines tables système s’appliquent à l’ensemble du cluster, en particulier celles qui tirent leurs données des nœuds Keeper, lesquels gèrent les métadonnées distribuées. Ces tables reflètent l’état global du cluster et doivent être cohérentes lorsqu’elles sont interrogées depuis des nœuds individuels. Par exemple, les [`parts`](/fr/reference/system-tables/parts) doivent être cohérentes, quel que soit le nœud depuis lequel elles sont interrogées :
 
 ```sql
 SELECT hostname(), count()
@@ -117,9 +111,9 @@ WHERE `table` = 'pypi'
 1 row in set. Elapsed: 0.004 sec.
 ```
 
-À l’inverse, d’autres tables système sont spécifiques à un nœud, par exemple parce qu’elles résident en mémoire ou qu’elles persistent leurs données à l’aide du moteur de table MergeTree. C’est généralement le cas de données telles que les logs et les métriques. Cette persistance garantit que les données historiques restent disponibles pour l’analyse. Cependant, ces tables spécifiques à un nœud sont, par nature, propres à chaque nœud.
+À l’inverse, d’autres tables système sont spécifiques à un nœud, par exemple parce qu’elles résident en mémoire ou qu’elles persistent leurs données à l’aide du moteur de table MergeTree. C’est généralement le cas de données telles que les logs et les métriques. Cette persistance garantit que les données historiques restent disponibles pour l’analyse. Cependant, ces tables spécifiques à un nœud sont, par nature, propres à chaque nœud. Notez que, dans ClickHouse Cloud, les tables persistées conservent leurs données dans le stockage d’objet, et non sur le disque local du nœud.
 
-De manière générale, les règles suivantes peuvent être appliquées pour déterminer si une table système est spécifique à un nœud :
+De manière générale, les règles suivantes peuvent être appliquées pour déterminer si une table système est spécifique à un nœud :
 
 * Les tables système avec un suffixe `_log`.
 * Les tables système qui exposent des métriques, par exemple `metrics`, `asynchronous_metrics`, `events`.
@@ -127,7 +121,7 @@ De manière générale, les règles suivantes peuvent être appliquées pour dé
 
 En outre, de nouvelles versions de tables système peuvent être créées à la suite de mises à niveau ou de modifications de leur schéma. Ces versions sont nommées à l’aide d’un suffixe numérique.
 
-Par exemple, prenons les tables `system.query_log`, qui contiennent une ligne pour chaque requête exécutée par le nœud :
+Par exemple, prenons les tables `system.query_log`, qui contiennent une ligne pour chaque requête exécutée par le nœud :
 
 ```sql
 SHOW TABLES FROM system LIKE 'query_log%'
@@ -149,11 +143,9 @@ SHOW TABLES FROM system LIKE 'query_log%'
 11 rows in set. Elapsed: 0.004 sec.
 ```
 
-<div id="querying-multiple-versions">
-  ### Interroger plusieurs versions
-</div>
+### Interroger plusieurs versions {#querying-multiple-versions}
 
-Nous pouvons interroger l’ensemble de ces tables à l’aide de la fonction [`merge`](/fr/reference/functions/table-functions/merge). Par exemple, la requête ci-dessous identifie la requête la plus récente adressée au nœud cible dans chaque table `query_log` :
+Nous pouvons interroger l’ensemble de ces tables à l’aide de la fonction [`merge`](/fr/reference/functions/table-functions/merge). Par exemple, la requête ci-dessous identifie la requête la plus récente adressée au nœud cible dans chaque table `query_log` :
 
 ```sql
 SELECT
@@ -184,14 +176,12 @@ Peak memory usage: 28.45 MiB.
 <Info>
   **Ne vous fiez pas au suffixe numérique pour déterminer l’ordre**
 
-  Bien que le suffixe numérique des tables puisse laisser penser qu’il indique l’ordre des données, il ne faut jamais s’y fier. C’est pourquoi vous devez toujours utiliser la fonction de table merge, associée à un filtre sur la date, lorsque vous ciblez des plages de dates spécifiques.
+  Bien que le suffixe numérique des tables puisse laisser penser qu’il indique l’ordre des données, il ne faut jamais s’y fier. C’est pourquoi vous devez toujours utiliser la fonction de table merge, associée à un filtre sur la date, lorsque vous ciblez des Plages de Dates spécifiques.
 </Info>
 
-Il est important de noter que ces tables restent **locales à chaque nœud**.
+Il est important de noter que ces tables restent **spécifiques à chaque nœud**.
 
-<div id="querying-across-nodes">
-  ### Interroger l’ensemble des nœuds
-</div>
+### Interroger l’ensemble des nœuds {#querying-across-nodes}
 
 Pour obtenir une vue complète du cluster, les utilisateurs peuvent exploiter la fonction [`clusterAllReplicas`](/fr/reference/functions/table-functions/cluster) en combinaison avec la fonction `merge`. La fonction `clusterAllReplicas` permet d’interroger les tables système sur toutes les répliques du cluster &quot;default&quot;, en regroupant les données propres à chaque nœud dans un résultat unifié. Combinée à la fonction `merge`, elle permet de cibler l’ensemble des données système d’une table donnée dans un cluster.
 
@@ -233,9 +223,7 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 3 rows in set. Elapsed: 0.026 sec. Processed 1.97 million rows, 7.88 MB (75.51 million rows/s., 302.05 MB/s.)
 ```
 
-<div id="querying-across-nodes-and-versions">
-  ### Interroger sur plusieurs nœuds et versions
-</div>
+### Interroger sur plusieurs nœuds et versions {#querying-across-nodes-and-versions}
 
 En raison du versionnement des tables système, cela ne représente toujours pas l’ensemble des données du cluster. En combinant ce qui précède avec la fonction `merge`, nous obtenons un résultat exact pour notre intervalle de dates :
 
@@ -256,9 +244,7 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 3 rows in set. Elapsed: 0.462 sec. Processed 7.94 million rows, 31.75 MB (17.17 million rows/s., 68.67 MB/s.)
 ```
 
-<div id="related-content">
-  ## Contenu connexe
-</div>
+## Contenu connexe {#related-content}
 
 * Blog : [Tables système et aperçu du fonctionnement interne de ClickHouse](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
 * Blog : [Requêtes de supervision essentielles - partie 1 - requêtes INSERT](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)

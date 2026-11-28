@@ -245,15 +245,39 @@ BlockInfo는 필드의 시퀀스로, 각 필드 앞에는 VarUInt 필드 ID가 �
 **서버로 보내는 블록의 kind.** 기본값이 아닌 kind에는 모두 방향성이 있으며, 서버가 보내는 결과 블록에만 나타납니다.
 서버로 보내는 블록(삽입 데이터, `input` 테이블 함수의 데이터, 외부 테이블 데이터, 스칼라)에는 클라이언트가 보낸 것이든 다른 서버가 보낸 것이든 `DEFAULT` 스택만 포함됩니다. 송신 측은 전송 전에 컬럼을 완전한(full) 컬럼으로 변환하며, 이러한 블록에 다른 kind가 포함되어 있으면 서버는 `INCORRECT_DATA` 오류를 반환하며 거부합니다.
 
-### 블록 변형 {#block-variants}
+### 블록(Block) 변형 {#block-variants}
 
-모든 Data 계열 패킷은 동일한 블록 wire 형식을 사용합니다. 각 변형은 컬럼 수와 행 수만 다릅니다.
+Data 계열의 모든 패킷은 동일한 블록(Block) wire 형식을 공유합니다. 각 변형은 컬럼 수와 행 수만 다릅니다.
 
-| 변형    | num&#95;columns | num&#95;rows | 용도                                                         |
-| ----- | --------------- | ------------ | ---------------------------------------------------------- |
-| 헤더 블록 | N &gt; 0        | 0            | 결과 스키마(컬럼명 + 타입)를 알립니다.                                    |
-| 결과 블록 | N &gt; 0        | M &gt; 0     | 실제 결과 행을 담습니다.                                             |
-| 빈 블록  | 0               | 0            | 센티널(sentinel)입니다. 클라이언트 측에서는 입력의 끝을, 서버 측에서는 경계 표시를 나타냅니다. |
+| 변형                  | num&#95;columns | num&#95;rows | 용도                                                                                                                   |
+| ------------------- | --------------- | ------------ | -------------------------------------------------------------------------------------------------------------------- |
+| 헤더 블록(Block)(Header block) | N &gt; 0        | 0            | 결과 스키마(컬럼 이름 + 타입)를 알립니다.                                                                                            |
+| 결과 블록(Block)               | N &gt; 0        | M &gt; 0     | 실제 결과 행입니다.                                                                                                          |
+| 빈 블록(Block)                | 0               | 0            | 센티널입니다. 클라이언트 측에서는 입력 종료를, 서버 측에서는 경계를 표시합니다.                                                                        |
+| 컬럼 없는 행 블록(Block)          | 0               | M &gt; 0     | 값을 전혀 담지 않는 행으로, 행의 개수 자체가 결과입니다. revision `54498` 이상에서 기록됩니다(`DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT`). |
+
+`num_rows`는 `num_columns`와 독립적으로 기록되므로, 블록(Block)은 컬럼을 전혀 담지 않고도 행을
+선언할 수 있습니다. 이는 모순이 아닙니다. 쿼리는 서버에 행의 개수만 요청할 수 있으며
+(예: `SELECT count() OVER () FROM distributed_table WHERE x > 0`에서 세그먼트가 계산하는 부분으로,
+윈도 함수는 initiator에서 평가되고 인수를 받지 않습니다), 이 경우 응답의 모든 행에는 값이 없습니다. 리더는 이러한 블록(Block)의 행 수(row count)를 반드시 `num_rows`에서 가져와야 합니다. 셀 수 있는 컬럼이
+없으므로 다른 출처가 없으며, (비어 있는) payload에서 개수를 복원할 수도 없습니다. 행 수가
+유일한 정보이므로, `num_rows > 0`인 컬럼 없는 블록(Block)은 다른 `num_columns = 0` 변형과 마찬가지로
+컬럼 엔트리를 전혀 담지 않습니다.
+
+이러한 행은 중간 결과에만 존재합니다. `Complete` 스테이지의 결과에는 항상 컬럼이 있습니다. 따라서
+이 변형은 `Complete` 이전 스테이지로 전송된 쿼리의 결과에서만 유효합니다. 그 밖의 모든 곳,
+즉 `Complete` 쿼리의 결과, 클라이언트가 서버로 보내는 데이터, `Log` 및
+`ProfileEvents` 패킷에서는 리더가 revision과 관계없이 이를 잘못된 데이터(`INCORRECT_DATA`)로 처리합니다.
+따라서 일반 결과의 컨슈머는 행은 있지만 컬럼은 없는 블록(Block)을 받는 일이 없습니다.
+
+revision `54498` 미만의 리더는 이 변형을 거부하므로(`INCORRECT_DATA`), writer는 협상된 revision이
+그 이상일 때에만 이를 내보냅니다. 그 미만에서는 writer가 행이 유실되는 빈 블록(Block)을 기록하는 대신
+오류(`NOT_IMPLEMENTED`)를 발생시켜 해당 블록(Block)을 거부하며, 컬럼 없는 결과를 기대하는 initiator도
+해당 revision 미만의 피어를 같은 방식으로 거부합니다. writer의 오류는 어떤 데이터보다도 먼저
+도착하므로, `skip_unavailable_shards_mode = 'unavailable_or_exception_before_processing'`로
+실행 중인 이전 버전의 initiator는 이를 처리 시작 전에 실패한 다른 세그먼트와 동일하게 취급합니다. 즉, 해당 모드의 설정대로 세그먼트를 건너뛰고 오류를 로그에 기록합니다. 또한 이를 통해
+revision `0`으로 기록되는 `Native` 파일에도 이 변형이 포함되지 않으므로, 이 파일에서는 컬럼 없이 행 수만 선언된 경우
+여전히 잘린 스트림이나 손상된 스트림의 징후로 간주됩니다.
 
 ### 바이트 수준 예시 {#byte-level-examples}
 
@@ -326,13 +350,14 @@ revision은 하나의 `UInt64` 값이며, `NativeWriter`와 `NativeReader` 모�
 | wire 상의 `LowCardinality`                  | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405`  | 특수한 경우로, 단순한 임계값 미만 규칙을 따르지 **않습니다**. `LowCardinality(T)`는 revision이 *0이 아니면서* `54405` 미만이거나, 별도로 제거가 강제된 경우에만 기본 타입 `T`로 변환됩니다. Revision `0`에서는 그대로 유지됩니다. 아래 참고 사항을 확인하십시오.                                                                                                                                                                                                                                                                                                                                                                         |
 | V2 `Dynamic` / `JSON` 직렬화                 | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473`  | `Dynamic`과 `JSON`/`Object`가 V2 대신 V1 직렬화(`max_dynamic_*` 매개변수 포함)를 사용합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 오프셋 방식 `String` 직렬화                       | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION`     | `54492`  | 임계값 미만에서는 `String` 컬럼 데이터가 [오프셋 레이아웃](#string-type)(`UInt64` 형식의 누적 바이트 오프셋 뒤에 모든 데이터를 연결) 대신 값별 레이아웃(행마다 `VarUInt` 길이 프리픽스 + 원시 바이트)을 사용합니다. 오직 revision으로만 제어되며, 컬럼별 wire 마커는 없습니다. 임계값 이상에서는 복합 타입(`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`) 내부에 중첩된 `String`에도 오프셋 레이아웃이 적용되지만, `LowCardinality` 컬럼의 딕셔너리에는 적용되지 **않습니다**. `LowCardinality` 딕셔너리는 항상 기본 중첩 직렬화로 기록되므로, 그 안의 `String` 값은 값별 레이아웃을 유지합니다(`LowCardinality(String)` 및 `LowCardinality(Nullable(String))` 포함). `Buffers` 포맷은 프로토콜에 속하지 않으며 항상 값별 레이아웃을 사용합니다. |
+| 컬럼(column)이 없는 블록의 행 수(row count)         | `DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT`               | `54498`  | 컬럼이 없는 블록은 항상 `num_rows = 0`을 선언하므로, 값이 없는 행(rows)은 전송할 수 없습니다([블록 변형](#block-variants) 참조). 임계값 미만에서는 헤더를 전달받지 않은 리더가 `num_columns = 0`이면서 `num_rows > 0`인 경우를 손상된 데이터로 간주하여 `INCORRECT_DATA` 예외를 발생시킵니다.                                                                                                                                                                                                                                                                                                                                            |
 | 집계 함수 버전 관리                               | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452`  | `AggregateFunction` 상태가 버전 정보 없이 기록됩니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `quantileDeterministic` 상태의 `skip_degree` | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE`        | `54491`  | `AggregateFunction(quantileDeterministic, ...)` 상태(및 같은 함수의 `quantiles`/`median` 표기)가 끝부분의 `UInt8 skip_degree` 없이 상태 버전 `0`으로 기록됩니다. [타입 별칭](#type-aliases)의 참고 사항을 확인하십시오.                                                                                                                                                                                                                                                                                                                                                                           |
 | `uniq` 상태의 64비트 해시 샘플                     | `DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1`                      | `54493`  | `AggregateFunction(uniq, ...)` 상태가 상태 버전 `0`으로 기록되며, 앞부분의 플래그 바이트와 끝부분의 64비트 해시 샘플이 모두 포함되지 않습니다. [타입 별칭](#type-aliases)의 참고 사항을 확인하십시오.                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 버전이 명시된 `-Merge` 상태                       | `DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION`            | `54494`  | `-Merge` 함수 자체의 상태(머지 대상이 되는 상태가 아님)는 버전 `0`으로 기록되며, 타입에 버전이 명시되지 않은 경우 버전 `0`으로 읽힙니다. 예를 들어 분산 `quantileDeterministicMerge(state)`에서 세그먼트는 `AggregateFunction(quantileDeterministicMerge, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))`를 전송합니다. 이때 payload는 바깥쪽 `AggregateFunction`의 버전을 따르는데, 여기서는 그 버전이 `0`이므로 끝부분의 `skip_degree`가 없습니다. `1`은 인수 타입에 속하며 이 payload에는 적용되지 않습니다. [타입 별칭](#type-aliases)의 참고 사항을 확인하십시오.                                                                                                             |
 | `BlockInfo`의 `out_of_order_buckets`       | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480`  | `BlockInfo` 필드 ID `3`이 기록되지 않습니다([BlockInfo](#blockinfo) 참조).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 병렬 블록 마셜링(`DETACHED`)                     | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478`  | 컬럼이 `ColumnBLOB`로 감싸지지 않으며, `DETACHED` / `DETACHED_OVER_SPARSE` 종류가 나타나지 않습니다([kind&#95;stack](#kind-stack-and-sparse-encoding) 참조).                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `DateTime(tz)` 타입 매개변수                    | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337`  | `type` 문자열에서 시간대 매개변수가 제거되어, `DateTime('UTC')`가 단순히 `DateTime`으로 전달됩니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `DateTime(tz)` 타입 매개변수                    | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337`  | `type` 문자열에서 시간대 매개변수가 제외됩니다. 즉, `DateTime('UTC')`는 매개변수 없이 `DateTime`으로만 전달됩니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 따라서 revision `0`은 거의 모든 항목에서 가장 보수적인 인코딩입니다. 스트림에는 `BlockInfo`도, `has_custom_serialization` 바이트도 없으며, V1 `Dynamic`/`JSON`이 사용되고, 집계 함수 버전도 없고, 시간대 매개변수가 제거된 순수한 `DateTime`만 포함됩니다. 다만 revision `0`에서 집계 함수 *state* 버전은 예외입니다. 버전을 도출할 기준이 되는 피어가 없기 때문입니다. 이 스트림은 이를 생성한 쪽(`StripeLog` 데이터 파일, `Set`/`Join` 백업, `Native` 포맷 파일)이 직접 쓰고 다시 읽습니다. 그래서 writer는 state를 버전 `0`으로 낮추지 않고 유형에 고정된 버전을 그대로 유지하며(평소처럼 유형 문자열에 명시함), 고정된 버전이 없는 유형만 버전 `0`으로 기록됩니다.
 

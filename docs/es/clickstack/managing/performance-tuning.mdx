@@ -77,6 +77,33 @@ Se recomienda revisar la siguiente documentación de ClickHouse antes de realiza
 
 Todas las optimizaciones descritas a continuación pueden aplicarse directamente sobre las tablas subyacentes mediante ClickHouse SQL estándar, ya sea a través de la [consola SQL de ClickHouse Cloud](/es/integrations/connectors/sql-clients/sql-console) o del [cliente de ClickHouse](/es/concepts/features/interfaces/client).
 
+## Identificar qué genera la carga de consultas {#query-attribution}
+
+Antes de optimizar, averigüe qué paneles de control, alertas y otras funcionalidades generan más trabajo. ClickStack etiqueta cada consulta que envía a ClickHouse, de modo que cualquier consulta en [`system.query_log`](/es/reference/system-tables/query_log) o [`system.processes`](/es/reference/system-tables/processes) puede rastrearse hasta su origen:
+
+* Su `query_id` comienza con `hdx-` seguido del nombre de la superficie que la emitió, por ejemplo `hdx-alert-<uuid>` o `hdx-mcp-<uuid>`. Úselo para localizar una consulta en ejecución en `system.processes`, que no tiene la columna `log_comment`; allí, el comentario se encuentra en `Settings['log_comment']`.
+* Su `log_comment` es un pequeño objeto JSON. `surface` indica qué emitió la consulta, por ejemplo `dashboard`, `search`, `chart-explorer`, `alert`, `mcp` o `api`. Según la superficie, también incluye los ID del `dashboard` y del `tile`, de la `search` guardada, de la `alert` y de la `source`, además de un `label`, como el nombre de la herramienta MCP, la ruta de la API o el nombre de un panel de control integrado. Por ejemplo, `{"v":1,"surface":"mcp","label":"clickstack_service_health"}`.
+
+El comentario registra qué se solicitó, no quién lo solicitó: no se escribe ningún identificador de usuario ni de equipo. (Para registrar el correo electrónico del usuario en los registros de consultas, utilice el **Query Log Setting Prefix** de la conexión; consulte [Conexiones](/es/clickstack/managing/config#connection-settings)). Algunas consultas internas, como la comprobación de versión, tienen un ID de consulta con el prefijo `hdx-` y un `log_comment` vacío. Las consultas PromQL incluyen la misma atribución.
+
+La siguiente consulta muestra de dónde procede la carga de lectura, desglosada por superficie y por panel de control:
+
+```sql
+SELECT
+    JSONExtractString(log_comment, 'surface') AS surface,
+    JSONExtractString(log_comment, 'dashboard') AS dashboard,
+    count() AS queries,
+    formatReadableSize(sum(read_bytes)) AS read
+FROM system.query_log
+WHERE (type = 'QueryFinish') AND startsWith(query_id, 'hdx-')
+GROUP BY
+    surface,
+    dashboard
+ORDER BY sum(read_bytes) DESC
+```
+
+En ClickHouse Cloud, `system.query_log` y `system.processes` son locales de cada réplica. Para incluir todas las réplicas del servicio, lea en su lugar de `clusterAllReplicas(default, system.query_log)` o `clusterAllReplicas(default, system.processes)`. En un solo servidor sin un cluster `default`, como la imagen todo en uno, consulte las tablas directamente.
+
 <div id="materialize-frequently-queried-attributes">
   ## Optimización 1. Materializar atributos consultados con frecuencia {#materialize-frequently-queried-attributes}
 </div>

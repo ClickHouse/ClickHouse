@@ -865,12 +865,15 @@ ORDER BY _part ASC
 `advanced` 和 `advanced_chunked`。
 
 序列化版本由 MergeTree
-settings [object&#95;shared&#95;data&#95;serialization&#95;version](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
-和 [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
-控制 (零级 part 是在向表中插入数据时创建的 part，而在 merge 过程中生成的 parts 会具有更高的级别) 。
+设置 [object&#95;shared&#95;data&#95;serialization&#95;version](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
+和 [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts) 控制。
+第二个设置用于小数据片段，即在插入操作期间创建的 parts (除非
+[use&#95;object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts&#95;on&#95;insert](/zh/reference/settings/merge-tree-settings/use#use_object_shared_data_serialization_version_for_small_parts_on_insert)
+已禁用) ，以及大小低于最小阈值
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/zh/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version) 的 parts。
 
 注意：仅
-对 `v3` [object serialization version](/zh/reference/settings/merge-tree-settings/other#object_serialization_version)
+对 `v3` [object 序列化版本](/zh/reference/settings/merge-tree-settings/other#object_serialization_version)
 支持更改共享数据结构序列化
 
 #### Map {#shared-data-map}

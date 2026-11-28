@@ -101,11 +101,11 @@ dbt автоматически определяет тип данных кажд
 }}
 
 select
-  -- event_type may be inferred as a String but we may prefer LowCardinality(String):
+  -- event_type may be infered as a String but we may prefer LowCardinality(String):
   CAST(event_type, 'LowCardinality(String)') as event_type,
-  -- countState() may be inferred as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
+  -- countState() may be infered as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
   CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count,
-  -- maxSimpleState() may be inferred as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
+  -- maxSimpleState() may be infered as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
   CAST(maxSimpleState(event_type), 'SimpleAggregateFunction(max, LowCardinality(String))') as max_event_type
 from {{ ref('user_events') }}
 group by event_type
@@ -245,7 +245,6 @@ models:
     +engine: <engine-type>
     +partition_by: [ <column-name>, ... ]
     +unique_key: [ <column-name>, ... ]
-    +inserts_only: [ True|False ]
 ```
 
 Или блок `config` в `models/<model_name>.sql`:
@@ -257,7 +256,6 @@ models:
     order_by = [ "<column-name>", ... ],
     partition_by = [ "<column-name>", ... ],
     unique_key = [ "<column-name>", ... ],
-    inserts_only = [ True|False ],
       ...
     ]
 ) }}
@@ -267,12 +265,12 @@ models:
 
 Ниже перечислены конфигурации, характерные для этого типа материализации:
 
-| Параметр                 | Описание                                                                                                                                                                                                                                                                                                                                    | Обязательно?                                                                                      |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `unique_key`             | Кортеж имён столбцов, которые однозначно идентифицируют строки. Подробнее об ограничениях уникальности см. [здесь](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                                                                                   | Обязательно. Если не указать, изменённые строки будут дважды добавлены в инкрементальную таблицу. |
-| `inserts_only`           | Этот параметр устарел в пользу инкрементальной `strategy` `append`, которая работает аналогичным образом. Если для инкрементальной модели задано значение True, инкрементальные обновления будут вставляться напрямую в целевую таблицу без создания промежуточной таблицы. Если задан `inserts_only`, `incremental_strategy` игнорируется. | Необязательно (по умолчанию: `False`)                                                             |
-| `incremental_strategy`   | Стратегия, используемая для инкрементальной материализации. Поддерживаются `delete+insert`, `append`, `insert_overwrite` и `microbatch`. Дополнительные сведения о стратегиях см. [здесь](#incremental-model-strategies)                                                                                                                    | Необязательно (по умолчанию: &#39;default&#39;)                                                   |
-| `incremental_predicates` | Дополнительные условия, применяемые к инкрементальной материализации (только для стратегии `delete+insert`                                                                                                                                                                                                                                  | Необязательно                                                                                     |
+| Параметр                 | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Обязательно?                                                                                                                                         |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unique_key`             | Кортеж имён столбцов, которые однозначно идентифицируют строки. Подробнее об ограничениях уникальности см. [здесь](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                                                                                                                                                                                                                                | Обязателен для `legacy`, `delete+insert` и `microbatch`. Если он не задан, по умолчанию используется стратегия `append`.                             |
+| `inserts_only`           | Этот параметр устарел в пользу инкрементальной `strategy` `append`, которая работает аналогичным образом. Если для инкрементальной модели задано значение True, инкрементальные обновления будут вставляться напрямую в целевую таблицу без создания промежуточной таблицы. Если задан `inserts_only`, `incremental_strategy` игнорируется. Если параметр задан, в журнал записывается предупреждение об устаревании, из-за которого запуск с флагом `--warn-error` завершается ошибкой. | Необязательно (по умолчанию: `False`)                                                                                                                |
+| `incremental_strategy`   | Стратегия, используемая для инкрементальной материализации. Поддерживаются `delete+insert`, `append`, `insert_overwrite` и `microbatch`. Дополнительные сведения о стратегиях см. [здесь](#incremental-model-strategies)                                                                                                                                                                                                                                                                 | Необязательно (по умолчанию: `append`, если не задан `unique_key`; иначе `delete+insert`, если задан `use_lw_deletes`, в остальных случаях `legacy`) |
+| `incremental_predicates` | Дополнительные условия, применяемые к инкрементальной материализации. Поддерживаются только стратегиями `delete+insert` и `microbatch`; если параметр задан, любая другая стратегия завершается ошибкой, в том числе `append`, используемая по умолчанию для моделей без `unique_key`.                                                                                                                                                                                                   | Необязательно                                                                                                                                        |
 
 ### Стратегии инкрементальных моделей {#incremental-model-strategies}
 
@@ -280,9 +278,10 @@ models:
 
 #### Стратегия по умолчанию (устаревшая) {#default-legacy-strategy}
 
+Это стратегия по умолчанию для моделей с `unique_key` (см. [`incremental_strategy`](#incremental-configurations)).
 Исторически ClickHouse поддерживал обновления и удаления лишь ограниченно — в виде асинхронных «мутаций».
 Чтобы эмулировать ожидаемое поведение dbt,
-dbt-clickhouse по умолчанию создает новую временную таблицу, содержащую все незатронутые (не удаленные и не измененные) «старые»
+dbt-clickhouse создает новую временную таблицу, содержащую все незатронутые (не удаленные и не измененные) «старые»
 записи, а также все новые или обновленные записи,
 а затем меняет местами или выполняет EXCHANGE этой временной таблицы с существующим отношением инкрементальной модели. Это единственная стратегия,
 которая сохраняет исходное отношение, если что-то
@@ -291,7 +290,7 @@ dbt-clickhouse по умолчанию создает новую временн�
 
 #### Стратегия Delete+Insert {#delete-insert-strategy}
 
-Стратегия `delete+insert` использует [легковесное удаление](/ru/concepts/features/operations/delete/lightweight-delete), чтобы удалить затронутые строки, а затем вставить новые. Поскольку она не копирует всю таблицу, её производительность значительно выше, чем у стратегии «legacy». Если в профиле задать `use_lw_deletes: true`, `delete+insert` станет инкрементальной стратегией по умолчанию.
+Стратегия `delete+insert` использует [легковесное удаление](/ru/concepts/features/operations/delete/lightweight-delete), чтобы удалить затронутые строки, а затем вставить новые. Поскольку она не копирует всю таблицу, её производительность значительно выше, чем у стратегии «legacy». Если в профиле задать `use_lw_deletes: true`, `delete+insert` станет инкрементальной стратегией по умолчанию для моделей с `unique_key`.
 
 При использовании этой стратегии следует учитывать несколько важных ограничений:
 
@@ -317,6 +316,8 @@ dbt-clickhouse по умолчанию создает новую временн�
 * Избавиться от необходимости в сложной условной логике при [дозагрузке](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills).
 
 Подробные сведения об использовании Microbatch см. в [официальной документации](https://docs.getdbt.com/docs/build/incremental-microbatch).
+
+Границы батчей задаются в UTC независимо от часового пояса сервера или столбца `event_time`.
 
 ##### Доступные конфигурации Microbatch {#available-microbatch-configurations}
 
@@ -567,6 +568,93 @@ select * from {{ ref('<model-name>') }}
 ```
 
 Подробный пример на основе Jaffle Shop приведён в [разделе о снимках в руководствах](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/guides#snapshot). Полный список параметров см. на справочной странице [snapshot configs](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs).
+
+## Функции (пользовательские функции (UDF)) {#functions}
+
+[Функции](https://docs.getdbt.com/docs/build/udfs) dbt появились в `dbt-core v1.11+` и позволяют пользователям определять пользовательские функции (UDF) и ссылаться на них непосредственно в dbt.
+Адаптер ClickHouse поддерживает определение SQL пользовательских функций (UDF) типов `scalar` и `aggregate` (см. [спецификацию type](https://docs.getdbt.com/reference/resource-configs/type?version=1)), хотя внутри ClickHouse оба типа обрабатываются одинаково.
+
+Ниже приведены два примера того, как создавать функции типа `scalar` и `aggregate` и ссылаться на них:
+
+```yaml
+# functions/schema.yml
+functions:
+  - name: price_for_xlarge
+    description: Doubles the price of a standard item
+    arguments:
+      - name: price
+        data_type: Float64  # required by dbt, not enforced by ClickHouse
+    returns:
+      data_type: Float64
+  - name: sum_squared
+    description: Sums all values, then squares the result
+    config:
+      type: aggregate
+    arguments:
+      - name: value
+        data_type: Float64
+    returns:
+      data_type: Float64
+```
+
+Тело функции — это одно выражение над аргументами, а не `SELECT`:
+
+```sql
+-- functions/price_for_xlarge.sql
+price * 2
+```
+
+```sql
+-- functions/sum_squared.sql
+pow(sum(value), 2)
+```
+
+dbt создаёт их с помощью `CREATE OR REPLACE FUNCTION price_for_xlarge AS (price) -> price * 2`. Модели вызывают их через
+`function()`:
+
+```sql
+select
+    category,
+    {{ function('sum_squared') }}({{ function('price_for_xlarge') }}(price)) as xlarge_total_squared
+from {{ ref('items') }}
+group by category
+```
+
+ClickHouse встраивает пользовательские функции (UDF) непосредственно в вызывающий запрос, поэтому к агрегатным пользовательским функциям (UDF) нельзя применять комбинаторы агрегатных функций (например, `-If` или `-State`) и оконные секции (`OVER (...)`).
+
+Полный список конфигураций см. в [документации по свойствам функций](https://docs.getdbt.com/reference/function-properties?version=1).
+Учтите, что некоторые конфигурации могут не применяться или работать некорректно в адаптере ClickHouse (см. [раздел о неподдерживаемых конфигурациях функций](#unsupported-function-configurations)).
+
+### Область видимости функций {#functions-scope}
+
+Пользовательские функции (UDF) не привязаны к базе данных: имя функции общее для всех баз данных в одном сервисе ClickHouse или кластере. Если нужно разграничить окружения, которые используют один и тот же сервис или кластер, используйте `alias`, например:
+
+```yaml
+functions:
+  - name: price_for_xlarge
+    config:
+      alias: "price_for_xlarge_{{ target.name }}"
+```
+
+В этом случае `{{ function('price_for_xlarge') }}` разрешается в `price_for_xlarge_dev`, `price_for_xlarge_prod` и т. д.
+
+### Пользовательские функции (UDF) на Python и JavaScript {#python-and-javascript-udfs}
+
+Пользовательские функции (UDF) на Python и JavaScript пока не поддерживаются адаптером ClickHouse.
+
+### Неподдерживаемые конфигурации функций {#unsupported-function-configurations}
+
+Следующие свойства функций не поддерживаются в ClickHouse:
+
+* `overloads`: пользовательская функция (UDF) может иметь только одну сигнатуру. Если указать `overloads`, сборка завершится с ошибкой.
+* `default_value` для аргумента: не может быть задан в пользовательских функциях (UDF) ClickHouse. Если указать `default_value`, сборка завершится с ошибкой.
+* `volatility`: не может быть задан в пользовательских функциях (UDF) ClickHouse. Параметр игнорируется с предупреждением.
+* `data_type` для аргумента и возвращаемого значения: обязателен в dbt, но пользовательские функции (UDF) в ClickHouse не типизированы, поэтому тип не проверяется. Если требуется фиксированный тип, выполните приведение типа (CAST) в теле функции.
+
+Кроме того, следующие конфигурации моделей не поддерживаются в ClickHouse:
+
+* `grants`: в ClickHouse нет привилегий на использование пользовательских функций (UDF) — любой пользователь может их вызывать. Если указать `grants`, сборка завершится с ошибкой.
+* `persist_docs`: описания нельзя сохранить в пользовательских функциях (UDF), поэтому они пропускаются без предупреждения. При этом они по-прежнему отображаются в документации dbt.
 
 ## Контракты и ограничения {#contracts-and-constraints}
 

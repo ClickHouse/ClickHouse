@@ -99,7 +99,38 @@ seção `named_collections_storage` do arquivo de configuração. O exemplo a se
 
 O parâmetro de configuração opcional `update_timeout_ms` é, por padrão, `5000`.
 
-Você pode verificar o tipo de armazenamento ativo por meio de `system.server_settings` e `getServerSetting`:
+#### Rotação de chaves {#named-collections-key-rotation}
+
+É possível configurar várias chaves, cada uma com um atributo `id`, e `current_key_id` seleciona a chave
+que criptografa novas entradas (`current_key_hex`, por sua vez, a seleciona pelo valor). Todas as chaves configuradas são
+usadas para descriptografia. Um servidor em execução não detecta alterações nas chaves, nem mesmo com
+`SYSTEM RELOAD CONFIG`: é necessário um restart. As coleções existentes continuam legíveis por meio da respectiva
+chave antiga e são criptografadas novamente com a chave atual na próxima vez em que forem gravadas: por
+`ALTER NAMED COLLECTION`, `CREATE OR REPLACE NAMED COLLECTION` ou por uma restauração a partir de um backup. Um servidor
+que não tenha a chave usada para criptografar uma coleção reporta um erro informando a impressão digital (fingerprint) dessa
+chave e ignora a coleção durante o carregamento: ela volta a ser carregada assim que o servidor for reiniciado com a
+chave ou assim que um servidor que tenha a chave reescrever a coleção. Remova uma chave antiga da
+configuração somente depois que todas as coleções criptografadas com ela tiverem sido reescritas.
+
+```xml
+<clickhouse>
+  <named_collections_storage>
+    <type>local_encrypted</type>
+    <key_hex id="0">bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <key_hex id="1">00112233445566778899aabbccddeeff</key_hex>
+    <current_key_id>1</current_key_id>
+  </named_collections_storage>
+</clickhouse>
+```
+
+Para fazer a rotação da chave de um armazenamento `local_encrypted`, adicione a nova chave, defina-a como a atual conforme o
+exemplo acima e reinicie o servidor. Todos os servidores que compartilham um armazenamento `keeper_encrypted` ou
+`zookeeper_encrypted` devem ter a nova chave antes que qualquer um deles a utilize para gravar dados: um servidor
+reiniciado com uma nova chave atual grava entradas que os servidores ainda não reiniciados não conseguem descriptografar.
+Faça a rotação da chave em duas fases: primeiro, adicione a nova chave mantendo a antiga como atual e reinicie
+todos os servidores; depois, defina a nova chave como a atual e reinicie todos os servidores novamente.
+
+Você pode consultar o tipo de armazenamento em uso por meio de `system.server_settings` e `getServerSetting`:
 
 ```sql
 SELECT value, getServerSetting('named_collections_storage_type')
@@ -107,7 +138,7 @@ FROM system.server_settings
 WHERE name = 'named_collections_storage.type';
 ```
 
-Alterar o tipo de armazenamento exige reiniciar o servidor; `SYSTEM RELOAD CONFIG` não altera o backend ativo.
+Alterar o tipo de armazenamento exige um restart do servidor; `SYSTEM RELOAD CONFIG` não altera o backend ativo.
 
 ## Armazenar coleções nomeadas em arquivos de configuração {#storing-named-collections-in-configuration-files}
 
@@ -557,21 +588,50 @@ kafka_max_block_size = '1048576';
 </clickhouse>
 ```
 
-### TLS e certificados de cliente {#kafka-mtls-named-collection}
+### TLS e certificados do cliente {#kafka-mtls-named-collection}
 
-Os caminhos de TLS e `ssl.key.password` são [configurações estendidas do librdkafka](/pt-BR/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections), e não configurações `kafka_*` do motor de tabela Kafka. Em uma coleção nomeada, defina-as com o prefixo `kafka.` em DDL (por exemplo, `kafka.ssl_ca_location`) ou dentro de `<kafka>` em XML (por exemplo, `<ssl_ca_location>`). Quando `ENGINE = Kafka(collection)` usa a coleção, a configuração global `<kafka>` do servidor não é mesclada.
+Os certificados TLS, as chaves privadas e `ssl.key.password` são [configurações estendidas do librdkafka](/pt-BR/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections), e não configurações `kafka_*` do motor de tabela Kafka. Em uma coleção nomeada, defina-os com o prefixo `kafka.` em DDL (por exemplo, `kafka.ssl_ca_pem`) ou dentro de `<kafka>` em XML (por exemplo, `<ssl_ca_location>`). Quando a coleção é usada por `ENGINE = Kafka(collection)`, a configuração global `<kafka>` do servidor não é mesclada.
+
+Uma coleção nomeada criada com SQL aceita apenas propriedades do `librdkafka` explicitamente permitidas. Para TLS, informe o conteúdo do certificado ou da chave em `ssl.ca.pem`, `ssl.certificate.pem` ou `ssl.key.pem`. Para usar caminhos de arquivo ou outras propriedades fora da allowlist, defina a coleção no arquivo de configuração do servidor. Consulte [TLS e SASL com coleções nomeadas](/pt-BR/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections).
+
+Exemplo com DDL:
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 ```
 
-Use os `SETTINGS` da tabela para `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, `kafka_sasl_username` e `kafka_sasl_password` quando esses valores precisarem variar de uma tabela para outra. Um exemplo completo de `CREATE TABLE` está disponível em [TLS e SASL com coleções nomeadas](/pt-BR/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections).
+Exemplo com XML, que permite referenciar arquivos no servidor:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
+```
+
+Use `SETTINGS` da tabela para `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, `kafka_sasl_username` e `kafka_sasl_password` quando esses valores precisarem variar de uma tabela para outra. Veja um exemplo completo de `CREATE TABLE` em [TLS e SASL com coleções nomeadas](/pt-BR/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections).
 
 ### Autenticação OAUTHBEARER/OIDC {#oauthbearer-oidc-authentication}
 

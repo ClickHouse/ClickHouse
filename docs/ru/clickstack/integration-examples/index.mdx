@@ -11,7 +11,7 @@ ClickStack предоставляет несколько способов нас
 <Note>
   Некоторые из этих руководств по интеграции используют встроенный OpenTelemetry Collector в ClickStack с открытым исходным кодом для быстрого тестирования и оценки.
 
-  Для production-развертываний мы рекомендуем запускать интеграции в виде агентов OpenTelemetry Collector рядом с вашими рабочими нагрузками. Эти агенты должны пересылать данные телеметрии по OTLP в коллектор ClickStack OpenTelemetry, который затем доставляет данные либо в самоуправляемый экземпляр ClickHouse для дистрибутива ClickStack с открытым исходным кодом, либо в Управляемый ClickStack. Сведения о конфигурации для production см. в разделе [&quot;Отправка данных OpenTelemetry&quot;](/ru/clickstack/ingesting-data/opentelemetry).
+  Для production-развертываний мы рекомендуем запускать интеграции в виде агентов OpenTelemetry Collector рядом с вашими рабочими нагрузками. Эти агенты должны пересылать данные телеметрии по OTLP в коллектор ClickStack OpenTelemetry, который затем доставляет данные в экземпляр ClickHouse, используемый вашим развертыванием ClickStack с открытым исходным кодом. Сведения о конфигурации для production см. в разделе [&quot;Отправка данных OpenTelemetry&quot;](/ru/clickstack/ingesting-data/opentelemetry).
 </Note>
 
 | Раздел                                                                                   | Описание                                           |
@@ -24,6 +24,7 @@ ClickStack предоставляет несколько способов нас
 | [Журналы Kafka](/ru/clickstack/integration-examples/kafka-logs)                             | Собирать журналы брокеров Kafka                    |
 | [Метрики Kafka](/ru/clickstack/integration-examples/kafka-metrics)                          | Отслеживать производительность Kafka               |
 | [Kubernetes](/ru/clickstack/integration-examples/kubernetes)                                | Отслеживать кластеры K8s                           |
+| [Loom](/ru/clickstack/integration-examples/loom)                                            | Отправлять трассы запросов и метрики Loom          |
 | [Журналы MongoDB](/ru/clickstack/integration-examples/mongodb-logs)                         | Собирать серверные журналы MongoDB                 |
 | [Журналы MySQL](/ru/clickstack/integration-examples/mysql)                                  | Собирать журналы медленных запросов и ошибок MySQL |
 | [Журналы Nginx](/ru/clickstack/integration-examples/nginx-logs)                             | Собирать журналы доступа и ошибок Nginx            |

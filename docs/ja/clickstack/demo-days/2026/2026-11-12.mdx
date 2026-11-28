@@ -1,0 +1,76 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-11-12
+title: 'デモデイズ - 2026-11-12'
+sidebarTitle: '2026-11-12'
+description: '2026-11-12 の ClickStack デモデー'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+## テキスト索引のブロックサイズとフィルタルックアップの高速化 {#text-index-block-size-and-faster-filter-lookups}
+
+*デモ担当者: [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ClickStack のフィルタパネルは読み込みが遅く、一致する値が存在する場合でもフィールドが空のままになることがありました。報告されたデモでは、537M 行のログを持つテーブルで、100 個のキーのうち 22 個分の候補しか返されず、それにも約 30 秒かかっていました。今回の変更により、同じパネルで 100 個すべてのキーの候補が返され、読み込みも高速になりました。
+
+このパネルは、テキスト索引を使用して Map のキーとその値を検出します。例えば、キー `service` を見つけ、`checkout` や `billing` といった値を候補として提示します。これにより生のログをスキャンせずに済みますが、索引を開く処理自体のコストは依然として高いままでした。
+
+各テキスト索引は、トークンをソートした辞書を持ち、これがブロックに分割されています。ヘッダーには各ブロックの開始位置が記録されており、ClickHouse は該当するブロックへ直接ジャンプできます。ブロックが大きいほどヘッダーのエントリ数が減り、ルックアップ開始前に読み込む情報も少なくなります。この仕組みは、ビデオで Aaron が図を使って解説しています。
+
+スキーマでは、`otel_logs`、`otel_traces`、`hyperdx_sessions` に対して `text_index_dictionary_block_size = 8192` を設定するようになりました (従来のデフォルトは 512) 。ローカルのベンチマークでは、これによりパーツあたりのヘッダーが 17.7 KB から 1.3 KB に削減されました。この移行は既存のインストールを含め ClickHouse 26.6 以降で適用され、明示的に指定されたテーブル設定は保持されます。新しいパーツには大きいブロックが使用され、既存のパーツはマージされるまで従来のレイアウトを維持します。
+
+ヘッダーが小さくなったことで、キーごとに個別にルックアップすることが現実的になりました。従来は、すべてのキーが 1 つのクエリを共有しており、そのデフォルトの上限は 300 万索引レコードでした。リクエスト ID のように数百万の異なる値を持つキーがこの上限を使い切ると、後続のキーに候補が表示されなくなることがありました。さらに、この不完全な結果がキャッシュされてしまう可能性もありました。
+
+大きいブロックで設定された索引では、キーごとに 20,000 索引レコードの上限が個別に設けられるようになりました。ルックアップは 10 キーずつのバッチで並列実行されるため、多数の値を持つキーが他のキーの割り当て分を消費することはありません。また、`topKWeighted` によって、読み取ったレコードの中から出現頻度の高い値をおおよそ選択するようになり、アルファベット順で先頭の値を選ぶ従来の方式に取って代わりました。小さいブロックで設定された索引では、各バッチ内で従来のルックアップ方式が維持されます。
+
+キーと値の初回ルックアップで読み取るパーツも少なくなりました。デフォルトでは、サイズ順位の中間から最大 20 個のパーツを調べます。**Map key index parts** でその数を制御し、**Map key index part size** で中サイズ、最小、最大のいずれのパーツを対象とするかを選択します。これにより、特にオブジェクトストレージからデータを取得する必要がある場合に、索引の読み取りが削減されます。その反面、選択されたパーツ以外にあるキーや値が候補から漏れる可能性があり、頻度の推定値も調べたレコードのみに基づくものになります。個々のキーで「さらに読み込む」を実行すると、関連するすべてのパーツが読み取られます。
+
+別の修正として、実行中の `getMapKeys` クエリを、条件が一致する同時実行の呼び出し元間で 1 つに共有するようにしました。従来は、検索ページを開くと同じ読み取りが 2 回実行されることがありました。例のテーブルでは、これらの重複クエリが合計で約 47 GiB のクエリメモリを消費していました。現在は各読み取りが 1 回だけ実行されます。
+
+報告されたベンチマークでは、大きいブロックによってテキスト索引を使った検索の性能も向上し、同じパーツ数で一部のクエリが約 60% 高速化しました。さらに、現在まだオープン中の変更では、すべての異なるキーをグループ化することなく、`topKWeighted` を使用して頻出する Map キーを検出します。パーツあたり約 5.5M の異なるキーを持つテーブルで、報告されたベンチマークではクエリ時間が 9.1 秒から 2.6 秒に、メモリ使用量が 14 GiB から 78 MiB に削減されました。
+
+**関連 PR:** [#3611](https://github.com/ClickHouse/clickstack/pull/3611) 同時実行の呼び出し元間で 1 つの Map キー読み取りを共有, [#3635](https://github.com/ClickHouse/clickstack/pull/3635) テキスト索引のキーと値のルックアップで読み取るパーツの集合を設定可能に, [#3617](https://github.com/ClickHouse/clickstack/pull/3617) テキスト索引の最頻値を 10 キーずつのバッチで表示, [#3614](https://github.com/ClickHouse/clickstack/pull/3614) topKWeighted で最頻出の Map キーを検出 (オープン)
+
+## カスタムヘッダーを使わない MCPサーバー接続 {#mcp-server-connections-without-custom-headers}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=396" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまで、ClickHouse Cloud の ClickStack MCPサーバーにエージェントを接続するには、サービス ID をカスタム HTTP ヘッダーとして渡す必要がありました。しかし、多くの MCPクライアントではカスタムヘッダーを簡単に設定できず、まったく設定できないものもあるため、エージェントごとに設定を手作業で編集しなければなりませんでした。
+
+現在は、デフォルトでサービス ID を MCP URL のクエリパラメータとして渡すようになっています。これは、ClickHouse AI チームが同じ制約を回避するためにすでに採用していた方式です。対応しているクライアントでは、エージェントのセットアップがコマンド 1 つで完了します (たとえば Codex では、以前は TOML 設定にブロックを貼り付ける必要がありました)。コマンドを実行できないクライアントでも、URL をそのまま使用できます。
+
+この変更がマージされた直後に、Claude Code が MCP 設定でのカスタムヘッダーのサポートを廃止したため、ヘッダーベースのセットアップは本番環境で動作しなくなりました。一方、クエリパラメータを使用する接続には影響はありませんでした。
+
+この変更はクラウドMCPエンドポイントが対象です。オープンソースの MCPサーバーは Bearerトークンで認証するため、渡すべきサービス ID はありません。オープンソース版では、`npx @hyperdx/cli mcp install` を実行すると、個人用または組織の APIキーを非表示で入力するよう求められ、キーの検証後、Claude Code、Codex、Cursor、VS Code の設定にサーバーが自動的に書き込まれます。
+
+## 「はじめに」での Datadog エージェントのセットアップ {#datadog-agent-setup-in-getting-started}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=469" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+「はじめに」フローで、Datadog エージェントが他の SDK やコレクターと並んで表示されるようになりました。これにより、オンボーディングページを離れることなく、既存の Datadog エージェントの送信先を ClickStack に切り替えられます。
+
+ここに表示される Datadog インジェストエンドポイントは、ClickHouse Cloud のデータプレーンから提供されます。データプレーンは、他のエンドポイントとあわせてこの URL もフロントエンドに渡すようになりました。セットアップ手順は他のすべての SDK と同様に公開ドキュメントから取得されるため、ページの内容は常に [Datadog 移行ガイド](https://clickhouse.com/docs/clickstack/migration/datadog)と同期されます。
+
+receiver 自体は、ClickStack コレクター内で Datadog のログ、トレース、メトリクスのペイロードを OpenTelemetry データモデルに変換します。そのため、既存のエージェントや SDK は変更なしでそのまま動作し続けます。オープンソース版 ClickStack では、receiver はポート 8126 で待ち受け、`ENABLE_DATADOG_RECEIVER=true` で有効化できます。
+
+## 組織のAPIキー {#organization-api-keys}
+
+*デモ担当者: [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/aQ4d7pFMZok?start=497" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまで、外部 API およびMCPサーバーで使用できる Bearer 認証情報は、個人のアクセスキーのみでした。このキーは所有者がチームから削除されると無効になるため、そのキーで設定した Terraform、CI などの自動化処理が動かなくなり、チームはボットユーザーを用意してこの問題を回避していました。
+
+今回から、**チーム設定** &gt; **API &amp; Agents** で、チームが所有するAPIキーを作成できるようになりました。各キーには説明と有効期限 (30 日、1 年、無期限のいずれか) を設定します。完全なキーは作成時に一度だけ表示され、SHA-256 ハッシュとして保存されます。一覧には各キーの作成者、最終使用日時、有効期限が表示されるため、ほとんど使われていないキーや期限切れ間近のキーを見つけて、その場で取り消すことができます。キーの取り消しや有効期限切れは、次のリクエストから即座に反映されます。
+
+各キーはそれぞれ独立した service account であり、他のユーザーと同じアクセス許可を持ちます。キーを使って作成したもの (アラート、ダッシュボード、保存済み検索) はすべて service account に帰属し、キーの作成者には帰属しません。また、作成者がその後チームから削除されたキーは「Deleted user」と表示され、引き続き使用できます。service account はサインインできず、**メンバー** にも表示されません。キーでユーザーを招待したり、他のキーを作成・取り消したりすることはできません。
+
+組織のキーは、個人のキーを使用できる場所であればどこでも使用できます。具体的には、外部 API v2、MCPサーバー、`npx @hyperdx/cli mcp install` です。Terraform プロバイダーでは、キーをチーム ID と併せて指定します。この機能はセルフホストのデプロイメントを想定したもので、RBAC による制御はありません。オープンソース版 ClickStack にはロールがないため、チームメンバーであれば誰でも組織のキーを管理でき、キーではユーザーが行えるあらゆる操作を実行できます。
+
+**関連 PR:** [#3435](https://github.com/ClickHouse/clickstack/pull/3435) チーム所有のAPIキー

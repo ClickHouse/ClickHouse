@@ -42,14 +42,14 @@ Si usaste el script de [instalación rápida](/es/get-started/setup/self-managed
     ```
 
     <Accordion title="Otros métodos de instalación">
-      | Herramienta                                    | Comando                         |
-      | ---------------------------------------------- | ------------------------------- |
-      | npm                                            | `npm install -g clickhousectl`  |
-      | uv                                             | `uv tool install clickhousectl` |
-      | pipx                                           | `pipx install clickhousectl`    |
-      | pip                                            | `pip install clickhousectl`     |
-      | cargo-binstall                                 | `cargo binstall clickhousectl`  |
-      | Cargo, a partir del código fuente (Rust 1.94+) | `cargo install clickhousectl`   |
+      | Herramienta                                      | Comando                         |
+      | ------------------------------------------------ | ------------------------------- |
+      | npm                                              | `npm install -g clickhousectl`  |
+      | uv                                               | `uv tool install clickhousectl` |
+      | pipx                                             | `pipx install clickhousectl`    |
+      | pip                                              | `pip install clickhousectl`     |
+      | cargo-binstall                                   | `cargo binstall clickhousectl`  |
+      | Cargo, a partir del código fuente (Rust 1.94.1+) | `cargo install clickhousectl`   |
 
       Solo el script de instalación y npm crean el alias `chctl`.
     </Accordion>
@@ -60,6 +60,9 @@ Si usaste el script de [instalación rápida](/es/get-started/setup/self-managed
     clickhousectl update --check
     clickhousectl update
     ```
+
+    `update` reemplaza las instalaciones realizadas con el script, mediante una descarga o con Cargo. En las instalaciones con npm, uv,
+    pipx y pip, en cambio, muestra el comando del gestor de paquetes que debe ejecutar.
   </Step>
 
   <Step title="Instale ClickHouse" id="cli-install-clickhouse">
@@ -103,12 +106,13 @@ Si usaste el script de [instalación rápida](/es/get-started/setup/self-managed
   </Step>
 
   <Step title="Inicie clickhouse-server" id="cli-start-clickhouse-server">
-    `clickhousectl` limita el ámbito de los servidores locales al directorio desde el que lo ejecutas. Crea un
-    directorio de proyecto e inicia un servidor en él:
+    `clickhousectl` asocia los servidores locales a un proyecto. Cree un directorio de proyecto,
+    márquelo como raíz del proyecto con `local init` e inicie allí un servidor:
 
     ```bash
     mkdir my-project && cd my-project
-    clickhousectl local server start
+    clickhousectl local init
+    clickhousectl local clickhouse start
     ```
 
     ```response
@@ -119,16 +123,17 @@ Si usaste el script de [instalación rápida](/es/get-started/setup/self-managed
     ```
 
     El servidor se ejecuta en segundo plano y se llama `default`. Sus datos se almacenan en
-    `./.clickhouse/`, por lo que debe ejecutar los comandos `clickhousectl local` posteriores desde el mismo
-    directorio; `clickhousectl` no busca en los directorios superiores. El servidor escucha
-    en el puerto HTTP `8123` y en el puerto TCP `9000`, o en puertos libres si estos ya están en uso.
-    Para elegir los puertos, use `--http-port` y `--tcp-port`. Para ejecutar más de un
-    servidor, asigne un nombre a cada uno, por ejemplo, `clickhousectl local server start dev`.
+    `.clickhouse/`, en la raíz del proyecto. Al igual que con Git, los comandos posteriores de `clickhousectl local`
+    funcionan desde ese directorio o desde cualquiera de sus subdirectorios. El servidor
+    escucha en el puerto HTTP `8123` y en el puerto TCP `9000`, o en puertos libres si estos ya
+    están ocupados. Para elegir los puertos, use `--http-port` y `--tcp-port`. Para ejecutar más de
+    un servidor, asigne un nombre a cada uno, por ejemplo, `clickhousectl local clickhouse start dev`.
+    `local ch` es la forma abreviada de `local clickhouse`.
 
-    Para comprobar que se está ejecutando:
+    Para comprobar que está en ejecución:
 
     ```bash
-    clickhousectl local server list
+    clickhousectl local clickhouse list
     ```
 
     ```response
@@ -138,17 +143,21 @@ Si usaste el script de [instalación rápida](/es/get-started/setup/self-managed
 
     1 server, 1 running
     ```
+
+    `clickhousectl local status` muestra todos los servidores de ClickHouse e instancias de Postgres
+    del proyecto, tanto en ejecución como detenidos.
   </Step>
 
   <Step title="Inicie clickhouse-client" id="cli-start-clickhouse-client">
-    Conéctese al servidor con `clickhouse-client` desde el mismo directorio:
+    Conéctese al servidor con `clickhouse-client` desde cualquier ubicación del proyecto:
 
     ```bash
     clickhousectl local client
     ```
 
-    `local client` se conecta al servidor llamado `default` y usa la misma
-    versión de ClickHouse que el servidor. Para conectarse a otro servidor, indique su nombre,
+    `local client` se conecta al servidor llamado `default`, o al único servidor del
+    proyecto si ninguno se llama `default`, y usa la misma versión de ClickHouse que el
+    servidor. Para conectarse a otro servidor, indique su nombre,
     por ejemplo, `clickhousectl local client dev`. Verá algo similar a lo siguiente:
 
     ```response
@@ -174,17 +183,17 @@ Si usaste el script de [instalación rápida](/es/get-started/setup/self-managed
   </Step>
 
   <Step title="Detenga el servidor" id="cli-stop-clickhouse-server">
-    El servidor sigue ejecutándose en segundo plano hasta que lo detengas. Para detenerlo, hazlo desde el
-    mismo directorio:
+    El servidor sigue ejecutándose en segundo plano hasta que lo detengas. Para detenerlo, hazlo desde
+    cualquier ubicación del proyecto:
 
     ```bash
-    clickhousectl local server stop
+    clickhousectl local clickhouse stop
     ```
 
-    Al detener el servidor, sus datos se conservan para la próxima ejecución de `clickhousectl local server start`.
+    Al detener el servidor, sus datos se conservan para la próxima ejecución de `clickhousectl local clickhouse start`.
 
     <Warning>
-      `clickhousectl local server remove` elimina permanentemente los datos de un servidor detenido.
+      `clickhousectl local clickhouse remove` elimina permanentemente los datos de un servidor detenido.
     </Warning>
   </Step>
 </Steps>

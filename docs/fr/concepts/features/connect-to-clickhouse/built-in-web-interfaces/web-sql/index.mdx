@@ -1,0 +1,61 @@
+---
+description: 'Documentation de l’interface Web SQL (Play), l’interface de requête intégrée exécutée dans le navigateur et servie à l’adresse `/play`'
+sidebarTitle: 'Interface Web SQL'
+slug: /concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql
+title: 'Interface Web SQL (Play)'
+doc_type: 'reference'
+---
+
+L’interface Web SQL (Play) est l’interface de requête intégrée de ClickHouse, utilisable directement dans le navigateur. Elle est servie par n’importe quel port HTTP de ClickHouse, au path `/play` (par exemple, `http://localhost:8123/play`). Elle permet d’écrire et d’exécuter des requêtes, d’afficher les ensembles de résultats sous forme de table ou de graphique, et de partager une requête en copiant son URL.
+
+L’ensemble de l’interface tient dans `programs/server/play.html`, une page unique et autonome servie directement par le binaire ClickHouse, sans framework ni étape de construction. Seul le rendu des graphiques fait exception : la bibliothèque de graphiques `uPlot` est chargée en différé depuis un CDN tiers la première fois qu’un ensemble de résultats est affiché sous forme de graphique. Les graphiques sont donc indisponibles dans les déploiements hors ligne ou dont le trafic sortant est restreint.
+
+## Onglets de requête {#query-tabs}
+
+Les onglets vous permettent de garder plusieurs requêtes côte à côte, plutôt que de jongler entre elles dans un seul éditeur ou de vous en remettre à l&#39;historique du navigateur.
+
+Chaque onglet possède son propre texte de la requête, son titre, ses paramètres de requête et son dernier ensemble de résultats. Les paramètres de connexion (URL, utilisateur, mot de passe) restent globaux et sont communs à tous les onglets.
+
+### Quand la barre d’onglets apparaît-elle ? {#when-the-tab-bar-appears}
+
+La barre d’onglets apparaît dès qu’une requête a été exécutée ou dès qu’il existe plus d’un onglet. Un onglet unique, sans ensemble de résultats, s’affiche exactement comme la page avant l’introduction des onglets : la barre d’onglets reste donc masquée jusqu’à ce que vous en ayez besoin.
+
+L’onglet actif se fond visuellement dans la page : son arrière-plan reprend la couleur dérivée du hachage de chaque requête (celle-là même qu’utilise déjà l’arrière-plan de la page), avec un dégradé plus saturé en haut dans le thème clair et plus lumineux en haut dans le thème sombre. Les onglets inactifs prennent une teinte dérivée du hachage du texte de leur propre requête, si bien que les différents onglets se distinguent automatiquement par leur couleur.
+
+### Créer, fermer et renommer des onglets {#creating-closing-and-renaming-tabs}
+
+* Créez un nouvel onglet à l’aide du bouton `[+]` situé à droite des onglets.
+* Fermez un onglet à l’aide de l’icône `x` située sur l’onglet.
+* Les nouveaux onglets reçoivent par défaut les noms `Query A`, `Query B`, etc.
+* Cliquez sur le titre de l’onglet actif pour le modifier directement ; le champ de saisie s’élargit à mesure que vous tapez.
+
+### Changer d’onglet {#switching-tabs}
+
+* Cliquez sur un onglet inactif pour l’activer.
+* Utilisez la molette de la souris au-dessus du panneau d’onglets pour changer d’onglet : un défilement vers le haut active l’onglet de gauche, un défilement vers le bas celui de droite (s’ils existent). Le défilement vertical comme horizontal de la molette est pris en charge.
+
+La barre d’onglets est fixe au défilement horizontal : elle reste ancrée à gauche lorsque la page défile horizontalement, comme le logo ClickHouse en bas, mais elle défile verticalement avec le reste de la page.
+
+### Persistance et historique du navigateur {#persistence-and-browser-history}
+
+L&#39;espace de travail — les onglets, leurs titres, l&#39;onglet actif, leur ordre ainsi que de petits snapshots des ensembles de résultats — est persisté dans IndexedDB et restauré au rechargement. La persistance est assurée dans la mesure du possible : si IndexedDB est indisponible, l&#39;espace de travail se replie sur un état en mémoire pour la session en cours.
+
+Les onglets s&#39;intègrent également à l&#39;API History du navigateur et à l&#39;URL :
+
+* L&#39;état de l&#39;historique contient l&#39;onglet actif : les boutons Précédent et Suivant du navigateur permettent donc de passer d&#39;un onglet à l&#39;autre.
+* Un paramètre `tab=<name>` est ajouté à l&#39;URL. Au chargement, la requête et le paramètre `tab` de l&#39;URL sont réconciliés avec les onglets enregistrés : soit un onglet existant portant ce nom est réutilisé (et sa requête est remplacée), soit un nouvel onglet est créé si aucun onglet ne porte ce nom ou si l&#39;onglet n&#39;avait pas de nom. Il est ainsi possible d&#39;ouvrir une URL contenant une nouvelle requête tout en conservant vos propres onglets enregistrés.
+
+## Mode notebook {#notebook-mode}
+
+Un onglet peut être transformé en notebook — une séquence ordonnée de cellules de requête et de texte — en ajoutant une
+cellule à l&#39;aide du bouton `[+]` qui apparaît sous un ensemble de résultats. Le mode notebook est propre à chaque onglet. Pour en savoir plus, consultez
+[Mode notebook de l&#39;interface utilisateur web](/fr/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook).
+
+### Limitations {#limitations}
+
+Une requête continue de s’exécuter lorsque vous quittez son onglet. Ses indicateurs de progression et de ressources continuent
+de s’incrémenter en arrière-plan, et la réouverture de l’onglet reprend cet état actif : les indicateurs
+repartent donc de leurs valeurs actuelles au lieu de redémarrer à zéro ou presque. En revanche, la fermeture de l’onglet, tout comme la navigation
+vers une autre entrée de l’historique (précédente ou suivante), arrête bien la requête.
+
+Seuls les ensembles de résultats de petite taille font l’objet d’un snapshot en vue de leur restauration. Un ensemble de résultats volumineux (au-delà de la limite de taille des snapshots) ou un ensemble de résultats sous forme d’image n’est pas persisté : après un changement d’onglet ou un rechargement, l’onglet conserve sa requête mais pas l’ensemble de résultats généré, et il suffit de réexécuter la requête pour l’obtenir à nouveau. Cela s’applique aussi bien aux ensembles de résultats d’une requête unique qu’à la sortie combinée d’une exécution « Run all » (multi-requêtes).

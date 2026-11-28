@@ -485,7 +485,14 @@ clang으로 디버그 모드에서 빌드하면 `libc++`의 디버그 버전이 
 ### 정의되지 않은 동작 새니타이저 {#undefined-behaviour-sanitizer}
 
 각 커밋마다 UBSan으로 기능, 통합, 스트레스 및 단위 테스트를 실행합니다.
-일부 서드파티 라이브러리 코드는 UB에 대한 새니타이저 처리가 되어 있지 않습니다.
+일부 타사 라이브러리 코드는 UB에 대한 새니타이저 처리가 되어 있지 않습니다.
+
+또한 `-fsanitize=undefined`에 포함되지 않는 `unsigned-integer-overflow` 검사를 추가로 활성화합니다.
+부호 없는 정수의 오버플로우는 잘 정의된 동작으로, modulo 2<sup>N</sup>으로 순환(wrap around)합니다.
+그러나 *의도하지 않은* 순환은 버그이므로, 의도적으로 순환시키는 곳(해시 함수, 체크섬, 의사 난수 생성기,
+부호 없는 타입에 대한 ClickHouse 산술 연산의 의미 체계 등)에는 `NO_SANITIZE_UNSIGNED_OVERFLOW`
+속성을 지정합니다(`base/base/sanitizer_defs.h` 참조). 파일 전체와 타사 헤더 전용 코드는
+`tests/ubsan_ignorelist.txt`에서 해당 검사를 비활성화하는 방식으로 처리합니다.
 
 ### Valgrind (memcheck) {#valgrind-memcheck}
 

@@ -63,9 +63,9 @@ Consulte o [arquivo de teste](https://github.com/ClickHouse/dbt-clickhouse/blob/
 
 ### Múltiplas visões materializadas {#multiple-materialized-views}
 
-O ClickHouse permite que mais de uma visão materializada grave registros na mesma tabela de destino. Para dar suporte a isso no dbt-clickhouse com a abordagem de destino implícito, você pode construir uma `UNION` no arquivo do modelo, envolvendo o SQL de cada visão materializada com comentários no formato `--my_mv_name:begin` e `--my_mv_name:end`.
+O ClickHouse permite que mais de uma visão materializada grave registros na mesma tabela de destino. Para dar suporte a isso no dbt-clickhouse com a abordagem de destino implícito, você pode construir uma `UNION` no arquivo do model, envolvendo o SQL de cada visão materializada com comentários no formato `--my_mv_name:begin` e `--my_mv_name:end`.
 
-Por exemplo, o seguinte criará duas visões materializadas, ambas gravando dados na mesma tabela de destino do modelo. Os nomes das visões materializadas terão o formato `<model_name>_mv1` e `<model_name>_mv2`:
+Por exemplo, o seguinte criará duas visões materializadas, ambas gravando dados na mesma tabela de destino do model. Os nomes das visões materializadas terão o formato `<model_name>_mv1` e `<model_name>_mv2`:
 
 ```sql
 --mv1:begin
@@ -77,8 +77,10 @@ select a,b,c from {{ source('raw', 'table_2') }}
 --mv2:end
 ```
 
+As visões podem consultar [models efêmeros](https://docs.getdbt.com/docs/build/materializations#ephemeral) quando nenhuma delas tem sua própria cláusula `WITH`. O dbt adiciona as CTEs dos models efêmeros uma única vez, antes da primeira visão, e o dbt-clickhouse as adiciona a cada visão. Quando uma visão tem sua própria cláusula `WITH`, o dbt adiciona as CTEs diretamente a essa cláusula. Assim, uma visão que consulta um model efêmero sem essas CTEs gera um erro. Nesse caso, escreva cada visão como um model separado com uma tabela de destino explícita (consulte [Migração de destino implícito para explícito](#migration-implicit-to-explicit)).
+
 <Warning>
-  Ao atualizar um modelo com várias visões materializadas (MVs), especialmente ao renomear uma das MVs,
+  Ao atualizar um model com várias visões materializadas (MVs), especialmente ao renomear uma das MVs,
   o dbt-clickhouse não remove automaticamente a MV antiga. Em vez disso,
   você verá o seguinte aviso:
 

@@ -37,7 +37,9 @@ El número máximo de partes que pueden cargarse de forma concurrente en una sol
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "10000"},{"label": "Número máximo de parte para la carga en S3"}]}]} />
 
-Número máximo de parte para la carga en S3.
+Número máximo de partes en una carga multiparte o una copia multiparte a S3. El valor predeterminado coincide con el límite de AWS S3.
+
+Al copiar, el tamaño de la parte se aumenta para que el número de partes no supere este valor. Al escribir, se lanza una excepción si los datos requieren más partes; en ese caso, aumente `s3_max_upload_part_size` o `s3_upload_part_size_multiply_factor`. Reduzca este valor en almacenamientos S3-compatible que admitan menos partes.
 
 ## s3_max_put_burst {#s3_max_put_burst}
 

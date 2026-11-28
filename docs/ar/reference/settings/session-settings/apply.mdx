@@ -108,10 +108,6 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 مدعوم عند القراءة من جداول `MergeTree` ومن صيغة `Parquet`. وفي `Parquet`، يُطبَّق عامل التصفية على الصفحات المرمَّزة بترميزات
 `PLAIN` و`DELTA_LENGTH_BYTE_ARRAY` و`DELTA_BYTE_ARRAY` والترميز باستخدام القاموس.
 
-لاحظ أن تقدير بايتات الإدخال الذي يُجمع لاتخاذ القرار التلقائي بشأن النسخ المتماثلة المتوازية
-(`RuntimeDataflowStatisticsInputBytes`) يعتمد على حجم الكتل المقروءة في الذاكرة، ولذلك يُقدِّر
-كمية البيانات المقروءة من القرص بأقل من حجمها الفعلي عندما تُستبدل القيم بسلاسل فارغة.
-
 القيم الممكنة:
 
 * 0 — معطَّل.

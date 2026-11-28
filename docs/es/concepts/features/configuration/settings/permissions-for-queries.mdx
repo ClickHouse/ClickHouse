@@ -25,9 +25,9 @@ La siguiente configuración regula los permisos de los usuarios según el tipo d
 
 ## readonly {#readonly}
 
-Restringe qué consultas puede ejecutar una sesión. Los valores del SETTING, su valor por defecto y qué SETTINGS
+Restringe qué consultas puede ejecutar una sesión. Los valores del parámetro de configuración, su valor por defecto y qué ajustes
 permite modificar cada valor se describen en la
-[referencia de SETTINGS](/es/reference/settings/session-settings/other#readonly); esta sección describe qué
+[referencia de ajustes](/es/reference/settings/session-settings/other#readonly); esta sección describe qué
 clases de consulta permite cada valor.
 
 Con el valor 1, se permiten consultas como:
@@ -37,45 +37,46 @@ Con el valor 1, se permiten consultas como:
 
 Con el valor 2, se permite lo anterior más `SET`, `CREATE TEMPORARY TABLE` y `RESTORE`. Un `RESTORE` puede
 crear una tabla y cargar datos en ella, por lo que `readonly = 2` no impide por sí solo que una sesión
-escriba; `readonly = 1` sí lo rechaza.
+escriba; `readonly = 1` sí lo rechaza. Una tabla temporal con una cláusula `ENGINE` distinta de `Memory`, como
+`File` o `URL`, requiere el privilegio `CREATE ARBITRARY TEMPORARY TABLE` y se rechaza con cualquier valor
+superior a 0.
 
 `BACKUP` no está restringido por `readonly` con ningún valor: una sesión que tenga los privilegios para hacer
 una copia de seguridad de una tabla puede escribirla incluso con `readonly = 1`. No confíe en `readonly` para impedir copias de seguridad.
 
 La mayoría de las table functions requieren el privilegio `CREATE TEMPORARY TABLE`, por lo que un `SELECT` que lea de una
 se rechaza con `readonly = 1`, pero no con `readonly = 2`. Algunas, como `numbers`, sí se permiten en modo
-de solo lectura.
+de solo lectura. `INSERT INTO FUNCTION` se rechaza con cualquier valor superior a 0, porque escribe en el origen
+de la función y no en una tabla temporal.
 
 Con cualquier valor superior a 0, no se permite ninguna de las siguientes operaciones sobre una tabla persistente: consultas de escritura de datos
 (`INSERT`, `OPTIMIZE`, `DELETE`, `UPDATE`, `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`) ni consultas
-DDL (`CREATE`, `ALTER TABLE`, `ALTER VIEW`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`,
-`TRUNCATE TABLE`). Tampoco se permiten las sentencias `SYSTEM` que requieren un privilegio del grupo `SYSTEM`, ni `CREATE`, `ALTER`
-y `DROP` de usuarios, roles, políticas de filas, políticas de enmascaramiento, cuotas y perfiles de configuración. La gestión de
-colecciones con nombre es una excepción: `readonly` no restringe
-`CREATE NAMED COLLECTION`, `ALTER NAMED COLLECTION` ni `DROP NAMED COLLECTION`.
+DDL (`CREATE`, `ALTER TABLE`, `ALTER VIEW`, `ALTER DATABASE`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`,
+`DROP`, `TRUNCATE TABLE`). Tampoco se permiten las sentencias `SYSTEM` que requieren un privilegio del grupo `SYSTEM`, ni `CREATE`, `ALTER`
+y `DROP` de usuarios, roles, políticas de filas, políticas de enmascaramiento, cuotas y perfiles de configuración. `KILL TRANSACTION` y la gestión
+de colecciones con nombre (`CREATE NAMED COLLECTION`,
+`ALTER NAMED COLLECTION`, `DROP NAMED COLLECTION`) también se rechazan.
 
-Conceder un privilegio con `GRANT` también se rechaza, pero no ocurre lo mismo con todas las sentencias de gestión de accesos: un
-`REVOKE` local y `GRANT CURRENT GRANTS` no están condicionados por `readonly`, de modo que una sesión de solo lectura todavía puede revocar
-un privilegio que posea con grant option y propagar sus propios grants a otro usuario.
-Revocar un privilegio `ON CLUSTER` sí se rechaza.
+También se rechaza modificar permisos, tanto localmente como `ON CLUSTER`: conceder un privilegio o un rol con `GRANT`,
+conceder privilegios con `GRANT CURRENT GRANTS` y revocar un privilegio o un rol con `REVOKE`.
 
-Las temporary tables están exentas de ambos SETTINGS: una sesión que pueda crear una también puede aplicarle `ALTER`,
+Las tablas temporales están exentas de ambos ajustes: una sesión que pueda crear una también puede aplicarle `ALTER`,
 insertar en ella y eliminarla.
 
 <Note>
   A través de la [HTTP interface](/es/concepts/features/interfaces/http), una solicitud cuyo método no sea `POST` se ejecuta
   con `readonly = 2` si, de lo contrario, el valor efectivo sería 0. Se conserva cualquier valor más estricto ya establecido por los
-  SETTINGS del usuario o por un perfil de configuración. `PUT` y `DELETE` quedan exentos cuando llegan a un
+  ajustes del usuario o por un perfil de configuración. `PUT` y `DELETE` quedan exentos cuando llegan a un
   [handler](/es/reference/statements/create/handler) definido mediante SQL que los acepte, de modo que una solicitud así puede
   modificar datos cuando el `readonly` efectivo es 0; en caso contrario, use el método `POST` para modificar datos.
 
   En una solicitud elevada de este modo, un parámetro `readonly` en la query string se rechaza con
   `Cannot modify 'readonly' setting in readonly mode`, salvo que indique el valor que la solicitud ya tiene.
 
-  Existe una forma de impedir que el usuario cambie solo determinados SETTINGS, y otra de permitir que cambie
-  solo determinados SETTINGS bajo las restricciones de `readonly = 1`. Para más detalles, consulte
-  [constraints on SETTINGS](/es/concepts/features/configuration/settings/constraints-on-settings), donde también
-  se desaconseja hacer que el propio SETTING `readonly` sea
+  Existe una forma de impedir que el usuario cambie solo determinados ajustes, y otra de permitir que cambie
+  solo determinados ajustes bajo las restricciones de `readonly = 1`. Para más detalles, consulte
+  [constraints on ajustes](/es/concepts/features/configuration/settings/constraints-on-settings), donde también
+  se desaconseja hacer que el propio parámetro de configuración `readonly` sea
   [modificable en modo de solo lectura](/es/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
 </Note>
 
@@ -87,16 +88,18 @@ tablas, vistas, diccionarios, funciones definidas por el usuario, workloads, rec
 Valores posibles:
 
 * 0 — Se bloquea la ejecución de cualquier consulta sobre un objeto persistente que requiera alguno de los siguientes privilegios:
-  `CREATE DATABASE`, `DROP DATABASE`, `CREATE TABLE`, `CREATE VIEW`, `ALTER TABLE`,
-  `ALTER VIEW`, `DROP TABLE`, `DROP VIEW`, `TRUNCATE`, `CREATE DICTIONARY`, `DROP DICTIONARY`,
-  `CREATE FUNCTION`, `DROP FUNCTION`, `CREATE WORKLOAD`, `DROP WORKLOAD`, `CREATE RESOURCE`,
-  `DROP RESOURCE`, `CREATE HANDLER`, `ALTER HANDLER`, `DROP HANDLER`. `RENAME`, `EXCHANGE`,
+  `CREATE DATABASE`, `ALTER DATABASE`, `DROP DATABASE`, `CREATE TABLE`, `CREATE VIEW`,
+  `ALTER TABLE`, `ALTER VIEW`, `DROP TABLE`, `DROP VIEW`, `TRUNCATE`, `UNDROP TABLE`,
+  `CREATE DICTIONARY`, `DROP DICTIONARY`, `CREATE FUNCTION`, `DROP FUNCTION`, `CREATE WORKLOAD`,
+  `DROP WORKLOAD`, `CREATE RESOURCE`, `DROP RESOURCE`, `CREATE NAMED COLLECTION`,
+  `ALTER NAMED COLLECTION`, `DROP NAMED COLLECTION`, `CREATE HANDLER`, `ALTER HANDLER`,
+  `DROP HANDLER`. `RENAME`, `EXCHANGE`,
   `ATTACH` y `DETACH` también necesitan estos privilegios, por lo que igualmente se bloquean, salvo que
-  `ALTER TABLE ... ATTACH PARTITION` y `ATTACH PART` solo necesitan `INSERT` y este SETTING no
+  `ALTER TABLE ... ATTACH PARTITION` y `ATTACH PART` solo necesitan `INSERT` y este parámetro de configuración no
   los bloquea, aunque `readonly` sí lo hace en una tabla persistente.
   `ATTACH PARTITION ... FROM` necesita además `ALTER DELETE`, por lo que sí se bloquea. La concesión y revocación de
   estos privilegios no se bloquea.
-* 1 — Este SETTING no bloquea nada.
+* 1 — Este parámetro de configuración no bloquea nada.
 
 Valor predeterminado: 1
 
@@ -105,11 +108,9 @@ Valor predeterminado: 1
 
   `allow_ddl` no restringe las consultas de gestión de accesos: `GRANT`, `REVOKE` y `CREATE`, `ALTER` y
   `DROP` de usuarios, roles, políticas de filas, políticas de enmascaramiento, cuotas y perfiles de configuración no se ven afectados por
-  ella. `CREATE TEMPORARY TABLE` y la gestión de colecciones con nombre tampoco se ven afectados, al igual que
-  `ALTER DATABASE ... MODIFY SETTING`, `ALTER DATABASE ... MODIFY COMMENT` y `UNDROP TABLE`, que
-  `readonly` tampoco restringe. Dentro de un `CREATE` o un `ALTER` de un usuario, un rol o un perfil de
+  ella. `CREATE TEMPORARY TABLE` tampoco se ve afectado. Dentro de un `CREATE` o un `ALTER` de un usuario, un rol o un perfil de
   configuración, se rechaza una cláusula `SETTINGS allow_ddl = 1` mientras la sesión actual tenga `allow_ddl = 0`,
-  mientras que una cláusula `SETTINGS allow_ddl = 0` sí se acepta. Todo SETTING incrustado se verifica frente a las
+  mientras que una cláusula `SETTINGS allow_ddl = 0` sí se acepta. Todo parámetro de configuración incrustado se verifica frente a las
   restricciones de configuración de la propia sesión, y por eso también se rechaza `SET allow_ddl = 1`.
 </Note>
 
@@ -120,7 +121,8 @@ Valor predeterminado: 1
   de `readonly` y `allow_ddl`. Lo que sí requiere es `SELECT` sobre `system.processes`, excepto en el caso de
   `KILL QUERY WHERE query_id = '<id>'`, que cancela tu propia consulta con ese id sin leer dicha
   tabla. Terminar una consulta que pertenece a otro usuario, así como cualquier `KILL QUERY ... ON CLUSTER`, requiere el
-  privilegio `KILL QUERY`, que `readonly = 1` y `readonly = 2` deniegan.
+  privilegio `KILL QUERY`, que `readonly = 1` y `readonly = 2` deniegan. `KILL TRANSACTION` siempre
+  requiere el privilegio `KILL TRANSACTION`, que `readonly = 1` y `readonly = 2` deniegan.
 </Info>
 
 ## Otras configuraciones relevantes {#other-relevant-settings}

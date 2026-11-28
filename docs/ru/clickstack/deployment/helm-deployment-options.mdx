@@ -27,6 +27,8 @@ Helm-чарт ClickStack поддерживает несколько вариа�
 
 Если у вас уже есть кластер ClickHouse (в том числе ClickHouse Cloud), вы можете отключить встроенный ClickHouse и подключиться к внешнему экземпляру.
 
+Входящий в комплект OTel collector остаётся включенным. Настройте для него конечную точку нативного протокола и учётные данные отдельно от HTTP-соединения, через которое HyperDX выполняет запросы. Пользователю коллектора требуются разрешения на создание схемы телеметрии и вставку данных.
+
 ### Вариант 1: Встроенная конфигурация (для разработки/тестирования) {#external-clickhouse-inline}
 
 Используйте этот подход для быстрого тестирования или в непродакшн-средах. Укажите сведения о подключении через `hyperdx.config` и `hyperdx.secrets`:
@@ -34,24 +36,29 @@ Helm-чарт ClickStack поддерживает несколько вариа�
 ```yaml
 # values-external-clickhouse.yaml
 clickhouse:
-  enabled: false  # Отключить ClickHouse, управляемый оператором
+  enabled: false  # Disable the operator-managed ClickHouse
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-clickhouse-server:9000?dial_timeout=10s"
+    CLICKHOUSE_USER: "your-username"
   secrets:
     CLICKHOUSE_PASSWORD: "your-password"
     CLICKHOUSE_APP_PASSWORD: "your-password"
 
-  defaultConnections: |
-    [
-      {
-        "name": "External ClickHouse",
-        "host": "http://your-clickhouse-server:8123",
-        "port": 8123,
-        "username": "your-username",
-        "password": "your-password"
-      }
-    ]
+  deployment:
+    defaultConnections: |
+      [
+        {
+          "name": "Local ClickHouse",
+          "host": "http://your-clickhouse-server:8123",
+          "username": "your-username",
+          "password": "your-password"
+        }
+      ]
 ```
+
+Оставьте имя соединения `Local ClickHouse` без изменений, поскольку на него ссылаются источники по умолчанию в чарте, даже если сервер внешний.
 
 Выполните установку, используя эту конфигурацию:
 
@@ -65,21 +72,22 @@ helm install my-clickstack clickstack/clickstack -f values-external-clickhouse.y
 
 #### Создайте файлы конфигурации {#create-configuration}
 
+Укажите порт HTTP(S) в URL `host` каждого соединения. В этом примере используется порт HTTPS `8443`; укажите порт, настроенный на вашем сервере.
+
 ```bash
-# Создать connections.json
+# Create connections.json
 cat <<EOF > connections.json
 [
   {
     "name": "Production ClickHouse",
-    "host": "https://your-production-clickhouse.com",
-    "port": 8123,
+    "host": "https://your-production-clickhouse.com:8443",
     "username": "hyperdx_user",
     "password": "your-secure-password"
   }
 ]
 EOF
 
-# Создать sources.json
+# Create sources.json
 cat <<EOF > sources.json
 [
   {
@@ -97,6 +105,7 @@ cat <<EOF > sources.json
     "bodyExpression": "Body",
     "eventAttributesExpression": "LogAttributes",
     "resourceAttributesExpression": "ResourceAttributes",
+    "defaultTableSelectExpression": "Timestamp,ServiceName,SeverityText,Body",
     "severityTextExpression": "SeverityText",
     "traceIdExpression": "TraceId",
     "spanIdExpression": "SpanId"
@@ -115,7 +124,12 @@ cat <<EOF > sources.json
     "serviceNameExpression": "ServiceName",
     "traceIdExpression": "TraceId",
     "spanIdExpression": "SpanId",
-    "durationExpression": "Duration"
+    "durationExpression": "Duration",
+    "durationPrecision": 9,
+    "defaultTableSelectExpression": "Timestamp,ServiceName,StatusCode,round(Duration/1e6),SpanName",
+    "parentSpanIdExpression": "ParentSpanId",
+    "spanNameExpression": "SpanName",
+    "spanKindExpression": "SpanKind"
   }
 ]
 EOF
@@ -132,7 +146,9 @@ kubectl create secret generic hyperdx-external-config \
 rm connections.json sources.json
 ```
 
-#### Настройте Helm для использования секрета {#configure-helm-secret}
+#### Настройте Helm для использования Secret {#configure-helm-secret}
+
+Secret с конфигурацией задаёт соединение HyperDX для выполнения запросов, а также источники. Конечную точку и учётные данные коллектора задайте отдельно, как описано ниже. Используйте нативный TLS-порт вашего сервера (в примере — `9440`).
 
 ```yaml
 # values-external-clickhouse-secret.yaml
@@ -140,10 +156,16 @@ clickhouse:
   enabled: false
 
 hyperdx:
-  useExistingConfigSecret: true
-  existingConfigSecret: "hyperdx-external-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-production-clickhouse.com:9440?secure=true"
+    CLICKHOUSE_USER: "hyperdx_user"
+  secrets:
+    CLICKHOUSE_PASSWORD: "your-secure-password"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "hyperdx-external-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
 ```shell
@@ -160,14 +182,18 @@ clickhouse:
   enabled: false
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-cloud-instance.clickhouse.cloud:9440?secure=true"
+    CLICKHOUSE_USER: "default"
   secrets:
     CLICKHOUSE_PASSWORD: "your-cloud-password"
     CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
 
-  useExistingConfigSecret: true
-  existingConfigSecret: "clickhouse-cloud-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "clickhouse-cloud-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
 ## Внешний OTel collector {#external-otel-collector}
@@ -177,10 +203,11 @@ hyperdx:
 ```yaml
 # values-external-otel.yaml
 otel-collector:
-  enabled: false  # Отключить субчарт OTel collector
+  enabled: false  # Disable the subchart OTEL collector
 
 hyperdx:
-  otelExporterEndpoint: "http://your-otel-collector:4318"
+  config:
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://your-otel-collector:4318"
 ```
 
 ```shell
@@ -202,25 +229,26 @@ otel-collector:
   enabled: false
 
 hyperdx:
-  otelExporterEndpoint: "http://your-otel-collector:4318"
+  config:
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://your-otel-collector:4318"
 
-  # Option 1: Inline (for testing)
-  defaultConnections: |
-    [
-      {
-        "name": "External ClickHouse",
-        "host": "http://your-clickhouse-server:8123",
-        "port": 8123,
-        "username": "your-username",
-        "password": "your-password"
-      }
-    ]
+  deployment:
+    # Option 1: Inline (for testing)
+    defaultConnections: |
+      [
+        {
+          "name": "Local ClickHouse",
+          "host": "http://your-clickhouse-server:8123",
+          "username": "your-username",
+          "password": "your-password"
+        }
+      ]
 
-  # Option 2: External secret (production)
-  # useExistingConfigSecret: true
-  # existingConfigSecret: "my-external-config"
-  # existingConfigConnectionsKey: "connections.json"
-  # existingConfigSourcesKey: "sources.json"
+    # Option 2: External secret (production)
+    # useExistingConfigSecret: true
+    # existingConfigSecret: "my-external-config"
+    # existingConfigConnectionsKey: "connections.json"
+    # existingConfigSourcesKey: "sources.json"
 ```
 
 ```shell

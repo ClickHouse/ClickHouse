@@ -228,7 +228,7 @@ GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hy
   ## Обработка — фильтрация, преобразование и обогащение {#processing-filtering-transforming-enriching}
 </div>
 
-Пользователям неизбежно потребуется фильтровать, преобразовывать и обогащать сообщения событий во время ингестии. Поскольку конфигурацию коннектора ClickStack изменить нельзя, пользователям, которым нужна дополнительная фильтрация и обработка событий, мы рекомендуем один из следующих вариантов:
+Пользователям неизбежно потребуется фильтровать, преобразовывать и обогащать сообщения событий во время ингестии. Пользователи могут добавлять процессоры и конвейеры в коллектор ClickStack с помощью [пользовательской конфигурации](#extending-collector-config). Чтобы вынести эту обработку за пределы коллектора ClickStack, мы рекомендуем один из следующих вариантов:
 
 * Развернуть собственную версию OTel collector, которая выполняет фильтрацию и обработку, и отправлять события в коллектор ClickStack через OTLP для ингестии в ClickHouse.
 * Развернуть собственную версию OTel collector и отправлять события напрямую в ClickHouse с помощью ClickHouse exporter.
@@ -241,17 +241,17 @@ OpenTelemetry поддерживает следующие возможности
 
 * [memory&#95;limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md) используется для предотвращения ситуаций нехватки памяти в коллекторе. Рекомендации см. в разделе [Оценка ресурсов](#estimating-resources).
 
-* Любой процессор, выполняющий обогащение на основе контекста. Например, [Kubernetes Attributes Processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor) позволяет автоматически задавать атрибуты ресурса для spans, metrics и журналов на основе метаданных k8s, например обогащать события идентификатором исходного пода.
+* Любой процессор, выполняющий обогащение на основе контекста. Например, [Kubernetes Attributes Processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor) позволяет автоматически задавать атрибуты ресурса для spans, метрик и журналов на основе метаданных k8s, например обогащать события идентификатором исходного пода.
 
 * [Tail или head sampling](https://opentelemetry.io/docs/concepts/sampling/), если это требуется для трасс.
 
 * [Базовая фильтрация](https://opentelemetry.io/docs/collector/transforming-telemetry/) - отбрасывание ненужных событий, если это нельзя сделать через оператор (см. ниже).
 
-* [Батчинг](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - необходим при работе с ClickHouse, чтобы данные отправлялись батчами. См. [&quot;Оптимизация вставок&quot;](#optimizing-inserts).
+* [Пакетирование](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - необходимо при работе с ClickHouse, чтобы данные отправлялись пакетами. См. [&quot;Оптимизация вставок&quot;](#optimizing-inserts).
 
-* **Операторы** - [Операторы](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) представляют собой самую базовую единицу обработки, доступную на уровне приёмника. Поддерживается базовый парсинг, что позволяет задавать такие поля, как Severity и Timestamp. Здесь поддерживаются парсинг JSON и regex, а также фильтрация событий и базовые преобразования. Мы рекомендуем выполнять фильтрацию событий именно здесь.
+* **Операторы** - [Операторы](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) представляют собой самую базовую единицу обработки, доступную на уровне приёмника. Поддерживается базовый разбор, что позволяет задавать такие поля, как Severity и Временная метка. Здесь поддерживаются разбор JSON и regex, а также фильтрация событий и базовые преобразования. Мы рекомендуем выполнять фильтрацию событий именно здесь.
 
-Мы рекомендуем пользователям избегать чрезмерной обработки событий с помощью операторов или [transform processors](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md). Они могут создавать значительную нагрузку на память и CPU, особенно при парсинге JSON. В ClickHouse можно выполнять почти всю обработку во время вставки с помощью materialized views и столбцов, за некоторыми исключениями — в частности, обогащения с учётом контекста, например добавления метаданных k8s. Подробнее см. в разделе [Извлечение структуры с помощью SQL](/ru/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql).
+Мы рекомендуем пользователям избегать чрезмерной обработки событий с помощью операторов или [процессоров transform](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md). Они могут создавать значительную нагрузку на память и CPU, особенно при разборе JSON. В ClickHouse можно выполнять почти всю обработку во время вставки с помощью materialized views и столбцов, за некоторыми исключениями — в частности, обогащения с учётом контекста, например добавления метаданных k8s. Подробнее см. в разделе [Извлечение структуры с помощью SQL](/ru/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql).
 
 <div id="example-processing">
   ### Пример {#example-processing}

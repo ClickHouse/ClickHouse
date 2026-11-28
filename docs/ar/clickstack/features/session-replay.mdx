@@ -11,9 +11,7 @@ keywords: ['clickstack', 'إعادة تشغيل الجلسات', 'Browser SDK', 
 
 ونظرًا إلى أن عمليات إعادة تشغيل الجلسات تُخزَّن في ClickHouse إلى جانب السجلات والتتبّعات والمقاييس لديك، يمكنك الانتقال من مشاهدة تجربة المستخدم إلى فحص تتبعات الخدمات الخلفية واستعلامات قاعدة البيانات التي كانت وراءها — وكل ذلك ببضع نقرات فقط. وهذا يجعل إعادة تشغيل الجلسة مفيدة في استكشاف مشكلات بيئة production وإصلاحها، وفهم سلوك المستخدمين، وتحديد نقاط الاحتكاك في تجربة المستخدم، والتأكد بصريًا من المشكلات التي أبلغ عنها فريق الدعم.
 
-<div id="instrumentation">
-  ## إضافة أدوات الرصد إلى تطبيقك {#instrumentation}
-</div>
+## إضافة أدوات الرصد إلى تطبيقك {#instrumentation}
 
 يتوافق ClickStack بالكامل مع OpenTelemetry، لذا يمكنك إرسال بيانات القياس عن بُعد للمتصفح (التتبعات والاستثناءات) باستخدام OpenTelemetry JavaScript SDK القياسي أو أيٍّ من [ClickStack language SDKs](/ar/clickstack/ingesting-data/sdks). ومع ذلك، **تتطلب ميزة إعادة تشغيل الجلسة استخدام SDK للمتصفح من ClickStack** (`@hyperdx/browser`)، إذ يوسّع OpenTelemetry SDK بإضافة تسجيل الجلسات، والتقاط مخرجات وحدة التحكّم، والتقاط طلبات الشبكة. وإذا كنت تحتاج فقط إلى التتبعات من دون إعادة تشغيل الجلسة، فستعمل أي حزمة SDK للمتصفح متوافقة مع OTel مع ClickStack.
 
@@ -34,7 +32,7 @@ keywords: ['clickstack', 'إعادة تشغيل الجلسات', 'Browser SDK', 
 
     HyperDX.init({
       url: 'http://your-otel-collector:4318',
-      apiKey: 'YOUR_INGESTION_API_KEY', // احذف هذا في Managed ClickStack
+      apiKey: 'YOUR_INGESTION_API_KEY',
       service: 'my-frontend-app',
       tracePropagationTargets: [/api.myapp.domain/i],
       consoleCapture: true,
@@ -53,7 +51,7 @@ keywords: ['clickstack', 'إعادة تشغيل الجلسات', 'Browser SDK', 
 
     HyperDX.init({
       url: 'http://your-otel-collector:4318',
-      apiKey: 'YOUR_INGESTION_API_KEY', // احذف هذا في Managed ClickStack
+      apiKey: 'YOUR_INGESTION_API_KEY',
       service: 'my-frontend-app',
       tracePropagationTargets: [/api.myapp.domain/i],
       consoleCapture: true,
@@ -70,7 +68,7 @@ keywords: ['clickstack', 'إعادة تشغيل الجلسات', 'Browser SDK', 
     <script>
       window.HyperDX.init({
         url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // احذف هذا في Managed ClickStack
+        apiKey: 'YOUR_INGESTION_API_KEY',
         service: 'my-frontend-app',
         tracePropagationTargets: [/api.myapp.domain/i],
         consoleCapture: true,

@@ -156,6 +156,17 @@ troupeau. Disponible uniquement dans ClickHouse Cloud
 Période maximale avant de revérifier le rôle de leader pour la mise à jour des parts. Disponible uniquement dans
 ClickHouse Cloud
 
+## shared_merge_tree_max_noop_updates_from_leader {#shared_merge_tree_max_noop_updates_from_leader}
+
+<SettingsInfoBlock type="UInt64" default_value="16" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "16"},{"label": "Nouveau paramètre : au-delà de ce nombre de mises à jour no-op consécutives des métadonnées, un follower lit les métadonnées depuis Keeper plutôt que depuis le leader de mise à jour des parts"}]}]} />
+
+Nombre de mises à jour consécutives des métadonnées n&#39;ayant modifié ni les parties virtuelles ni
+les mutations, au-delà duquel un follower lit les métadonnées depuis Keeper plutôt que depuis le
+leader de mise à jour des parts, jusqu&#39;à ce qu&#39;un nouveau changement survienne. 0 désactive ce basculement. Disponible
+uniquement dans ClickHouse Cloud.
+
 ## shared_merge_tree_max_outdated_parts_to_process_at_once {#shared_merge_tree_max_outdated_parts_to_process_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
@@ -342,6 +353,14 @@ dans ClickHouse Cloud
 
 Nombre de jobs de récupération des métadonnées des parts à planifier simultanément. Disponible uniquement dans
 ClickHouse Cloud
+
+## shared_merge_tree_parts_update_leader_tables_budget_factor {#shared_merge_tree_parts_update_leader_tables_budget_factor}
+
+<SettingsInfoBlock type="Float" default_value="2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "2"},{"label": "Nouveau paramètre"}]}]} />
+
+Une réplique cesse d&#39;acquérir de nouveaux verrous de leader de mise à jour des parts dès qu&#39;elle en détient `factor * attached SharedMergeTree tables * shared_merge_tree_max_parts_update_leaders_per_az / active replicas in its AZ`. La valeur 0 désactive cette limite. Disponible uniquement dans ClickHouse Cloud.
 
 ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms {#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms}
 

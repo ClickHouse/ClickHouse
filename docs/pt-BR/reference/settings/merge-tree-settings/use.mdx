@@ -13,26 +13,20 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.merge&#95;tree&#95;settings](/pt-BR/reference/system-tables/merge_tree_settings) e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="use_adaptive_write_buffer_for_dynamic_subcolumns">
-  ## use_adaptive_write_buffer_for_dynamic_subcolumns
-</div>
+## use_adaptive_write_buffer_for_dynamic_subcolumns {#use_adaptive_write_buffer_for_dynamic_subcolumns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Permite usar buffers de gravação adaptativos ao gravar subcolunas dinâmicas para
 reduzir o uso de memória
 
-<div id="use_async_block_ids_cache">
-  ## use_async_block_ids_cache
-</div>
+## use_async_block_ids_cache {#use_async_block_ids_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Configuração obsoleta, sem efeito.
 
-<div id="use_compact_variant_discriminators_serialization">
-  ## use_compact_variant_discriminators_serialization
-</div>
+## use_compact_variant_discriminators_serialization {#use_compact_variant_discriminators_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,9 +35,7 @@ dados Variant.
 Esse modo permite usar significativamente menos memória para armazenar discriminadores
 em partes quando há predominantemente uma variante ou muitos valores NULL.
 
-<div id="use_const_adaptive_granularity">
-  ## use_const_adaptive_granularity
-</div>
+## use_const_adaptive_granularity {#use_const_adaptive_granularity}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -68,17 +60,25 @@ A configuração é aplicada apenas às partes gravadas após sua alteração. U
 [ALTER TABLE ... REWRITE PARTS](/pt-BR/reference/statements/alter/partition#rewrite-parts)
 para aplicá-la às partes existentes. As partes `Compact` sempre usam granularidade adaptativa.
 
-<div id="use_metadata_cache">
-  ## use_metadata_cache
-</div>
+## use_metadata_cache {#use_metadata_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Configuração obsoleta, sem efeito.
 
-<div id="use_primary_key_cache">
-  ## use_primary_key_cache
-</div>
+## use_object_shared_data_serialization_version_for_small_parts_on_insert {#use_object_shared_data_serialization_version_for_small_parts_on_insert}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nova configuração"}]}]} />
+
+Grava os dados compartilhados dentro do Tipo JSON das partes criadas por operações de insert, incluindo suas projeções, usando
+[object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/pt-BR/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts),
+independentemente do tamanho delas, para manter os inserts rápidos. Quando desabilitada, a versão das partes inseridas é definida por
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/pt-BR/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version),
+assim como ocorre com as partes mescladas.
+
+## use_primary_key_cache {#use_primary_key_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

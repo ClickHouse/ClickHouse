@@ -13,8 +13,15 @@ doc_type: 'reference'
 ## إنشاء جدول {#create-table}
 
 ```sql
+-- Account key
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
-    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, extra_credentials(client_id=, tenant_id=)])
+    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+
+-- Workload identity (mutually exclusive with account_name / account_key)
+CREATE TABLE azure_blob_storage_table (name String, value UInt32)
+    ENGINE = AzureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, partition_columns_in_data_file])
     [PARTITION BY expr]
     [SETTINGS ...]
 ```
@@ -32,7 +39,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 * `compression` — القيم المدعومة: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. افتراضيًا، سيُكتشف الضغط تلقائيًا من امتداد الملف. (وهو ما يعادل ضبطه على `auto`). بالنسبة إلى `snappy`، يُحدد التنسيق السلكي بواسطة إعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (القيمة الافتراضية هي `basic`).
 * `partition_strategy` – الخيارات: `wildcard` أو `hive`. يتطلب `wildcard` وجود `{_partition_id}` في المسار، ويُستبدل بمفتاح التقسيم. أما `hive` فلا يسمح بأحرف البدل، ويفترض أن المسار هو جذر الجدول، ويُنشئ أدلة تقسيم بنمط Hive مع Snowflake IDs كأسماء ملفات وتنسيق الملف كامتداد. في حال عدم تحديد استراتيجية صراحةً، يستخدم المسار الذي يحتوي على `{_partition_id}` استراتيجية `wildcard`. والمسار الذي يحتوي على glob آخر لا يستخدم أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. أما المسار الذي لا يحتوي على glob فيستخدم `hive` عندما يكون `file_like_engine_default_partition_strategy` هو `hive`؛ وبخلاف ذلك لا يستخدم أي استراتيجية تقسيم.
 * `partition_columns_in_data_file` - يُستخدم فقط مع استراتيجية التقسيم `hive`. ويُخبر ClickHouse ما إذا كان ينبغي توقّع كتابة أعمدة التقسيم في ملف البيانات. والقيمة الافتراضية `false`.
-* `extra_credentials` - استخدم `client_id` و `tenant_id` للمصادقة. إذا جرى توفير extra&#95;credentials، فستُعطى أولوية على `account_name` و `account_key`.
+* `extra_credentials` - استخدم `client_id` و `tenant_id` للمصادقة عبر هوية أحمال عمل Azure (Azure Workload Identity). لا يمكن استخدامه مع `account_name` / `account_key`، ويتطلب `storage_account_url` (وليس `connection_string`).
 
 **مثال**
 

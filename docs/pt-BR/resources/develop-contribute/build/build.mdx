@@ -84,6 +84,15 @@ rustup default nightly-2026-11-02
 rustup component add rust-src
 ```
 
+No Linux x86&#95;64 e aarch64, o ClickHouse é vinculado estaticamente ao musl por padrão, portanto o Rust também precisa ter o musl como destino.
+O `rustup` instala apenas o destino `*-unknown-linux-gnu`, então adicione o destino musl; caso contrário, o `cmake` falhará com `Target x86_64-unknown-linux-musl is not installed for toolchain nightly-2026-11-02`:
+
+```bash
+rustup target add --toolchain nightly-2026-11-02 "$(uname -m)-unknown-linux-musl"
+```
+
+Uma compilação com `-DUSE_MUSL=OFF` (glibc) usa o destino `*-unknown-linux-gnu`, que o `rustup` instala por padrão.
+
 <Tip>
   O ccache não armazena o Rust em cache, portanto cada novo diretório de compilação compila todos os crates Rust novamente.
   Com `-DRUST_BUILD_CACHE_DIR=<path>`, o Cargo mantém os crates compilados nesse diretório, e novos diretórios de compilação do mesmo checkout e da mesma configuração os reutilizam (exceto o delta-kernel-rs). Esse diretório ocupa cerca de 7 GB por checkout e configuração, não tem limite de tamanho e pode ser excluído a qualquer momento.

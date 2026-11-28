@@ -96,6 +96,60 @@ ORDER BY name ASC
 * `ExpressionTransform`은 `sleep(1)` 실행 중에는 어떤 데이터도 받지 않으므로 `SourceFromSingleChunk`는 대기해야 합니다. 따라서 1e6 us 동안 `PortFull` 상태가 되며, 그 결과 `output_wait_elapsed_us` &gt; 1e6입니다.
 * `LimitsCheckingTransform`/`NullSource`/`LazyOutputFormat`은 결과를 처리하려면 `ExpressionTransform`이 `sleep(1)` 실행을 마칠 때까지 대기해야 하므로 `input_wait_elapsed_us` &gt; 1e6입니다.
 
+### 조인 프로파일링 {#profiling-a-join}
+
+쿼리가 여러 테이블(tables)에서 데이터를 읽으면 테이블마다 자체 읽기 파이프라인이 있으며, 행(rows)은 결과(result)에 도달하기까지 여러 프로세서를 거칩니다.
+따라서 모든 프로세서의 `input_rows` 또는 `output_rows`를 합산하면 같은 행이 여러 번 집계되므로, 각 테이블에서 얼마나 많은 데이터를 읽었는지 알 수 없습니다.
+다음 예시에서는 단일 서버에서 크기가 서로 다른 `MergeTree` 테이블 2개를 사용합니다.
+
+```sql title="Query"
+CREATE TABLE big (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE small (id UInt64, w UInt64) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO big SELECT number, number FROM numbers(1000000);
+INSERT INTO small SELECT number, number FROM numbers(1000);
+
+EXPLAIN PIPELINE
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0;
+```
+
+`EXPLAIN PIPELINE`은 조인 양쪽 각각에 대한 읽기 파이프라인(`ReadFromMergeTree`, 그 아래에 `MergeTreeSelect` 소스가 위치)을 하나씩 표시하며, 이 파이프라인들은 조인 프로세서로 연결됩니다. `join_algorithm = 'hash'`와 `enable_join_runtime_filters = 0`을 설정하면 이 예시를 재현할 수 있습니다. 조인 런타임 필터(runtime filter)는 `big`의 소스가 행(rows)을 내보내기 전에는 `big`을 프루닝할 수 없기 때문입니다.
+
+```sql title="Query"
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0, log_processors_profiles = 1;
+-- Note the query ID printed by the client, or look it up in `system.query_log`.
+
+SYSTEM FLUSH LOGS;
+
+SELECT
+    id,
+    parent_ids,
+    plan_step,
+    name,
+    plan_step_name,
+    plan_step_description,
+    input_rows,
+    output_rows,
+    elapsed_us
+FROM system.processors_profile_log
+WHERE query_id = '<query_id>'
+ORDER BY plan_step, id;
+```
+
+결과는 다음과 같이 해석합니다.
+
+* `name`이 `MergeTreeSelect(...)`(또는 `MergeTreeSource`)이고 `plan_step_name`이 `ReadFromMergeTree`인 소스 프로세서를 확인하십시오. 이 프로세서의 `output_rows`는 각 소스가 생성한 행 수입니다. 이 값은 쿼리 전체가 아니라 읽기 단계(`plan_step`)별로 합산하십시오. 합산한 값이 곧 해당 읽기 단계가 파이프라인의 나머지 부분으로 전달한 행 수입니다.
+* 조인의 양쪽에는 각각 `plan_step`이 서로 다른 별도의 `ReadFromMergeTree` 단계가 있습니다. 이 실행에서 얻은 행의 `parent_ids`에는 다운스트림 프로세서의 ID 목록이 담겨 있습니다. 소스에서 시작하여 모든 `parent_ids` 값을 동일한 `query_id` 내의 `id`와 재귀적으로 매칭하면 조인 방향으로 이어지는 브랜치를 추적할 수 있습니다. 이 방법으로 예를 들어 `FillingRightJoinSide`에 데이터를 공급하는 브랜치를 식별할 수 있습니다.
+* 소스 상위에 있는 프로세서(예: `ExpressionTransform`, `FillingRightJoinSide`, `ConcatProcessor` 또는 조인 변환 자체)는 소스에서 파생된 행을 소비하고 생성합니다. 이러한 프로세서의 카운터를 소스 카운터에 더하지 마십시오. 같은 행이 중복 집계됩니다.
+* 단계 정보만으로는 소스를 식별하기 어려울 수 있습니다. `EXPLAIN PIPELINE`은 별도의 계획으로, 프로세서 이름과 브랜치 구조를 비교하는 데는 유용하지만 일반 텍스트 출력에는 로그에 기록된 `id` 값과 `parent_ids`가 모두 포함되지 않습니다. 두 테이블의 단계 설명이 비슷하다면 실행된 쿼리의 그래프와 이미 알고 있는 행 수를 활용하십시오. 이 예시에서 `big`의 읽기 소스 합계는 1,000,000행이고, `small`의 읽기 소스 합계는 1,000행입니다.
+* 프로세서의 행 및 바이트 카운터는 물리적 스토리지 읽기가 아니라 파이프라인을 통과하는 데이터를 나타냅니다. 따라서 읽은 뒤 필터링으로 제외된 그래뉼이나 마크는 포함되지 않고, 프라이머리 키 및 기타 인덱스 필터링, `PREWHERE`, 열 가지치기(Column pruning)의 영향을 받으며, 디스크에서 읽은 압축된 바이트 수도 반영되지 않습니다. `system.query_log`의 `SelectedRows`, `SelectedBytes`, `SelectedMarks`는 논리적 선택 통계이므로, 모든 데이터를 캐시에서 가져온 경우에도 0이 아닐 수 있습니다. 파일 읽기를 조사하려면 OS 페이지 캐시에서 처리된 읽기까지 포함하는 `ReadBufferFromFileDescriptorReadBytes`를 사용하십시오. OS 페이지 캐시를 제외한 로컬 디스크 또는 블록 디바이스 읽기를 조사하려면 `OSReadBytes`를 사용하십시오.
+
 ## 관련 항목 {#see-also}
 
 * [`EXPLAIN PIPELINE`](/ko/reference/statements/explain#explain-pipeline)

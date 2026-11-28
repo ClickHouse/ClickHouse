@@ -49,10 +49,12 @@ Les exigences suivantes sont essentielles à l’architecture et à l’exploita
   * Afficher les services et leur statut.
 * **Sauvegarde et restauration gérées**
 * **Mise à l’échelle verticale et horizontale manuelle.**
+* **Mise à l’échelle horizontale automatique :** Disponible uniquement pour les déploiements où la mise à l’échelle automatique est activée. Elle ajuste le nombre de répliques dans les limites configurées, sans modifier la taille de chaque réplique. Contactez l’assistance pour vérifier si elle est disponible pour votre déploiement.
+* **Mise à l’échelle automatique verticale :** Disponible uniquement si elle est activée pour votre organisation. Contactez l’assistance pour vérifier sa disponibilité.
 * **Mise en veille/réveil automatiques**
 * **Warehouses** : Compute-Compute Separation
 * **Réseau Zero Trust via Tailscale.**
-* **Monitoring** :
+* **Supervision** :
   * Collecte Prometheus pour une supervision centralisée avec Prometheus, Grafana et Datadog. Consultez [BYOC Observability](/fr/products/bring-your-own-cloud/reference/observability-aws) pour les instructions de configuration.
 * **VPC Peering**
 * **S3 sécurisé**
@@ -65,10 +67,9 @@ Les exigences suivantes sont essentielles à l’architecture et à l’exploita
 
 Les fonctionnalités suivantes présentent des limitations ou ne sont pas entièrement prises en charge dans les déploiements Bring Your Own Cloud (BYOC).
 
-* SQL Console : non disponible pour les déploiements BYOC, mais figure sur la feuille de route.
-* ClickPipes : non disponible pour les déploiements BYOC, mais figure sur la feuille de route.
-* Autoscaling : prévu sur la feuille de route pour une ajout dans de futures versions.
+* SQL Console : non disponible pour les déploiements BYOC, mais figure sur la feuille de route.
+* ClickPipes : non disponible pour les déploiements BYOC, mais figure sur la feuille de route.
 * Interface MySQL
 * AWS KMS, également appelé CMEK (clés de chiffrement gérées par le client)
-* Advanced Dashboard : cette interface uniquement côté client nécessite que votre navigateur ait un accès direct à votre serveur ClickHouse et puisse s’y connecter via son point de terminaison. Si les politiques réseau de votre VPC restreignent l’accès entrant du navigateur au point de terminaison ClickHouse, l’Advanced Dashboard ne fonctionnera pas.
-* Dashboards de monitoring : actuellement, seules les métriques d’allocation mémoire sont disponibles dans le dashboard de monitoring. La prise en charge de métriques supplémentaires est en cours et devrait être disponible dans une prochaine version.
+* Advanced Dashboard : cette interface uniquement côté client nécessite que votre navigateur ait un accès direct à votre serveur ClickHouse et puisse s’y connecter via son point de terminaison. Si les politiques réseau de votre VPC restreignent l’accès entrant du navigateur au point de terminaison ClickHouse, l’Advanced Dashboard ne fonctionnera pas.
+* Dashboards de supervision : actuellement, seules les métriques d’allocation mémoire sont disponibles dans le dashboard de supervision. La prise en charge de métriques supplémentaires est en cours et devrait être disponible dans une prochaine version.

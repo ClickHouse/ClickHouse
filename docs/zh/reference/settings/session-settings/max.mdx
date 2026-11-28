@@ -72,6 +72,8 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 不要将用于压缩的块 (由字节组成的一段内存) 与用于查询处理的块 (表中的一组行) 混淆。
 
+一个压缩块最多可容纳 256 MiB 的未压缩数据，因此超过 256 MiB 的设置值会按 256 MiB 处理。如果编解码器处理后的块大小会超过 512 MiB，块还会进一步缩小；这种情况只会在串联使用会使数据膨胀的编解码器时发生。旧版本以更大的块写入的数据无法读取。
+
 ## max_consume_snapshots {#max_consume_snapshots}
 
 <ExperimentalBadge />
@@ -118,6 +120,25 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 * 正整数。
 * 0 或 1 — 禁用。`SELECT` 查询将以单线程执行。
+
+## max_generic_compression_threads {#max_generic_compression_threads}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "新增设置，用于控制对输出流进行并行 gzip 压缩时使用的线程数。"}]}]} />
+
+用于压缩通用流式压缩输出 (目前为 `gzip`) 的最大线程数，适用于写入输出格式、文件或存储，以及压缩 HTTP 查询响应的场景——包括使用 `Content-Encoding: gzip` 的情况，以及使用由 `compression` 设置选定的响应体编解码器的情况。
+
+输出仍为标准 `gzip` 格式，任何解压缩工具均可读取；只有写入端是并行的。相互独立的块会在共享的 IO 线程池上并行压缩。该设置采用通用命名，以便日后其他流式压缩方法也能沿用。
+
+可选值：
+
+* 0 或 1 — 单线程压缩 (默认) 。
+* 大于 1 的正整数 — 最多使用该数量的线程进行压缩。
+
+值越大，内存使用量越高。
+
+对于 HTTP 查询响应，压缩缓冲区在查询执行之前就已创建，这一点与其他 HTTP 响应整形设置 (`enable_http_compression`、`http_zlib_compression_level`、`compression`) 相同。因此在这种情况下，该设置必须通过 HTTP URL 参数或用户配置文件指定；查询中的 `SETTINGS` 子句不会影响 HTTP 响应本身的压缩 (但仍对查询写入的文件和存储生效，例如 `INSERT INTO FUNCTION file(...)` 或 `SELECT ... INTO OUTFILE`) 。
 
 ## max_http_get_redirects {#max_http_get_redirects}
 

@@ -75,6 +75,18 @@ Valeurs possibles :
 
 Nombre maximal de fichiers pouvant être renvoyés en lot par la requête ListObject
 
+## s3_list_object_parallelism {#s3_list_object_parallelism}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nouveau paramètre permettant de lister les chemins avec motif glob sur un stockage d’objet compatible S3 (les fonctions de table `s3` et `s3Cluster`, le table engine `S3` et leurs alias `gcs`, `cosn`, `oss`) à l’aide de plusieurs requêtes `ListObjects` concurrentes, en parcourant en parallèle l’arborescence des préfixes communs."}]}]} />
+
+Nombre de requêtes `ListObjects` concurrentes utilisées pour lister les fichiers lorsque le chemin contient des motifs glob, lors des lectures depuis un stockage d’objet compatible S3 : la fonction de table `s3`, le table engine `S3`, la fonction de table `s3Cluster`, ainsi que leurs alias `gcs`, `cosn` et `oss`.
+
+Lorsque la valeur est supérieure à `1`, les fichiers correspondants sont listés en parcourant l’arborescence de « répertoires » (les préfixes communs formés par le délimiteur `/`) avec autant de fils d’exécution en parallèle, au lieu de paginer l’intégralité du préfixe dans un seul flux séquentiel. Cela peut accélérer considérablement les requêtes portant sur des buckets contenant des millions d’objets, en particulier avec des dispositions partitionnées hiérarchiquement (par exemple `year=*/month=*/`), où des sous-arbres entiers sans correspondance sont élagués pendant le parcours.
+
+Une valeur de `1` (par défaut) conserve l’ancien comportement d’énumération séquentielle. Les motifs glob récursifs (`**`) utilisent toujours l’énumération séquentielle.
+
 ## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
@@ -89,6 +101,16 @@ La taille minimale de la partie à téléverser lors d’un téléversement mult
 
 Nombre maximal de valeurs `_path` pouvant être extraites des filtres de requête pour parcourir les fichiers
 au lieu d’utiliser un listage par glob. 0 signifie désactivé.
+
+## s3_request_payer {#s3_request_payer}
+
+<SettingsInfoBlock type="S3RequestPayer" default_value="none" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "none"},{"label": "Nouveau paramètre permettant d’accéder aux buckets S3 de type « requester-pays »."}]}]} />
+
+Définissez ce paramètre sur `requester` pour accéder à un bucket `S3` de type « requester-pays » : chaque requête inclut alors l’en-tête `x-amz-request-payer: requester`, de sorte que les frais de requête et de transfert de données sont à la charge du demandeur. Valeurs possibles : `none` (valeur par défaut, l’en-tête n’est pas envoyé), `requester`.
+
+Ce paramètre est pris en compte lors de la création du client `S3` ; il s’applique donc aux usages limités à la portée d’une requête, comme la fonction de table `s3` et `BACKUP ... TO S3`. Un `SET` ultérieur au niveau d’une requête ne reconfigure pas un client à longue durée de vie déjà créé, comme un disque `S3` ou une table `S3` disposant de ses propres identifiants. Dans ces cas, utilisez la clé `request_payer` d’une section d’endpoint de la configuration du serveur `<s3>` ou de la définition du disque, qui a par ailleurs préséance sur ce paramètre.
 
 ## s3_request_timeout_ms {#s3_request_timeout_ms}
 

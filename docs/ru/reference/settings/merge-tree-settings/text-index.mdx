@@ -24,9 +24,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 ## text_index_dictionary_block_size {#text_index_dictionary_block_size}
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="512" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "новая настройка"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "новая настройка"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "8192"},{"label": "Увеличен размер блока словаря по умолчанию для текстовых индексов"}]}]} />
 
 Размер блока словаря по умолчанию для текстовых индексов.
 Может быть переопределён явно заданным аргументом индекса `dictionary_block_size`.

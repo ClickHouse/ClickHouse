@@ -1,0 +1,55 @@
+---
+sidebarTitle: '推奨事項'
+title: 'クエリとスキーマの推奨事項'
+description: 'ClickHouse Cloud がクエリログとテーブルスキーマをもとに提示する、決定論的な推奨事項。'
+keywords: ['推奨事項', 'スキーマの推奨事項', 'クエリの推奨事項', 'sorting key', 'ClickHouse Cloud', 'プライベートプレビュー']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
+ClickHouse Cloud はクエリトラフィックとテーブルスキーマを分析し、パフォーマンス改善のための推奨事項を生成します。これらのテストは決定論的なもので、LLM は使用せず、お客様のサービス上で実行されることもありません。
+
+推奨事項には次の 2 種類があります。
+
+* スキーマに関する推奨事項は **監視** &gt; **テーブル** に表示され、テーブルスキーマに加えられる変更を提案します。
+* クエリに関する推奨事項は、**監視** &gt; **クエリパフォーマンス** でクエリを開くと表示され、クエリに加えられる変更を提案します。
+  スキーマとクエリの推奨事項が重複する場合もあり、その場合はクエリパターンとテーブルスキーマのどちらからでも解決できます。
+
+<Warning>
+  推奨事項はプレビュー段階の機能です。内容は変更される可能性があり、ClickHouse Cloud の標準 SLA の対象外です。
+</Warning>
+
+## スキーマに関する推奨事項 {#schema-recommendations}
+
+これらは[監視](/ja/products/cloud/features/monitoring/cloud-console)のテーブルに表示されます。
+
+| 推奨事項              | 表示される条件                                                | 対処方法                                                                                                                                                                                                                            |
+| ----------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| sorting key を変更する | 多くのクエリが同じカラムでフィルタしており、それらのカラムが sorting key に含まれていない場合。 | よく使われるフィルタが sorting key と一致するよう、sorting key の変更を検討してください。この変更ではテーブルが再構築されます。[Schema Advisor](/ja/products/cloud/features/ai-ml/schema-advisor) を使用すると、この変更を計画してデプロイできます。                                                           |
+| プロジェクションを追加する     | 多数のクエリが、sorting key に含まれない少数のカラムでフィルタしている場合。           | それらのカラムに[プロジェクション](/ja/data-modeling/projections)を追加してください。sorting key を変更せずに、これらのクエリを高速化できます。[Schema Advisor](/ja/products/cloud/features/ai-ml/schema-advisor) は `ALTER TABLE` によってこの変更をインプレースで適用するため、再構築も `EXCHANGE TABLES` も不要です。 |
+| Dictionary を使用する  | テーブルに対するクエリの大半が単一行のルックアップである場合。                        | 頻繁に読み取られ、更新はまれなディメンションテーブルには、[Dictionary](/ja/sql-reference/statements/create/dictionary) の使用を検討してください。                                                                                                                            |
+| バッチ挿入を行う          | テーブルが小規模な挿入を大量に受け取り、それによって小さなデータパーツが多数作成されている場合。       | 挿入をバッチ化して、各パーツのサイズを大きくしてください。パーツ数が減るほど、マージの負荷も軽減されます。詳しくは[非同期挿入](/ja/optimize/asynchronous-inserts)を参照してください。                                                                                                                      |
+
+## クエリの推奨事項 {#query-recommendations}
+
+これらの推奨事項は、**監視** &gt; **クエリパフォーマンス** で正規化クエリを開くと表示されます。このページは [クエリインサイト](/ja/products/cloud/features/sql-console-features/query-insights) の次期バージョンで、テーブルごとにクエリをフィルタしたり、個々のクエリを開いてメトリクスを確認したりできます。クエリの推奨事項を適用するには、クエリ自体を変更する必要があります。これらは Schema Advisor によってデプロイされるものではありません。
+
+| 推奨事項                            | 表示される条件                                                                                                                                                                                                                                       | 対処方法                                                                                                                                      |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `uniq` を使用する                    | クエリで `COUNT(DISTINCT ...)` または [`uniqExact`](/ja/sql-reference/aggregate-functions/reference/uniqexact) を使用しており、近似カウントで十分な場合。                                                                                                                    | 大規模なユニーク数のカウントには [`uniq`](/ja/sql-reference/aggregate-functions/reference/uniq) を使用してください。メモリ使用量を抑えられます。                                     |
+| JSON をネイティブに保存する                | クエリの実行時に、String 型のカラムから JSON をパースしている場合。                                                                                                                                                                                                      | クエリのたびに文字列をパースするのではなく、値を [JSON](/ja/sql-reference/data-types/newjson) カラム、または通常のカラムとして保存してください。                                              |
+| 必要なカラムを列挙する                     | カラム数の多いテーブルに対して、クエリで `SELECT *` または `alias.*` を使用している場合。                                                                                                                                                                                      | 必要なカラムを明示的に指定し、ClickHouse が残りのカラムを読み取らないようにしてください。                                                                                        |
+| `OPTIMIZE ... FINAL` を定常的に実行しない | クエリで `FINAL` を指定して [`OPTIMIZE`](/ja/sql-reference/statements/optimize) を実行しており、テーブルが書き換えられる場合。                                                                                                                                                   | `OPTIMIZE ... FINAL` を定常的な手順として実行しないでください。I/O と CPU の負荷が高く、挿入処理をブロックする可能性があります。                                                           |
+| ソートマージ結合を使用する                   | `JOIN` の両側がすでに結合キーでソートされている場合。                                                                                                                                                                                                                | [`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) を `full_sorting_merge` に設定し、ClickHouse が入力を再ソートしないようにしてください。 |
+| sorting key の先頭カラムでフィルタリングする    | クエリのフィルタが sorting key の先頭カラムを使用していない場合。ClickHouse は後続のキーカラムからでもグラニュールを除外できますが、その効果は弱くなる可能性があります。[セカンダリキー列に対する条件に基づくフィルタリング](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns) を参照してください。 | `EXPLAIN indexes = 1` で実行計画を確認してください。先頭キーのフィルタは、クエリ結果が変わらない場合にのみ追加してください。                                                                 |
+| 非同期挿入を許可する                      | `INSERT` で非同期挿入が無効化されており、多数の小さなデータパーツが作成されている場合。                                                                                                                                                                                              | [非同期挿入](/ja/optimize/asynchronous-inserts) を有効のままにするか、クライアント側で挿入処理をバッチ化して、小さな書き込みがまとめられるようにしてください。                                           |
+
+## 関連ページ {#related-pages}
+
+* [Schema Advisor](/ja/products/cloud/features/ai-ml/schema-advisor)
+* [クラウドコンソールでの監視](/ja/products/cloud/features/monitoring/cloud-console)
+* [クエリインサイト](/ja/products/cloud/features/sql-console-features/query-insights)
+* [スキーマ設計](/ja/data-modeling/schema-design)

@@ -44,20 +44,10 @@ config :logger,
 Después, tendrás que configurar las siguientes variables de entorno en tu
 shell para enviar telemetría a ClickStack a través del collector de OpenTelemetry:
 
-<Tabs>
-  <Tab title="Managed ClickStack">
-    ```shell
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
-    ```
-  </Tab>
-
-  <Tab title="ClickStack Open Source">
-    ```shell
-    export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
-    ```
-  </Tab>
-</Tabs>
+```shell
+export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
+```
 
 *La variable de entorno `OTEL_SERVICE_NAME` se utiliza para identificar tu servicio
 en la UI de ClickStack; puede tener cualquier nombre que quieras.*

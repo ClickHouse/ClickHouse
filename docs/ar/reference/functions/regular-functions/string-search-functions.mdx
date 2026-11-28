@@ -430,6 +430,68 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 ['Server','nginx']
 ```
 
+## fullMatch {#fullMatch}
+
+أُضيف في: v26.11.0
+
+يتحقق مما إذا كانت السلسلة النصية المُدخلة تطابق نمط التعبير النمطي المُعطى بالكامل.
+
+على خلاف [`match`](#match)، التي تبحث عن تطابق في أي موضع من السلسلة النصية، تُرجع هذه الدالة
+`1` فقط إذا طابق النمط السلسلة النصية بأكملها، كما لو كان النمط مقيَّدًا من
+الطرفين باستخدام `^` و `$`. ويقابل ذلك `RE2::FullMatch` في مكتبة RE2، و
+`re.fullmatch` في بايثون، و`regexp_full_match` في DuckDB.
+
+تستخدم هذه الدالة مكتبة RE2 للتعبيرات النمطية. يُرجى الرجوع إلى [re2](https://github.com/google/re2/wiki/Syntax) للاطلاع على الصيغة المدعومة.
+
+تعمل المطابقة على افتراض UTF-8. فعلى سبيل المثال، يُستخدَم `¥` داخليًا على هيئة بايتين، لكن المطابقة تتعامل معه باعتباره نقطة ترميز واحدة.
+يجب ألا يحتوي التعبير النمطي على بايتات NULL.
+إذا لم تكن السلسلة النصية المُدخلَة أو النمط بتنسيق UTF-8 صالحين، فسيكون السلوك غير محدد.
+
+وعلى خلاف السلوك الافتراضي في re2، فإن `.` يطابق فواصل الأسطر. لتعطيل ذلك، أضف `(?-s)` في بداية النمط.
+
+**الصيغة**
+
+```sql
+fullMatch(haystack, pattern)
+```
+
+**الأسماء المستعارة**: `regexp_full_match`
+
+**الوسيطات**
+
+* `haystack` — سلسلة يُبحث فيها عن النمط. [`String`](/ar/reference/data-types/string)
+* `pattern` — نمط تعبير نمطي. يمكن أن يكون ثابتًا أو أن يأتي من عمود. [`String`](/ar/reference/data-types/string)
+
+**القيمة المعادة**
+
+تُرجع `1` إذا كان النمط يطابق السلسلة النصية بالكامل، و`0` خلاف ذلك. [`UInt8`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مطابقة السلسلة النصية بالكامل**
+
+```sql title=Query
+SELECT fullMatch('abcde', 'a.*e'), fullMatch('abcde', 'b.*d'), match('abcde', 'b.*d')
+```
+
+```response title=Response
+┌─fullMatch('abcde', 'a.*e')─┬─fullMatch('abcde', 'b.*d')─┬─match('abcde', 'b.*d')─┐
+│                          1 │                          0 │                      1 │
+└────────────────────────────┴────────────────────────────┴────────────────────────┘
+```
+
+**نمط يتضمن بدائل في المستوى الأعلى**
+
+```sql title=Query
+SELECT fullMatch('gold-1', 'zzz|gold.*'), fullMatch('app-gold-1', 'zzz|gold.*')
+```
+
+```response title=Response
+┌─fullMatch('gold-1', 'zzz|gold.*')─┬─fullMatch('app-gold-1', 'zzz|gold.*')─┐
+│                                 1 │                                     0 │
+└───────────────────────────────────┴───────────────────────────────────────┘
+```
+
 ## hasAllTokens {#hasAllTokens}
 
 أُضيف في: v25.10.0
@@ -911,13 +973,13 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
   إذا لم يكن هناك فهرس نصي مُعرّف، فستُجري الدالة مسحًا كاملًا للعمود بالقوة الغاشمة، وهو أبطأ بعدة مراتب من البحث عبر الفهرس.
 </Note>
 
-قبل البحث، تُجزِّئ الدالة الوسيط `input`، وكذلك الوسيط `phrase` عندما يكون من النوع `String`، إلى رموز باستخدام مُقسِّم الرموز المحدد للفهرس النصي.
-إذا لم يكن للعمود فهرس نصي مُعرّف، فسيُستخدم بدلًا من ذلك مُقسِّم الرموز `splitByNonAlpha` — ما لم يتم تمرير مُقسِّم رموز باعتباره الوسيط الثالث الاختياري.
-يجب أن يكون وسيط مُقسِّم الرموز واحدًا من `splitByNonAlpha` أو `splitByString` أو `splitByRegexp` أو `array` أو `ngrams` أو `asciiCJK` أو `icu`.
+قبل البحث، تُجزِّئ الدالة الوسيطة `input`، وكذلك الوسيطة `phrase` عندما يكون من النوع `String`، إلى رموز باستخدام مُقسِّم الرموز المحدد للفهرس النصي.
+إذا لم يكن للعمود فهرس نصي مُعرّف، فسيُستخدم بدلًا من ذلك مُقسِّم الرموز `splitByNonAlpha` — ما لم يتم تمرير مُقسِّم رموز باعتباره الوسيطة الثالثة الاختيارية.
+يجب أن تكون وسيطة مُقسِّم الرموز واحدةً من `splitByNonAlpha` أو `splitByString` أو `splitByRegexp` أو `array` أو `ngrams` أو `asciiCJK` أو `icu`.
 
-إذا كان `input` من النوع [Array(String)](/ar/reference/data-types/array)، فتُجزَّأ عناصره إلى رموز كأي إدخال آخر، وتُشكّل رموزها تسلسلًا واحدًا لكل صف، لذا قد تمتد العبارة عبر عنصرين. ومع مُقسِّم الرموز `array` يكون كل عنصر رمزًا واحدًا، وبهذه الطريقة يُبحث في عمود يحتوي على قيم مُجزَّأة إلى رموز مسبقًا.
+إذا كان `input` من النوع [Array(String)](/ar/reference/data-types/array)، فتُجزَّأ عناصره إلى رموز كأي إدخال آخر، ويجب أن تقع العبارة ضمن عنصر واحد. ومع مُقسِّم الرموز `array` يكون كل عنصر رمزًا واحدًا وتمتد العبارة عبر عناصر متتالية، وبهذه الطريقة يُبحث في عمود يحتوي على قيم مُجزَّأة إلى رموز مسبقًا.
 إذا كان `phrase` من النوع [Array(String)](/ar/reference/data-types/array)، فإن عناصره هي الرموز المراد البحث عنها، بالترتيب ومع
-احتساب العناصر المكررة. تُتجاهل عناصر العبارة الفارغة، لأنه لا يوجد مُقسِّم رموز يُنتج رمزًا فارغًا.
+احتساب العناصر المكررة. تُتجاهل عناصر العبارة الفارغة، لأنه لا يوجد مُقسِّم رموز يُنتج رمزًا فارغًا.
 
 <Note>
   عندما يعرّف الفهرس النصي [معالجًا مسبقًا](/ar/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (على سبيل المثال `lowerUTF8`)، تطبّقه `hasPhrase` على كلٍّ من `input` و`phrase` قبل تقسيمهما إلى رموز.
@@ -940,7 +1002,7 @@ hasPhrase(input, phrase[, tokenizer])
 
 * `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Nullable(String)`](/ar/reference/data-types/nullable) أو [`Nullable(FixedString)`](/ar/reference/data-types/nullable) أو [`Array(String)`](/ar/reference/data-types/array) أو [`Array(FixedString)`](/ar/reference/data-types/array) أو [`Array(Nullable(String))`](/ar/reference/data-types/array) أو [`Array(Nullable(FixedString))`](/ar/reference/data-types/array)
 * `phrase` — العبارة المراد البحث عنها. [`const String`](/ar/reference/data-types/string) أو [`const Array(String)`](/ar/reference/data-types/array)
-* `tokenizer` — مُقسِّم الرموز المراد استخدامه. اختياري، والقيمة الافتراضية هي `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
+* `tokenizer` — مُقسِّم الرموز المراد استخدامه. اختياري، والقيمة الافتراضية هي `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
@@ -972,28 +1034,28 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 └─────────────────────────────────────────────────────┘
 ```
 
-**تسلسل رموز مُمرَّر على هيئة مصفوفات**
+**قيم مُجزَّأة إلى رموز مسبقًا باستخدام مُقسِّم الرموز `array`**
 
 ```sql title=Query
-SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')
 ```
 
 ```response title=Response
-┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
-│                                                               1 │
-└─────────────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')─┐
+│                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**عبارة تمتد عبر عنصرين**
+**لا يمكن أن تمتد العبارة عبر عنصرين**
 
 ```sql title=Query
-SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+SELECT hasPhrase(['the quick', 'brown fox'], 'quick brown')
 ```
 
 ```response title=Response
-┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
-│                                                         1 │
-└───────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the quick', 'brown fox'], 'quick brown')─┐
+│                                                    0 │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}
@@ -1534,7 +1596,7 @@ SELECT locate('ca', 'abcabc')
 
 وعلى خلاف السلوك الافتراضي في re2، فإن `.` يطابق فواصل الأسطر. لتعطيل ذلك، أضف `(?-s)` في بداية النمط.
 
-النمط غير مقيَّد. ولمطابقة السلسلة النصية بالكامل، قيِّد النمط بنفسك باستخدام `^` و `$`.
+النمط غير مقيَّد. ولمطابقة السلسلة النصية بالكامل، قيِّد النمط بنفسك باستخدام `^` و `$`، أو استخدم الدالة [`fullMatch`](#fullMatch).
 
 إذا كنت تريد فقط البحث عن سلاسل فرعية، فيمكنك استخدام الدالتين [`like`](#like) أو [`position`](#position) بدلًا من ذلك، إذ تعملان أسرع بكثير من هذه الدالة.
 

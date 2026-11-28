@@ -46,7 +46,7 @@ TDE 必须在创建服务时启用。现有服务无法在创建后再加密。�
 </div>
 
 <Warning>
-  删除用于加密 ClickHouse Cloud 服务的 KMS 密钥会导致您的 ClickHouse 服务停止，其数据以及现有备份都将无法找回。为防止在轮换密钥时意外丢失数据，建议在删除旧 KMS 密钥前先保留一段时间。
+  永久删除用于加密 ClickHouse Cloud 服务的 KMS 密钥，将导致该服务的数据及其现有备份无法找回。删除密钥后，服务会首先停止；大多数 KMS 提供商在彻底销毁已删除的密钥之前，会保留一段等待期，在此期间仍可恢复该密钥 (参见 [KMS 密钥轮询器](#kms-key-poller)) 。为防止在轮换密钥时意外丢失数据，请将旧 KMS 密钥保留一段时间后再删除。
 </Warning>
 
 服务一旦启用 TDE 加密，客户即可通过更新密钥来启用 CMEK。更新 TDE 设置后，服务会自动重启。在此过程中，旧 KMS 密钥会先解密数据加密密钥 (DEK)，再由新 KMS 密钥对 DEK 重新加密。这样可确保服务重启后，后续加密操作将使用新的 KMS 密钥。该过程可能需要几分钟。
@@ -83,11 +83,11 @@ TDE 必须在创建服务时启用。现有服务无法在创建后再加密。�
      }
      ```
 
-  8. 保存 Key policy
+  8. 保存 密钥策略
 
   9. 复制 Key ARN
 
-  10. 返回 ClickHouse Cloud，将 Key ARN 粘贴到 Service Settings 的 Transparent Data Encryption 部分
+  10. 返回 ClickHouse Cloud，将 Key ARN 粘贴到 服务设置 的 透明数据加密 部分
 
   11. 保存更改
 </Accordion>
@@ -104,7 +104,7 @@ TDE 必须在创建服务时启用。现有服务无法在创建后再加密。�
      * Cloud KMS Viewer
   8. 保存 Key permission
   9. 复制 Key Resource Path
-  10. 返回 ClickHouse Cloud，将 Key Resource Path 粘贴到 Service Settings 的 Transparent Data Encryption 部分
+  10. 返回 ClickHouse Cloud，将 Key Resource Path 粘贴到 服务设置 的 透明数据加密 部分
   11. 保存更改
 </Accordion>
 
@@ -142,11 +142,19 @@ TDE 必须在创建服务时启用。现有服务无法在创建后再加密。�
 
 设置好 CMEK 后，按照上文中创建新 KMS 密钥并授予权限的步骤轮换密钥。返回服务设置页面，粘贴新的 ARN (AWS) 、Key Resource Path (GCP) 或 Key Name (Azure) ，然后保存设置。服务将重启以应用新密钥。
 
-<div id="kms-key-poller">
-  #### KMS 密钥轮询器 {#kms-key-poller}
-</div>
+#### KMS 密钥轮询器 {#kms-key-poller}
 
-使用 CMEK 时，系统会每 10 分钟检查一次所提供的 KMS 密钥是否有效。如果无法访问 KMS 密钥，ClickHouse 服务将停止。要恢复服务，请按照本指南中的步骤重新恢复对 KMS 密钥的访问权限，然后重启服务。
+使用 CMEK 时，系统每 10 分钟检查一次所提供的 KMS 密钥是否有效。如果无法正常访问 KMS 密钥，ClickHouse 服务将会停止。要恢复服务，请按照本指南中的步骤恢复对 KMS 密钥的访问，然后重启该服务。
+
+因密钥轮询器而停止的服务不会被删除，恢复该服务也没有时间限制。如果密钥已被撤销或禁用，只需恢复对该密钥的访问并重启服务，服务即可连同其数据一并恢复。
+
+删除密钥则是另一回事。密钥一旦被永久删除，服务数据及其备份将再也无法解密 (请参阅[客户管理的加密密钥](#customer-managed-encryption-keys-cmek)中的警告) 。各 KMS 提供商在销毁已删除的密钥之前，都会保留一段可恢复该密钥的等待期：
+
+* AWS KMS：7 至 30 天 (默认 30 天) 。[取消密钥删除](https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys-cancelling-key-deletion.html)，然后启用该密钥。
+* GCP Cloud KMS：24 小时至 120 天 (默认 30 天) 。该周期在创建密钥时设定，之后无法更改，因此若密钥创建时设置的周期较短，则最早可能在计划销毁后 24 小时即被销毁。请查看密钥版本的计划销毁时间，而不要想当然地依赖默认值。[恢复密钥版本](https://docs.cloud.google.com/kms/docs/destroy-restore)，然后启用该版本。
+* Azure Key Vault：7 至 90 天，前提是该 Key Vault 已启用软删除且密钥尚未被清除。如果未启用清除保护，已删除的密钥可能会在该周期结束前被永久清除。请启用清除保护，以防密钥被提前永久删除。[恢复已删除的密钥](https://learn.microsoft.com/en-us/azure/key-vault/general/key-vault-recovery)。
+
+密钥恢复可用后，请重启该服务。
 
 <div id="backup-and-restore">
   ### 备份与恢复 {#backup-and-restore}

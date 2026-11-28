@@ -138,7 +138,9 @@ Valores possíveis:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "2097152"},{"label": "O valor foi unificado com `filesystem_prefetch_min_bytes_for_single_read_task`"}]}]} />
 
-Número mínimo de bytes lidos por tarefa.
+A quantidade mínima de dados comprimidos, em bytes, que uma única tarefa de leitura lê de uma parte de uma tabela `MergeTree` armazenada em um disco remoto (por exemplo, S3). Tarefas maiores resultam em menos requisições ao armazenamento, enquanto tarefas menores permitem distribuir o trabalho de forma mais uniforme entre as threads.
+
+O tamanho da tarefa não é aumentado além do ponto em que cada thread de leitura recebe pelo menos duas tarefas. A configuração também é usada para estimar o número de threads de leitura ao decidir se réplicas paralelas devem ser usadas automaticamente.
 
 ## merge_tree_min_read_task_size {#merge_tree_min_read_task_size}
 
@@ -187,6 +189,16 @@ Valores possíveis:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para controlar o prefetch de subfluxos de dados compartilhados JSON lidos por meio de um reposicionamento até uma marca em partes Wide."}]}]} />
 
 Habilita o prefetch de subfluxos de dados compartilhados JSON em partes Wide lidos por meio de um reposicionamento até uma marca, incluindo o subfluxo de dados dos caminhos tipados `SHARED`. Esse prefetch lê desde o início do grânulo, que geralmente não é a posição a partir da qual o subfluxo é lido, podendo ser desnecessário. Desabilite-o para ignorar esses prefetches.
+
+## merge_tree_read_end_tasks_per_stream {#merge_tree_read_end_tasks_per_stream}
+
+<SettingsInfoBlock type="UInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "32"},{"label": "Nova configuração: as tarefas no final de uma leitura de `MergeTree` são menores, para que todas as threads terminem praticamente ao mesmo tempo."}]}]} />
+
+Faz com que as tarefas no final de uma leitura de `MergeTree` correspondam a 1/N da parcela de dados de uma thread (sem ficarem menores que
+`merge_tree_min_read_task_size`), para que todas as threads terminem praticamente ao mesmo tempo. Valores maiores equilibram melhor as
+threads, mas adicionam sobrecarga por tarefa. 0 desabilita esse comportamento.
 
 ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability}
 

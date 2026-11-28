@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
+import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد أُنشئت تلقائيًا استنادًا إلى [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -39,6 +40,16 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 يُفعِّل تحليل الفهرس الموزّع حتى للمحركات التي لا تستخدم SharedMergeTree (وهو محرك متاح في Cloud فقط).
+
+## distributed_index_analysis_on_stateless_workers {#distributed_index_analysis_on_stateless_workers}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+يُشغّل تحليل الفهارس الموزّع على stateless worker ضمن الاستعلام الأولي الذي يُنفَّذ وفق خطة تنفيذ موزعة (`make_distributed_plan`) ويحتفظ بعمّال أو يمكنه استئجارهم، وذلك بشكل مستقل عن `distributed_index_analysis`. يحلّل العمّال الجداول المخزّنة في التخزين الكائني لجدول مشترك. حاليًا، يؤدي تفعيل هذا الإعداد إلى إيقاف تحليل الفهرس على النسخ المتماثلة (`distributed_index_analysis`)، ومن ثَمّ تُحلَّل محليًا عمليات القراءة التي لا يتولاها العمّال، وكذلك عمليات القراءة الخاصة بالاستعلامات الأخرى. يحتاج العمّال إلى عمليات تبادل تدفقي: فعند استخدام عمليات تبادل من النوع `Persisted` (عبر `distributed_plan_force_exchange_kind`، أو عند عدم تهيئة أي مستمع للتدفق) تُحلَّل عمليات القراءة محليًا. وتنطبق هنا إعدادات MergeTree ‏`distributed_index_analysis_min_parts_to_activate` و`distributed_index_analysis_min_indexes_bytes_to_activate`.
 
 ## distributed_index_analysis_only_on_coordinator {#distributed_index_analysis_only_on_coordinator}
 

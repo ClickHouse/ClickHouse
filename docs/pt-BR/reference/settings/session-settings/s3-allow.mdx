@@ -19,7 +19,9 @@ Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Nova configuração."}]}]} />
 
-Permite cópia em múltiplas partes no S3.
+Permite copiar objetos dentro do S3 (por exemplo, ao fazer um backup no S3 ou ao mover dados entre discos S3) por meio de cópia em múltiplas partes (`UploadPartCopy`) quando o objeto for maior que `s3_max_single_operation_copy_size`.
+
+Se desabilitada, os objetos são copiados com uma única requisição `CopyObject`, independentemente do tamanho, e, se isso não for possível, os dados são lidos e enviados novamente. Desative-a para armazenamentos compatíveis com S3 que não oferecem suporte a `UploadPartCopy`.
 
 ## s3_allow_parallel_part_upload {#s3_allow_parallel_part_upload}
 

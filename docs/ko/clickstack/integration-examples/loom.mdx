@@ -1,0 +1,48 @@
+---
+title: 'Loom 텔레메트리를 ClickStack으로 전송하기'
+sidebarTitle: 'Loom'
+slug: /use-cases/observability/clickstack/integrations/loom
+description: 'OpenTelemetry를 통해 Loom의 요청 트레이스와 메트릭을 ClickStack Open Source로 전송합니다.'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Loom', 'OpenTelemetry', 'OTLP']
+---
+
+AI 에이전트용 메모리 및 코드 검색 서버인 [Loom](https://github.com/ClickHouse/loom)의 요청 트레이스와 메트릭을 ClickStack에서 확인하세요.
+
+## 시작하기 전에 {#before-you-begin}
+
+* 실행 중인 Loom 서버가 필요합니다.
+* Loom 서버에서 연결할 수 있는 OTLP HTTP 수신기를 갖춘 [ClickStack Open Source 배포](/ko/clickstack/deployment/oss)가 필요합니다.
+
+## 작동 방식 {#how-it-works}
+
+Loom은 OTLP HTTP를 통해 텔레메트리를 ClickStack OpenTelemetry 수집기로 내보냅니다. collector는 이 텔레메트리를 ClickHouse에 기록하며, 기록된 데이터는 ClickStack에서 확인할 수 있습니다.
+
+## Loom 익스포터 구성 {#configure-loom-exporter}
+
+ClickStack 수집 API key는 **팀 설정 → API 키**에서 확인할 수 있습니다. Loom 서버에 다음 환경 변수를 구성하고 예시 URL과 키를 실제 값으로 바꾼 다음 Loom을 재시작하십시오.
+
+```bash
+export LOOM_OTEL_EXPORTER=otlp
+export LOOM_OTEL_EXPORTER_OTLP_ENDPOINT='http://clickstack-collector:4318'
+export LOOM_OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
+
+Loom에서 연결할 수 있는 collector 기준 URL을 사용하십시오. Loom은 이 URL 끝에 `/v1/traces`와 `/v1/metrics`를 추가합니다. Loom이 중간 collector로 데이터를 전송한다면 해당 수신기가 요구하는 헤더를 쉼표로 구분된 `key=value` 쌍 형식으로 지정하십시오. 수신기에 필요한 헤더가 없다면 헤더 설정을 생략하십시오.
+
+## ClickStack에서 텔레메트리 확인 {#verify-telemetry}
+
+Loom의 해석된 익스포터 설정을 확인하십시오. 서버가 다른 호스트나 포트에서 실행 중인 경우 예시 Loom URL을 해당 주소로 바꾸십시오.
+
+```bash
+curl -sS 'http://localhost:7777/v1/health?include=otel'
+```
+
+`otel.mode`가 `otlp`이고 `otel.endpoint`가 구성된 collector URL인지 확인하십시오.
+
+메모리 검색과 같은 Loom 요청을 보내 트레이스를 생성하십시오. ClickStack에서 **검색**을 열고 **Traces** 소스를 선택한 다음, 서비스 이름 `loom`(OpenTelemetry의 `service.name`)으로 필터링하십시오. `LOOM_OTEL_SERVICE_NAME`이 설정되어 있다면 해당 값으로 필터링하십시오.
+
+## 다음 단계 {#next-steps}
+
+* [ClickStack으로 OpenTelemetry 데이터 전송하기](/ko/clickstack/ingesting-data/opentelemetry)
+* [Loom 텔레메트리 설정 및 메트릭](https://github.com/ClickHouse/loom/blob/v1.3.0/docs/features/observability/telemetry.md)

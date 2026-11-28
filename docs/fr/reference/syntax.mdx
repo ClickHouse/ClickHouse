@@ -308,7 +308,7 @@ Les paramètres de requête vous permettent d’écrire des requêtes génériqu
 Lorsqu’une requête avec des paramètres de requête est exécutée,
 tous les placeholders sont résolus et remplacés par les valeurs réelles des paramètres de requête.
 
-Les paramètres de requête peuvent être définis de plusieurs façons :
+Les paramètres de requête peuvent être définis de plusieurs façons :
 
 * `SET param_<name>=<value>` — à l’aide d’une commande `SET` dans une requête.
 * `--param_<name>='<value>'` — comme argument de `clickhouse-client` en ligne de commande.
@@ -317,7 +317,7 @@ Les paramètres de requête peuvent être définis de plusieurs façons :
 Un paramètre de requête peut être référencé dans une requête à l’aide de `{<name>: <datatype>}`, où `<name>` est le nom du paramètre de requête et `<datatype>` le type de données vers lequel il est converti.
 
 <Accordion title="Exemple avec la commande SET">
-  Par exemple, le SQL suivant définit des paramètres nommés `a`, `b`, `c` et `d` - chacun avec un type de données différent :
+  Par exemple, le SQL suivant définit des paramètres nommés `a`, `b`, `c` et `d` - chacun avec un type de données différent :
 
   ```sql
   SET param_a = 13;
@@ -336,7 +336,7 @@ Un paramètre de requête peut être référencé dans une requête à l’aide 
 </Accordion>
 
 <Accordion title="Exemple avec clickhouse-client">
-  Si vous utilisez `clickhouse-client`, les paramètres sont spécifiés sous la forme `--param_name=value`. Par exemple, le paramètre suivant porte le nom `message` et est récupéré en tant que `String` :
+  Si vous utilisez `clickhouse-client`, les paramètres sont spécifiés sous la forme `--param_name=value`. Par exemple, le paramètre suivant porte le nom `message` et est récupéré en tant que `String` :
 
   ```bash
   clickhouse-client --param_message='hello' --query="SELECT {message: String}"
@@ -344,7 +344,7 @@ Un paramètre de requête peut être référencé dans une requête à l’aide 
   hello
   ```
 
-  Si le paramètre de requête représente le nom d’une base de données, d’une table, d’une fonction ou d’un autre identifiant, utilisez `Identifier` comme type. Par exemple, la requête suivante renvoie les lignes d’une table nommée `uk_price_paid` :
+  Si le paramètre de requête représente le nom d’une base de données, d’une table, d’une fonction ou d’un autre identifiant, utilisez `Identifier` comme type. Par exemple, la requête suivante renvoie les lignes d’une table nommée `uk_price_paid` :
 
   ```sql
   SET param_mytablename = "uk_price_paid";
@@ -353,7 +353,7 @@ Un paramètre de requête peut être référencé dans une requête à l’aide 
 </Accordion>
 
 <Accordion title="Exemple avec l’interface HTTP">
-  Les paramètres de requête peuvent être transmis comme paramètres de query string d’URL avec le préfixe `param_`. Par exemple :
+  Les paramètres de requête peuvent être transmis comme paramètres de query string d’URL avec le préfixe `param_`. Par exemple :
 
   ```bash
   curl -s "http://localhost:8123/?param_message=hello" --data-binary "SELECT {message: String}"
@@ -369,6 +369,7 @@ Un paramètre de requête peut être référencé dans une requête à l’aide 
 <Note>
   Les paramètres de requête ne sont pas des substitutions de texte génériques pouvant être utilisées à des emplacements arbitraires dans n’importe quelle requête SQL.
   Ils sont principalement conçus pour fonctionner dans les instructions `SELECT` à la place d’identifiants ou de littéraux.
+  Ils fonctionnent également dans les instructions DDL à la place des noms de bases de données et de tables (par exemple `CREATE TABLE {db:Identifier}.{tbl:Identifier}`). Dans `ALTER TABLE`, ils fonctionnent aussi dans `DROP`, `CLEAR`, `MATERIALIZE`, `COMMENT`, `RENAME COLUMN` et `AFTER` (par exemple `ALTER TABLE t RENAME COLUMN {c:Identifier} TO {c2:Identifier}`).
 </Note>
 
 ## Fonctions {#functions}

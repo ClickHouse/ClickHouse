@@ -13,34 +13,38 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir des sources de ClickHouse.
 
-<div id="min_bytes_for_compact_part">
-  ## min_bytes_for_compact_part
-</div>
+## min_bytes_for_compact_part {#min_bytes_for_compact_part}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Paramètre obsolète, sans effet
 
-<div id="min_bytes_for_full_part_storage">
-  ## min_bytes_for_full_part_storage
-</div>
+## min_bytes_for_full_part_storage {#min_bytes_for_full_part_storage}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Taille minimale non compressée, en octets, pour
 utiliser le type de stockage Full pour la part de données au lieu de packed
 
-<div id="min_bytes_for_wide_part">
-  ## min_bytes_for_wide_part
-</div>
+## min_bytes_for_object_shared_data_main_serialization_version {#min_bytes_for_object_shared_data_main_serialization_version}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+
+Taille non compressée minimale, en octets, qu&#39;une part doit atteindre pour que les données partagées du type JSON soient écrites avec la version principale définie par
+[object&#95;shared&#95;data&#95;serialization&#95;version](/fr/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version).
+Les parts plus petites utilisent [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/fr/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts).
+Pour une partie fusionnée, la taille correspond à la taille totale des parts fusionnées ; pour une part modifiée, il s&#39;agit de la taille de la partie source.
+`0` désactive la vérification de taille.
+
+## min_bytes_for_wide_part {#min_bytes_for_wide_part}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
 Nombre minimal d’octets/lignes dans une part de données pouvant être stockée au format `Wide`. Vous pouvez définir l’un de ces paramètres, les deux, ou aucun.
 
-<div id="min_bytes_to_prewarm_caches">
-  ## min_bytes_to_prewarm_caches
-</div>
+## min_bytes_to_prewarm_caches {#min_bytes_to_prewarm_caches}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -49,9 +53,7 @@ Nombre minimal d’octets/lignes dans une part de données pouvant être stocké
 Taille minimale (en octets non compressés) pour précharger le mark cache et le cache de l’index primaire
 pour les nouvelles parts
 
-<div id="min_bytes_to_rebalance_partition_over_jbod">
-  ## min_bytes_to_rebalance_partition_over_jbod
-</div>
+## min_bytes_to_rebalance_partition_over_jbod {#min_bytes_to_rebalance_partition_over_jbod}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

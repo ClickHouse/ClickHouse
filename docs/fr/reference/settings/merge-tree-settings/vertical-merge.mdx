@@ -49,8 +49,7 @@ Si la valeur est `true`, le lightweight delete est optimisé lors d&#39;une fusi
 
 Si la valeur est true, une fusion avec TTL de lignes peut utiliser l’algorithme de fusion verticale au lieu de se rabattre sur une
 fusion horizontale. Ne s’applique qu’en mode de fusion `MergeTree`, `Replacing`, `Collapsing` ou `VersionedCollapsing`,
-à une table dotée d’un TTL de lignes, sans TTL de colonne ni TTL `GROUP BY`, et uniquement si aucune partie de données
-impliquée dans la fusion ne comporte de lightweight delete. Toute autre fusion TTL reste horizontale.
+à une table dotée d’un TTL de lignes, sans TTL de colonne ni TTL `GROUP BY`. Toute autre fusion TTL reste horizontale.
 
 ## vertical_merge_remote_filesystem_prefetch {#vertical_merge_remote_filesystem_prefetch}
 

@@ -130,6 +130,8 @@ Exemplo:
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
+Para tabelas da família `MergeTree`, `CLEAR COLUMN` também aceita as colunas virtuais [`_block_number` e `_block_offset`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns). Especificar qualquer um dos dois nomes limpa ambas as colunas, de modo que uma parte passa a retornar seu número de bloco mínimo como `_block_number` e `_part_offset` como `_block_offset`.
+
 ## COMMENT COLUMN {#comment-column}
 
 ```sql

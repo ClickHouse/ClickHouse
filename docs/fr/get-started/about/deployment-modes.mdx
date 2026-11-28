@@ -63,7 +63,7 @@ La nature gérée du service signifie que vous n’avez pas à vous soucier des 
 
 L’[interface en ligne de commande de ClickHouse](/fr/concepts/features/interfaces/cli) (`clickhousectl`, alias `chctl`) est un outil en ligne de commande destiné au développement local avec ClickHouse et Postgres, ainsi qu’à la gestion de ClickHouse Cloud. Il permet d’installer des versions de ClickHouse, de lancer et gérer des serveurs locaux, et d’exécuter des requêtes.
 
-Pour le développement local, `clickhousectl` installe n’importe quelle version de ClickHouse et exécute des serveurs nommés. Connectez-vous avec `clickhousectl local client`, qui lance le `clickhouse-client` de la version correspondante. Chaque serveur conserve ses données dans le répertoire `.clickhouse/` du projet, ce qui vous permet de faire tourner plusieurs environnements isolés en parallèle. Lorsque Docker est en cours d’exécution, `clickhousectl local postgres` démarre des serveurs Postgres locaux de la même manière.
+Pour le développement local, `clickhousectl` installe n’importe quelle version de ClickHouse et exécute des serveurs nommés dans un répertoire de projet initialisé avec `clickhousectl local init`. Connectez-vous avec `clickhousectl local client`, qui lance le `clickhouse-client` de la version correspondante. Chaque serveur conserve ses données dans le répertoire `.clickhouse/` du projet, ce qui vous permet de faire tourner plusieurs environnements isolés en parallèle. Lorsque Docker est en cours d’exécution, `clickhousectl local postgres` démarre des serveurs Postgres locaux de la même manière.
 
 `clickhousectl` gère également les ressources cloud de ClickHouse Cloud : services, mise à l’échelle, sauvegardes, Managed Postgres, ClickPipes, Managed ClickStack, clés API et organisations. La connexion via le navigateur (`clickhousectl cloud auth login`) n’offre qu’un accès en lecture seule ; la création ou la modification de ressources nécessite une API key.
 
@@ -73,7 +73,8 @@ curl -fsSL https://clickhouse.com/cli | sh
 
 # Install the latest ClickHouse, set it as your default, and symlink it to ~/.local/bin/clickhouse
 clickhousectl local use latest
-clickhousectl local server start
+clickhousectl local init
+clickhousectl local clickhouse start
 clickhousectl local client
 ```
 

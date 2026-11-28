@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 يعرض محرك قاعدة البيانات `Filesystem` الملفات الموجودة في دليل محلي على هيئة جداول للقراءة فقط. ويُحدَّد اسم الجدول كمسار نسبي إلى دليل قاعدة البيانات، ثم تُقرأ محتوياته باستخدام دالة الجدول [`file`](/ar/reference/functions/table-functions/file).
 
-## إنشاء قاعدة بيانات
+## إنشاء قاعدة بيانات {#creating-a-database}
 
 ```sql
 CREATE DATABASE files
@@ -19,7 +19,7 @@ ENGINE = Filesystem([path]);
 
 `path` هو الدليل الذي يحتوي على الملفات. وإذا تم حذفه، يستخدم ClickHouse الدليل الحالي في `clickhouse-local`، ودليل `user_files` في خادم ClickHouse.
 
-## الاستخدام
+## الاستخدام {#usage}
 
 على سبيل المثال، مع وجود `data.csv` في الدليل المحدد:
 
@@ -33,9 +33,9 @@ SELECT * FROM files.`data.csv`;
 
 لا تمتلك قاعدة البيانات أي تعريفات جداول: فالجداول تُنشأ عند تحليل مسارات ملفاتها لأول مرة، ويُحتفظ بها في الذاكرة المؤقتة فقط لأغراض الوصول اللاحق. أما `CREATE TABLE` و`INSERT` وغيرها من عمليات الكتابة عبر قاعدة البيانات هذه فغير مدعومة.
 
-## التحكم في الوصول
+## التحكم في الوصول {#access-control}
 
-في خادم ClickHouse، يجب أن يكون دليل قاعدة البيانات وكل ملف يُحلّ مساره داخل [`user_files_path`](/ar/reference/settings/server-settings/settings#user_files_path)؛ وينطبق هذا القيد كذلك بعد تتبّع الروابط الرمزية. أما `clickhouse-local` فهو غير مقيّد بـ `user_files_path`.
+في خادم ClickHouse، يجب أن يكون دليل قاعدة البيانات وكل ملف مُحدَّد المسار النهائي داخل [`user_files_path`](/ar/reference/settings/server-settings/settings#user_files_path)؛ وينطبق هذا القيد كذلك بعد تتبّع الروابط الرمزية. ويجب أيضًا أن يقع كل ملف مُحدَّد المسار النهائي داخل دليل قاعدة البيانات، فلا يمكن لاسم الجدول أن يشير إلى خارجه باستخدام `..` أو مسار مطلق. أما `clickhouse-local` فهو غير مقيّد بـ `user_files_path`.
 
 يتطلب إنشاء قاعدة البيانات هذه صلاحيتَي المصدر `READ` و`WRITE` على `FILE`، بصرف النظر عن [`table_engines_require_grant`](/ar/reference/settings/server-settings/settings/other#table_engines_require_grant). يمكن منحهما، على سبيل المثال، على النحو التالي:
 
@@ -45,7 +45,7 @@ GRANT READ, WRITE ON FILE TO user_name;
 
 راجع [امتيازات `SOURCES`](/ar/reference/statements/grant#sources) لمعرفة تفاصيل الإصدار والتوافق.
 
-## انظر أيضاً
+## انظر أيضاً {#see-also}
 
 * [دالة الجدول `file`](/ar/reference/functions/table-functions/file)
 * [محرك قاعدة البيانات S3](/ar/reference/engines/database-engines/s3)

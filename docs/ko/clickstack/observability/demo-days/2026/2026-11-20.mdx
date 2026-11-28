@@ -1,0 +1,203 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-11-20
+title: '데모 데이 - 2026-11-20'
+sidebarTitle: '2026-11-20'
+description: '2026-11-20 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-11-20"
+---
+
+## 검색 결과 테이블의 컬럼 및 정렬 컨트롤 {#columns-and-sort-controls-on-the-search-results-table}
+
+*데모 진행자: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**탐색 단계의 작업으로, 출시가 확정된 기능은 아닙니다.**
+
+이전에는 `SELECT`와 `ORDER BY`가 쿼리 폼의 텍스트 입력란이었습니다. 따라서 컬럼이나 정렬 순서(sort order)를 변경하려면 SQL을 작성해야 했습니다. 인터뷰에서 사용자에게 컬럼을 추가해 보도록 요청했더니, 어디에서 추가해야 하는지 찾지 못했습니다. 이 입력란과 아래 테이블 사이의 연관성이 명확하지 않았기 때문입니다. 또한 이 입력란은 이벤트 패턴 위에도 표시되었는데, 그곳에서는 아무런 효과가 없었습니다.
+
+이번 제안에서는 이 입력란을 결과 테이블의 **Columns** 및 **Sort** 컨트롤로 옮깁니다. **Columns**에서는 컬럼을 드래그하여 순서를 바꾸거나 제거할 수 있으며, 추천 필드를 선택하거나 `upper(Body) as message`와 같은 표현식을 입력한 뒤 **Add**를 클릭하여 컬럼을 추가할 수 있습니다. **Sort**에는 각 `ORDER BY` 필드와 정렬 방향이 표시됩니다. 두 컨트롤 모두 절을 직접 편집할 수 있는 **SQL** 탭을 제공합니다. 필드 뷰에서 변경한 내용은 SQL에도 반영되므로 원하는 방식을 사용하면 됩니다. 테이블 작업(줄 바꿈, 생성된 SQL, CSV)도 같은 툴바로 이동합니다. 기존에는 이 작업들이 마지막 컬럼의 헤더에 있어서, 해당 컬럼의 너비가 넓으면 화면 밖으로 밀려날 수 있었습니다.
+
+적용하지 않은 변경 사항이 있는 상태에서 팝오버를 닫으면, 변경 사항을 버리기 전에 확인 메시지가 표시됩니다. 정렬에 사용 중인 컬럼을 제거하면 정렬에서도 함께 제거됩니다. 파서가 `Timestamp DESC NULLS LAST`와 같은 절을 해석하지 못하면 SQL을 작성된 그대로 유지하고 **SQL** 탭을 엽니다. 이 컨트롤은 이벤트 차이나 이벤트 패턴에는 표시되지 않습니다.
+
+이 변경으로 테이블 위에 툴바 행이 하나 추가됩니다. 편집기는 머지되었지만 아직 검색 페이지에는 적용되지 않았으며, 이를 추가하는 PR은 현재 열려 있습니다. 변경 규모가 크기 때문에 ClickHouse Observability 베타에는 포함하지 않았습니다. 마지막으로 사용한 탭을 기억해 두었다가, **SQL** 탭을 선호하는 사용자에게는 해당 탭이 열리도록 하는 방안도 고려할 수 있습니다. 이 기능의 동작 방식에 대한 의견을 기다립니다.
+
+**관련 PR:** [#3431](https://github.com/ClickHouse/ClickStack/pull/3431) 컬럼 및 정렬 편집기 추가, [#3432](https://github.com/ClickHouse/ClickStack/pull/3432) 검색 페이지에 Columns 및 Sort 마운트 (진행 중)
+
+## 대시보드용 연결 및 데이터 소스 변수 {#connection-and-data-source-variables-for-dashboards}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=276" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이 영상은 음질이 좋지 않습니다. 양해 부탁드립니다.
+
+대시보드의 **Edit filters and variables**에 두 가지 변수 유형이 새로 추가되었습니다. 연결 변수로는 팀의 ClickHouse 연결 중 하나를 선택할 수 있고, 데이터 소스 변수로는 팀의 소스 중 하나를 선택할 수 있습니다. 소스 유형을 제한할 수 있으며(예: 로그만 허용), 필요에 따라 특정 연결로 범위를 좁힐 수도 있습니다. 이 연결로는 고정된 연결이나 연결 변수를 지정할 수 있으므로, 연결을 바꾸면 선택 가능한 소스도 함께 바뀝니다.
+
+타일에서는 특정 소스나 연결 대신 이러한 변수를 사용할 수 있습니다. 예를 들어 쿼리 빌더(query builder) 타일은 `$logSource`를 데이터 소스로 사용할 수 있고, 원시 SQL(Raw SQL) 타일은 `$connection`을 사용할 수 있습니다. 차트 구성에는 소스 또는 연결 ID 필드에 `$varName`이 저장됩니다. 대시보드를 렌더링할 때 이 값이 실제 ID로 변환되므로 나머지는 기존과 동일하게 동작합니다.
+
+다른 필터도 이러한 변수를 기반으로 동작할 수 있습니다. 데모에서는 SQL 표현식 기반 값 필터가 선택된 소스에서 서비스 이름을 가져옵니다. 데모 연결에서 로컬 연결로 전환하면 타일과 필터의 서비스 이름이 모두 갱신됩니다. 선택 값이 없거나 유효하지 않으면 타일은 실패할 쿼리를 실행하지 않고 플레이스홀더나 오류를 표시합니다. 현재는 SQL 내부에서 `$source`를 직접 사용할 수 없습니다. 타일에서 소스를 선택한 다음 `$__sourceTable`을 사용하여 해당 테이블을 참조하십시오.
+
+선택 값은 일반적으로 소스 및 연결 ID 형태로 URL에 포함되지만, 이름을 사용할 수도 있습니다. 따라서 소스 이름은 같지만 ID가 서로 다른 환경 간에도 링크를 공유할 수 있습니다. 이름 조회(lookup)에는 검색 페이지의 `source=` 매개변수와 동일한 방식이 사용됩니다.
+
+두 변수 유형은 외부 API와 MCP에서도 사용할 수 있습니다. SQL 쿼리(SQL query) 필터에서도 소스 및 연결 변수를 참조할 수 있습니다.
+
+**관련 PR:** [#3651](https://github.com/ClickHouse/ClickStack/pull/3651) 대시보드에 데이터 소스 및 연결 변수 유형 추가, [#3652](https://github.com/ClickHouse/ClickStack/pull/3652) 외부 API 및 MCP에서 데이터 소스 및 연결 변수 지원, [#3712](https://github.com/ClickHouse/ClickStack/pull/3712) 소스 및 연결 변수 값으로 소스 및 연결 이름 허용, [#3714](https://github.com/ClickHouse/ClickStack/pull/3714) SQL 필터에서 소스 변수 참조 허용
+
+## 임시 대시보드 저장 {#saving-a-temporary-dashboard}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=423" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 임시 대시보드의 배너에 해당 대시보드를 저장할 수 없다는 안내가 표시되었습니다. 따라서 작업한 내용을 유지하려면 저장된 대시보드로 다시 만들어야 했으며, 최근 Vladimir도 이 문제를 겪었습니다. 이제 배너에는 여전히 임시 대시보드라는 안내가 표시되지만, 모든 타일을 포함해 대시보드를 저장할 수 있는 버튼도 함께 제공됩니다.
+
+**관련 풀 리퀘스트:** [#3729](https://github.com/ClickHouse/ClickStack/pull/3729) 임시 대시보드를 내용 그대로 저장
+
+## 대시보드 필터 유형 문서 {#documentation-for-dashboard-filter-types}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=453" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 대시보드 문서에서 지난 몇 달간 추가된 모든 필터 유형을 다룹니다. 다루는 유형은 SQL 표현식(SQL expression) 값, 정적 값, SQL 쿼리(SQL query) 값, PromQL 레이블 값, 애드혹 키와 값(keys and values), 데이터 소스, 연결입니다. [필터 유형](https://clickhouse.com/docs/clickstack/observability/features/dashboards/overview#filter-types) 표에서는 각 유형이 값을 어디에서 가져오는지, 그리고 타일에 필터를 적용하는지, 변수로 동작하는지, 아니면 둘 다인지 설명합니다. 표 아래에는 유형별로 별도의 섹션이 마련되어 있습니다. 또한 필터가 미리 설정된 상태로 대시보드에 바로 연결할 수 있는 URL 매개변수도 이 페이지에서 설명합니다.
+
+**관련 PR:** 없음. 코드 변경이 아닌 문서 변경이며, 게시된 페이지 링크는 위에 있습니다.
+
+## 버전 인식 앱 빌더 {#version-aware-app-builder}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=477" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ClickStack 앱에는 이전부터 버전 이력 기능이 있었습니다. 에이전트에게 빌드를 요청할 때마다 새 버전이 생성되며, 이전 버전으로 복원할 수 있습니다. 그러나 에이전트는 이러한 버전을 볼 수 없었고, 사용자가 버전을 복원했는지도 알지 못했습니다. 그래서 더 이상 앱에 존재하지 않는 코드를 계속 언급했고, 대화 내용이 실제 소스와 어긋나곤 했습니다. 또한 이전 동작 방식이 더 마음에 들어 변경 사항을 되돌렸더라도, 에이전트는 해당 버전을 다시 살펴볼 수 없었습니다.
+
+이제 에이전트는 모든 버전을 볼 수 있고, 사용자가 버전을 복원한 시점을 인식하며, 임의의 두 버전을 비교하는 diff 도구도 사용할 수 있습니다. 데모에서는 Langfuse 트레이스를 통해 에이전트가 이 도구를 호출하고 diff 결과를 받아 오는 과정을 확인할 수 있습니다. 따라서 변경 사항을 되돌린 이유를 설명하면, 에이전트가 버전을 살펴보고 자신이 무엇을 변경했는지 정확히 파악할 수 있습니다.
+
+## 더 적은 토큰으로 더 빠른 앱 빌드 {#faster-app-builds-with-fewer-tokens}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=569" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이 클립도 음질이 좋지 않습니다. 양해 부탁드립니다.
+
+빌드 속도를 높이고 토큰 사용량을 줄이기 위해 앱 빌더에 세 가지 변경 사항을 적용했습니다.
+
+에이전트가 SQL을 앱에 추가하기 전에 테스트하는 데 사용하는 도구는 이제 호출당 쿼리를 하나씩 실행하는 대신 여러 쿼리를 병렬로 실행할 수 있습니다. MCP 서버를 사용하는 에이전트도 같은 도구로 SQL을 검사할 수 있습니다.
+
+컨텍스트를 컴팩션하는 시점도 변경했습니다. 이전에는 빌더가 노트북과 마찬가지로 최근 8개 단계만 유지했습니다. 이 방식은 컨텍스트를 작게 유지할 수 있었지만, 8번째 이후의 모든 단계마다 프롬프트가 다시 작성되면서 프롬프트 캐시가 무효화되어 비용과 지연 시간이 늘어났습니다. 이제는 컨텍스트가 600,000 토큰에 도달할 때까지 기다립니다. 이는 Opus 모델에 구성한 1M 토큰 윈도우의 60%에 해당합니다. 컴팩션 후에는 컨텍스트가 다시 이 크기까지 커져야 다음 컴팩션이 수행됩니다. 아직 어떤 환경에서도 이 한도에 도달한 빌드가 없어 컴팩션이 필요했던 적은 없습니다.
+
+마지막으로, 앱 정보 패널에는 앱이 실행하는 쿼리가 표시됩니다. 이전에는 쿼리가 이미 코드에 있는데도 에이전트가 이 목록을 직접 작성했습니다. 목록이 잘못되면 경고를 다시 보내 에이전트가 재시도하도록 했습니다. 빌드 이력 전체를 살펴보면, 이 목록을 작성하고 수정하는 작업이 토큰 사용량과 빌드 시간에서 적지 않은 비중을 차지했습니다. 이제는 소스에서 쿼리를 직접 추출합니다. 이 작업을 안정적으로 수행할 수 있도록 프롬프트에서 에이전트에게 쿼리 서식 지정 방법을 안내하며, 서식을 수정해야 하면 여전히 경고를 보냅니다. 또한 각 쿼리에는 줄 번호와 함께 코드에서 해당 쿼리가 사용되는 위치로 이동하는 링크가 표시됩니다.
+
+## 대시보드 링크로 필터와 시간 범위 전달하기 {#passing-filters-and-time-range-through-dashboard-links}
+
+*데모 진행자: [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=769" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+대시보드는 이미 다른 대시보드로 연결되는 링크를 지원합니다. 테이블 타일에서 행을 클릭하면 해당 행의 값을 다른 대시보드로 전달할 수 있으며, Markdown 타일과 테이블 타일에는 일반 링크를 넣을 수 있습니다. 하지만 일반 링크로는 필터가 전달되지 않았습니다. 예를 들어 개요 대시보드를 특정 서비스의 오류로 필터링한 뒤 링크를 따라 서비스 상세 대시보드로 이동하면, 다시 모든 서비스가 표시되었습니다.
+
+이제 두 개의 전역 변수를 사용하여 링크에 현재 시간 범위와 필터 선택 항목을 포함할 수 있습니다. `$__url_time_range`는 `from=…&to=…`로 확장되고, `$__all_variables`는 `filters=` 매개변수로 확장됩니다. 따라서 대상 대시보드가 동일한 서비스, 상태, 시간 범위가 선택된 상태로 열립니다. 데모에서는 개요를 API 서비스의 오류로 필터링한 다음 링크를 따라 서비스 상세 대시보드로 이동하는데, 이 대시보드에는 처음부터 해당 서비스의 실패한 스팬만 표시됩니다. 해당 PR은 아직 머지되지 않았습니다.
+
+**관련 PR:** [#3726](https://github.com/ClickHouse/ClickStack/pull/3726) 대시보드 링크용 전역 변수 추가 (진행 중)
+
+## 모든 배포 환경에서 사용 가능한 애드혹 대시보드 필터 {#ad-hoc-dashboard-filters-for-every-deployment}
+
+*데모 진행자: [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=875" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+애드혹 필터를 사용하면 조사 중에 필터 바에서 키, 연산자, 값을 직접 선택할 수 있으므로 대시보드 작성자가 각 필터를 미리 설정해 둘 필요가 없습니다. 이 기능은 10월에 `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS` 플래그를 통해 처음 도입되었으며, 기본 내용은 [10월 What&#39;s New](https://clickhouse.com/blog/whats-new-in-clickstack-october-2026#user-content-ad_hoc_dashboard_filters)에서 확인할 수 있습니다. 이제 이 플래그가 제거되어 모든 배포 환경에서 애드혹 필터가 활성화됩니다.
+
+그 이후 몇 가지 기능이 추가되었습니다. 종속 필드를 사용해 애드혹 필터의 범위를 지정할 수 있습니다. 예를 들어 `ServiceName = api`로 제한된 필터는 해당 서비스의 키와 값만 표시합니다. 또한 하나의 필터를 여러 소스에 적용할 수 있습니다. 트레이스 소스에서 `SpanName`을 선택하면 해당 소스를 사용하는 차트와 테이블에 필터가 적용됩니다. 이제 외부 v2 대시보드 API와 MCP 대시보드 도구에서도 애드혹 필터가 포함된 대시보드를 생성, 조회, 업데이트할 수 있습니다. 이전에는 MCP에서 애드혹 필터가 표시되지 않았고, `filters`를 포함한 `clickstack_save_dashboard` 업데이트를 실행하면 기존 애드혹 필터가 아무런 알림 없이 삭제되었습니다.
+
+애드혹 필터의 이름은 식별자 역할만 하므로 타일에서 `$name` 형태로 참조할 수 없습니다. 다만 `filters=` URL 매개변수에서 필터의 조건을 식별하는 데 사용되므로 이름은 여전히 고유해야 합니다.
+
+**관련 PR:** [#3585](https://github.com/ClickHouse/ClickStack/pull/3585) 종속 애드혹 필터 추가, [#3658](https://github.com/ClickHouse/ClickStack/pull/3658) 애드혹 필터 마무리 작업, [#3659](https://github.com/ClickHouse/ClickStack/pull/3659) 외부 API에서 애드혹 대시보드 필터 지원, [#3660](https://github.com/ClickHouse/ClickStack/pull/3660) MCP 대시보드 도구에서 애드혹 대시보드 필터 지원, [#3727](https://github.com/ClickHouse/ClickStack/pull/3727) 애드혹 필터 기능 토글 제거
+
+## 더 빠른 필터 로딩 {#faster-filter-loading}
+
+*데모: [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=939" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+검색 사이드바는 필터 키와 값을 가져올 때, 소스에 속성 맵에 대한 텍스트 인덱스가 있으면 해당 인덱스를 사용하고(all values 모드), 그렇지 않으면 테이블을 스캔합니다(exact 모드). 이제 두 방식 모두 더 빨라졌습니다.
+
+이전에는 텍스트 인덱스 조회 시 시간 범위 내 모든 파트에서 딕셔너리를 읽었습니다. ClickHouse Observability에서는 파트의 인덱스를 열 때마다 객체 스토리지와의 왕복이 발생합니다. 이제는 기본적으로 행 수가 중앙값에 가장 가까운 파트 20개를 선택하여 읽습니다. 이를 제어하는 새로운 소스 설정 두 가지가 추가되었습니다. **Map key index parts**(`mapKeyIndexMaxParts`)는 읽을 파트 수를 지정하고, **Map key index part size**(`mapKeyIndexPartSelection`)는 `median`, `smallest`, `largest` 중 하나를 선택합니다. 가장 작은 파트는 대개 최근에 생성되어 아직 병합되지 않은 파트이므로 읽는 비용이 적고 새로운 키를 찾는 데 유용합니다. 가장 큰 파트는 더 많은 키를 포함하지만 딕셔너리도 더 큽니다.
+
+선택되지 않은 파트에만 존재하는 키와 값은 누락될 수 있습니다. 키에서 **Load more**를 클릭하면 모든 파트를 읽습니다. 이 설정은 소스 양식에 있지만, 고급 섹션의 다른 항목보다도 더 전문적인 설정입니다. 이를 어떤 방식으로 노출하는 것이 가장 좋을지는 아직 논의 중입니다.
+
+이제 텍스트 인덱스는 알파벳순으로 앞선 값 대신 `topKWeighted`로 순위를 매긴 최빈값을 반환합니다. 조회는 키 10개 단위의 배치로 병렬 실행됩니다. 요청 ID처럼 행마다 값이 다른 키가 있더라도, 정렬상 그 뒤에 오는 모든 키가 아니라 해당 키가 속한 배치만 지연됩니다.
+
+쿼리 성능은 인덱스의 사전 블록(dictionary block) 크기에도 영향을 받습니다. 블록이 8,192 토큰이면 각 키를 개별적으로 읽으며, 인덱스 행 20,000개에 도달하면 중단합니다. 이제 컬렉터 마이그레이션은 ClickHouse 26.6 이상에서 기본 테이블에 `text_index_dictionary_block_size = 8192`를 설정합니다. ClickHouse의 기본값도 26.11부터 512에서 8,192로 변경됩니다. 데모에서는 인덱스에서 키와 값을 2,000개 로드하는데, 이는 이전에 요청할 수 있던 양보다 많습니다. 이제 팀 설정에서 컬럼당 최대 10,000개의 키를 허용합니다.
+
+exact 모드에는 심각한 성능 버그가 있었습니다. 조회 시 하나의 쿼리로 여러 맵 키의 값을 요청했는데, `Map`은 키-값 쌍의 배열로 저장되므로 ClickHouse는 요청된 키마다 각 행의 배열을 한 번씩 스캔했습니다. 이제는 행마다 한 번만 훑어 요청된 키를 모두 찾습니다. 단일 서비스로 범위를 한정하면 exact 모드도 충분히 빨라져 오히려 더 나은 기본값이 될 수도 있습니다. 기본적으로 최대 300만 개의 행을 읽으며, 이 값은 팀 설정에서 조정할 수 있습니다. 다만 ClickHouse Observability에서는 이 제한이 사용자에게 전혀 노출되지 않으므로, 소스 설정으로 옮기는 것이 적절할 것으로 보입니다.
+
+이제 동일한 맵 키에 대한 동시 요청은 첫 번째 요청이 실행되는 동안 각자 새 쿼리를 시작하지 않고 하나의 ClickHouse 쿼리를 공유합니다.
+
+**관련 PR:** [#3611](https://github.com/ClickHouse/ClickStack/pull/3611) 동시 호출자 간 Map 키 읽기 공유, [#3617](https://github.com/ClickHouse/ClickStack/pull/3617) 텍스트 인덱스 최빈값을 키 10개 단위 배치로 표시, [#3635](https://github.com/ClickHouse/ClickStack/pull/3635) 텍스트 인덱스 키 및 값 조회 시 읽을 파트 집합을 구성 가능하도록 변경, [#3657](https://github.com/ClickHouse/ClickStack/pull/3657) 팀 설정에서 컬럼당 최대 10,000개의 필터 키 허용, [#3695](https://github.com/ClickHouse/ClickStack/pull/3695) exact 필터 속도 개선, [ClickHouse/ClickHouse#132804](https://github.com/ClickHouse/ClickHouse/pull/132804) 기본 텍스트 인덱스 사전 블록 크기 변경
+
+## Artifact Hub의 ClickStack Helm 차트 {#clickstack-helm-charts-on-artifact-hub}
+
+*데모 진행자: [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1121" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+보안 팀과 협력하여 공식 Helm 차트를 위한 [Artifact Hub의 `clickhouse` 조직](https://artifacthub.io/packages/search?org=clickhouse)을 개설했습니다. `clickstack` 및 `clickstack-operators` 차트가 인증된 게시자 배지와 함께 이곳에 등록되어 있습니다. 이제 차트 메타데이터는 기존 hyperdxio 리포지토리 대신 ClickStack-helm-charts 리포지토리를 가리킵니다. 덕분에 차트를 더 쉽게 찾을 수 있으며, Artifact Hub가 모든 릴리스의 취약점을 무료로 스캔합니다.
+
+이 스캔은 이미 효과를 보고 있습니다. 차트 3.6.0의 스캔 보고서를 바탕으로 데모 전에 여러 문제를 수정했습니다. collector 베이스 이미지와 gomplate를 업데이트하여 앱 및 collector image 전반에서 치명적(critical) CVE 9개를 제거했습니다. 또한 사용자 정의 collector 빌드를 contrib v0.155.0에서 v0.165.0으로 업데이트하고, 앱 image에서 발견된 높은 심각도의 Node 의존성 취약점을 50개에서 2개로 줄였습니다.
+
+차트는 GHCR에도 OCI 산출물로 게시되며, 해당 패키지는 이제 퍼블릭으로 공개되었습니다. GitHub Pages 리포지토리를 먼저 추가하지 않아도 `helm install my-clickstack oci://ghcr.io/clickhouse/charts/clickstack`을 실행할 수 있습니다. 기존 `helm repo add` 방식도 그대로 사용할 수 있습니다. 또한 &quot;WIP&quot; 랜딩 페이지를 두 차트의 설치 지침과 문서 및 업그레이드 가이드 링크가 담긴 페이지로 교체했습니다.
+
+다음 단계로 차트에 서명하고, 조직 내 패키지를 공식 패키지로 표시해 달라고 Artifact Hub에 요청할 예정입니다.
+
+**관련 PR:** [ClickHouse/ClickStack-helm-charts#297](https://github.com/ClickHouse/ClickStack-helm-charts/pull/297) 릴리스된 차트를 GHCR에 OCI 산출물로 게시, [ClickHouse/ClickStack-helm-charts#319](https://github.com/ClickHouse/ClickStack-helm-charts/pull/319) 비어 있는 Pages 랜딩 페이지 교체 및 Artifact Hub 설정, [ClickHouse/ClickStack-helm-charts#322](https://github.com/ClickHouse/ClickStack-helm-charts/pull/322) GHCR에서 차트를 설치하는 방법 문서화, [#3709](https://github.com/ClickHouse/ClickStack/pull/3709) 앱 및 collector image의 치명적 CVE 해결, [#3710](https://github.com/ClickHouse/ClickStack/pull/3710) 기본 collector를 v0.165.0으로 업데이트, [#3711](https://github.com/ClickHouse/ClickStack/pull/3711) 앱 image에서 취약점으로 지적된 Node 의존성 업데이트
+
+## 이벤트 패턴 필터링 또는 제외 {#filtering-for-or-excluding-an-event-pattern}
+
+*데모 진행자: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1216" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이 기능은 이벤트 패턴(Event Patterns)을 유용하게 사용하던 한 고객이 패턴의 샘플로만 이동할 수 있다는 점을 아쉬워하면서 시작되었습니다. 이제 각 행에 마우스를 올리면 두 가지 작업이 표시됩니다. **Exclude this pattern**은 이벤트 패턴 화면을 유지한 채 해당 패턴을 제외하고 다시 실행합니다. 여러 패턴을 차례로 제외하면서 노이즈를 계속 걸러낼 수 있습니다. **Filter for this pattern**은 일치하는 이벤트만 표시된 결과 테이블(Results Table)을 엽니다.
+
+두 작업 모두 패턴 템플릿으로 구축한 SQL 조건을 사용해 검색 필터를 추가합니다. 이 조건은 MCP `clickstack_event_patterns` 도구가 드릴다운에 사용하는 조건을 축약한 형태로, URL에 담을 수 있을 만큼 짧습니다. ClickHouse는 샘플링된 10,000개 행에 국한하지 않고 전체 시간 범위에 이 조건을 적용하므로 결과 테이블, 히스토그램, 발생 횟수가 모두 갱신됩니다. 이러한 필터는 다른 필터와 나란히 **Pattern** 필(pill)로 표시되며, URL과 저장된 검색에도 유지됩니다.
+
+한 번에 하나의 패턴만 포함할 수 있습니다. 필터는 `AND`로 결합되므로 두 패턴을 포함하면 일치하는 항목이 없게 됩니다. 다른 패턴을 선택하면 기존 포함 필터가 대체됩니다. 또한 MCP 제한과 동일하게, 4,000자를 초과하는 템플릿에는 버튼이 표시되지 않습니다.
+
+몇 가지 제한 사항이 있습니다. `<*> <*>`와 같은 범용 템플릿은 행에 표시된 것보다 더 많은 이벤트와 일치할 수 있습니다. 템플릿에 타임스탬프가 리터럴 텍스트로 남아 있으면 패턴이 해당 날짜와 시간대에 고정됩니다. 제외 필터를 사용하면 쿼리 시간이 약 2배로 늘어나며, 대시보드의 패턴 타일에서는 아직 버튼을 사용할 수 없습니다.
+
+**관련 PR:** [#3662](https://github.com/ClickHouse/ClickStack/pull/3662) Event Patterns 드릴다운 프레디케이트 공유, [#3663](https://github.com/ClickHouse/ClickStack/pull/3663) 드릴다운에 공유 패턴 프레디케이트 사용, [#3664](https://github.com/ClickHouse/ClickStack/pull/3664) 패턴 프레디케이트의 축약형 추가, [#3665](https://github.com/ClickHouse/ClickStack/pull/3665) Event Patterns에서 패턴 필터링 또는 제외
+
+## 트레이스 검색의 RED 메트릭 {#red-metrics-on-trace-search}
+
+*데모 진행자: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1308" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 검색 화면에서 소스와 관계없이 결과 위에 개수 히스토그램 하나만 표시되었습니다. 이제 소요 시간 컬럼이 있는 트레이스 소스에는 3개의 타일이 표시됩니다. **Throughput**은 상태별 스팬 개수를 보여 주고, **Errors**는 최대 100%로 제한되는 오류율 선과 오류 건수를 전환하여 보여 주며, **Duration**은 소스의 소요 시간 정밀도에 설정된 단위로 Avg, P95, P99 선을 보여 줍니다.
+
+타일은 하나만 표시하거나 3개 모두 표시할 수 있습니다. 한 타일 위에 마우스를 올리면 3개 타일 모두에서 같은 시점에 커서가 표시됩니다. Throughput 또는 Errors에서 상태 시계열을 클릭하면 기존에 히스토그램을 클릭했을 때와 마찬가지로 결과가 필터링됩니다. Throughput은 기존 결과 개수 쿼리를 그대로 사용하므로 추가 스캔이 발생하지 않습니다.
+
+**RED** / **Heatmap** 스위치를 사용하면 3개의 타일이 시간에 따른 소요 시간 분포를 보여 주는 히트맵으로 대체됩니다. 이 히트맵은 대시보드에서 사용하는 것과 동일합니다. 선택한 내용은 URL에 저장되므로 공유된 링크를 열어도 같은 뷰가 표시됩니다. 히트맵 뷰에서는 실시간 로그 보기가 비활성화됩니다. `ServiceName`과 같은 사용자 정의 그룹화(Group By)를 설정하면 그룹화된 히스토그램이 다시 표시됩니다. 로그 소스와 좁은 화면에서는 기존 히스토그램이 그대로 유지됩니다.
+
+**관련 PR:** [#3183](https://github.com/ClickHouse/ClickStack/pull/3183) 트레이스 검색 결과 뷰에 RED 메트릭 표시, [#3184](https://github.com/ClickHouse/ClickStack/pull/3184) 트레이스 검색에 소요 시간 히트맵 뷰 추가
+
+## Cmd+K 메뉴에서 설정 열기와 숨겨진 CRT 모드 {#settings-from-the-cmd-k-menu-and-a-hidden-crt-mode}
+
+*데모 진행자: [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1381" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 설정을 찾으려면 팀 설정이나 사용자 메뉴를 거쳐야 했습니다. 이제 `Cmd+K`(다른 OS에서는 `Ctrl+K`)에서 설정을 검색할 수 있습니다. 설정 그룹에는 팀 설정, 소스, 연결, 팀 구성원, API 키, 조직 API 키, MCP 서버, 웹훅, 쿼리 설정(query settings)이 포함됩니다. 각 엔트리를 선택하면 해당 탭이 열리고 관련 섹션으로 바로 스크롤됩니다. 로컬 모드에는 팀 페이지가 없으므로 이 그룹이 표시되지 않습니다.
+
+환경설정(Preferences) 그룹을 선택하면 환경설정 모달 대화 상자가 열립니다. 시간대, 12h/24h, 글꼴, 행 클릭 등의 키워드로 검색하여 찾을 수 있습니다. 또한 메뉴에서 **Use light mode**, **Use dark mode**, **Use system color mode**를 선택하여 테마를 바로 변경할 수도 있습니다.
+
+여기까지 읽으셨다면 [@jordan-simonovski](https://github.com/jordan-simonovski)가 준비한 작은 이스터 에그도 하나 소개합니다. **User preferences**를 열고 코나미 코드 `Up, Up, Down, Down, Left, Right, Left, Right, B, A`를 입력하십시오. 짧은 부팅 애니메이션이 재생된 후 **CRT mode** 스위치가 나타납니다. 이 스위치를 켜면 주사선, 둥근 모서리, 빛나는 텍스트가 적용되어 앱이 옛날 CRT 화면처럼 보입니다.
+
+이 효과는 오버레이 방식이므로 앱은 평소처럼 계속 사용할 수 있습니다. 모드가 켜져 있는 동안에는 스위치가 환경설정에 계속 표시되므로 코드를 다시 입력하지 않고도 끌 수 있습니다. 기본값은 꺼짐이며, `prefers-reduced-motion`이 활성화되어 있으면 깜빡임 효과와 잠금 해제 애니메이션이 재생되지 않습니다. 참고로 데모에서는 코드를 제대로 입력하기까지 몇 번 시도해야 했습니다.
+
+**관련 PR:** [#3707](https://github.com/ClickHouse/ClickStack/pull/3707) Cmd+K 메뉴에서 설정 및 환경설정 찾기, [#3704](https://github.com/ClickHouse/ClickStack/pull/3704) 환경설정에서 비밀 코드로 잠금 해제되는 숨겨진 CRT 모드

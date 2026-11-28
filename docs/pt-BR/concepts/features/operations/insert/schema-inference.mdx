@@ -1,0 +1,2330 @@
+---
+description: 'Página que descreve a inferência automática de esquema a partir dos dados de entrada no ClickHouse'
+sidebarTitle: 'Inferência de esquema'
+slug: /concepts/features/operations/insert/schema-inference
+title: 'Inferência automática de esquema a partir dos dados de entrada'
+doc_type: 'reference'
+---
+
+O ClickHouse consegue determinar automaticamente a estrutura dos dados de entrada em quase todos os [formatos de entrada](/pt-BR/reference/formats/index) compatíveis.
+Este documento descreve quando a inferência de esquema é utilizada, como ela funciona com os diferentes formatos de entrada e quais configurações
+permitem controlá-la.
+
+## Uso {#usage}
+
+A inferência de esquema é usada quando o ClickHouse precisa ler dados em um formato de dados específico cuja estrutura é desconhecida.
+
+## Funções de tabela [file](/pt-BR/reference/functions/table-functions/file), [s3](/pt-BR/reference/functions/table-functions/s3), [url](/pt-BR/reference/functions/table-functions/url), [hdfs](/pt-BR/reference/functions/table-functions/hdfs), [azureBlobStorage](/pt-BR/reference/functions/table-functions/azureBlobStorage). {#table-functions-file-s3-url-hdfs-azureblobstorage}
+
+Essas funções de tabela têm o argumento opcional `structure`, que define a estrutura dos dados de entrada. Se esse argumento não for especificado ou for definido como `auto`, a estrutura será inferida a partir dos dados.
+
+**Exemplo:**
+
+Suponha que tenhamos um arquivo `hobbies.jsonl` no formato JSONEachRow no diretório `user_files` com o seguinte conteúdo:
+
+```json
+{"id" :  1, "age" :  25, "name" :  "Josh", "hobbies" :  ["football", "cooking", "music"]}
+{"id" :  2, "age" :  19, "name" :  "Alan", "hobbies" :  ["tennis", "art"]}
+{"id" :  3, "age" :  32, "name" :  "Lana", "hobbies" :  ["fitness", "reading", "shopping"]}
+{"id" :  4, "age" :  47, "name" :  "Brayan", "hobbies" :  ["movies", "skydiving"]}
+```
+
+O ClickHouse consegue ler esses dados sem que você precise especificar a estrutura deles:
+
+```sql
+SELECT * FROM file('hobbies.jsonl')
+```
+
+```response
+┌─id─┬─age─┬─name───┬─hobbies──────────────────────────┐
+│  1 │  25 │ Josh   │ ['football','cooking','music']   │
+│  2 │  19 │ Alan   │ ['tennis','art']                 │
+│  3 │  32 │ Lana   │ ['fitness','reading','shopping'] │
+│  4 │  47 │ Brayan │ ['movies','skydiving']           │
+└────┴─────┴────────┴──────────────────────────────────┘
+```
+
+Observação: o formato `JSONEachRow` foi determinado automaticamente a partir da extensão de arquivo `.jsonl`.
+
+Você pode ver a estrutura determinada automaticamente usando a consulta `DESCRIBE`:
+
+```sql
+DESCRIBE file('hobbies.jsonl')
+```
+
+```response
+┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ Nullable(Int64)         │              │                    │         │                  │                │
+│ age     │ Nullable(Int64)         │              │                    │         │                  │                │
+│ name    │ Nullable(String)        │              │                    │         │                  │                │
+│ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
+└─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+## Motores de tabela [File](/pt-BR/reference/engines/table-engines/special/file), [S3](/pt-BR/reference/engines/table-engines/integrations/s3), [URL](/pt-BR/reference/engines/table-engines/special/url), [HDFS](/pt-BR/reference/engines/table-engines/integrations/hdfs), [azureBlobStorage](/pt-BR/reference/engines/table-engines/integrations/azureBlobStorage) {#table-engines-file-s3-url-hdfs-azureblobstorage}
+
+Se a lista de colunas não for especificada na consulta `CREATE TABLE`, a estrutura da tabela será inferida automaticamente a partir dos dados.
+
+**Exemplo:**
+
+Vamos usar o arquivo `hobbies.jsonl`. Podemos criar uma tabela com o motor `File` a partir dos dados desse arquivo:
+
+```sql
+CREATE TABLE hobbies ENGINE=File(JSONEachRow, 'hobbies.jsonl')
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT * FROM hobbies
+```
+
+```response
+┌─id─┬─age─┬─name───┬─hobbies──────────────────────────┐
+│  1 │  25 │ Josh   │ ['football','cooking','music']   │
+│  2 │  19 │ Alan   │ ['tennis','art']                 │
+│  3 │  32 │ Lana   │ ['fitness','reading','shopping'] │
+│  4 │  47 │ Brayan │ ['movies','skydiving']           │
+└────┴─────┴────────┴──────────────────────────────────┘
+```
+
+```sql
+DESCRIBE TABLE hobbies
+```
+
+```response
+┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ Nullable(Int64)         │              │                    │         │                  │                │
+│ age     │ Nullable(Int64)         │              │                    │         │                  │                │
+│ name    │ Nullable(String)        │              │                    │         │                  │                │
+│ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
+└─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+## clickhouse-local {#clickhouse-local}
+
+O `clickhouse-local` tem um parâmetro opcional `-S/--structure` que define a estrutura dos dados de entrada. Se esse parâmetro não for especificado ou for definido como `auto`, a estrutura será inferida a partir dos dados.
+
+**Exemplo:**
+
+Vamos usar o arquivo `hobbies.jsonl`. Podemos consultar os dados desse arquivo usando o `clickhouse-local`:
+
+```shell
+clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='DESCRIBE TABLE hobbies'
+```
+
+```response
+id    Nullable(Int64)
+age    Nullable(Int64)
+name    Nullable(String)
+hobbies    Array(Nullable(String))
+```
+
+```shell
+clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='SELECT * FROM hobbies'
+```
+
+```response
+1    25    Josh    ['football','cooking','music']
+2    19    Alan    ['tennis','art']
+3    32    Lana    ['fitness','reading','shopping']
+4    47    Brayan    ['movies','skydiving']
+```
+
+## Usando a estrutura da tabela de inserção {#using-structure-from-insertion-table}
+
+Quando as funções de tabela `file/s3/url/hdfs` são usadas para inserir dados em uma tabela,
+é possível usar a estrutura da tabela de inserção em vez de extraí-la dos dados.
+Isso pode melhorar o desempenho da inserção, pois a inferência de esquema pode levar algum tempo. Além disso, é útil quando a tabela tem um schema otimizado, pois assim
+nenhuma conversão entre tipos será realizada.
+
+Existe uma configuração específica, [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/pt-BR/reference/settings/session-settings/use#use_structure_from_insertion_table_in_table_functions),
+que controla esse comportamento. Ela tem 3 valores possíveis:
+
+* 0 - a função de tabela extrairá a estrutura dos dados.
+* 1 - a função de tabela usará a estrutura da tabela de inserção.
+* 2 - o ClickHouse determinará automaticamente se é possível usar a estrutura da tabela de inserção ou se deve usar a inferência de esquema. Valor default.
+
+**Exemplo 1:**
+
+Vamos criar a tabela `hobbies1` com a seguinte estrutura:
+
+```sql
+CREATE TABLE hobbies1
+(
+    `id` UInt64,
+    `age` LowCardinality(UInt8),
+    `name` String,
+    `hobbies` Array(String)
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+Em seguida, insira os dados do arquivo `hobbies.jsonl`:
+
+```sql
+INSERT INTO hobbies1 SELECT * FROM file(hobbies.jsonl)
+```
+
+Neste caso, todas as colunas do arquivo são inseridas na tabela sem alterações, portanto o ClickHouse usará a estrutura da tabela de inserção em vez da inferência de esquema.
+
+**Exemplo 2:**
+
+Vamos criar a tabela `hobbies2` com a seguinte estrutura:
+
+```sql
+CREATE TABLE hobbies2
+(
+  `id` UInt64,
+  `age` LowCardinality(UInt8),
+  `hobbies` Array(String)
+)
+  ENGINE = MergeTree
+ORDER BY id;
+```
+
+Em seguida, insira os dados do arquivo `hobbies.jsonl`:
+
+```sql
+INSERT INTO hobbies2 SELECT id, age, hobbies FROM file(hobbies.jsonl)
+```
+
+Neste caso, todas as colunas da consulta `SELECT` estão presentes na tabela, portanto o ClickHouse usará a estrutura da tabela de inserção.
+Observe que isso só funciona com formatos de entrada que suportam a leitura de um subconjunto de colunas, como JSONEachRow, TSKV, Parquet etc. (portanto, não funcionará, por exemplo, com o formato TSV).
+
+**Exemplo 3:**
+
+Vamos criar a tabela `hobbies3` com a seguinte estrutura:
+
+```sql
+CREATE TABLE hobbies3
+(
+  `identifier` UInt64,
+  `age` LowCardinality(UInt8),
+  `hobbies` Array(String)
+)
+  ENGINE = MergeTree
+ORDER BY identifier;
+```
+
+Em seguida, insira os dados do arquivo `hobbies.jsonl`:
+
+```sql
+INSERT INTO hobbies3 SELECT id, age, hobbies FROM file(hobbies.jsonl)
+```
+
+Nesse caso, a coluna `id` é usada na consulta `SELECT`, mas a tabela não tem essa coluna (ela tem uma coluna chamada `identifier`),
+então o ClickHouse não consegue usar a estrutura da tabela de inserção e recorre à inferência de esquema.
+
+**Exemplo 4:**
+
+Vamos criar a tabela `hobbies4` com a seguinte estrutura:
+
+```sql
+CREATE TABLE hobbies4
+(
+  `id` UInt64,
+  `any_hobby` Nullable(String)
+)
+  ENGINE = MergeTree
+ORDER BY id;
+```
+
+Em seguida, insira os dados do arquivo `hobbies.jsonl`:
+
+```sql
+INSERT INTO hobbies4 SELECT id, empty(hobbies) ? NULL : hobbies[1] FROM file(hobbies.jsonl)
+```
+
+Neste caso, algumas operações são aplicadas à coluna `hobbies` na consulta `SELECT` antes de inseri-la na tabela; portanto, o ClickHouse não pode usar a estrutura da tabela de inserção, e a inferência de esquema será utilizada.
+
+## Cache de inferência de schema {#schema-inference-cache}
+
+Para a maioria dos formatos de entrada, a inferência de schema lê parte dos dados para determinar sua estrutura, e esse processo pode levar algum tempo.
+Para evitar inferir o mesmo schema toda vez que o ClickHouse lê os dados do mesmo arquivo, o schema inferido é armazenado em cache e, ao acessar o mesmo arquivo novamente, o ClickHouse usa o schema do cache.
+
+Existem configurações específicas que controlam esse cache:
+
+* `schema_inference_cache_max_elements_for_{file/s3/hdfs/url/azure}` - o número máximo de schemas armazenados em cache para a função de tabela correspondente. O valor default é `4096`. Essas configurações devem ser definidas na configuração do servidor.
+* `schema_inference_use_cache_for_{file,s3,hdfs,url,azure}` - permite ativar/desativar o uso do cache na inferência de schema. Essas configurações podem ser usadas em consultas.
+
+O schema do arquivo pode mudar com a modificação dos dados ou com a alteração das configurações de formato.
+Por isso, o cache de inferência de schema identifica o schema pela fonte do arquivo, pelo nome do formato, pelas configurações de formato utilizadas e pelo horário da última modificação do arquivo.
+
+Nota: alguns arquivos acessados por URL na função de tabela `url` podem não conter informações sobre o horário da última modificação; para esse caso, existe uma configuração específica,
+`schema_inference_cache_require_modification_time_for_url`. Desabilitar essa configuração permite usar o schema do cache sem o horário da última modificação para esses arquivos.
+
+Há também a tabela de sistema [schema&#95;inference&#95;cache](/pt-BR/reference/system-tables/schema_inference_cache), com todos os schemas atualmente em cache, e a consulta de sistema `SYSTEM CLEAR SCHEMA CACHE [FOR File/S3/URL/HDFS]`,
+que permite limpar o cache de schema para todas as fontes de dados ou para uma fonte de dados específica.
+
+**Exemplos:**
+
+Vamos tentar inferir a estrutura de um conjunto de dados de exemplo do S3, `github-2022.ndjson.gz`, e ver como funciona o cache de inferência de schema:
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
+```
+
+```response
+┌─name───────┬─type─────────────────────────────────────────┐
+│ type       │ Nullable(String)                             │
+│ actor      │ Tuple(                                      ↴│
+│            │↳    avatar_url Nullable(String),            ↴│
+│            │↳    display_login Nullable(String),         ↴│
+│            │↳    id Nullable(Int64),                     ↴│
+│            │↳    login Nullable(String),                 ↴│
+│            │↳    url Nullable(String))                    │
+│ repo       │ Tuple(                                      ↴│
+│            │↳    id Nullable(Int64),                     ↴│
+│            │↳    name Nullable(String),                  ↴│
+│            │↳    url Nullable(String))                    │
+│ created_at │ Nullable(String)                             │
+│ payload    │ Tuple(                                      ↴│
+│            │↳    action Nullable(String),                ↴│
+│            │↳    distinct_size Nullable(Int64),          ↴│
+│            │↳    pull_request Tuple(                     ↴│
+│            │↳        author_association Nullable(String),↴│
+│            │↳        base Tuple(                         ↴│
+│            │↳            ref Nullable(String),           ↴│
+│            │↳            sha Nullable(String)),          ↴│
+│            │↳        head Tuple(                         ↴│
+│            │↳            ref Nullable(String),           ↴│
+│            │↳            sha Nullable(String)),          ↴│
+│            │↳        number Nullable(Int64),             ↴│
+│            │↳        state Nullable(String),             ↴│
+│            │↳        title Nullable(String),             ↴│
+│            │↳        updated_at Nullable(String),        ↴│
+│            │↳        user Tuple(                         ↴│
+│            │↳            login Nullable(String))),       ↴│
+│            │↳    ref Nullable(String),                   ↴│
+│            │↳    ref_type Nullable(String),              ↴│
+│            │↳    size Nullable(Int64))                    │
+└────────────┴──────────────────────────────────────────────┘
+5 rows in set. Elapsed: 0.601 sec.
+```
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
+```
+
+```response
+┌─name───────┬─type─────────────────────────────────────────┐
+│ type       │ Nullable(String)                             │
+│ actor      │ Tuple(                                      ↴│
+│            │↳    avatar_url Nullable(String),            ↴│
+│            │↳    display_login Nullable(String),         ↴│
+│            │↳    id Nullable(Int64),                     ↴│
+│            │↳    login Nullable(String),                 ↴│
+│            │↳    url Nullable(String))                    │
+│ repo       │ Tuple(                                      ↴│
+│            │↳    id Nullable(Int64),                     ↴│
+│            │↳    name Nullable(String),                  ↴│
+│            │↳    url Nullable(String))                    │
+│ created_at │ Nullable(String)                             │
+│ payload    │ Tuple(                                      ↴│
+│            │↳    action Nullable(String),                ↴│
+│            │↳    distinct_size Nullable(Int64),          ↴│
+│            │↳    pull_request Tuple(                     ↴│
+│            │↳        author_association Nullable(String),↴│
+│            │↳        base Tuple(                         ↴│
+│            │↳            ref Nullable(String),           ↴│
+│            │↳            sha Nullable(String)),          ↴│
+│            │↳        head Tuple(                         ↴│
+│            │↳            ref Nullable(String),           ↴│
+│            │↳            sha Nullable(String)),          ↴│
+│            │↳        number Nullable(Int64),             ↴│
+│            │↳        state Nullable(String),             ↴│
+│            │↳        title Nullable(String),             ↴│
+│            │↳        updated_at Nullable(String),        ↴│
+│            │↳        user Tuple(                         ↴│
+│            │↳            login Nullable(String))),       ↴│
+│            │↳    ref Nullable(String),                   ↴│
+│            │↳    ref_type Nullable(String),              ↴│
+│            │↳    size Nullable(Int64))                    │
+└────────────┴──────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.059 sec.
+```
+
+Como você pode ver, a segunda consulta foi executada quase instantaneamente.
+
+Vamos tentar alterar algumas configurações que podem afetar o esquema inferido:
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
+SETTINGS input_format_json_try_infer_named_tuples_from_objects=0, input_format_json_read_objects_as_strings = 1
+
+┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ type       │ Nullable(String) │              │                    │         │                  │                │
+│ actor      │ Nullable(String) │              │                    │         │                  │                │
+│ repo       │ Nullable(String) │              │                    │         │                  │                │
+│ created_at │ Nullable(String) │              │                    │         │                  │                │
+│ payload    │ Nullable(String) │              │                    │         │                  │                │
+└────────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+
+5 rows in set. Elapsed: 0.611 sec
+```
+
+Como você pode ver, o schema do cache não foi usado para o mesmo arquivo, pois a configuração que pode afetar o esquema inferido foi alterada.
+
+Vamos verificar o conteúdo da tabela `system.schema_inference_cache`:
+
+```sql
+SELECT schema, format, source FROM system.schema_inference_cache WHERE storage='S3'
+```
+
+```response
+┌─schema──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─format─┬─source───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ type Nullable(String), actor Tuple(avatar_url Nullable(String), display_login Nullable(String), id Nullable(Int64), login Nullable(String), url Nullable(String)), repo Tuple(id Nullable(Int64), name Nullable(String), url Nullable(String)), created_at Nullable(String), payload Tuple(action Nullable(String), distinct_size Nullable(Int64), pull_request Tuple(author_association Nullable(String), base Tuple(ref Nullable(String), sha Nullable(String)), head Tuple(ref Nullable(String), sha Nullable(String)), number Nullable(Int64), state Nullable(String), title Nullable(String), updated_at Nullable(String), user Tuple(login Nullable(String))), ref Nullable(String), ref_type Nullable(String), size Nullable(Int64)) │ NDJSON │ datasets-documentation.s3.eu-west-3.amazonaws.com443/datasets-documentation/github/github-2022.ndjson.gz │
+│ type Nullable(String), actor Nullable(String), repo Nullable(String), created_at Nullable(String), payload Nullable(String)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 │ NDJSON │ datasets-documentation.s3.eu-west-3.amazonaws.com443/datasets-documentation/github/github-2022.ndjson.gz │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Como você pode ver, há dois esquemas diferentes para o mesmo arquivo.
+
+Podemos limpar o cache de esquema com uma consulta de sistema:
+
+```sql
+SYSTEM CLEAR SCHEMA CACHE FOR S3
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT count() FROM system.schema_inference_cache WHERE storage='S3'
+```
+
+```response
+┌─count()─┐
+│       0 │
+└─────────┘
+```
+
+## Formatos de texto {#text-formats}
+
+Para formatos de texto, o ClickHouse lê os dados linha por linha, extrai os valores das colunas de acordo com o formato
+e, em seguida, usa alguns analisadores sintáticos recursivos e heurísticas para determinar o tipo de cada valor. O número máximo de linhas e bytes lidos dos dados durante a inferência de esquema
+é controlado pelas configurações `input_format_max_rows_to_read_for_schema_inference` (25000 por padrão) e `input_format_max_bytes_to_read_for_schema_inference` (32Mb por padrão).
+Por padrão, todos os tipos inferidos são [Nullable](/pt-BR/reference/data-types/nullable), mas você pode alterar isso com a configuração `schema_inference_make_columns_nullable` (veja exemplos na seção de [configurações](#settings-for-text-formats)).
+
+### Formatos JSON {#json-formats}
+
+Nos formatos JSON, o ClickHouse interpreta os valores de acordo com a especificação JSON e, em seguida, tenta encontrar o tipo de dado mais adequado para eles.
+
+Vamos ver como isso funciona, quais tipos podem ser inferidos e quais configurações específicas podem ser usadas nos Formatos JSON.
+
+**Exemplos**
+
+Daqui em diante, a função de tabela [format](/pt-BR/reference/functions/table-functions/format) será usada nos exemplos.
+
+Inteiros, Números de ponto flutuante, Bool, Strings:
+
+```sql
+DESC format(JSONEachRow, '{"int" : 42, "float" : 42.42, "string" : "Hello, World!"}');
+```
+
+```response
+┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ int    │ Nullable(Int64)   │              │                    │         │                  │                │
+│ float  │ Nullable(Float64) │              │                    │         │                  │                │
+│ bool   │ Nullable(Bool)    │              │                    │         │                  │                │
+│ string │ Nullable(String)  │              │                    │         │                  │                │
+└────────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Datas, DateTimes:
+
+```sql
+DESC format(JSONEachRow, '{"date" : "2022-01-01", "datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}')
+```
+
+```response
+┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ date       │ Nullable(Date)          │              │                    │         │                  │                │
+│ datetime   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Arrays:
+
+```sql
+DESC format(JSONEachRow, '{"arr" : [1, 2, 3], "nested_arrays" : [[1, 2, 3], [4, 5, 6], []]}')
+```
+
+```response
+┌─name──────────┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ arr           │ Array(Nullable(Int64))        │              │                    │         │                  │                │
+│ nested_arrays │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
+└───────────────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Se um array contiver `null`, o ClickHouse usará os tipos dos demais elementos do array:
+
+```sql
+DESC format(JSONEachRow, '{"arr" : [null, 42, null]}')
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ arr  │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Se um array contiver valores de tipos diferentes e a configuração `input_format_json_infer_array_of_dynamic_from_array_of_different_types` estiver habilitada (o que ocorre por padrão), ele terá o tipo `Array(Dynamic)`:
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=1;
+DESC format(JSONEachRow, '{"arr" : [42, "hello", [1, 2, 3]]}');
+```
+
+```response
+┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ arr  │ Array(Dynamic) │              │                    │         │                  │                │
+└──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Tuplas nomeadas:
+
+Quando a configuração `input_format_json_try_infer_named_tuples_from_objects` está habilitada, o ClickHouse tentará, durante a inferência de esquema, inferir uma tupla nomeada a partir de objetos JSON.
+A tupla nomeada resultante conterá todos os elementos de todos os objetos JSON correspondentes nos dados de amostra.
+
+```sql
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 43, "c" : [1, 2, 3]}}, {"obj" : {"d" : {"e" : 42}}}')
+```
+
+```response
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Tuplas não nomeadas:
+
+Se a configuração `input_format_json_infer_array_of_dynamic_from_array_of_different_types` estiver desabilitada, Arrays com elementos de tipos diferentes serão tratados como Tuplas não nomeadas nos formatos JSON.
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types = 0;
+DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
+```
+
+```response
+┌─name──┬─type─────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ tuple │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │              │                    │         │                  │                │
+└───────┴──────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Se alguns valores forem `null` ou vazios, usamos os tipos dos valores correspondentes das outras linhas:
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
+DESC format(JSONEachRow, $$
+                              {"tuple" : [1, null, null]}
+                              {"tuple" : [null, "Hello, World!", []]}
+                              {"tuple" : [null, null, [1, 2, 3]]}
+                         $$)
+```
+
+```response
+┌─name──┬─type─────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ tuple │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │              │                    │         │                  │                │
+└───────┴──────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Mapas:
+
+Em JSON, é possível ler objetos cujos valores são do mesmo tipo como o tipo Map.
+Nota: isso só funciona quando as configurações `input_format_json_read_objects_as_strings` e `input_format_json_try_infer_named_tuples_from_objects` estão desabilitadas.
+
+```sql
+SET input_format_json_read_objects_as_strings = 0, input_format_json_try_infer_named_tuples_from_objects = 0;
+DESC format(JSONEachRow, '{"map" : {"key1" : 42, "key2" : 24, "key3" : 4}}')
+```
+
+```response
+┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ map  │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴──────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Tipos complexos aninhados:
+
+```sql
+DESC format(JSONEachRow, '{"value" : [[[42, 24], []], {"key1" : 42, "key2" : 24}]}')
+```
+
+```response
+┌─name──┬─type─────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ value │ Tuple(Array(Array(Nullable(String))), Tuple(key1 Nullable(Int64), key2 Nullable(Int64))) │              │                    │         │                  │                │
+└───────┴──────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Se o ClickHouse não conseguir determinar o tipo de alguma chave porque os dados contêm apenas valores NULL/objetos vazios/arrays vazios, será usado o tipo `String` caso a configuração `input_format_json_infer_incomplete_types_as_strings` esteja habilitada; caso contrário, será lançada uma exceção:
+
+```sql
+DESC format(JSONEachRow, '{"arr" : [null, null]}') SETTINGS input_format_json_infer_incomplete_types_as_strings = 1;
+```
+
+```response
+┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ arr  │ Array(Nullable(String)) │              │                    │         │                  │                │
+└──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(JSONEachRow, '{"arr" : [null, null]}') SETTINGS input_format_json_infer_incomplete_types_as_strings = 0;
+```
+
+```response
+Code: 652. DB::Exception: Received from localhost:9000. DB::Exception:
+Cannot determine type for column 'arr' by first 1 rows of data,
+most likely this column contains only Nulls or empty Arrays/Maps.
+...
+```
+
+#### Configurações de JSON {#json-settings}
+
+##### input_format_json_try_infer_numbers_from_strings {#input_format_json_try_infer_numbers_from_strings}
+
+Habilitar esta configuração permite inferir números a partir de valores do tipo String.
+
+Esta configuração fica desabilitada por padrão.
+
+**Exemplo:**
+
+```sql
+SET input_format_json_try_infer_numbers_from_strings = 1;
+DESC format(JSONEachRow, $$
+                              {"value" : "42"}
+                              {"value" : "424242424242"}
+                         $$)
+```
+
+```response
+┌─name──┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ value │ Nullable(Int64) │              │                    │         │                  │                │
+└───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+##### input_format_json_try_infer_named_tuples_from_objects {#input_format_json_try_infer_named_tuples_from_objects}
+
+Quando esta configuração está habilitada, é possível inferir tuplas nomeadas a partir de objetos JSON. A tupla nomeada resultante conterá todos os elementos de todos os objetos JSON correspondentes presentes nos dados de amostra.
+Isso pode ser útil quando os dados JSON não são esparsos, de modo que a amostra de dados contenha todas as chaves de objeto possíveis.
+
+Esta configuração vem habilitada por padrão.
+
+**Exemplo**
+
+```sql title="Query"
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 43, "c" : [1, 2, 3]}}, {"obj" : {"d" : {"e" : 42}}}')
+```
+
+```response title="Response"
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql title="Query"
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+DESC format(JSONEachRow, '{"array" : [{"a" : 42, "b" : "Hello"}, {}, {"c" : [1,2,3]}, {"d" : "2020-01-01"}]}')
+```
+
+```markdown title="Response"
+┌─name──┬─type────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ array │ Array(Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Nullable(Date))) │              │                    │         │                  │                │
+└───────┴─────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+##### input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects {#input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects}
+
+Habilitar esta configuração permite usar o tipo String para caminhos ambíguos durante a inferência de tuplas nomeadas a partir de objetos JSON (quando `input_format_json_try_infer_named_tuples_from_objects` está habilitada), em vez de gerar uma exceção.
+Isso permite ler objetos JSON como Tuplas nomeadas mesmo quando há caminhos ambíguos.
+
+Desabilitada por padrão.
+
+**Exemplos**
+
+Com a configuração desabilitada:
+
+```sql title="Query"
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+SET input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = 0;
+DESC format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}}');
+```
+
+```response title="Response"
+Code: 636. DB::Exception: The table structure cannot be extracted from a JSONEachRow format file. Error:
+Code: 117. DB::Exception: JSON objects have ambiguous data: in some objects path 'a' has type 'Int64' and in some - 'Tuple(b String)'. You can enable setting input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type for path 'a'. (INCORRECT_DATA) (version 24.3.1.1).
+You can specify the structure manually. (CANNOT_EXTRACT_TABLE_STRUCTURE)
+```
+
+Com a configuração habilitada:
+
+```sql title="Query"
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+SET input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = 1;
+DESC format(JSONEachRow, '{"obj" : "a" : 42}, {"obj" : {"a" : {"b" : "Hello"}}}');
+SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}}');
+```
+
+```response title="Response"
+┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Nullable(String))     │              │                    │         │                  │                │
+└──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─obj─────────────────┐
+│ ('42')              │
+│ ('{"b" : "Hello"}') │
+└─────────────────────┘
+```
+
+##### input_format_json_read_objects_as_strings {#input_format_json_read_objects_as_strings}
+
+Habilitar esta configuração permite ler objetos JSON aninhados como strings.
+Esta configuração pode ser usada para ler objetos JSON aninhados sem usar o tipo de objeto JSON.
+
+Esta configuração vem habilitada por padrão.
+
+Nota: habilitar esta configuração só terá efeito se a configuração `input_format_json_try_infer_named_tuples_from_objects` estiver desabilitada.
+
+```sql
+SET input_format_json_read_objects_as_strings = 1, input_format_json_try_infer_named_tuples_from_objects = 0;
+DESC format(JSONEachRow, $$
+                             {"obj" : {"key1" : 42, "key2" : [1,2,3,4]}}
+                             {"obj" : {"key3" : {"nested_key" : 1}}}
+                         $$)
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+##### input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
+
+Habilitar esta configuração permite ler valores numéricos como strings.
+
+Esta configuração vem habilitada por padrão.
+
+**Exemplo**
+
+```sql
+SET input_format_json_read_numbers_as_strings = 1;
+DESC format(JSONEachRow, $$
+                                {"value" : 1055}
+                                {"value" : "unknown"}
+                         $$)
+```
+
+```response
+┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ value │ Nullable(String) │              │                    │         │                  │                │
+└───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+##### input_format_json_read_bools_as_numbers {#input_format_json_read_bools_as_numbers}
+
+Habilitar esta configuração permite ler valores Bool como números.
+
+Esta configuração vem habilitada por padrão.
+
+**Exemplo:**
+
+```sql
+SET input_format_json_read_bools_as_numbers = 1;
+DESC format(JSONEachRow, $$
+                                {"value" : true}
+                                {"value" : 42}
+                         $$)
+```
+
+```response
+┌─name──┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ value │ Nullable(Int64) │              │                    │         │                  │                │
+└───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+##### input_format_json_read_bools_as_strings {#input_format_json_read_bools_as_strings}
+
+Habilitar esta configuração permite ler valores Bool como strings.
+
+Esta configuração vem habilitada por padrão.
+
+**Exemplo:**
+
+```sql
+SET input_format_json_read_bools_as_strings = 1;
+DESC format(JSONEachRow, $$
+                                {"value" : true}
+                                {"value" : "Hello, World"}
+                         $$)
+```
+
+```response
+┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ value │ Nullable(String) │              │                    │         │                  │                │
+└───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+##### input_format_json_read_arrays_as_strings {#input_format_json_read_arrays_as_strings}
+
+Habilitar esta configuração permite ler valores de array JSON como strings.
+
+Esta configuração vem habilitada por padrão.
+
+**Exemplo**
+
+```sql
+SET input_format_json_read_arrays_as_strings = 1;
+SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow, 'arr String', '{"arr" : [1, "Hello", [1,2,3]]}');
+```
+
+```response
+┌─arr───────────────────┬─toTypeName(arr)─┬─arrayElement(JSONExtractArrayRaw(arr), 3)─┐
+│ [1, "Hello", [1,2,3]] │ String          │ [1,2,3]                                   │
+└───────────────────────┴─────────────────┴───────────────────────────────────────────┘
+```
+
+##### input_format_json_infer_incomplete_types_as_strings {#input_format_json_infer_incomplete_types_as_strings}
+
+Habilitar esta configuração permite usar o tipo String para chaves JSON que contêm apenas `Null`/`{}`/`[]` na amostra de dados durante a inferência de esquema.
+Nos formatos JSON, qualquer valor pode ser lido como String se todas as configurações correspondentes estiverem habilitadas (todas vêm habilitadas por padrão), e, ao usar o tipo String para chaves com tipos desconhecidos, é possível evitar erros como `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` durante a inferência de esquema.
+
+Exemplo:
+
+```sql title="Query"
+SET input_format_json_infer_incomplete_types_as_strings = 1, input_format_json_try_infer_named_tuples_from_objects = 1;
+DESCRIBE format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
+SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
+```
+
+```markdown title="Response"
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Array(Nullable(Int64)), b Nullable(String), c Nullable(String), d Nullable(String), e Array(Nullable(String))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+
+┌─obj────────────────────────────┐
+│ ([1,2,3],'hello',NULL,'{}',[]) │
+└────────────────────────────────┘
+```
+
+### CSV {#csv}
+
+No formato CSV, o ClickHouse extrai os valores da coluna de cada linha com base nos delimitadores. O ClickHouse espera que todos os tipos, exceto números e strings, estejam entre aspas duplas. Se o valor estiver entre aspas duplas, o ClickHouse tenta interpretar
+os dados entre as aspas usando o analisador sintático recursivo e, em seguida, tenta encontrar o tipo de dado mais adequado para eles. Se o valor não estiver entre aspas duplas, o ClickHouse tenta interpretá-lo como um número
+e, se o valor não for um número, o ClickHouse o trata como uma string.
+
+Se você não quiser que o ClickHouse tente determinar tipos complexos usando analisadores sintáticos e heurísticas, pode desativar a configuração `input_format_csv_use_best_effort_in_schema_inference`
+e o ClickHouse tratará todas as colunas como Strings.
+
+Se a configuração `input_format_csv_detect_header` estiver habilitada, o ClickHouse tentará detectar o cabeçalho com os nomes de colunas (e, possivelmente, os tipos) ao inferir o schema. Essa configuração vem habilitada por padrão.
+
+**Exemplos:**
+
+Inteiros, números de ponto flutuante, Bool, Strings:
+
+```sql
+DESC format(CSV, '42,42.42,true,"Hello,World!"')
+```
+
+```response
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
+│ c2   │ Nullable(Float64) │              │                    │         │                  │                │
+│ c3   │ Nullable(Bool)    │              │                    │         │                  │                │
+│ c4   │ Nullable(String)  │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Strings sem aspas:
+
+```sql
+DESC format(CSV, 'Hello world!,World hello!')
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+│ c2   │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Datas, DateTimes:
+
+```sql
+DESC format(CSV, '"2020-01-01","2020-01-01 00:00:00","2022-01-01 00:00:00.000"')
+```
+
+```response
+┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Date)          │              │                    │         │                  │                │
+│ c2   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ c3   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Arrays:
+
+```sql
+DESC format(CSV, '"[1,2,3]","[[1, 2], [], [3, 4]]"')
+```
+
+```response
+┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(Int64))        │              │                    │         │                  │                │
+│ c2   │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(CSV, $$"['Hello', 'world']","[['Abc', 'Def'], []]"$$)
+```
+
+```response
+┌─name─┬─type───────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(String))        │              │                    │         │                  │                │
+│ c2   │ Array(Array(Nullable(String))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Se um array contiver null, o ClickHouse usará os tipos dos demais elementos do array:
+
+```sql
+DESC format(CSV, '"[NULL, 42, NULL]"')
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Mapas:
+
+```sql
+DESC format(CSV, $$"{'key1' : 42, 'key2' : 24}"$$)
+```
+
+```response
+┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴──────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Arrays e mapas aninhados:
+
+```sql
+DESC format(CSV, $$"[{'key1' : [[42, 42], []], 'key2' : [[null], [42]]}]"$$)
+```
+
+```response
+┌─name─┬─type──────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Map(String, Array(Array(Nullable(Int64))))) │              │                    │         │                  │                │
+└──────┴───────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Se o ClickHouse não conseguir determinar o tipo do valor entre aspas porque os dados contêm apenas valores NULL, ele o tratará como String:
+
+```sql
+DESC format(CSV, '"[NULL, NULL]"')
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Exemplo com a configuração `input_format_csv_use_best_effort_in_schema_inference` desabilitada:
+
+```sql
+SET input_format_csv_use_best_effort_in_schema_inference = 0
+DESC format(CSV, '"[1,2,3]",42.42,Hello World!')
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+│ c2   │ Nullable(String) │              │                    │         │                  │                │
+│ c3   │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Exemplos de detecção automática de cabeçalho (quando `input_format_csv_detect_header` está habilitado):
+
+Somente nomes:
+
+```sql
+SELECT * FROM format(CSV,
+$$"number","string","array"
+42,"Hello","[1, 2, 3]"
+43,"World","[4, 5, 6]"
+$$)
+```
+
+```response
+┌─number─┬─string─┬─array───┐
+│     42 │ Hello  │ [1,2,3] │
+│     43 │ World  │ [4,5,6] │
+└────────┴────────┴─────────┘
+```
+
+Nomes e tipos:
+
+```sql
+DESC format(CSV,
+$$"number","string","array"
+"UInt32","String","Array(UInt16)"
+42,"Hello","[1, 2, 3]"
+43,"World","[4, 5, 6]"
+$$)
+```
+
+```response
+┌─name───┬─type──────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ UInt32        │              │                    │         │                  │                │
+│ string │ String        │              │                    │         │                  │                │
+│ array  │ Array(UInt16) │              │                    │         │                  │                │
+└────────┴───────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Observe que o cabeçalho só pode ser detectado se houver pelo menos uma coluna com tipo diferente de String. Se todas as colunas forem do tipo String, o cabeçalho não será detectado:
+
+```sql
+SELECT * FROM format(CSV,
+$$"first_column","second_column"
+"Hello","World"
+"World","Hello"
+$$)
+```
+
+```response
+┌─c1───────────┬─c2────────────┐
+│ first_column │ second_column │
+│ Hello        │ World         │
+│ World        │ Hello         │
+└──────────────┴───────────────┘
+```
+
+#### Configurações de CSV {#csv-settings}
+
+##### input_format_csv_try_infer_numbers_from_strings {#input_format_csv_try_infer_numbers_from_strings}
+
+Quando esta configuração está ativada, é possível inferir números a partir de valores do tipo String.
+
+Esta configuração está desabilitada por padrão.
+
+**Exemplo:**
+
+```sql
+SET input_format_json_try_infer_numbers_from_strings = 1;
+DESC format(CSV, '42,42.42');
+```
+
+```response
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
+│ c2   │ Nullable(Float64) │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+### TSV/TSKV {#tsv-tskv}
+
+Nos formatos TSV/TSKV, o ClickHouse extrai o valor da coluna da linha de acordo com os delimitadores tabulares e, em seguida, analisa sintaticamente o valor extraído usando
+o analisador sintático recursivo para determinar o tipo mais adequado. Se não for possível determinar o tipo, o ClickHouse trata esse valor como String.
+
+Se você não quiser que o ClickHouse tente determinar tipos complexos usando analisadores sintáticos e heurísticas, pode desativar a configuração `input_format_tsv_use_best_effort_in_schema_inference`
+e o ClickHouse tratará todas as colunas como Strings.
+
+Se a configuração `input_format_tsv_detect_header` estiver habilitada, o ClickHouse tentará detectar o cabeçalho com os nomes de colunas (e possivelmente os tipos) ao inferir o schema. Essa configuração vem habilitada por padrão.
+
+**Exemplos:**
+
+Inteiros, números de ponto flutuante, Bool, Strings:
+
+```sql
+DESC format(TSV, '42    42.42    true    Hello,World!')
+```
+
+```response
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
+│ c2   │ Nullable(Float64) │              │                    │         │                  │                │
+│ c3   │ Nullable(Bool)    │              │                    │         │                  │                │
+│ c4   │ Nullable(String)  │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(TSKV, 'int=42    float=42.42    bool=true    string=Hello,World!\n')
+```
+
+```response
+┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ int    │ Nullable(Int64)   │              │                    │         │                  │                │
+│ float  │ Nullable(Float64) │              │                    │         │                  │                │
+│ bool   │ Nullable(Bool)    │              │                    │         │                  │                │
+│ string │ Nullable(String)  │              │                    │         │                  │                │
+└────────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Datas, DateTimes:
+
+```sql
+DESC format(TSV, '2020-01-01    2020-01-01 00:00:00    2022-01-01 00:00:00.000')
+```
+
+```response
+┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Date)          │              │                    │         │                  │                │
+│ c2   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ c3   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Arrays:
+
+```sql
+DESC format(TSV, '[1,2,3]    [[1, 2], [], [3, 4]]')
+```
+
+```response
+┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(Int64))        │              │                    │         │                  │                │
+│ c2   │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(TSV, '[''Hello'', ''world'']    [[''Abc'', ''Def''], []]')
+```
+
+```response
+┌─name─┬─type───────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(String))        │              │                    │         │                  │                │
+│ c2   │ Array(Array(Nullable(String))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Se um array contiver null, o ClickHouse usará os tipos dos demais elementos do array:
+
+```sql
+DESC format(TSV, '[NULL, 42, NULL]')
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Tuplas:
+
+```sql
+DESC format(TSV, $$(42, 'Hello, world!')$$)
+```
+
+```response
+┌─name─┬─type─────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Tuple(Nullable(Int64), Nullable(String)) │              │                    │         │                  │                │
+└──────┴──────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Mapas:
+
+```sql
+DESC format(TSV, $${'key1' : 42, 'key2' : 24}$$)
+```
+
+```response
+┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴──────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Arrays, Tuplas e mapas aninhados:
+
+```sql
+DESC format(TSV, $$[{'key1' : [(42, 'Hello'), (24, NULL)], 'key2' : [(NULL, ','), (42, 'world!')]}]$$)
+```
+
+```response
+┌─name─┬─type────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Map(String, Array(Tuple(Nullable(Int64), Nullable(String))))) │              │                    │         │                  │                │
+└──────┴─────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Se o ClickHouse não conseguir determinar o tipo porque os dados contêm apenas valores NULL, ele o tratará como String:
+
+```sql
+DESC format(TSV, '[NULL, NULL]')
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Exemplo com a configuração `input_format_tsv_use_best_effort_in_schema_inference` desabilitada:
+
+```sql
+SET input_format_tsv_use_best_effort_in_schema_inference = 0
+DESC format(TSV, '[1,2,3]    42.42    Hello World!')
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+│ c2   │ Nullable(String) │              │                    │         │                  │                │
+│ c3   │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Exemplos de detecção automática de cabeçalho (quando `input_format_tsv_detect_header` está habilitado):
+
+Somente nomes:
+
+```sql
+SELECT * FROM format(TSV,
+$$number    string    array
+42    Hello    [1, 2, 3]
+43    World    [4, 5, 6]
+$$);
+```
+
+```response
+┌─number─┬─string─┬─array───┐
+│     42 │ Hello  │ [1,2,3] │
+│     43 │ World  │ [4,5,6] │
+└────────┴────────┴─────────┘
+```
+
+Nomes e tipos:
+
+```sql
+DESC format(TSV,
+$$number    string    array
+UInt32    String    Array(UInt16)
+42    Hello    [1, 2, 3]
+43    World    [4, 5, 6]
+$$)
+```
+
+```response
+┌─name───┬─type──────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ UInt32        │              │                    │         │                  │                │
+│ string │ String        │              │                    │         │                  │                │
+│ array  │ Array(UInt16) │              │                    │         │                  │                │
+└────────┴───────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Observe que o cabeçalho só pode ser detectado se houver pelo menos uma coluna com tipo diferente de String. Se todas as colunas forem do tipo String, o cabeçalho não será detectado:
+
+```sql
+SELECT * FROM format(TSV,
+$$first_column    second_column
+Hello    World
+World    Hello
+$$)
+```
+
+```response
+┌─c1───────────┬─c2────────────┐
+│ first_column │ second_column │
+│ Hello        │ World         │
+│ World        │ Hello         │
+└──────────────┴───────────────┘
+```
+
+### Valores {#values}
+
+No formato Values, o ClickHouse extrai o valor da coluna da linha e, em seguida, o analisa sintaticamente usando
+o analisador sintático recursivo, de forma semelhante à interpretação de literais.
+
+**Exemplos:**
+
+Inteiros, números de ponto flutuante, Bool, Strings:
+
+```sql
+DESC format(Values, $$(42, 42.42, true, 'Hello,World!')$$)
+```
+
+```response
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
+│ c2   │ Nullable(Float64) │              │                    │         │                  │                │
+│ c3   │ Nullable(Bool)    │              │                    │         │                  │                │
+│ c4   │ Nullable(String)  │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Datas, DateTimes:
+
+```sql
+ DESC format(Values, $$('2020-01-01', '2020-01-01 00:00:00', '2022-01-01 00:00:00.000')$$)
+```
+
+```response
+┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Date)          │              │                    │         │                  │                │
+│ c2   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ c3   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Arrays:
+
+```sql
+DESC format(Values, '([1,2,3], [[1, 2], [], [3, 4]])')
+```
+
+```response
+┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(Int64))        │              │                    │         │                  │                │
+│ c2   │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Se um array contiver null, o ClickHouse usará os tipos dos demais elementos do array:
+
+```sql
+DESC format(Values, '([NULL, 42, NULL])')
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Tuplas:
+
+```sql
+DESC format(Values, $$((42, 'Hello, world!'))$$)
+```
+
+```response
+┌─name─┬─type─────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Tuple(Nullable(Int64), Nullable(String)) │              │                    │         │                  │                │
+└──────┴──────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Mapas:
+
+```sql
+DESC format(Values, $$({'key1' : 42, 'key2' : 24})$$)
+```
+
+```response
+┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴──────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Arrays, tuplas e mapas aninhados:
+
+```sql
+DESC format(Values, $$([{'key1' : [(42, 'Hello'), (24, NULL)], 'key2' : [(NULL, ','), (42, 'world!')]}])$$)
+```
+
+```response
+┌─name─┬─type────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Map(String, Array(Tuple(Nullable(Int64), Nullable(String))))) │              │                    │         │                  │                │
+└──────┴─────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Se o ClickHouse não conseguir determinar o tipo porque os dados contêm apenas valores NULL, será lançada uma exceção:
+
+```sql
+DESC format(Values, '([NULL, NULL])')
+```
+
+```response
+Code: 652. DB::Exception: Received from localhost:9000. DB::Exception:
+Cannot determine type for column 'c1' by first 1 rows of data,
+most likely this column contains only Nulls or empty Arrays/Maps.
+...
+```
+
+Exemplo com a configuração `input_format_tsv_use_best_effort_in_schema_inference` desabilitada:
+
+```sql
+SET input_format_tsv_use_best_effort_in_schema_inference = 0
+DESC format(TSV, '[1,2,3]    42.42    Hello World!')
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+│ c2   │ Nullable(String) │              │                    │         │                  │                │
+│ c3   │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+### CustomSeparated {#custom-separated}
+
+No formato CustomSeparated, o ClickHouse primeiro extrai todos os valores das colunas da linha de acordo com os delimitadores especificados e, em seguida, tenta inferir
+o tipo de dado de cada valor de acordo com a regra de escape.
+
+Se a configuração `input_format_custom_detect_header` estiver habilitada, o ClickHouse tentará detectar o cabeçalho com os nomes de colunas (e possivelmente os tipos) ao inferir o schema. Essa configuração vem habilitada por padrão.
+
+**Exemplo**
+
+```sql
+SET format_custom_row_before_delimiter = '<row_before_delimiter>',
+       format_custom_row_after_delimiter = '<row_after_delimiter>\n',
+       format_custom_row_between_delimiter = '<row_between_delimiter>\n',
+       format_custom_result_before_delimiter = '<result_before_delimiter>\n',
+       format_custom_result_after_delimiter = '<result_after_delimiter>\n',
+       format_custom_field_delimiter = '<field_delimiter>',
+       format_custom_escaping_rule = 'Quoted'
+
+DESC format(CustomSeparated, $$<result_before_delimiter>
+<row_before_delimiter>42.42<field_delimiter>'Some string 1'<field_delimiter>[1, NULL, 3]<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>NULL<field_delimiter>'Some string 3'<field_delimiter>[1, 2, NULL]<row_after_delimiter>
+<result_after_delimiter>
+$$)
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Float64)      │              │                    │         │                  │                │
+│ c2   │ Nullable(String)       │              │                    │         │                  │                │
+│ c3   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Exemplo de detecção automática de cabeçalho (quando `input_format_custom_detect_header` está habilitado):
+
+```sql
+SET format_custom_row_before_delimiter = '<row_before_delimiter>',
+       format_custom_row_after_delimiter = '<row_after_delimiter>\n',
+       format_custom_row_between_delimiter = '<row_between_delimiter>\n',
+       format_custom_result_before_delimiter = '<result_before_delimiter>\n',
+       format_custom_result_after_delimiter = '<result_after_delimiter>\n',
+       format_custom_field_delimiter = '<field_delimiter>',
+       format_custom_escaping_rule = 'Quoted'
+
+DESC format(CustomSeparated, $$<result_before_delimiter>
+<row_before_delimiter>'number'<field_delimiter>'string'<field_delimiter>'array'<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>42.42<field_delimiter>'Some string 1'<field_delimiter>[1, NULL, 3]<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>NULL<field_delimiter>'Some string 3'<field_delimiter>[1, 2, NULL]<row_after_delimiter>
+<result_after_delimiter>
+$$)
+```
+
+```response
+┌─number─┬─string────────┬─array──────┐
+│  42.42 │ Some string 1 │ [1,NULL,3] │
+│   ᴺᵁᴸᴸ │ Some string 3 │ [1,2,NULL] │
+└────────┴───────────────┴────────────┘
+```
+
+### Template {#template}
+
+No formato Template, o ClickHouse primeiro extrai todos os valores de coluna da linha de acordo com o template especificado e, em seguida, tenta inferir o
+tipo de dado de cada valor de acordo com sua regra de escape.
+
+**Exemplo**
+
+Suponha que temos um arquivo `resultset` com o seguinte conteúdo:
+
+```bash
+<result_before_delimiter>
+${data}<result_after_delimiter>
+```
+
+E um arquivo `row_format` com o seguinte conteúdo:
+
+```text
+<row_before_delimiter>${column_1:CSV}<field_delimiter_1>${column_2:Quoted}<field_delimiter_2>${column_3:JSON}<row_after_delimiter>
+```
+
+Em seguida, podemos executar as seguintes consultas:
+
+```sql
+SET format_template_rows_between_delimiter = '<row_between_delimiter>\n',
+       format_template_row = 'row_format',
+       format_template_resultset = 'resultset_format'
+
+DESC format(Template, $$<result_before_delimiter>
+<row_before_delimiter>42.42<field_delimiter_1>'Some string 1'<field_delimiter_2>[1, null, 2]<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>\N<field_delimiter_1>'Some string 3'<field_delimiter_2>[1, 2, null]<row_after_delimiter>
+<result_after_delimiter>
+$$)
+```
+
+```response
+┌─name─────┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ column_1 │ Nullable(Float64)      │              │                    │         │                  │                │
+│ column_2 │ Nullable(String)       │              │                    │         │                  │                │
+│ column_3 │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+### Regexp {#regexp}
+
+Assim como no formato Template, no formato Regexp o ClickHouse primeiro extrai todos os valores das colunas da linha de acordo com a expressão regular especificada e, em seguida, tenta inferir
+o tipo de dado de cada valor de acordo com a regra de escape especificada.
+
+**Exemplo**
+
+```sql
+SET format_regexp = '^Line: value_1=(.+?), value_2=(.+?), value_3=(.+?)',
+       format_regexp_escaping_rule = 'CSV'
+
+DESC format(Regexp, $$Line: value_1=42, value_2="Some string 1", value_3="[1, NULL, 3]"
+Line: value_1=2, value_2="Some string 2", value_3="[4, 5, NULL]"$$)
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Int64)        │              │                    │         │                  │                │
+│ c2   │ Nullable(String)       │              │                    │         │                  │                │
+│ c3   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+### Configurações para formatos de texto {#settings-for-text-formats}
+
+#### input_format_max_rows_to_read_for_schema_inference/input_format_max_bytes_to_read_for_schema_inference {#input-format-max-rows-to-read-for-schema-inference}
+
+Essas configurações controlam a quantidade de dados lidos durante a inferência de esquema.
+Quanto mais linhas/bytes forem lidos, mais tempo será gasto na inferência de esquema, mas maior será a chance de
+determinar corretamente os tipos (especialmente quando os dados contêm muitos valores NULL).
+
+Valores default:
+
+* `25000` para `input_format_max_rows_to_read_for_schema_inference`.
+* `33554432` (32 Mb) para `input_format_max_bytes_to_read_for_schema_inference`.
+
+#### column_names_for_schema_inference {#column-names-for-schema-inference}
+
+Lista de nomes de colunas a serem usados na inferência de esquema para formatos sem nomes de colunas explícitos. Os nomes especificados serão usados no lugar dos nomes padrão `c1,c2,c3,...`. Formato: `column1,column2,column3,...`.
+
+**Exemplo**
+
+```sql
+DESC format(TSV, 'Hello, World!    42    [1, 2, 3]') settings column_names_for_schema_inference = 'str,int,arr'
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ str  │ Nullable(String)       │              │                    │         │                  │                │
+│ int  │ Nullable(Int64)        │              │                    │         │                  │                │
+│ arr  │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+#### schema_inference_hints {#schema-inference-hints}
+
+Lista de nomes de colunas e tipos a serem usados na inferência de esquema em vez dos tipos determinados automaticamente. Formato: &#39;column&#95;name1 column&#95;type1, column&#95;name2 column&#95;type2, ...&#39;.
+Esta configuração pode ser usada para especificar os tipos de colunas que não puderam ser determinados automaticamente ou para otimizar o schema.
+
+**Exemplo**
+
+```sql
+DESC format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}') SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(String)', allow_suspicious_low_cardinality_types=1
+```
+
+```response
+┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ Nullable(Int64)         │              │                    │         │                  │                │
+│ age     │ LowCardinality(UInt8)   │              │                    │         │                  │                │
+│ name    │ Nullable(String)        │              │                    │         │                  │                │
+│ status  │ Nullable(String)        │              │                    │         │                  │                │
+│ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
+└─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+#### schema_inference_make_columns_nullable $ {#schema-inference-make-columns-nullable}
+
+Controla se os tipos inferidos passam a ser `Nullable` na inferência de esquema para formatos que não fornecem informações sobre a possibilidade de valores nulos. Valores possíveis:
+
+* 0 - o tipo inferido nunca será `Nullable`,
+* 1 - todos os tipos inferidos serão `Nullable`,
+* 2 ou &#39;auto&#39; - para formatos de texto, o tipo inferido será `Nullable` somente se a coluna contiver `NULL` na amostra interpretada durante a inferência de esquema; para formatos fortemente tipados (Parquet, ORC, Arrow), as informações de nulabilidade são obtidas dos metadados do arquivo,
+* 3 - para formatos de texto, usa `Nullable`; para formatos fortemente tipados, usa os metadados do arquivo.
+
+Valor padrão: 3.
+
+**Exemplos**
+
+```sql
+SET schema_inference_make_columns_nullable = 1;
+DESC format(JSONEachRow, $$
+                                {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
+                                {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
+                         $$)
+```
+
+```response
+┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ Nullable(Int64)         │              │                    │         │                  │                │
+│ age     │ Nullable(Int64)         │              │                    │         │                  │                │
+│ name    │ Nullable(String)        │              │                    │         │                  │                │
+│ status  │ Nullable(String)        │              │                    │         │                  │                │
+│ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
+└─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+SET schema_inference_make_columns_nullable = 'auto';
+DESC format(JSONEachRow, $$
+                                {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
+                                {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
+                         $$)
+```
+
+```response
+┌─name────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ Int64            │              │                    │         │                  │                │
+│ age     │ Int64            │              │                    │         │                  │                │
+│ name    │ String           │              │                    │         │                  │                │
+│ status  │ Nullable(String) │              │                    │         │                  │                │
+│ hobbies │ Array(String)    │              │                    │         │                  │                │
+└─────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+SET schema_inference_make_columns_nullable = 0;
+DESC format(JSONEachRow, $$
+                                {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
+                                {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
+                         $$)
+```
+
+```response
+
+┌─name────┬─type──────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ Int64         │              │                    │         │                  │                │
+│ age     │ Int64         │              │                    │         │                  │                │
+│ name    │ String        │              │                    │         │                  │                │
+│ status  │ String        │              │                    │         │                  │                │
+│ hobbies │ Array(String) │              │                    │         │                  │                │
+└─────────┴───────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+#### input_format_try_infer_integers {#input-format-try-infer-integers}
+
+<Note>
+  Esta configuração não se aplica ao tipo de dado `JSON`.
+</Note>
+
+Se habilitada, o ClickHouse tentará inferir inteiros em vez de números de ponto flutuante na inferência de esquema para formatos de texto.
+Se todos os números da coluna nos dados de amostra forem inteiros, o tipo de resultado será `Int64`; se pelo menos um número for de ponto flutuante, o tipo de resultado será `Float64`.
+Se os dados de amostra contiverem apenas inteiros e pelo menos um deles for positivo e causar overflow em `Int64`, o ClickHouse inferirá `UInt64`.
+
+Habilitada por padrão.
+
+**Exemplos**
+
+```sql
+SET input_format_try_infer_integers = 0
+DESC format(JSONEachRow, $$
+                                {"number" : 1}
+                                {"number" : 2}
+                         $$)
+```
+
+```response
+┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ Nullable(Float64) │              │                    │         │                  │                │
+└────────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+SET input_format_try_infer_integers = 1
+DESC format(JSONEachRow, $$
+                                {"number" : 1}
+                                {"number" : 2}
+                         $$)
+```
+
+```response
+┌─name───┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ Nullable(Int64) │              │                    │         │                  │                │
+└────────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(JSONEachRow, $$
+                                {"number" : 1}
+                                {"number" : 18446744073709551615}
+                         $$)
+```
+
+```response
+┌─name───┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ Nullable(UInt64) │              │                    │         │                  │                │
+└────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(JSONEachRow, $$
+                                {"number" : 1}
+                                {"number" : 2.2}
+                         $$)
+```
+
+```response
+┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ Nullable(Float64) │              │                    │         │                  │                │
+└────────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+#### input_format_try_infer_datetimes {#input-format-try-infer-datetimes}
+
+Se habilitado, o ClickHouse tentará inferir o tipo `DateTime` ou `DateTime64` a partir de campos do tipo string durante a inferência de esquema para formatos de texto.
+Se todos os campos de uma coluna nos dados de amostra forem convertidos com sucesso em valores de data e hora, o tipo de resultado será `DateTime` ou `DateTime64(9)` (caso algum valor de data e hora tenha parte fracionária);
+se pelo menos um campo não puder ser convertido em data e hora, o tipo de resultado será `String`.
+
+Habilitado por padrão.
+
+**Exemplos**
+
+```sql
+SET input_format_try_infer_datetimes = 0;
+DESC format(JSONEachRow, $$
+                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
+                         $$)
+```
+
+```response
+┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime   │ Nullable(String) │              │                    │         │                  │                │
+│ datetime64 │ Nullable(String) │              │                    │         │                  │                │
+└────────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+SET input_format_try_infer_datetimes = 1;
+DESC format(JSONEachRow, $$
+                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
+                         $$)
+```
+
+```response
+┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(JSONEachRow, $$
+                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "unknown", "datetime64" : "unknown"}
+                         $$)
+```
+
+```response
+┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime   │ Nullable(String) │              │                    │         │                  │                │
+│ datetime64 │ Nullable(String) │              │                    │         │                  │                │
+└────────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+#### input_format_try_infer_datetimes_only_datetime64 {#input-format-try-infer-datetimes-only-datetime64}
+
+Se habilitado, o ClickHouse sempre irá inferir `DateTime64(9)` quando `input_format_try_infer_datetimes` estiver habilitado, mesmo que os valores de data e hora não tenham parte fracionária.
+
+Desabilitado por padrão.
+
+**Exemplos**
+
+```sql
+SET input_format_try_infer_datetimes = 1;
+SET input_format_try_infer_datetimes_only_datetime64 = 1;
+DESC format(JSONEachRow, $$
+                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
+                         $$)
+```
+
+```response
+┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+│ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Nota: o parsing de valores de data e hora durante a inferência de esquema respeita a configuração [date&#95;time&#95;input&#95;format](/pt-BR/reference/settings/formats/date-time#date_time_input_format)
+
+#### input_format_try_infer_dates {#input-format-try-infer-dates}
+
+Se habilitado, o ClickHouse tentará inferir o tipo `Date` a partir de campos do tipo string durante a inferência de esquema para formatos de texto.
+Se todos os campos de uma coluna nos dados de amostra forem convertidos com sucesso em datas, o tipo de resultado será `Date`;
+se pelo menos um campo não for convertido em data, o tipo de resultado será `String`.
+
+Habilitado por padrão.
+
+**Exemplos**
+
+```sql
+SET input_format_try_infer_datetimes = 0, input_format_try_infer_dates = 0
+DESC format(JSONEachRow, $$
+                                {"date" : "2021-01-01"}
+                                {"date" : "2022-01-01"}
+                         $$)
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ date │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+SET input_format_try_infer_dates = 1
+DESC format(JSONEachRow, $$
+                                {"date" : "2021-01-01"}
+                                {"date" : "2022-01-01"}
+                         $$)
+```
+
+```response
+┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ date │ Nullable(Date) │              │                    │         │                  │                │
+└──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(JSONEachRow, $$
+                                {"date" : "2021-01-01"}
+                                {"date" : "unknown"}
+                         $$)
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ date │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+#### input_format_try_infer_exponent_floats {#input-format-try-infer-exponent-floats}
+
+Se habilitado, o ClickHouse tentará inferir números de ponto flutuante em notação exponencial para formatos de texto (exceto JSON, no qual números em notação exponencial são sempre inferidos).
+
+Desabilitado por padrão.
+
+**Exemplo**
+
+```sql
+SET input_format_try_infer_exponent_floats = 1;
+DESC format(CSV,
+$$1.1E10
+2.3e-12
+42E00
+$$)
+```
+
+```response
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Float64) │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+## Formatos autodescritivos {#self-describing-formats}
+
+Formatos autodescritivos contêm, nos próprios dados, informações sobre a estrutura desses dados,
+que podem ser um cabeçalho com uma descrição, uma árvore binária de tipos ou algum tipo de tabela.
+Para inferir automaticamente um schema a partir de arquivos nesses formatos, o ClickHouse lê uma parte dos dados que contém
+informações sobre os tipos e as converte em um schema da tabela do ClickHouse.
+
+### Formatos com o sufixo -WithNamesAndTypes {#formats-with-names-and-types}
+
+O ClickHouse oferece suporte a alguns formatos de texto com o sufixo -WithNamesAndTypes. Esse sufixo indica que os dados contêm duas linhas adicionais, com os nomes e os tipos das colunas, antes dos dados propriamente ditos.
+Durante a inferência de esquema para esses formatos, o ClickHouse lê as duas primeiras linhas e extrai delas os nomes e os tipos das colunas.
+
+**Exemplo**
+
+```sql
+DESC format(TSVWithNamesAndTypes,
+$$num    str    arr
+UInt8    String    Array(UInt8)
+42    Hello, World!    [1,2,3]
+$$)
+```
+
+```response
+┌─name─┬─type─────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ num  │ UInt8        │              │                    │         │                  │                │
+│ str  │ String       │              │                    │         │                  │                │
+│ arr  │ Array(UInt8) │              │                    │         │                  │                │
+└──────┴──────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+### Formatos JSON com metadados {#json-with-metadata}
+
+Alguns formatos de entrada JSON ([JSON](/pt-BR/reference/formats/JSON/JSON), [JSONCompact](/pt-BR/reference/formats/JSON/JSONCompact), [JSONColumnsWithMetadata](/pt-BR/reference/formats/JSON/JSONColumnsWithMetadata)) contêm metadados com os nomes e os tipos das colunas.
+Na inferência de esquema para esses formatos, o ClickHouse lê esses metadados.
+
+**Exemplo**
+
+```sql
+DESC format(JSON, $$
+{
+    "meta":
+    [
+        {
+            "name": "num",
+            "type": "UInt8"
+        },
+        {
+            "name": "str",
+            "type": "String"
+        },
+        {
+            "name": "arr",
+            "type": "Array(UInt8)"
+        }
+    ],
+
+    "data":
+    [
+        {
+            "num": 42,
+            "str": "Hello, World",
+            "arr": [1,2,3]
+        }
+    ],
+
+    "rows": 1,
+
+    "statistics":
+    {
+        "elapsed": 0.005723915,
+        "rows_read": 1,
+        "bytes_read": 1
+    }
+}
+$$)
+```
+
+```response
+┌─name─┬─type─────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ num  │ UInt8        │              │                    │         │                  │                │
+│ str  │ String       │              │                    │         │                  │                │
+│ arr  │ Array(UInt8) │              │                    │         │                  │                │
+└──────┴──────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+### Avro {#avro}
+
+No formato Avro, o ClickHouse lê seu esquema a partir dos dados e o converte em um schema do ClickHouse usando as seguintes correspondências de tipos:
+
+| Tipo de dados Avro                 | Tipo de dados do ClickHouse                                           |
+| ---------------------------------- | --------------------------------------------------------------------- |
+| `boolean`                          | [Bool](/pt-BR/reference/data-types/boolean)                                 |
+| `int`                              | [Int32](/pt-BR/reference/data-types/int-uint)                               |
+| `int (date)` *                     | [Date32](/pt-BR/reference/data-types/date32)                                |
+| `long`                             | [Int64](/pt-BR/reference/data-types/int-uint)                               |
+| `float`                            | [Float32](/pt-BR/reference/data-types/float)                                |
+| `double`                           | [Float64](/pt-BR/reference/data-types/float)                                |
+| `bytes`, `string`                  | [String](/pt-BR/reference/data-types/string)                                |
+| `fixed`                            | [FixedString(N)](/pt-BR/reference/data-types/fixedstring)                   |
+| `enum`                             | [Enum](/pt-BR/reference/data-types/enum)                                    |
+| `array(T)`                         | [Array(T)](/pt-BR/reference/data-types/array)                               |
+| `union(null, T)`, `union(T, null)` | [Nullable(T)](/pt-BR/reference/data-types/date)                             |
+| `null`                             | [Nullable(Nothing)](/pt-BR/reference/data-types/special-data-types/nothing) |
+| `string (uuid)` *                  | [UUID](/pt-BR/reference/data-types/uuid)                                    |
+| `binary (decimal)` *               | [Decimal(P, S)](/pt-BR/reference/data-types/decimal)                        |
+
+* [Tipos lógicos do Avro](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
+
+Outros tipos Avro não são suportados.
+
+### Parquet {#parquet}
+
+No formato Parquet, o ClickHouse lê seu esquema a partir dos dados e o converte em um schema do ClickHouse usando as seguintes correspondências de tipos:
+
+| Tipo de dados do Parquet     | Tipo de dados do ClickHouse                    |
+| ---------------------------- | ---------------------------------------------- |
+| `BOOL`                       | [Bool](/pt-BR/reference/data-types/boolean)          |
+| `UINT8`                      | [UInt8](/pt-BR/reference/data-types/int-uint)        |
+| `INT8`                       | [Int8](/pt-BR/reference/data-types/int-uint)         |
+| `UINT16`                     | [UInt16](/pt-BR/reference/data-types/int-uint)       |
+| `INT16`                      | [Int16](/pt-BR/reference/data-types/int-uint)        |
+| `UINT32`                     | [UInt32](/pt-BR/reference/data-types/int-uint)       |
+| `INT32`                      | [Int32](/pt-BR/reference/data-types/int-uint)        |
+| `UINT64`                     | [UInt64](/pt-BR/reference/data-types/int-uint)       |
+| `INT64`                      | [Int64](/pt-BR/reference/data-types/int-uint)        |
+| `FLOAT`                      | [Float32](/pt-BR/reference/data-types/float)         |
+| `DOUBLE`                     | [Float64](/pt-BR/reference/data-types/float)         |
+| `DATE`                       | [Date32](/pt-BR/reference/data-types/date32)         |
+| `TIME (ms)`                  | [DateTime](/pt-BR/reference/data-types/datetime)     |
+| `TIMESTAMP`, `TIME (us, ns)` | [DateTime64](/pt-BR/reference/data-types/datetime64) |
+| `STRING`, `BINARY`           | [String](/pt-BR/reference/data-types/string)         |
+| `DECIMAL`                    | [Decimal](/pt-BR/reference/data-types/decimal)       |
+| `LIST`                       | [Array](/pt-BR/reference/data-types/array)           |
+| `STRUCT`                     | [Tuple](/pt-BR/reference/data-types/tuple)           |
+| `MAP`                        | [Map](/pt-BR/reference/data-types/map)               |
+
+Outros tipos do Parquet não são suportados.
+
+### Arrow {#arrow}
+
+No formato Arrow, o ClickHouse lê seu esquema a partir dos dados e o converte para um schema do ClickHouse usando as seguintes correspondências de tipos:
+
+| Tipo de dados do Arrow          | Tipo de dados do ClickHouse                    |
+| ------------------------------- | ---------------------------------------------- |
+| `BOOL`                          | [Bool](/pt-BR/reference/data-types/boolean)          |
+| `UINT8`                         | [UInt8](/pt-BR/reference/data-types/int-uint)        |
+| `INT8`                          | [Int8](/pt-BR/reference/data-types/int-uint)         |
+| `UINT16`                        | [UInt16](/pt-BR/reference/data-types/int-uint)       |
+| `INT16`                         | [Int16](/pt-BR/reference/data-types/int-uint)        |
+| `UINT32`                        | [UInt32](/pt-BR/reference/data-types/int-uint)       |
+| `INT32`                         | [Int32](/pt-BR/reference/data-types/int-uint)        |
+| `UINT64`                        | [UInt64](/pt-BR/reference/data-types/int-uint)       |
+| `INT64`                         | [Int64](/pt-BR/reference/data-types/int-uint)        |
+| `FLOAT`, `HALF_FLOAT`           | [Float32](/pt-BR/reference/data-types/float)         |
+| `DOUBLE`                        | [Float64](/pt-BR/reference/data-types/float)         |
+| `DATE32`                        | [Date32](/pt-BR/reference/data-types/date32)         |
+| `DATE64`                        | [DateTime](/pt-BR/reference/data-types/datetime)     |
+| `TIMESTAMP`, `TIME32`, `TIME64` | [DateTime64](/pt-BR/reference/data-types/datetime64) |
+| `STRING`, `BINARY`              | [String](/pt-BR/reference/data-types/string)         |
+| `DECIMAL128`, `DECIMAL256`      | [Decimal](/pt-BR/reference/data-types/decimal)       |
+| `LIST`                          | [Array](/pt-BR/reference/data-types/array)           |
+| `STRUCT`                        | [Tuple](/pt-BR/reference/data-types/tuple)           |
+| `MAP`                           | [Map](/pt-BR/reference/data-types/map)               |
+
+Outros tipos do Arrow não são suportados.
+
+### ORC {#orc}
+
+No formato ORC, o ClickHouse lê seu esquema a partir dos dados e o converte em um schema do ClickHouse usando as seguintes correspondências de tipos:
+
+| Tipo de dados ORC                    | Tipo de dados do ClickHouse                    |
+| ------------------------------------ | ---------------------------------------------- |
+| `Boolean`                            | [Bool](/pt-BR/reference/data-types/boolean)          |
+| `Tinyint`                            | [Int8](/pt-BR/reference/data-types/int-uint)         |
+| `Smallint`                           | [Int16](/pt-BR/reference/data-types/int-uint)        |
+| `Int`                                | [Int32](/pt-BR/reference/data-types/int-uint)        |
+| `Bigint`                             | [Int64](/pt-BR/reference/data-types/int-uint)        |
+| `Float`                              | [Float32](/pt-BR/reference/data-types/float)         |
+| `Double`                             | [Float64](/pt-BR/reference/data-types/float)         |
+| `Date`                               | [Date32](/pt-BR/reference/data-types/date32)         |
+| `Timestamp`                          | [DateTime64](/pt-BR/reference/data-types/datetime64) |
+| `String`, `Char`, `Varchar`,`BINARY` | [String](/pt-BR/reference/data-types/string)         |
+| `Decimal`                            | [Decimal](/pt-BR/reference/data-types/decimal)       |
+| `List`                               | [Array](/pt-BR/reference/data-types/array)           |
+| `Struct`                             | [Tuple](/pt-BR/reference/data-types/tuple)           |
+| `Map`                                | [Map](/pt-BR/reference/data-types/map)               |
+| `Union`                              | [Variant](/pt-BR/reference/data-types/variant)       |
+
+Outros tipos ORC não são suportados.
+
+### Native {#native}
+
+O formato Native é usado internamente pelo ClickHouse e contém o schema nos próprios dados.
+Na inferência de esquema, o ClickHouse lê o schema diretamente dos dados, sem nenhuma transformação.
+
+## Formatos com schema externo {#formats-with-external-schema}
+
+Esses formatos exigem um schema que descreva os dados em um arquivo separado, escrito em uma linguagem de schema específica.
+Para inferir automaticamente o schema a partir de arquivos nesses formatos, o ClickHouse lê o schema externo de um arquivo separado e o converte em um esquema de tabela do ClickHouse.
+
+### Protobuf {#protobuf}
+
+Na inferência de esquema para o formato Protobuf, o ClickHouse usa as seguintes correspondências de tipos:
+
+| Tipo de dados do Protobuf     | Tipo de dados do ClickHouse              |
+| ----------------------------- | ---------------------------------------- |
+| `bool`                        | [UInt8](/pt-BR/reference/data-types/int-uint)  |
+| `float`                       | [Float32](/pt-BR/reference/data-types/float)   |
+| `double`                      | [Float64](/pt-BR/reference/data-types/float)   |
+| `int32`, `sint32`, `sfixed32` | [Int32](/pt-BR/reference/data-types/int-uint)  |
+| `int64`, `sint64`, `sfixed64` | [Int64](/pt-BR/reference/data-types/int-uint)  |
+| `uint32`, `fixed32`           | [UInt32](/pt-BR/reference/data-types/int-uint) |
+| `uint64`, `fixed64`           | [UInt64](/pt-BR/reference/data-types/int-uint) |
+| `string`, `bytes`             | [String](/pt-BR/reference/data-types/string)   |
+| `enum`                        | [Enum](/pt-BR/reference/data-types/enum)       |
+| `repeated T`                  | [Array(T)](/pt-BR/reference/data-types/array)  |
+| `message`, `group`            | [Tuple](/pt-BR/reference/data-types/tuple)     |
+
+### CapnProto {#capnproto}
+
+Na inferência de esquema para o formato CapnProto, o ClickHouse usa as seguintes correspondências de tipos:
+
+| Tipo de dados do CapnProto         | Tipo de dados do ClickHouse                   |
+| ---------------------------------- | --------------------------------------------- |
+| `Bool`                             | [UInt8](/pt-BR/reference/data-types/int-uint)       |
+| `Int8`                             | [Int8](/pt-BR/reference/data-types/int-uint)        |
+| `UInt8`                            | [UInt8](/pt-BR/reference/data-types/int-uint)       |
+| `Int16`                            | [Int16](/pt-BR/reference/data-types/int-uint)       |
+| `UInt16`                           | [UInt16](/pt-BR/reference/data-types/int-uint)      |
+| `Int32`                            | [Int32](/pt-BR/reference/data-types/int-uint)       |
+| `UInt32`                           | [UInt32](/pt-BR/reference/data-types/int-uint)      |
+| `Int64`                            | [Int64](/pt-BR/reference/data-types/int-uint)       |
+| `UInt64`                           | [UInt64](/pt-BR/reference/data-types/int-uint)      |
+| `Float32`                          | [Float32](/pt-BR/reference/data-types/float)        |
+| `Float64`                          | [Float64](/pt-BR/reference/data-types/float)        |
+| `Text`, `Data`                     | [String](/pt-BR/reference/data-types/string)        |
+| `enum`                             | [Enum](/pt-BR/reference/data-types/enum)            |
+| `List`                             | [Array](/pt-BR/reference/data-types/array)          |
+| `struct`                           | [Tuple](/pt-BR/reference/data-types/tuple)          |
+| `union(T, Void)`, `union(Void, T)` | [Nullable(T)](/pt-BR/reference/data-types/nullable) |
+
+## Formatos binários fortemente tipados {#strong-typed-binary-formats}
+
+Nesses formatos, cada valor serializado contém informações sobre seu tipo (e possivelmente sobre seu nome), mas não há informações sobre a tabela como um todo.
+Na inferência de esquema para esses formatos, o ClickHouse lê os dados linha por linha (até `input_format_max_rows_to_read_for_schema_inference` linhas ou `input_format_max_bytes_to_read_for_schema_inference` bytes), extrai
+dos dados o tipo (e possivelmente o nome) de cada valor e, em seguida, converte esses tipos em tipos do ClickHouse.
+
+### MsgPack {#msgpack}
+
+No formato MsgPack não há delimitador entre linhas. Para usar a inferência de esquema com esse formato, é necessário especificar o número de colunas da tabela
+por meio da configuração `input_format_msgpack_number_of_columns`. O ClickHouse usa as seguintes correspondências de tipos:
+
+| Tipo de dados do MessagePack (`INSERT`)                            | Tipo de dados do ClickHouse                  |
+| ------------------------------------------------------------------ | -------------------------------------------- |
+| `int N`, `uint N`, `negative fixint`, `positive fixint`            | [Int64](/pt-BR/reference/data-types/int-uint)      |
+| `bool`                                                             | [UInt8](/pt-BR/reference/data-types/int-uint)      |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [String](/pt-BR/reference/data-types/string)       |
+| `float 32`                                                         | [Float32](/pt-BR/reference/data-types/float)       |
+| `float 64`                                                         | [Float64](/pt-BR/reference/data-types/float)       |
+| `uint 16`                                                          | [Date](/pt-BR/reference/data-types/date)           |
+| `uint 32`                                                          | [DateTime](/pt-BR/reference/data-types/datetime)   |
+| `uint 64`                                                          | [DateTime64](/pt-BR/reference/data-types/datetime) |
+| `fixarray`, `array 16`, `array 32`                                 | [Array](/pt-BR/reference/data-types/array)         |
+| `fixmap`, `map 16`, `map 32`                                       | [Map](/pt-BR/reference/data-types/map)             |
+
+Por padrão, todos os tipos inferidos estão dentro de `Nullable`, mas isso pode ser alterado por meio da configuração `schema_inference_make_columns_nullable`.
+
+### BSONEachRow {#bsoneachrow}
+
+No BSONEachRow, cada linha de dados é representada como um documento BSON. Na inferência de esquema, o ClickHouse lê os documentos BSON um a um, extrai
+valores, nomes e tipos dos dados e, em seguida, converte esses tipos em tipos do ClickHouse usando as seguintes correspondências de tipos:
+
+| Tipo BSON                                                                                        | Tipo do ClickHouse                                                                                                 |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `\x08` booleano                                                                                  | [Bool](/pt-BR/reference/data-types/boolean)                                                                              |
+| `\x10` int32                                                                                     | [Int32](/pt-BR/reference/data-types/int-uint)                                                                            |
+| `\x12` int64                                                                                     | [Int64](/pt-BR/reference/data-types/int-uint)                                                                            |
+| `\x01` double                                                                                    | [Float64](/pt-BR/reference/data-types/float)                                                                             |
+| `\x09` data e hora                                                                               | [DateTime64](/pt-BR/reference/data-types/datetime64)                                                                     |
+| `\x05` binary com `\x00` subtipo binário, `\x02` string, `\x0E` symbol, `\x0D` código JavaScript | [String](/pt-BR/reference/data-types/string)                                                                             |
+| `\x07` ObjectId,                                                                                 | [FixedString(12)](/pt-BR/reference/data-types/fixedstring)                                                               |
+| `\x05` binary com `\x04` subtipo uuid, tamanho = 16                                              | [UUID](/pt-BR/reference/data-types/uuid)                                                                                 |
+| `\x04` array                                                                                     | [Array](/pt-BR/reference/data-types/array)/[Tuple](/pt-BR/reference/data-types/tuple) (se os tipos aninhados forem diferentes) |
+| `\x03` documento                                                                                 | [Named Tuple](/pt-BR/reference/data-types/tuple)/[Map](/pt-BR/reference/data-types/map) (com chaves String)                    |
+
+Por padrão, todos os tipos inferidos estão dentro de `Nullable`, mas isso pode ser alterado com a configuração `schema_inference_make_columns_nullable`.
+
+## Formatos com schema constante {#formats-with-constant-schema}
+
+Os dados nesses formatos sempre têm o mesmo schema.
+
+### LineAsString {#line-as-string}
+
+Neste formato, o ClickHouse lê a linha inteira dos dados para uma única coluna com o tipo de dado `String`. O tipo inferido para este formato é sempre `String`, e o nome da coluna é `line`.
+
+**Exemplo**
+
+```sql
+DESC format(LineAsString, 'Hello\nworld!')
+```
+
+```response
+┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ line │ String │              │                    │         │                  │                │
+└──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+### JSONAsString {#json-as-string}
+
+Neste formato, o ClickHouse lê todo o objeto JSON dos dados para uma única coluna com o tipo de dado `String`. O tipo inferido para este formato é sempre `String`, e o nome da coluna é `json`.
+
+**Exemplo**
+
+```sql
+DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}')
+```
+
+```response
+┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ json │ String │              │                    │         │                  │                │
+└──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+### JSONAsObject {#json-as-object}
+
+Neste formato, o ClickHouse lê todo o objeto JSON dos dados em uma única coluna com o tipo de dado `JSON`. O tipo inferido para este formato é sempre `JSON`, e o nome da coluna é `json`.
+
+**Exemplo**
+
+```sql
+DESC format(JSONAsObject, '{"x" : 42, "y" : "Hello, World!"}');
+```
+
+```response
+┌─name─┬─type─┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ json │ JSON │              │                    │         │                  │                │
+└──────┴──────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+## Modos de inferência de esquema {#schema-inference-modes}
+
+A inferência de esquema a partir de um conjunto de arquivos de dados pode operar em 2 modos diferentes: `default` e `union`.
+O modo é controlado pela configuração `schema_inference_mode`.
+
+### Modo padrão {#default-schema-inference-mode}
+
+No modo padrão, o ClickHouse pressupõe que todos os arquivos têm o mesmo schema e tenta inferir o schema lendo os arquivos um a um até conseguir.
+
+Exemplo:
+
+Suponha que temos 3 arquivos, `data1.jsonl`, `data2.jsonl` e `data3.jsonl`, com o seguinte conteúdo:
+
+`data1.jsonl`:
+
+```json
+{"field1" :  1, "field2" :  null}
+{"field1" :  2, "field2" :  null}
+{"field1" :  3, "field2" :  null}
+```
+
+`data2.jsonl`:
+
+```json
+{"field1" :  4, "field2" :  "Data4"}
+{"field1" :  5, "field2" :  "Data5"}
+{"field1" :  6, "field2" :  "Data5"}
+```
+
+`data3.jsonl`:
+
+```json
+{"field1" :  7, "field2" :  "Data7", "field3" :  [1, 2, 3]}
+{"field1" :  8, "field2" :  "Data8", "field3" :  [4, 5, 6]}
+{"field1" :  9, "field2" :  "Data9", "field3" :  [7, 8, 9]}
+```
+
+Vamos tentar usar a inferência de esquema nestes 3 arquivos:
+
+```sql title="Query"
+:) DESCRIBE file('data{1,2,3}.jsonl') SETTINGS schema_inference_mode='default'
+```
+
+```response title="Response"
+┌─name───┬─type─────────────┐
+│ field1 │ Nullable(Int64)  │
+│ field2 │ Nullable(String) │
+└────────┴──────────────────┘
+```
+
+Como podemos ver, não temos o `field3` do arquivo `data3.jsonl`.
+Isso acontece porque o ClickHouse primeiro tentou inferir o schema a partir do arquivo `data1.jsonl`, falhou porque o campo `field2` continha apenas valores NULL,
+e depois tentou inferir o schema a partir de `data2.jsonl` e conseguiu; por isso, os dados do arquivo `data3.jsonl` não foram lidos.
+
+### Modo de união {#default-schema-inference-mode-1}
+
+No modo de união, o ClickHouse considera que os arquivos podem ter esquemas diferentes; por isso, ele infere os esquemas de todos os arquivos e depois os une em um schema comum.
+
+Suponha que temos 3 arquivos, `data1.jsonl`, `data2.jsonl` e `data3.jsonl`, com o seguinte conteúdo:
+
+`data1.jsonl`:
+
+```json
+{"field1" :  1}
+{"field1" :  2}
+{"field1" :  3}
+```
+
+`data2.jsonl`:
+
+```json
+{"field2" :  "Data4"}
+{"field2" :  "Data5"}
+{"field2" :  "Data5"}
+```
+
+`data3.jsonl`:
+
+```json
+{"field3" :  [1, 2, 3]}
+{"field3" :  [4, 5, 6]}
+{"field3" :  [7, 8, 9]}
+```
+
+Vamos tentar usar a inferência de esquema nestes 3 arquivos:
+
+```sql title="Query"
+:) DESCRIBE file('data{1,2,3}.jsonl') SETTINGS schema_inference_mode='union'
+```
+
+```response title="Response"
+┌─name───┬─type───────────────────┐
+│ field1 │ Nullable(Int64)        │
+│ field2 │ Nullable(String)       │
+│ field3 │ Array(Nullable(Int64)) │
+└────────┴────────────────────────┘
+```
+
+Como podemos ver, temos todos os campos de todos os arquivos.
+
+Nota:
+
+* Como alguns arquivos podem não conter determinadas colunas do schema resultante, o modo de união é compatível apenas com formatos que permitem a leitura de um subconjunto de colunas (como JSONEachRow, Parquet, TSVWithNames etc.) e não funcionará com outros formatos (como CSV, TSV, JSONCompactEachRow etc.).
+* Se o ClickHouse não conseguir inferir o schema de um dos arquivos, uma exceção será lançada.
+* Se você tiver muitos arquivos, a leitura do schema de todos eles pode levar bastante tempo.
+
+## Detecção automática de formato {#automatic-format-detection}
+
+Se o formato de dados não for especificado e não puder ser determinado pela extensão do arquivo, o ClickHouse tentará detectar o formato do arquivo com base em seu conteúdo.
+
+**Exemplos:**
+
+Suponha que tenhamos `data` com o seguinte conteúdo:
+
+```csv
+"a","b"
+1,"Data1"
+2,"Data2"
+3,"Data3"
+```
+
+Podemos inspecionar e consultar este arquivo sem especificar o formato nem a estrutura:
+
+```sql
+:) desc file(data);
+```
+
+```response
+┌─name─┬─type─────────────┐
+│ a    │ Nullable(Int64)  │
+│ b    │ Nullable(String) │
+└──────┴──────────────────┘
+```
+
+```sql
+:) select * from file(data);
+```
+
+```response
+┌─a─┬─b─────┐
+│ 1 │ Data1 │
+│ 2 │ Data2 │
+│ 3 │ Data3 │
+└───┴───────┘
+```
+
+<Note>
+  O ClickHouse consegue detectar apenas um subconjunto de formatos, e essa detecção leva algum tempo; por isso, é sempre preferível especificar o formato explicitamente.
+</Note>

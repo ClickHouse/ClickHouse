@@ -49,8 +49,8 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Если значение равно true, слияние с TTL для строк может использовать алгоритм вертикального слияния вместо того, чтобы переключаться на
 горизонтальное слияние. Действует только в режимах слияния `MergeTree`, `Replacing`, `Collapsing` или `VersionedCollapsing`,
-для таблиц с TTL для строк, но без TTL для столбцов или `GROUP BY`, и лишь при условии, что ни одна часть,
-участвующая в слиянии, не содержит легковесного удаления. Все остальные слияния с TTL выполняются горизонтально.
+для таблиц с TTL для строк, но без TTL для столбцов или `GROUP BY`. Все остальные слияния с TTL выполняются
+горизонтально.
 
 ## vertical_merge_remote_filesystem_prefetch {#vertical_merge_remote_filesystem_prefetch}
 

@@ -82,6 +82,8 @@ Ces identifiants API sont distincts de l’API key d’ingestion disponible dans
 
 La fonctionnalité **Exporter vers Terraform** porte le label **Expérimental**. Sélectionnez les types de ressources à inclure, puis utilisez **Download import file** pour les ajouter à un projet Terraform. L&#39;UI fournit la commande permettant de générer la configuration des ressources avec le fournisseur ClickHouse. Les connexions gérées par la plateforme sont exportées sous forme de locals servant uniquement de référence.
 
+Les alertes définies sur les recherches enregistrées et sur les vignettes de tableau de bord sont exportées. Un fichier contenant une alerte de vignette nécessite la version 3.28.0 ou ultérieure du fournisseur Terraform ClickHouse. Les alertes de l&#39;Explorateur de graphiques ne sont pas exportées, pas plus que les alertes de vignette dont la vignette ne porte pas de nom unique et non vide au sein de son tableau de bord. La configuration générée pour une alerte de vignette attribue des valeurs littérales à `dashboard_id` et `tile_id` : remplacez-les par des références à la ressource `clickhouse_clickstack_dashboard` avant d&#39;appliquer cette configuration.
+
 ### Configurer l&#39;IA générative {#generative-ai}
 
 Utilisez **Configurer l&#39;IA générative** pour activer ou désactiver les fonctionnalités d&#39;IA générative du service, notamment l&#39;Assistant IA de graphiques dans l&#39;Explorateur de graphiques et les [Notebooks IA](/fr/clickstack/observability/notebooks).

@@ -41,7 +41,7 @@ kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_
 
 ### 创建 DaemonSet 守护进程集配置 {#creating-the-daemonset-configuration}
 
-DaemonSet 守护进程集会从集群中的每个节点采集日志和指标，但不会采集 Kubernetes 事件或集群级指标。
+DaemonSet 守护进程集会从集群中的每个节点收集日志和指标，但不会收集 Kubernetes 事件或 cluster-wide 指标。
 
 下载 DaemonSet 守护进程集清单：
 
@@ -49,209 +49,110 @@ DaemonSet 守护进程集会从集群中的每个节点采集日志和指标，�
 curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_daemonset.yaml
 ```
 
-<Tabs>
-  <Tab title="托管 ClickStack">
-    <Accordion title="k8s_daemonset.yaml">
-      ```yaml
-      # daemonset.yaml
-      mode: daemonset
+<Accordion title="k8s_daemonset.yaml">
+  ```yaml
+  # daemonset.yaml
+  mode: daemonset
 
-      # 使用 kubeletstats 的 CPU/内存利用率指标所必需
-      clusterRole:
-        create: true
-        rules:
-          - apiGroups:
-              - ''
-            resources:
-              - nodes/proxy
-            verbs:
-              - get
+  # 使用 kubeletstats 的 CPU/内存利用率指标所必需
+  clusterRole:
+    create: true
+    rules:
+      - apiGroups:
+          - ''
+        resources:
+          - nodes/proxy
+        verbs:
+          - get
 
-      presets:
-        logsCollection:
-          enabled: true
-        hostMetrics:
-          enabled: true
-        # 配置 Kubernetes 处理器以添加 Kubernetes 元数据。
-        # 将 k8sattributes 处理器添加到所有管道，并向集群角色添加必要的规则。
-        # 更多信息：https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
-        kubernetesAttributes:
-          enabled: true
-          # 启用后，该处理器会提取关联 pod（容器组）的所有标签，并将其作为资源属性添加。
-          # 标签的精确名称将作为键。
-          extractAllPodLabels: true
-          # 启用后，该处理器会提取关联 pod（容器组）的所有注解，并将其作为资源属性添加。
-          # 注解的精确名称将作为键。
-          extractAllPodAnnotations: true
-        # 配置收集器通过 kubelet 上的 API server 收集节点、pod（容器组）和容器指标。
-        # 将 kubeletstats receiver 添加到指标管道，并向集群角色添加必要的规则。
-        # 更多信息：https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
-        kubeletMetrics:
-          enabled: true
+  presets:
+    logsCollection:
+      enabled: true
+    hostMetrics:
+      enabled: true
+    # 配置 Kubernetes 处理器以添加 Kubernetes 元数据。
+    # 将 k8sattributes 处理器添加到所有管道中，并向集群角色添加所需规则。
+    # 更多信息：https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+    kubernetesAttributes:
+      enabled: true
+      # 启用后，该处理器会提取关联 pod（容器组）的所有标签，并将其添加为资源属性。
+      # 标签的原始名称将作为键。
+      extractAllPodLabels: true
+      # 启用后，该处理器会提取关联 pod（容器组）的所有注解，并将其添加为资源属性。
+      # 注解的原始名称将作为键。
+      extractAllPodAnnotations: true
+    # 配置 collector 通过 kubelet 节点代理上的 API server 收集节点、pod（容器组）和容器指标。
+    # 将 kubeletstats receiver 添加到指标管道中，并向集群角色添加所需规则。
+    # 更多信息：https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+    kubeletMetrics:
+      enabled: true
 
-      extraEnvs:
-        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
-          valueFrom:
-            configMapKeyRef:
-              name: otel-config-vars
-              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+  extraEnvs:
+    - name: HYPERDX_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: hyperdx-secret
+          key: HYPERDX_API_KEY
+          optional: true
+    - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+      valueFrom:
+        configMapKeyRef:
+          name: otel-config-vars
+          key: YOUR_OTEL_COLLECTOR_ENDPOINT
 
-      config:
-        receivers:
-          # 配置额外的 kubelet 指标
-          kubeletstats:
-            collection_interval: 20s
-            auth_type: 'serviceAccount'
-            endpoint: '${env:K8S_NODE_NAME}:10250'
-            insecure_skip_verify: true
-            metrics:
-              k8s.pod.cpu_limit_utilization:
-                enabled: true
-              k8s.pod.cpu_request_utilization:
-                enabled: true
-              k8s.pod.memory_limit_utilization:
-                enabled: true
-              k8s.pod.memory_request_utilization:
-                enabled: true
-              k8s.pod.uptime:
-                enabled: true
-              k8s.node.uptime:
-                enabled: true
-              k8s.container.cpu_limit_utilization:
-                enabled: true
-              k8s.container.cpu_request_utilization:
-                enabled: true
-              k8s.container.memory_limit_utilization:
-                enabled: true
-              k8s.container.memory_request_utilization:
-                enabled: true
-              container.uptime:
-                enabled: true
+  config:
+    receivers:
+      # 配置额外的 kubelet 指标
+      kubeletstats:
+        collection_interval: 20s
+        auth_type: 'serviceAccount'
+        endpoint: '${env:K8S_NODE_NAME}:10250'
+        insecure_skip_verify: true
+        metrics:
+          k8s.pod.cpu_limit_utilization:
+            enabled: true
+          k8s.pod.cpu_request_utilization:
+            enabled: true
+          k8s.pod.memory_limit_utilization:
+            enabled: true
+          k8s.pod.memory_request_utilization:
+            enabled: true
+          k8s.pod.uptime:
+            enabled: true
+          k8s.node.uptime:
+            enabled: true
+          k8s.container.cpu_limit_utilization:
+            enabled: true
+          k8s.container.cpu_request_utilization:
+            enabled: true
+          k8s.container.memory_limit_utilization:
+            enabled: true
+          k8s.container.memory_request_utilization:
+            enabled: true
+          container.uptime:
+            enabled: true
 
-        exporters:
-          otlphttp:
-            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
-            compression: gzip
+    exporters:
+      otlphttp:
+        endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+        headers:
+          authorization: "${env:HYPERDX_API_KEY}"
+        compression: gzip
 
-        service:
-          pipelines:
-            logs:
-              exporters:
-                - otlphttp
-            metrics:
-              exporters:
-                - otlphttp
-      ```
-    </Accordion>
-  </Tab>
-
-  <Tab title="ClickStack 开源版">
-    <Accordion title="k8s_daemonset.yaml">
-      ```yaml
-      # daemonset.yaml
-      mode: daemonset
-
-      # 使用 kubeletstats 的 CPU/内存利用率指标所必需
-      clusterRole:
-        create: true
-        rules:
-          - apiGroups:
-              - ''
-            resources:
-              - nodes/proxy
-            verbs:
-              - get
-
-      presets:
-        logsCollection:
-          enabled: true
-        hostMetrics:
-          enabled: true
-        # 配置 Kubernetes 处理器以添加 Kubernetes 元数据。
-        # 将 k8sattributes 处理器添加到所有管道中，并向集群角色添加所需规则。
-        # 更多信息：https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
-        kubernetesAttributes:
-          enabled: true
-          # 启用后，该处理器会提取关联 pod（容器组）的所有标签，并将其添加为资源属性。
-          # 标签的原始名称将作为键。
-          extractAllPodLabels: true
-          # 启用后，该处理器会提取关联 pod（容器组）的所有注解，并将其添加为资源属性。
-          # 注解的原始名称将作为键。
-          extractAllPodAnnotations: true
-        # 配置 collector 通过 kubelet 节点代理上的 API server 收集节点、pod（容器组）和容器指标。
-        # 将 kubeletstats receiver 添加到指标管道中，并向集群角色添加所需规则。
-        # 更多信息：https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
-        kubeletMetrics:
-          enabled: true
-
-      extraEnvs:
-        - name: HYPERDX_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: hyperdx-secret
-              key: HYPERDX_API_KEY
-              optional: true
-        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
-          valueFrom:
-            configMapKeyRef:
-              name: otel-config-vars
-              key: YOUR_OTEL_COLLECTOR_ENDPOINT
-
-      config:
-        receivers:
-          # 配置额外的 kubelet 指标
-          kubeletstats:
-            collection_interval: 20s
-            auth_type: 'serviceAccount'
-            endpoint: '${env:K8S_NODE_NAME}:10250'
-            insecure_skip_verify: true
-            metrics:
-              k8s.pod.cpu_limit_utilization:
-                enabled: true
-              k8s.pod.cpu_request_utilization:
-                enabled: true
-              k8s.pod.memory_limit_utilization:
-                enabled: true
-              k8s.pod.memory_request_utilization:
-                enabled: true
-              k8s.pod.uptime:
-                enabled: true
-              k8s.node.uptime:
-                enabled: true
-              k8s.container.cpu_limit_utilization:
-                enabled: true
-              k8s.container.cpu_request_utilization:
-                enabled: true
-              k8s.container.memory_limit_utilization:
-                enabled: true
-              k8s.container.memory_request_utilization:
-                enabled: true
-              container.uptime:
-                enabled: true
-
-        exporters:
-          otlphttp:
-            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
-            headers:
-              authorization: "${env:HYPERDX_API_KEY}"
-            compression: gzip
-
-        service:
-          pipelines:
-            logs:
-              exporters:
-                - otlphttp
-            metrics:
-              exporters:
-                - otlphttp
-      ```
-    </Accordion>
-  </Tab>
-</Tabs>
+    service:
+      pipelines:
+        logs:
+          exporters:
+            - otlphttp
+        metrics:
+          exporters:
+            - otlphttp
+  ```
+</Accordion>
 
 ### 创建部署配置 {#creating-the-deployment-configuration}
 
-要收集 Kubernetes 事件和集群级指标，我们需要单独部署一个以部署形式运行的 OpenTelemetry Collector。
+要收集 Kubernetes 事件和集群级 (cluster-wide) 指标，我们需要单独部署一个以部署形式运行的 OpenTelemetry Collector。
 
 下载安装清单：
 
@@ -259,129 +160,68 @@ curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/
 curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_deployment.yaml
 ```
 
-<Tabs>
-  <Tab title="托管 ClickStack">
-    <Accordion title="k8s_deployment.yaml">
-      ```yaml
-      # deployment.yaml
-      mode: deployment
+<Accordion title="k8s_deployment.yaml">
+  ```yaml
+  # deployment.yaml
+  mode: deployment
 
-      image:
-        repository: otel/opentelemetry-collector-contrib
-        tag: 0.123.0
-       
-      # 这里只需要一个 collector，更多的话会产生重复数据
-      replicaCount: 1
-       
-      presets:
-        kubernetesAttributes:
-          enabled: true
-          # 启用后，处理器会提取关联 pod（容器组）的所有 labels，并将其添加为资源属性。
-          # label 的准确名称将作为键。
-          extractAllPodLabels: true
-          # 启用后，处理器会提取关联 pod（容器组）的所有 annotations，并将其添加为资源属性。
-          # annotation 的准确名称将作为键。
-          extractAllPodAnnotations: true
-        # 配置 collector 以收集 Kubernetes 事件。
-        # 将 k8sobject receiver 添加到日志管道中，并默认收集 Kubernetes 事件。
-        # 更多信息：https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
-        kubernetesEvents:
-          enabled: true
-        # 配置 Kubernetes Cluster Receiver 以收集集群级指标。
-        # 将 k8s_cluster receiver 添加到指标管道中，并向 ClusteRole 添加必要的规则。
-        # 更多信息：https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
-        clusterMetrics:
-          enabled: true
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: 0.123.0
 
-      extraEnvs:
-        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
-          valueFrom:
-            configMapKeyRef:
-              name: otel-config-vars
-              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+  # 这里只需要一个 collector，更多的话会产生重复数据
+  replicaCount: 1
 
-      config:
-        exporters:
-          otlphttp:
-            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
-            compression: gzip
-        service:
-          pipelines:
-            logs:
-              exporters:
-                - otlphttp
-            metrics:
-              exporters:
-                - otlphttp
-      ```
-    </Accordion>
-  </Tab>
+  presets:
+    kubernetesAttributes:
+      enabled: true
+      # 启用后，处理器会提取关联 pod（容器组）的所有 labels，并将其添加为资源属性。
+      # label 的准确名称将作为键。
+      extractAllPodLabels: true
+      # 启用后，处理器会提取关联 pod（容器组）的所有 annotations，并将其添加为资源属性。
+      # annotation 的准确名称将作为键。
+      extractAllPodAnnotations: true
+    # 配置 collector 以收集 Kubernetes 事件。
+    # 将 k8sobject receiver 添加到日志管道中，并默认收集 Kubernetes 事件。
+    # 更多信息：https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+    kubernetesEvents:
+      enabled: true
+    # 配置 Kubernetes Cluster Receiver 以收集集群级指标。
+    # 将 k8s_cluster receiver 添加到指标管道中，并向 ClusteRole 添加必要的规则。
+    # 更多信息：https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+    clusterMetrics:
+      enabled: true
 
-  <Tab title="ClickStack 开源版">
-    <Accordion title="k8s_deployment.yaml">
-      ```yaml
-      # deployment.yaml
-      mode: deployment
+  extraEnvs:
+    - name: HYPERDX_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: hyperdx-secret
+          key: HYPERDX_API_KEY
+          optional: true
+    - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+      valueFrom:
+        configMapKeyRef:
+          name: otel-config-vars
+          key: YOUR_OTEL_COLLECTOR_ENDPOINT
 
-      image:
-        repository: otel/opentelemetry-collector-contrib
-        tag: 0.123.0
-       
-      # 这里只需要一个 collector，更多的话会产生重复数据
-      replicaCount: 1
-       
-      presets:
-        kubernetesAttributes:
-          enabled: true
-          # 启用后，处理器会提取关联 pod（容器组）的所有 labels，并将其添加为资源属性。
-          # label 的准确名称将作为键。
-          extractAllPodLabels: true
-          # 启用后，处理器会提取关联 pod（容器组）的所有 annotations，并将其添加为资源属性。
-          # annotation 的准确名称将作为键。
-          extractAllPodAnnotations: true
-        # 配置 collector 以收集 Kubernetes 事件。
-        # 将 k8sobject receiver 添加到日志管道中，并默认收集 Kubernetes 事件。
-        # 更多信息：https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
-        kubernetesEvents:
-          enabled: true
-        # 配置 Kubernetes Cluster Receiver 以收集集群级指标。
-        # 将 k8s_cluster receiver 添加到指标管道中，并向 ClusteRole 添加必要的规则。
-        # 更多信息：https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
-        clusterMetrics:
-          enabled: true
-
-      extraEnvs:
-        - name: HYPERDX_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: hyperdx-secret
-              key: HYPERDX_API_KEY
-              optional: true
-        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
-          valueFrom:
-            configMapKeyRef:
-              name: otel-config-vars
-              key: YOUR_OTEL_COLLECTOR_ENDPOINT
-
-      config:
-        exporters:
-          otlphttp:
-            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
-            compression: gzip
-            headers:
-              authorization: "${env:HYPERDX_API_KEY}"
-        service:
-          pipelines:
-            logs:
-              exporters:
-                - otlphttp
-            metrics:
-              exporters:
-                - otlphttp
-      ```
-    </Accordion>
-  </Tab>
-</Tabs>
+  config:
+    exporters:
+      otlphttp:
+        endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+        compression: gzip
+        headers:
+          authorization: "${env:HYPERDX_API_KEY}"
+    service:
+      pipelines:
+        logs:
+          exporters:
+            - otlphttp
+        metrics:
+          exporters:
+            - otlphttp
+  ```
+</Accordion>
 
 ## 部署 OpenTelemetry Collector {#deploying-the-otel-collector}
 

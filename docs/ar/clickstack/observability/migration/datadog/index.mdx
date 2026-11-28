@@ -182,3 +182,5 @@ sudo launchctl kickstart -k system/com.datadoghq.agent
 مستقبِل Datadog ميزة تجريبية، إذ يحوّل سجلات Datadog والتتبّع والمقاييس المدعومة إلى نموذج بيانات OpenTelemetry الذي يستخدمه ClickHouse Observability. تعتمد التهيئة الواردة أعلاه على واجهة استقبال المقاييس v2، أما ميزات Datadog الخلفية الأخرى فتقع خارج نطاق مسار الترحيل هذا.
 
 يمكنك الإبقاء على أدوات رصد Datadog الحالية لديك أثناء ترحيل تطبيقاتك إلى OpenTelemetry تدريجيًا.
+
+عند استخدام مُجمِّع ClickStack مُدار ذاتيًا، يمكن للتطبيقات أيضًا إرسال مقاييس DogStatsD المخصصة إلى جامع البيانات مباشرةً، كما يستطيع جامع البيانات استخلاص مقاييس الطلبات والأخطاء والمدة من بيانات التتبّع. راجع [استقبال مقاييس StatsD](/ar/clickstack/self-configured/ingesting-data/collector#statsd-receiver) و[استخلاص المقاييس من مقاطع التتبع](/ar/clickstack/self-configured/ingesting-data/collector#span-metrics).

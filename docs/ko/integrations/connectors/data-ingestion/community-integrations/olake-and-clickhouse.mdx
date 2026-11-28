@@ -1,0 +1,84 @@
+---
+sidebarTitle: 'OLake Go'
+slug: /integrations/olake
+description: '데이터베이스, S3, Kafka의 데이터를 ClickHouse가 네이티브로 읽을 수 있는 Apache Iceberg 테이블로 복제합니다'
+title: 'OLake Go와 ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://olake.io/'
+keywords: ['olake', 'olake go', 'data ingestion', 'iceberg', 'parquet', 'cdc', 'replication', 'data integration']
+---
+
+import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[OLake Go](https://olake.io/)는 운영 데이터베이스와 개방형 레이크하우스(lakehouse) 스토리지를 연결하는 고성능 오픈 소스 EL(Extract–Load) 플랫폼으로, Amazon S3에 Apache Iceberg 테이블이나 Parquet 파일을 기록합니다. OLake Go는 증분 동기화, 변경 데이터 캡처(Change Data Capture, CDC), 그리고 상태를 유지하며 중단 지점부터 재개할 수 있는 상태 유지형 동기화를 지원합니다.
+
+ClickHouse는 [`iceberg`](/ko/reference/functions/table-functions/iceberg) 테이블 함수와 [`Iceberg`](/ko/reference/engines/table-engines/integrations/iceberg) 테이블 엔진을 통해 Iceberg 테이블(Iceberg tables)을 네이티브로 읽고, [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake)를 통해 Iceberg 카탈로그에 연결합니다. 이 페이지에서는 OLake Go를 사용하여 ClickHouse에서 쿼리할 Iceberg 테이블에 데이터를 채우는 방법을 설명합니다.
+
+## 사전 요구 사항 {#prerequisites}
+
+* Docker Compose, Kubernetes(Helm) 또는 독립형 Docker 컨테이너로 자체 호스팅하는 OLake Go
+* OLake Go가 지원하는 소스 시스템: PostgreSQL, MySQL, MongoDB, Oracle, MSSQL, DB2, Kafka 또는 Amazon S3
+* Iceberg 읽기를 지원하는 ClickHouse Cloud 또는 자체 호스팅 ClickHouse
+* OLake Go가 데이터를 기록하고 ClickHouse가 연결할 수 있는 Iceberg 카탈로그(예: AWS Glue, Hive Metastore, REST, Unity Catalog, Polaris, BigLake). 자세한 내용은 [OLake Go 카탈로그 호환성 매트릭스](https://olake.io/docs/understanding/compatibility-catalogs/) 및 ClickHouse [`DataLakeCatalog` 카탈로그 타입](/ko/reference/engines/database-engines/datalake)을 참조하십시오.
+
+## 설정 {#setup}
+
+1. [OLake Go 빠른 시작](https://olake.io/docs/getting-started/quickstart/)에 따라 OLake Go를 배포하십시오.
+2. 소스(예: PostgreSQL 또는 MySQL)를 구성하고, S3 또는 S3 호환 스토리지에 Iceberg 대상을 구성하십시오.
+3. 지원되는 Iceberg 카탈로그를 선택하십시오. 카탈로그는 OLake Go와 ClickHouse의 `DataLakeCatalog`에서 모두 지원되어야 합니다(카탈로그 타입: `glue`, `rest`, `hive`, `unity`, `onelake`, `horizon`).
+4. 동기화를 실행하여 Iceberg 테이블(Iceberg tables)에 데이터를 기록하십시오.
+5. ClickHouse에서 `iceberg` 테이블 함수 또는 `Iceberg` 테이블 엔진(Table Engine)으로 Iceberg 데이터를 쿼리하거나, [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake)를 통해 카탈로그에 연결하십시오.
+
+## 예시: PostgreSQL에서 Iceberg로 동기화하고 ClickHouse에서 쿼리하기 {#example}
+
+1. OLake Go에서 PostgreSQL 소스를 생성하고, AWS Glue 카탈로그(AWS Glue catalog)를 사용하는 Amazon S3 기반 Iceberg 대상을 생성하십시오.
+2. 전체 새로 고침(full refresh) 또는 CDC 동기화를 실행하여 테이블(tables)을 Iceberg 형식으로 복제하십시오.
+3. ClickHouse에서 Iceberg 데이터를 기반으로 테이블을 생성하십시오:
+
+```sql
+CREATE TABLE my_iceberg_table
+ENGINE = IcebergS3(
+  's3://my-bucket/warehouse/my_database/my_table/',
+  'aws_access_key',
+  'aws_secret_key'
+)
+```
+
+4. 복제된 데이터를 쿼리합니다.
+
+```sql
+SELECT * FROM my_iceberg_table LIMIT 10;
+```
+
+또는 `DataLakeCatalog`를 통해 AWS Glue 카탈로그(AWS Glue catalog)를 ClickHouse에 연결한 뒤, 해당 카탈로그의 테이블을 직접 쿼리할 수도 있습니다.
+
+## 알려진 제한 사항 {#known-limitations}
+
+* OLake Go는 Iceberg 테이블(Iceberg tables)을 쓰고, ClickHouse는 이를 읽습니다. ClickHouse는 버전 25.7부터 Iceberg 테이블 수정도 지원하지만, 이는 ClickHouse 자체 기능이며 OLake Go가 제공하는 기능이 아닙니다.
+* 동등 삭제(equality deletes)는 ClickHouse 버전 25.8부터 지원됩니다. 이전 버전에서는 OLake Go가 쓸 수 있는 삭제 포맷 중 일부를 읽지 못할 수 있습니다. 현재 지원되는 삭제 포맷은 [ClickHouse Iceberg 문서](/ko/reference/functions/table-functions/iceberg)를 참조하십시오.
+* OLake Go가 지원하는 카탈로그(catalogs) 중 일부는 ClickHouse에서 `DataLakeCatalog` 카탈로그 타입으로 사용할 수 없습니다. 카탈로그를 선택하기 전에 [OLake Go 카탈로그 호환성 매트릭스](https://olake.io/docs/understanding/compatibility-catalogs/)와 [`DataLakeCatalog` 문서](/ko/reference/engines/database-engines/datalake)를 모두 확인하십시오.
+
+## 문제 해결 {#troubleshooting}
+
+### ClickHouse에 테이블이 표시되지 않음 {#tables-not-visible}
+
+OLake Go가 데이터를 쓰는 Iceberg 카탈로그에 ClickHouse가 연결할 수 있는지, 그리고 카탈로그 연결 매개변수와 자격 증명이 올바른지 확인하십시오. 지원되는 카탈로그 타입은 [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake)를 참고하십시오.
+
+### 삭제된 행이 계속 표시되는 경우 {#deleted-rows-visible}
+
+사용 중인 ClickHouse 버전이 OLake Go가 기록한 삭제 포맷(동등, 위치 기반 또는 삭제 벡터(deletion vectors))을 지원하는지 확인하십시오. 동등 삭제(equality deletes)를 사용하려면 ClickHouse 25.8 이상이 필요합니다. 자세한 내용은 [Iceberg 테이블 함수(Table Function) 문서](/ko/reference/functions/table-functions/iceberg)를 참고하십시오.
+
+## 추가 자료 {#further-reading}
+
+* [OLake Go 문서](https://olake.io/docs/)
+* [OLake Go 쿼리 엔진(query engine)과 ClickHouse의 호환성](https://olake.io/docs/understanding/compatibility-engines/)
+* [OLake Go Iceberg 카탈로그 호환성](https://olake.io/docs/understanding/compatibility-catalogs/)
+* [ClickHouse `iceberg` 테이블 함수](/ko/reference/functions/table-functions/iceberg)
+* [ClickHouse `Iceberg` 테이블 엔진(Table Engine)](/ko/reference/engines/table-engines/integrations/iceberg)
+* [ClickHouse `DataLakeCatalog`](/ko/reference/engines/database-engines/datalake)
+* [ClickHouse 데이터 카탈로그(Data catalogs)](/ko/integrations/data-catalogs)

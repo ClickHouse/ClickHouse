@@ -12,6 +12,8 @@ doc_type: 'reference'
 
 `clickhouse-local` は、開発やテスト、ファイル処理には非常に便利なツールですが、エンドユーザーやアプリケーション向けの提供には適していません。このような用途では、オープンソースの [ClickHouse](/ja/get-started/setup/install) を使用することを推奨します。ClickHouse は、大規模な分析ワークロードを処理するよう設計された強力な OLAP データベースです。大規模なデータセットに対する複雑なクエリを高速かつ効率的に処理できるため、高いパフォーマンスが求められる本番環境に最適です。さらに、ClickHouse は、レプリケーション、シャーディング、高可用性など、アプリケーションの提供や大規模データセットの処理に向けてスケールするうえで不可欠な幅広い機能を備えています。より大きなデータセットを扱う必要がある場合や、エンドユーザーやアプリケーション向けに提供する必要がある場合は、`clickhouse-local` ではなくオープンソースの ClickHouse を使用することを推奨します。
 
+`clickhouse-local` は [ネットワーク接続を受け付ける](#starting-listeners) こともできますが、その場合、接続したすべてのクライアントに、ローカルファイルへの無制限のアクセス、コマンドの実行、管理者権限が与えられてしまいます。そのため、マルチユーザー環境では使用しないでください。詳しくは [マルチユーザーのシナリオ](#multi-user-scenarios) を参照してください。
+
 以下のドキュメントでは、[ローカルファイルへのクエリ](#query_data_in_file) や [S3 上の Parquet ファイルの読み取り](#query-data-in-a-parquet-file-in-aws-s3) など、`clickhouse-local` の使用例を紹介しています。ぜひご覧ください。
 
 ## clickhouse-local をダウンロードする {#download-clickhouse-local}
@@ -428,10 +430,30 @@ HTTP リスナーは、デフォルトの `clickhouse-server` 設定と同じ許
 <Warning>
   **セキュリティ**
 
-  デフォルトでは、`clickhouse-local` は一時ユーザー設定で実行されるため、開かれたリスナーはいずれも認証されません。`users_config` 設定でカスタムの `users.xml` を指定して (たとえば `--config-file` を使用して) ユーザーとアクセス制御を明示的に設定している場合を除き、ループバックアドレス (`127.0.0.1` または `::1`) にバインドしてください。認証なしで非ループバックアドレスで待ち受けると、選択したポートに到達できるすべての相手に、ローカルインスタンスのデータが公開されます。
+  デフォルトでは、`clickhouse-local` は一時ユーザー設定で実行されるため、開かれたリスナーはいずれも認証されません。`users_config` 設定でカスタムの `users.xml` を指定して (たとえば `--config-file` を使用して) ユーザーとアクセス制御を明示的に設定している場合を除き、ループバックアドレス (`127.0.0.1` または `::1`) にバインドしてください。認証なしで非ループバックアドレスで待ち受けると、選択したポートに到達できるすべての相手に、ローカルインスタンスのデータだけでなく、`clickhouse-local` を実行している OS ユーザーの権限でのファイルへのアクセスやコマンドの実行まで許すことになります。詳しくは [マルチユーザーのシナリオ](#multi-user-scenarios) を参照してください。
 
   ループバックアドレスにもブラウザーから到達できることに注意してください。HTTP リスナーが開いている間は、アクセスしたあらゆる Web ページがローカルインスタンスにクエリを実行でき、デフォルトの CORS ヘッダーにより結果を読み取ることもできます。
 </Warning>
+
+### マルチユーザーのシナリオ {#multi-user-scenarios}
+
+<Note>
+  `clickhouse-local` のリスナーは、単一のユーザー、つまり起動したユーザー本人が自分のツールで接続することを想定しています。異なる権限を持つ複数の人やアプリケーションが利用する場合や、自分の OS アカウントへのログインを許可しないようなクライアントが接続する場合など、マルチユーザーのシナリオでは、代わりに [`clickhouse-server`](/ja/get-started/setup/install) を使用してください。
+</Note>
+
+`clickhouse-local` は、実行したユーザーのローカル環境で作業するためのツールであるため、`clickhouse-server` がクエリに課している制限を解除しています。これはプロセス全体に適用され、リスナーが受け付けたすべての接続には、`clickhouse-local` 自体の session と同じ能力が与えられます。接続したクライアントは次の操作が可能です。
+
+* **任意のファイルの読み書き。** `clickhouse-server` はファイルへのアクセスを [`user_files_path`](/ja/reference/settings/server-settings/settings/user#user_files_path) ディレクトリ内に限定します。`clickhouse-local` にはそのようなディレクトリがなく、クエリは `clickhouse-local` を実行している OS ユーザーがアクセスできるすべてのファイルを読み取り、一覧表示、作成、上書きできます。これは [`file`](/ja/reference/functions/table-functions/file) および [`filesystem`](/ja/reference/functions/table-functions/filesystem) テーブル関数、[`file`](/ja/reference/functions/regular-functions/files#file) 関数、[`File`](/ja/reference/engines/table-engines/special/file) テーブルエンジン、[`Filesystem`](/ja/reference/engines/database-engines/filesystem) および [`SQLite`](/ja/reference/engines/database-engines/sqlite) データベースエンジンで可能なほか、`SELECT * FROM '/path/to/data.csv'` のようにパスをテーブル名として指定するだけでも可能です。アクセス可能なファイルには、秘密鍵、クラウドサービスの認証情報、シェルの設定ファイル、プロセスの環境変数 (`/proc/self/environ`) なども含まれます。
+* **コマンドの実行。** `clickhouse-server` は、[`EXECUTABLE`](/ja/reference/statements/create/dictionary/sources/executable-file) および [`EXECUTABLE_POOL`](/ja/reference/statements/create/dictionary/sources/executable-pool) ソースを使用する辞書を、管理者が記述した設定ファイルからのみ受け付け、クエリによる作成は拒否します。一方、`clickhouse-local` は `CREATE DICTIONARY ... SOURCE(EXECUTABLE(COMMAND '...'))` を許可し、そのコマンドはシェルによって実行されるため、クエリから任意のプログラムを実行できます。
+* **管理者としての操作。** `users_config` でユーザーが設定されていない限り、ユーザーは `default` のみです。このユーザーにはパスワードがなく、任意のアドレスからの接続が許可され、アクセス管理を含む管理者権限を持ちます。すべての接続で、インスタンスの全データの読み取り・変更・削除、任意の設定の変更 (設定の制約やクォータはありません)、`system.processes` での他の session のクエリの閲覧と強制終了、リスナーのクローズ、`SYSTEM SHUTDOWN` によるプロセスの終了が可能です。また、ユーザーを作成することもでき、データディレクトリが永続的な場合、作成したユーザーはそこに保存されて再起動後も残ります。
+* **任意のホストへの接続。** `clickhouse-local` では [`remote_url_allow_hosts`](/ja/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) の制限が適用されないため、`url`、`s3`、`remote`、`mysql`、`postgresql` などの外部ソース向けのテーブル関数やエンジンから、ループバックインターフェースや内部ネットワーク上のサービスを含む任意のアドレスへ、お使いのマシンを経由してリクエストを送信できます。
+* **イントロスペクション関数の使用。** [イントロスペクション関数](/ja/reference/functions/regular-functions/introspection)はデフォルトで有効になっているため ([`allow_introspection_functions`](/ja/reference/settings/session-settings/allow#allow_introspection_functions) を参照)、クライアントは `system.stack_trace` 内のものなど、プロセスのスタックトレースをシンボル名やソース上の位置に解決できます。
+
+パスワードと限定的な権限を持つユーザーを設定すれば認証は追加されますが、これらの制限が復活するわけではありません。ファイルへのアクセス権限 (`FILE` に対する `READ` および `WRITE`) を付与されたユーザーは、専用ディレクトリに限らずファイルシステム全体にアクセスでき、さらに `CREATE DICTIONARY` 権限があればコマンドも実行できるようになります。`file` 関数は権限をまったくチェックしないため、ファイルに対する権限を一切持たないユーザーでも、すべてのファイルを読み取れます。
+
+また、リスナーは TLS をサポートしていません。`clickhouse-local` の `SYSTEM START LISTEN` は平文の `TCP` および `HTTP` リスナーしか開かないため、パスワード、クエリ、データは暗号化されないままネットワーク上を送信されます。
+
+これらはすべて、`clickhouse-local` を実行している OS ユーザー (通常はあなた個人のアカウント) の権限で行われます。一方、`clickhouse-server` は通常、自身のデータ以外は何も所有しない専用アカウントで実行されます。複数の OS ユーザーが共有するマシンでは、ループバックアドレスにはそのすべてのユーザーがアクセスできます。デフォルトの認証なしの構成では、同じマシンの別のユーザーがリスナーに接続すると、あなたのファイルを読み取ったり、あなたのアカウントでコマンドを実行したりできてしまいます。
 
 ## 関連コンテンツ {#related-content-1}
 

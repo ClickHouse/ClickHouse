@@ -883,12 +883,10 @@ Operator 管理器上的两个标志可在全局范围内控制升级检查循�
   ## ClickHouse 设置 {#clickhouse-settings}
 </div>
 
-<div id="default-user-password">
-  ### 默认用户密码 {#default-user-password}
-</div>
+### 默认用户密码 {#default-user-password}
 
 `spec.settings.defaultUserPassword` 用于为内置 `default`
-用户设置密码。请提供你创建的 Secret (推荐) 或 ConfigMap 中某个键的值，
+用户设置密码。请提供你创建的 Secret 中某个键的值，
 而不要直接将密码内联写在 CR 中：
 
 ```yaml
@@ -896,13 +894,12 @@ spec:
   settings:
     defaultUserPassword:
       passwordType: password   # default; see "Password types" below
-      secret:                  # exactly one of secret or configMap
-        name: clickhouse-password   # name of the Secret/ConfigMap
+      secret:
+        name: clickhouse-password   # name of the Secret
         key: password               # the key inside it, not the password value
 ```
 
-只能提供 `secret` 或 `configMap` 其中之一，并且两者都必须同时包含 `name` (对象)
-和 `key` (保存密码的条目) 。
+需同时设置 `name` (Secret) 和 `key` (保存密码的条目) 。
 
 <div id="password-types">
   #### 密码类型 {#password-types}
@@ -962,13 +959,15 @@ spec:
         key: password
 ```
 
-<div id="using-configmap-for-user-passwords">
-  #### 使用 ConfigMap {#using-configmap-for-user-passwords}
-</div>
+#### 使用 ConfigMap (已弃用) {#using-configmap-for-user-passwords} 
 
-ConfigMap 的作用方式与 Secret 相同，但其内容不像 Secret 那样受到保护。
-仅应用于非敏感或已哈希的值，例如
-`password_sha256_hex` 摘要：
+<Warning>
+  `configMap` source 已弃用，并已在 `v1alpha2` 中移除。ConfigMap
+  不像 Secret 那样受到保护，且未加盐的密码哈希值可能被穷举破解。
+  请改为将密码 (无论是明文还是已哈希) 存储在 Secret 中。
+</Warning>
+
+ConfigMap 的作用方式与 Secret 相同，但其内容不受保护：
 
 ```yaml
 spec:

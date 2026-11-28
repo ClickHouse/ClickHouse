@@ -314,10 +314,10 @@ Los parámetros de consulta se pueden definir de varias formas:
 * `--param_<name>='<value>'` — como argumento de `clickhouse-client` en la línea de comandos.
 * `param_<name>=<value>` — como parámetro de la cadena de consulta de la URL para la interfaz HTTP.
 
-Se puede hacer referencia a un parámetro de consulta dentro de una consulta mediante `{<name>: <datatype>}`, donde `<name>` es el nombre del parámetro de consulta y `<datatype>` es el tipo de dato al que se convierte.
+Se puede hacer referencia a un parámetro de consulta dentro de una consulta mediante `{<name>: <datatype>}`, donde `<name>` es el nombre del parámetro de consulta y `<datatype>` es el tipo de datos al que se convierte.
 
 <Accordion title="Ejemplo con el comando SET">
-  Por ejemplo, el siguiente SQL define parámetros llamados `a`, `b`, `c` y `d`, cada uno con un tipo de dato diferente:
+  Por ejemplo, el siguiente SQL define parámetros llamados `a`, `b`, `c` y `d`, cada uno con un tipo de datos diferente:
 
   ```sql
   SET param_a = 13;
@@ -369,6 +369,7 @@ Se puede hacer referencia a un parámetro de consulta dentro de una consulta med
 <Note>
   Los parámetros de consulta no son sustituciones de texto generales que puedan usarse en lugares arbitrarios de consultas SQL arbitrarias.
   Están diseñados principalmente para usarse en sentencias `SELECT` en lugar de identificadores o literales.
+  También funcionan en sentencias DDL en lugar de nombres de bases de datos y de tablas (por ejemplo, `CREATE TABLE {db:Identifier}.{tbl:Identifier}`). En `ALTER TABLE`, también funcionan en `DROP`, `CLEAR`, `MATERIALIZE`, `COMMENT`, `RENAME COLUMN` y `AFTER` (por ejemplo, `ALTER TABLE t RENAME COLUMN {c:Identifier} TO {c2:Identifier}`).
 </Note>
 
 ## Funciones {#functions}

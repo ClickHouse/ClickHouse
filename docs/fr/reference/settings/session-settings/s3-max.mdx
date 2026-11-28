@@ -37,7 +37,9 @@ Le nombre maximal de parties téléversées simultanément dans une requête de 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "10000"},{"label": "Numéro de partie maximal pour une partie de téléversement S3"}]}]} />
 
-Numéro de partie de données maximal pour une partie de données de téléversement S3.
+Nombre maximal de parties dans un téléversement en plusieurs parties ou une copie en plusieurs parties vers S3. La valeur par défaut correspond à la limite d’AWS S3.
+
+Lors d’une copie, la taille des parties est augmentée afin que leur nombre ne dépasse pas cette valeur. Lors d’une écriture, une exception est levée si les données nécessitent davantage de parties ; dans ce cas, augmentez `s3_max_upload_part_size` ou `s3_upload_part_size_multiply_factor`. Réduisez cette valeur pour les composants de stockage compatibles S3 qui prennent en charge un nombre de parties plus faible.
 
 ## s3_max_put_burst {#s3_max_put_burst}
 

@@ -30,7 +30,7 @@ La función de agregado [stochasticLogisticRegression](/es/reference/functions/a
 
 Introducido en: v26.8.0
 
-Devuelve el id del centroide más cercano (L2) a un vector. Los centroides se especifican como un array constante de arrays de números flotantes, donde el id es la posición (empezando en 0) dentro de dicho array, o como el nombre de un `Dictionary` que contiene los atributos `cid` y `vec`, donde el id es `cid`.
+Devuelve el id del centroide más cercano (L2) a un vector. Los centroides se especifican como un array constante de arrays, donde el id es la posición (empezando en 0) dentro de dicho array, o como el nombre de un `Dictionary` que contiene los atributos `cid` y `vec`, donde el id es `cid`.
 
 <Note>
   Esta función es no determinista: puede devolver resultados distintos para los mismos argumentos.
@@ -44,8 +44,8 @@ assignCentroid(vec, centroids | dict_name)
 
 **Argumentos**
 
-* `vec` — Vector que se va a asignar. Su dimensión debe coincidir con la dimensión de los centroides. Los anchos distintos de `Float32` se convierten a `Float32`, que es lo que utiliza el kernel de puntuación. [`Array(Float32)`](/es/reference/data-types/array) o [`Array(Float64)`](/es/reference/data-types/array) o [`Array(BFloat16)`](/es/reference/data-types/array)
-* `centroids` — Los centroides con los que se compara, que deben ser constantes. Se indican como un array de arrays de números flotantes no vacíos y de igual tamaño, siendo el id la posición en ese array (empezando en 0); o como el nombre de un `Dictionary` con un attribute `cid` de un integer type sin signo que quepa en `UInt32` y un attribute `vec` de tipo `Array(Float32)`, en cuyo caso el id es `cid`. El diccionario se lee una sola vez y se mantiene cached hasta que se vuelve a cargar. [`Array(Array(Float32))`](/es/reference/data-types/array) o [`Array(Array(Float64))`](/es/reference/data-types/array) o [`Array(Array(BFloat16))`](/es/reference/data-types/array) o [`String`](/es/reference/data-types/string)
+* `vec` — Vector que se va a asignar. Su dimensión debe coincidir con la dimensión de los centroides. Los tipos de elemento distintos de `Float32` se convierten a `Float32`, que es lo que utiliza el kernel de puntuación. [`Array(Float32)`](/es/reference/data-types/array) o [`Array(Float64)`](/es/reference/data-types/array) o [`Array(BFloat16)`](/es/reference/data-types/array) o [`Array(Int8)`](/es/reference/data-types/array) o [`Array(UInt8)`](/es/reference/data-types/array)
+* `centroids` — Los centroides con los que se compara, que deben ser constantes. Se indican como un array de arrays no vacíos y de igual tamaño con cualquiera de los tipos de elemento aceptados para `vec` (no necesariamente el mismo), siendo el id la posición en ese array (empezando en 0); o como el nombre de un `Dictionary` con un atributo `cid` de un integer type sin signo que quepa en `UInt32` y un atributo `vec` de tipo `Array(Float32)`, en cuyo caso el id es `cid`. El diccionario se lee una sola vez y se mantiene cached hasta que se vuelve a cargar. [`Array(Array(Float32))`](/es/reference/data-types/array) o [`Array(Array(Float64))`](/es/reference/data-types/array) o [`Array(Array(BFloat16))`](/es/reference/data-types/array) o [`Array(Array(Int8))`](/es/reference/data-types/array) o [`Array(Array(UInt8))`](/es/reference/data-types/array) o [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 

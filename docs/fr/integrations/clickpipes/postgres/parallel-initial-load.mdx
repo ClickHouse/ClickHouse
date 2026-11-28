@@ -27,7 +27,7 @@ Dans Postgres, chaque ligne d&#39;une table possède un identifiant unique appel
 
 ### Partitionnement logique {#logical-partitioning-pg-snapshot}
 
-Le Postgres ClickPipe utilise la colonne CTID pour partitionner logiquement les tables source. Il obtient les partitions en exécutant d’abord un COUNT(*) sur la table source, puis une requête de partitionnement s’appuyant sur une fonction de fenêtre afin d’obtenir les plages de CTID pour chaque partition. Cela permet au ClickPipe de lire la table source en parallèle, chaque partition étant traitée par un thread distinct.
+Le Postgres ClickPipe utilise la colonne CTID pour partitionner logiquement les tables source. Il obtient les partitions en estimant d’abord le nombre de lignes de la table source à partir des statistiques de la table, puis en divisant les blocs de la table en plages de CTID de taille égale, à raison d’une plage par partition. Cela permet au ClickPipe de lire la table source en parallèle, chaque partition étant traitée par un thread distinct.
 
 Examinons les paramètres ci-dessous :
 
@@ -53,17 +53,10 @@ Ce paramètre contrôle le nombre de partitions traitées en parallèle. La vale
   #### Nombre de tables dont le snapshot est pris en parallèle {#tables-parallel-pg-snapshot}
 </div>
 
-Ce paramètre n’est pas vraiment lié au snapshot parallèle, mais il contrôle le nombre de tables traitées en parallèle pendant le chargement initial. La valeur par défaut est 1. Notez que cela s’ajoute au parallélisme des partitions ; ainsi, si vous avez 4 partitions et 2 tables, le ClickPipe lira 8 partitions en parallèle.
+Ce paramètre n’est pas vraiment lié au snapshot parallèle, mais il contrôle le nombre de tables traitées en parallèle pendant le chargement initial. La valeur par défaut est 1. Notez que cela s’ajoute au parallélisme des partitions ; ainsi, si le parallélisme du chargement initial est de 4 et que vous avez 2 tables, le ClickPipe lira 8 partitions en parallèle.
 
 <div id="monitoring-parallel-pg-snapshot">
   ### Surveiller le snapshot parallèle dans Postgres {#monitoring-parallel-pg-snapshot}
 </div>
 
-Vous pouvez analyser **pg&#95;stat&#95;activity** pour observer le snapshot parallèle en action. Le ClickPipe créera plusieurs connexions à la base de données source, chacune lisant une partition différente de la table source. Si vous voyez des requêtes **FETCH** avec des plages de CTID différentes, cela signifie que le ClickPipe lit les tables source. Vous pouvez aussi y voir le COUNT(*) ainsi que la requête de partitionnement.
-
-<div id="limitations-parallel-pg-snapshot">
-  ### Limitations {#limitations-parallel-pg-snapshot}
-</div>
-
-* Les paramètres de snapshot ne peuvent pas être modifiés après la création du pipe. Si vous souhaitez les modifier, vous devrez créer un nouveau ClickPipe.
-* Lors de l&#39;ajout de tables à un ClickPipe existant, vous ne pouvez pas modifier les paramètres de snapshot. Le ClickPipe utilisera les paramètres existants pour les nouvelles tables.
+Vous pouvez analyser **pg&#95;stat&#95;activity** pour observer le snapshot parallèle en action. Le ClickPipe créera plusieurs connexions à la base de données source, chacune lisant une partition différente de la table source. Chaque connexion déclare un curseur pour sa plage de CTID, puis lit à partir de celui-ci : si vous voyez des requêtes **FETCH** de la forme `FETCH <n> FROM peerdb_cursor_<id>`, cela signifie que le ClickPipe lit les tables source.

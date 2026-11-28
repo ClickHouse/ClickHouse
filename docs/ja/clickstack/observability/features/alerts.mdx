@@ -205,6 +205,7 @@ Webhook の名前は必須ですが、説明は任意です。そのほかに入
 **Slack (API)**
 
 * Slack ボットトークン。詳細は [Slack のドキュメント](https://docs.slack.dev/authentication/tokens/#bot/) を参照してください。
+* Slack アプリの Bot Token Scopes には、`groups:read`、`channels:read`、`chat:write` を含める必要があります。読み取り系のスコープにより、アラートの編集中に ClickHouse オブザーバビリティが Slack チャンネルの一覧を取得できます。
 
 **PagerDuty API**
 

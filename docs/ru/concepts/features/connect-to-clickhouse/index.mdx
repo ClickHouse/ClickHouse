@@ -1,0 +1,107 @@
+---
+description: 'Выберите клиент, драйвер, протокол или встроенный интерфейс для подключения к ClickHouse'
+sidebarTitle: 'Обзор'
+keywords: ['clients', 'interfaces', 'CLI', 'SQL console', 'drivers', 'protocols']
+slug: /concepts/features/connect-to-clickhouse
+title: 'Подключение к ClickHouse'
+doc_type: 'landing-page'
+mode: wide
+---
+
+Выберите интерфейс, который лучше всего подходит для вашего сценария работы с ClickHouse. Для разработки приложений начните с официального клиента для языка программирования или драйвера. Для интерактивной работы используйте нативный или веб-инструмент. Для прямой интеграции используйте сетевой протокол. Перед подключением при необходимости настройте [сетевые порты](/ru/concepts/features/security/network-ports), [права доступа](/ru/concepts/features/security/access-rights) и [TLS](/ru/concepts/features/security/tls/configuring-tls).
+
+## Нативные инструменты {#native-tools}
+
+<CardGroup cols={2}>
+  <Card title="clickhousectl" icon="terminal" href="/ru/concepts/features/connect-to-clickhouse/native-tools/clickhousectl">
+    Официальный ClickHouse CLI (`chctl`): локальная разработка с ClickHouse и Postgres, а также управление ClickHouse Cloud.
+  </Card>
+
+  <Card title="Клиент ClickHouse" icon="keyboard" href="/ru/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client">
+    Нативный клиент командной строки с поддержкой параметров командной строки и файлов конфигурации.
+  </Card>
+
+  <Card title="Веб-терминал" icon="globe" href="/ru/concepts/features/connect-to-clickhouse/native-tools/web-terminal">
+    Сеанс `clickhouse-client` прямо в браузере через WebSocket.
+  </Card>
+
+  <Card title="Model Context Protocol (MCP)" icon="/images/mcp.svg" href="/ru/concepts/features/connect-to-clickhouse/native-tools/mcp">
+    Подключение ИИ-ассистентов к ClickHouse через стандартизированный интерфейс.
+  </Card>
+</CardGroup>
+
+## Драйверы и клиентские библиотеки {#drivers-and-language-clients}
+
+<CardGroup cols={2}>
+  <Card title="Драйвер ADBC" icon="database" href="/ru/concepts/features/connect-to-clickhouse/drivers/adbc">
+    Подключение ADBC-совместимых приложений к ClickHouse.
+  </Card>
+
+  <Card title="Драйвер ODBC" icon="database" href="/ru/concepts/features/connect-to-clickhouse/drivers/odbc">
+    Подключение ODBC-совместимых приложений к ClickHouse.
+  </Card>
+
+  <Card title="Клиентские библиотеки" icon="code" href="/ru/integrations/language-clients">
+    Официальные клиенты ClickHouse для вашего языка программирования.
+  </Card>
+</CardGroup>
+
+## Протоколы {#protocols}
+
+<CardGroup cols={2}>
+  <Card title="HTTP-интерфейс" icon="globe" href="/ru/concepts/features/connect-to-clickhouse/protocols/http">
+    Работайте с ClickHouse по HTTP на любой платформе и из любого языка программирования.
+  </Card>
+
+  <Card title="Нативный TCP-интерфейс" icon="network-wired" href="/ru/concepts/features/connect-to-clickhouse/protocols/native-tcp">
+    Используйте собственный протокол для клиентов с поддержкой ClickHouse и для межсерверного взаимодействия.
+  </Card>
+
+  <Card title="gRPC-интерфейс" icon="arrows-left-right" href="/ru/concepts/features/connect-to-clickhouse/protocols/grpc">
+    Используйте gRPC-интерфейс ClickHouse.
+  </Card>
+
+  <Card title="Интерфейс Arrow Flight" icon="arrow-right-arrow-left" href="/ru/concepts/features/connect-to-clickhouse/protocols/arrow-flight">
+    Подключайте клиенты Flight SQL с помощью Apache Arrow.
+  </Card>
+
+  <Card title="Интерфейс MySQL" icon="database" href="/ru/concepts/features/connect-to-clickhouse/protocols/compatibility/mysql">
+    Подключайте клиенты, совместимые с MySQL.
+  </Card>
+
+  <Card title="Интерфейс PostgreSQL" icon="database" href="/ru/concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql">
+    Подключайте клиенты, совместимые с PostgreSQL.
+  </Card>
+
+  <Card title="Интерфейс SSH" icon="terminal" href="/ru/concepts/features/connect-to-clickhouse/protocols/ssh">
+    Подключайтесь к серверу ClickHouse с помощью SSH-клиента.
+  </Card>
+</CardGroup>
+
+## Prometheus {#prometheus}
+
+<CardGroup cols={2}>
+  <Card title="API Prometheus и PromQL" icon="chart-line" href="/ru/concepts/features/connect-to-clickhouse/prometheus">
+    Храните метрики Prometheus в ClickHouse и выполняйте к ним запросы на PromQL.
+  </Card>
+
+  <Card title="Конечная точка метрик Prometheus" icon="chart-line" href="/ru/concepts/features/connect-to-clickhouse/prometheus/metrics">
+    Публикуйте метрики сервера ClickHouse, чтобы сервер Prometheus мог выполнять их сбор.
+  </Card>
+</CardGroup>
+
+## Встроенные веб-интерфейсы {#built-in-web-interfaces}
+
+<CardGroup cols={2}>
+  <Card title="Веб-интерфейс SQL (Play)" icon="browser" href="/ru/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql">
+    Встроенный браузерный интерфейс SQL, доступный в ClickHouse по адресу `/play`.
+  </Card>
+
+  <Card title="Консоль SQL" icon="browser" href="/ru/concepts/features/connect-to-clickhouse/built-in-web-interfaces/sql-console">
+    Встроенный веб-интерфейс для выполнения запросов и исследования данных.
+  </Card>
+
+  <Card title="Поиск по документации" icon="book-open" href="/ru/concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search">
+    Поиск по справочной документации, встроенной в работающий сервер ClickHouse.
+  </Card>
+</CardGroup>

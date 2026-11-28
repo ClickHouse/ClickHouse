@@ -100,7 +100,7 @@ block ごとのコーデックは、[`mergeTreeCodecBlockCounts`](/ja/reference/
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "行マスク更新の結合をデフォルトで有効化"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "行マスク更新の結合をデフォルトで有効化"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "この変更は 26.8 にバックポートされ、そちらに記録されています。"}]}]} />
 
 Full storage を使用する Wide パーツに対してミューテーションを実行する際、隣接する単一の `UPDATE _row_exists = 0` コマンドを結合します。永続化されたミューテーションコマンドおよびその
 バージョンは変更されません。

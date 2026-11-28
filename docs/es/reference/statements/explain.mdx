@@ -1081,7 +1081,7 @@ Para cada lado, `EXPLAIN ANALYZE` informa de lo siguiente:
 
 * `rows estimated <estimated_rows>` — la estimación del optimizador de orden de join sobre las filas de ese lado, mostrada para compararla con el valor real de `rows` que aparece junto a ella; `no stats` cuando el optimizador no produjo ninguna estimación (consulte [Métricas estimadas frente a reales de las uniones](#explain-analyze-join-estimation)).
 * `rows <rows>` — el número total de filas de ese lado que pasaron por la unión.
-* `q-error <ratio>`: `max(<estimated_rows> / <rows>, <rows> / <estimated_rows>)` de ese lado, igual que para `Output rows`; se muestra cuando ambos valores son distintos de cero. Si el lado es una lectura de tabla filtrada, corresponde al q-error de la estimación del filtro. Los filtros de JOIN en tiempo de ejecución eliminan filas del lado al que se aplican, y ninguna estimación lo tiene en cuenta; establezca `enable_join_runtime_filters = 0` para comparar únicamente la estimación.
+* `q-error <ratio>`: `max(<estimated_rows> / <rows>, <rows> / <estimated_rows>)` de ese lado, igual que para `Output rows`; se muestra cuando ambos valores son distintos de cero. Si el lado es una lectura de tabla filtrada, corresponde al q-error de la estimación del filtro. Los filtros de JOIN en tiempo de ejecución eliminan filas del lado al que se aplican, y ninguna estimación lo tiene en cuenta; establezca `enable_join_runtime_filters = 0` para comparar únicamente la estimación. Del mismo modo, una unión hash segmentada por rangos de clave primaria (`query_plan_join_shard_by_pk_ranges`) no lee las filas del lado de sondeo de un rango cuyo lado de construcción está vacío, ya que en ese caso no pueden aparecer en el resultado; establezca `query_plan_join_shard_by_pk_ranges = 0` para comparar únicamente la estimación.
 * `matched <matched_rows>` — el número de filas de ese lado que encontraron al menos una fila correspondiente en el otro lado de la unión. Esto cuenta *filas*, no claves: si una clave aparece tres veces en el lado derecho y coincide, las tres filas de ese lado se cuentan como coincidentes.
 * `match rate <match_rate>%` — el porcentaje de filas de ese lado que coincidieron, calculado como `100 * <matched_rows> / <rows>`.
 * `fanout <fanout>` — el número de filas de salida que produjo, en promedio, una fila coincidente de ese lado.
@@ -1143,7 +1143,7 @@ Un `outer join` genera una fila de salida rellenada con `NULL` por cada fila del
 
 #### Cuándo los números requieren `matches = 1` {#explain-analyze-matches}
 
-La mayoría de estos números se obtienen de datos que el join ya genera de todos modos y se muestran con un `EXPLAIN ANALYZE` normal. El resto requiere un seguimiento que el join no realizaría de otro modo, por lo que solo se muestra con `EXPLAIN ANALYZE matches = 1`. Cuáles son depende del algoritmo; en la familia hash hay dos casos:
+La mayoría de estos números se obtienen de datos que la unión ya genera de todos modos y se muestran con un `EXPLAIN ANALYZE` normal. El resto requiere un seguimiento que la unión no realizaría de otro modo, por lo que solo se muestra con `EXPLAIN ANALYZE matches = 1`. Cuáles son depende del algoritmo; en la familia hash hay dos casos:
 
 * el lado **derecho** de `ALL INNER` y `ALL LEFT`, que requiere marcar cada fila derecha coincidente;
 * el lado **izquierdo** de `ALL LEFT` y `ALL FULL`, pero solo cuando la consulta no selecciona nada de la
@@ -1159,11 +1159,13 @@ tipos `ALL` no necesitan nada.
   La opción está desactivada de forma predeterminada porque el seguimiento adicional no es gratuito: su coste es la fidelidad de la medición. El trabajo se realiza dentro del bucle de sondeo y aumenta con el número de filas de salida. Use `matches = 1` cuando necesite conocer las coincidencias exactas que las filas izquierdas y derechas encontraron en el otro lado.
 </Note>
 
-`matches = 1` no permite recopilar todas las combinaciones. El lado sobre el que un join puede informar depende de lo que ese join debe hacer de todos modos, por lo que también depende del algoritmo, además del tipo y la strictness.
+`matches = 1` no permite recopilar todas las combinaciones. El lado sobre el que una unión puede informar depende
+de lo que esa unión debe hacer de todos modos, por lo que también depende del algoritmo, además del tipo y la
+estrictez.
 
 **Familia hash.** `hash`, `parallel_hash` y `grace_hash` siempre se comportan igual:
 
-| Join                                             | `matched` izquierdo | `matched` derecho |
+| Unión                                             | `matched` izquierdo | `matched` derecho |
 | ------------------------------------------------ | ------------------- | ----------------- |
 | `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL` | sí                  | sí                |
 | `SEMI LEFT`, `ANTI LEFT`                         | sí                  | no                |
@@ -1172,11 +1174,13 @@ tipos `ALL` no necesitan nada.
 | `SEMI RIGHT`                                     | no                  | no                |
 | `ANY INNER`, `ANY LEFT`, `ASOF LEFT`             | no                  | no                |
 
-El lado derecho no está disponible cuando el join conserva solo una fila por clave en su tabla hash, como hacen los joins `ANY`, `SEMI` y `ANTI`: las filas derechas duplicadas nunca se almacenan, por lo que no pueden contarse. El lado izquierdo no está disponible cuando el join suprime la salida de una fila izquierda cuya fila asociada ya fue reclamada por otra fila izquierda, lo que hace que las filas emitidas infravaloren el número de filas coincidentes.
+El lado derecho no está disponible cuando la unión conserva solo una fila por clave en su tabla hash, como hacen las uniones `ANY`, `SEMI` y `ANTI`: las filas derechas duplicadas nunca se almacenan, por lo que no pueden contarse. El lado izquierdo no está disponible cuando la unión suprime la salida de una fila izquierda cuya fila asociada ya fue reclamada por otra fila izquierda, lo que hace que las filas emitidas infravaloren el número de filas coincidentes.
+
+Para los tipos `RIGHT` y `FULL`, el lado derecho corresponde a las filas derechas menos las que la unión emite sin fila asociada, una vez finalizado todo el sondeo. Una consulta que se detiene antes de que la unión las haya emitido todas, por ejemplo por un `LIMIT`, lo muestra como `not collected`.
 
 Al habilitar [`any_join_distinct_right_table_keys`](/es/reference/settings/session-settings/other#any_join_distinct_right_table_keys), `ANY` cambia a la semántica anterior de `RightAny`, que emite una fila por cada fila izquierda y, por tanto, conserva ambos recuentos. `ANY RIGHT` y `ANY FULL` informan entonces de **ambos** lados, y `ANY INNER` se reescribe como `SEMI LEFT`.
 
-El motor de tabla [`Join`](/es/reference/engines/table-engines/special/join) sigue la misma tabla y usa el tipo y la strictness declarados en el motor: `Join(ALL, INNER, …)` informa de ambos lados y `Join(ANY, LEFT, …)`, de ninguno.
+El motor de tabla [`Join`](/es/reference/engines/table-engines/special/join) sigue la misma tabla y usa el tipo y la estrictez declarados en el motor: `Join(ALL, INNER, …)` informa de ambos lados y `Join(ANY, LEFT, …)`, de ninguno.
 
 **Algoritmos de fusión.** `full_sorting_merge` y `parallel_full_sorting_merge` aceptan los cuatro tipos `ALL`, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` y `ASOF LEFT`. Informan de **ambos** lados para todos los tipos excepto `ASOF` y `ASOF LEFT`, donde el lado derecho es `not collected`, y lo hacen sin `matches = 1`: recorren las dos entradas ordenadas y ven cada fila de un rango de igualdad a medida que lo consumen, por lo que no es necesario reconstruir nada después.
 
@@ -1184,9 +1188,9 @@ El motor de tabla [`Join`](/es/reference/engines/table-engines/special/join) sig
 
 **`direct`.** Solo el lado izquierdo. El lado derecho es un almacén de clave-valor que nunca se materializa en filas, por lo que no tiene ninguna línea `Right:`.
 
-**`CROSS`, `COMMA` y un `ON` constante.** Ningún lado, como se describe [anteriormente](#explain-analyze-join-algorithm-lines).
+**`CROSS`, `COMMA` y un `ON` constante.** Ninguno de los dos lados, como se describe [más arriba](#explain-analyze-join-algorithm-lines).
 
-**Block nested loop join.** Es el operador que recibe una sección `ON` que no determina ninguna join key, salvo que alguna de las rutas anteriores reclame la condición (consulte [`allow_block_nested_loop_join`](/es/reference/settings/session-settings/allow)). Acepta todos los tipos y estrictez excepto `ASOF`, `PASTE` y `ANY FULL`:
+**Combinación por bucles anidados por bloques.** Es el operador que recibe una sección `ON` que no determina ninguna join key, salvo que alguna de las rutas anteriores reclame la condición (consulte [`allow_block_nested_loop_join`](/es/reference/settings/session-settings/allow)). Acepta todos los tipos y estrictez excepto `ASOF`, `PASTE` y `ANY FULL`:
 
 | Unión                                                         | `matched` izquierda | `matched` derecha |
 | ------------------------------------------------------------- | ------------------- | ----------------- |

@@ -13,7 +13,7 @@ As visualizações baseadas em SQL são úteis quando você precisa ir além do 
 
 ## Criando uma visualização baseada em SQL {#creating-a-raw-sql-chart}
 
-Para criar uma visualização baseada em SQL, abra o editor de um painel do dashboard e selecione **SQL**.
+Para criar uma visualização baseada em SQL, abra o editor de um bloco do dashboard e selecione **SQL**.
 
 <div className="ch-image-lg">
   <Frame>
@@ -24,9 +24,11 @@ Para criar uma visualização baseada em SQL, abra o editor de um painel do dash
 Em seguida:
 
 1. Selecione a **Conexão** em que a consulta será executada.
-2. Opcionalmente, selecione uma **Fonte de dados** — isso permite aplicar filtros no nível do painel ao seu gráfico por meio da macro `$__filters`.
+2. Opcionalmente, selecione uma **Fonte de dados** — isso permite aplicar filtros no nível do painel ao seu gráfico por meio da macro `$__filters` e usar `$__sourceTable` na consulta.
 3. Escreva sua consulta SQL no editor, usando parâmetros de consulta e macros para integrá-la ao intervalo de tempo, aos filtros e às variáveis do dashboard.
 4. Clique em **Executar** para pré-visualizar os resultados e, depois, em **Salvar** para salvar a visualização.
+
+Também é possível usar uma [variável de conexão ou variável de fonte de dados](/pt-BR/clickstack/observability/features/dashboards/overview#source-connection-variables) para definir a conexão ou a fonte de dados, permitindo que o visualizador escolha qual delas será consultada pelo bloco.
 
 ## Parâmetros de consulta {#query-parameters}
 
@@ -104,17 +106,18 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 
 ### Macro de filtro do dashboard {#dashboard-filter-macro}
 
-| Macro        | Descrição                                                                                                         |
-| ------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `$__filters` | Substituído pelas condições de filtragem no nível do dashboard (requer que uma Fonte de dados esteja selecionada) |
+| Macro            | Descrição                                                                                                                                                                                                                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$__filters`     | Substituído pelas condições de filtragem no nível do dashboard (requer que uma Fonte de dados esteja selecionada)                                                                                                                                                                                                                     |
+| `$__sourceTable` | Substituído pelo nome totalmente qualificado da tabela da Fonte de dados selecionada, como `default.otel_logs`. Para fontes de dados de métricas, use `$__sourceTable(<metric type>)`, em que o tipo de métrica é `gauge`, `histogram`, `sum`, `summary` ou `exponential histogram`. Requer que uma Fonte de dados esteja selecionada |
 
 Quando uma **Fonte de dados** está selecionada no gráfico e há filtros de dashboard ativos, `$__filters` se expande para as condições `WHERE` SQL correspondentes. Quando nenhuma fonte de dados está selecionada ou nenhum filtro está aplicado, ele se expande para `(1=1)`; portanto, é sempre seguro incluí-lo em uma cláusula `WHERE`.
 
-Somente os filtros com a opção **Condição de filtragem por difusão** habilitada são aplicados por `$__filters`. Filtros expostos como variáveis são referenciados explicitamente, conforme descrito abaixo.
+`$__filters` aplica os valores selecionados nos filtros de valores de expressões SQL com a opção **Condição de filtragem por difusão** habilitada e as condições dos [filtros ad hoc](/pt-BR/clickstack/observability/features/dashboards/overview#adhoc-filters) que se aplicam à fonte de dados do bloco. Filtros expostos como variáveis são referenciados explicitamente, conforme descrito abaixo.
 
-### Macros de variáveis de dashboard {#dashboard-variables}
+### Macros de variáveis do painel {#dashboard-variables}
 
-Quando um filtro de dashboard está [disponível como variável](/pt-BR/clickstack/observability/features/dashboards/overview#dashboard-variables), seus valores selecionados podem ser referenciados em qualquer parte da consulta. Essas macros só estão disponíveis em blocos de um dashboard que declare pelo menos uma variável.
+Quando um filtro de dashboard está [disponível como variável](/pt-BR/clickstack/observability/features/dashboards/overview#dashboard-variables) — um filtro de valores de expressão SQL com **Available as variable** habilitado, ou qualquer filtro de valores estáticos, valores de consulta SQL ou valores de rótulo PromQL —, seus valores selecionados podem ser referenciados em qualquer parte da consulta. Essas macros só estão disponíveis em blocos de um dashboard que declare pelo menos uma variável.
 
 | Macro                                         | Descrição                                                                                                                                     |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |

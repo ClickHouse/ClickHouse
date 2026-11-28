@@ -110,7 +110,7 @@ ClickPipes는 다음과 같은 경우 JSON 타입을 지원합니다.
 
 #### 지원되는 Avro 데이터 타입 {#supported-avro-data-types}
 
-ClickPipes는 `local-timestamp-millis` 및 `local_timestamp-micros`를 제외한 모든 Avro Primitive 및 Complex 타입과 모든 Avro Logical 타입을 지원합니다. Avro `record` 타입은 Tuple로, `array` 타입은 배열로, `map` 타입은 맵으로(문자열 키만 지원) 변환됩니다. 일반적으로 [여기](/ko/concepts/features/interfaces/schema-inference#avro)에 나열된 변환을 사용할 수 있습니다. ClickPipes는 타입 변환 시 오버플로우나 정밀도 손실을 검사하지 않으므로, Avro 숫자 타입에는 정확히 일치하는 타입을 사용하는 것이 좋습니다. 또는 모든 Avro 타입을 `String` 컬럼에 삽입할 수 있으며, 이 경우 유효한 JSON 문자열로 표현됩니다.
+ClickPipes는 `local-timestamp-millis` 및 `local_timestamp-micros`를 제외한 모든 Avro Primitive 및 Complex 타입과 모든 Avro Logical 타입을 지원합니다. Avro `record` 타입은 Tuple로, `array` 타입은 배열로, `map` 타입은 맵으로(문자열 키만 지원) 변환됩니다. 일반적으로 [여기](/ko/concepts/features/operations/insert/schema-inference#avro)에 나열된 변환을 사용할 수 있습니다. ClickPipes는 타입 변환 시 오버플로우나 정밀도 손실을 검사하지 않으므로, Avro 숫자 타입에는 정확히 일치하는 타입을 사용하는 것이 좋습니다. 또는 모든 Avro 타입을 `String` 컬럼에 삽입할 수 있으며, 이 경우 유효한 JSON 문자열로 표현됩니다.
 
 #### 널 허용 타입과 Avro 유니온 {#nullable-types-and-avro-unions}
 

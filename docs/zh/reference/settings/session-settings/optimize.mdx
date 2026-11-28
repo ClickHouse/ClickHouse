@@ -80,7 +80,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-如果 DISTINCT 中的某些列构成排序前缀，则启用 DISTINCT 优化。例如，MergeTree 中 sorting key 的前缀，或 ORDER BY 语句中的前缀。
+如果 DISTINCT 中的某些列构成排序前缀，则启用 DISTINCT 优化。例如，MergeTree 中 sorting key 的前缀，或 ORDER BY 语句中的前缀。对于使用 vertical `FINAL` (参见 `enable_vertical_final`) 的 `FINAL` 读取，该优化不会生效；除非 `LIMIT` 使 `DISTINCT` 能够提前停止读取，或者读取因其他原因 (例如 `ORDER BY`) 本身已按顺序进行。
 
 ## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
 
@@ -334,7 +334,9 @@ SELECT * FROM test2;
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-根据输入流的排序属性优化排序
+如果进入 `ORDER BY` 的数据已按 sorting key 的某个前缀排序 (例如经过带有 `ORDER BY` 的子查询或排序合并 JOIN 之后) ，则只对该前缀值相同的行进行排序，而无需对全部数据排序。后续连接在排序时也会复用排序合并 JOIN 结果的顺序。
+
+仅在启用 `query_plan_enable_optimizations` 时生效。
 
 ## optimize_substitute_columns {#optimize_substitute_columns}
 

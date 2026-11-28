@@ -3486,7 +3486,8 @@ Introduit dans : v20.4.0
 Applique une fonction d’agrégation aux éléments du tableau dans les plages indiquées et renvoie un tableau contenant le résultat correspondant à chaque plage.
 La fonction renvoie le même résultat que plusieurs `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
 La seule différence est que la longueur est non signée : une longueur supérieure à la valeur maximale de `Int64` sélectionne le reste du tableau,
-alors que `arraySlice` interprète une telle valeur comme une longueur négative.
+alors que `arraySlice` interprète une telle valeur comme une longueur négative. De même, un index `UInt64` supérieur à la valeur maximale de `Int64`
+se situe au-delà de la fin du tableau.
 
 **Syntaxe**
 

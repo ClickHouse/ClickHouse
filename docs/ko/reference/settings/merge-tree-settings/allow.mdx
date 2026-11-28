@@ -111,7 +111,7 @@ ClickHouse Cloud에서만 사용할 수 있습니다
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-동일한 표현식을 사용하는 프라이머리/세컨더리 인덱스와 정렬 키를 거부합니다
+동일한 표현식을 사용하는 프라이머리/보조 인덱스와 정렬 키를 거부하며, 저장된 컬럼과 이름이 같은 표현식을 정렬 키, 기본 키, 샘플링 키, 보조 인덱스 또는 프로젝션(projection)의 정렬 키에 사용하는 것도 거부합니다
 
 ## allow_tuple_element_aggregation {#allow_tuple_element_aggregation}
 

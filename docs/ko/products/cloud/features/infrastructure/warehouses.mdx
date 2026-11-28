@@ -147,7 +147,7 @@ IP 필터링 설정은 각 서비스에 개별적으로 적용할 수 있으므�
 
 <Note>
   1. 읽기 전용 서비스는 현재 사용자 관리 작업(CREATE, DROP 등)을 지원합니다.
-  2. [갱신 가능 구체화 뷰](/ko/concepts/features/materialized-views/refreshable-materialized-view)는 웨어하우스의 읽기-쓰기(RW) 서비스에서**만** 실행됩니다.
+  2. 갱신이 조정되는(기본값) [갱신 가능 구체화 뷰](/ko/concepts/features/materialized-views/refreshable-materialized-view)는 웨어하우스의 읽기-쓰기(RW) 서비스에서**만** 실행됩니다. `APPEND`와 `SETTINGS all_replicas = 1`로 생성된 뷰는 갱신이 조정되지 않습니다. 읽기 전용 서비스를 포함한 모든 서비스가 매번 갱신을 시도하며, 읽기 전용 서비스에서는 뷰가 외부 스토리지에 데이터를 쓰지 않는 한 각 시도가 `QUERY_IS_PROHIBITED`(코드 392) 오류로 실패합니다.
   3. 서비스 유형(읽기 전용 또는 읽기-쓰기)은 생성 시 고정되며, 이후에는 Cloud Console에서 변경할 수 없습니다. 읽기 전용과 읽기-쓰기 액세스 간에 전환하려면 원하는 유형으로 웨어하우스에 새 서비스를 생성하십시오.
 </Note>
 

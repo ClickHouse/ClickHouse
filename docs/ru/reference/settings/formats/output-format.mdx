@@ -162,6 +162,15 @@ ClickHouse читает такой столбец обратно в тип, ук
 Записывает значения `UUID` как обычный тип Arrow `FixedSizeBinary(16)` без указания типа расширения `arrow.uuid` в метаданных поля.
 Используйте эту настройку для считывателей Arrow, которые не поддерживают тип расширения `arrow.uuid`.
 
+## output_format_arrow_variant_as_json_string {#output_format_arrow_variant_as_json_string}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка для записи Variant в столбец Utf8 в виде строки с JSON-представлением значения вместо плотного объединения (dense union) Arrow."}]}]} />
+
+Записывает значения `Variant` в допускающий NULL столбец Arrow `Utf8`, содержащий JSON-представление каждого значения (как в формате `JSONEachRow`, например, значение `String` заключается в кавычки), вместо плотного объединения (dense union) Arrow. Используйте эту настройку для считывателей Arrow, которые не поддерживают объединения.
+Значение `NULL` записывается как null в Arrow. Исключение — ключ `Map`: Arrow не допускает null в ключах, поэтому в этом случае записывается JSON-значение `null`.
+
 ## output_format_avro_codec {#output_format_avro_codec}
 
 Кодек сжатия, используемый для вывода данных. Возможные значения: &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;, &#39;bzip2&#39;, &#39;xz&#39;.
@@ -762,6 +771,14 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Метод сжатия для выходного формата Parquet. Поддерживаемые кодеки: snappy, lz4, brotli, zstd, gzip, none (без сжатия)
 
+## output_format_parquet_data_page_row_limit {#output_format_parquet_data_page_row_limit}
+
+<SettingsInfoBlock type="UInt64" default_value="20000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "20000"},{"label": "Новая настройка: страница данных Parquet завершается после 20000 строк, как в parquet-mr и Arrow, чтобы индекс страниц мог пропускать части хорошо сжимаемых столбцов."}]}]} />
+
+Максимальное количество строк в странице данных; проверяется каждые [output&#95;format&#95;parquet&#95;batch&#95;size](/ru/reference/settings/formats/output-format#output_format_parquet_batch_size) значений. Страница также завершается при достижении [output&#95;format&#95;parquet&#95;data&#95;page&#95;size](/ru/reference/settings/formats/output-format#output_format_parquet_data_page_size). Без этого ограничения хорошо сжимаемый столбец (например, отсортированный) помещает всю группу строк в одну страницу, и индекс страниц не может пропустить ни одной его части. 0 означает отсутствие ограничения.
+
 ## output_format_parquet_data_page_size {#output_format_parquet_data_page_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
@@ -857,6 +874,14 @@ SELECT area/period FROM account_orders FORMAT JSON;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
 Кодирует столбцы `Float32` и `Float64` (Parquet `FLOAT` и `DOUBLE`) с помощью кодирования `ALP` (Adaptive Lossless floating-Point). `ALP` работает без потерь и сжимает данные с плавающей точкой, близкие к десятичным (цены, результаты измерений, координаты), значительно эффективнее, чем `PLAIN`. Такие столбцы записываются без словаря, а страница, для которой `ALP` дало бы больший размер, чем `PLAIN`, записывается в кодировании `PLAIN`. Это кодирование появилось в формате Parquet недавно, поэтому пока его поддерживают не все ридеры Parquet: включайте настройку, только если файлы будут читаться ридерами Parquet, которые его поддерживают.
+
+## output_format_parquet_use_data_page_v2 {#output_format_parquet_use_data_page_v2}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Новая настройка."}]}]} />
+
+Записывает страницы данных Parquet в формате `DataPageV2` вместо `DataPage` (V1). `DataPageV2` хранит уровни повторения и определения в несжатом виде, поэтому считыватели могут получать значения NULL и размеры массивов без распаковки значений. Кроме того, в этом формате количество строк и значений NULL записывается в заголовок страницы, а страницы начинаются на границах строк. Некоторые ридеры Parquet не поддерживают `DataPageV2`.
 
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
@@ -1158,6 +1183,39 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 При сериализации столбцов с типом Nullable с помощью обёрток Google значения по умолчанию сериализуются как пустые обёртки. Если этот параметр отключён, значения по умолчанию и значения NULL не сериализуются
+
+## output_format_puffin_blob_type {#output_format_puffin_blob_type}
+
+<SettingsInfoBlock type="String" default_value="deletion-vector-v1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "deletion-vector-v1"},{"label": "Новая настройка для формата вывода `Puffin`: тип записываемых blob-объектов."}]}]} />
+
+Тип blob-объектов, записываемых форматом вывода `Puffin`. Возможные значения:
+
+* `deletion-vector-v1` — входные данные содержат два столбца: файл данных, на который указывает ссылка, и позиции удалённых строк; для каждого такого файла данных записывается один blob-объект вектора удаления.
+* `apache-datasketches-theta-v1` — каждый входной столбец преобразуется в один blob-объект скетча Apache DataSketches Theta, построенный по его non-NULL значениям; свойству `ndv` при этом присваивается оценка количества уникальных значений — так же, как Iceberg записывает статистику столбцов.
+
+## output_format_puffin_field_ids {#output_format_puffin_field_ids}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "Новая настройка для формата вывода `Puffin`: идентификаторы полей Iceberg для столбцов, используемых в blob-объектах Theta-скетчей."}]}]} />
+
+Разделённый запятыми список идентификаторов полей Iceberg для входных столбцов, который формат вывода `Puffin` записывает в `fields` blob-объектов `apache-datasketches-theta-v1`. Обязателен для записи Theta-скетчей.
+
+## output_format_puffin_sequence_number {#output_format_puffin_sequence_number}
+
+<SettingsInfoBlock type="Int64" default_value="-1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "-1"},{"label": "Новая настройка для формата вывода `Puffin`: порядковый номер blob-объектов со скетчами Theta."}]}]} />
+
+Порядковый номер Iceberg, который формат вывода `Puffin` записывает в blob-объекты `apache-datasketches-theta-v1`: порядковый номер снимка, по которому была вычислена статистика. Необходим для записи скетчей Theta.
+
+## output_format_puffin_snapshot_id {#output_format_puffin_snapshot_id}
+
+<SettingsInfoBlock type="Int64" default_value="-1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "-1"},{"label": "Новая настройка для формата вывода `Puffin`: идентификатор снимка для blob-объектов со скетчами Theta."}]}]} />
+
+Идентификатор снимка Iceberg, который формат вывода `Puffin` записывает в blob-объекты `apache-datasketches-theta-v1`, — снимка, по которому была вычислена статистика. Необходим для записи скетчей Theta.
 
 ## output_format_schema {#output_format_schema}
 

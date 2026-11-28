@@ -323,14 +323,14 @@ SELECT dateTimeToSnowflakeID(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))
 
 ## dateTimeToUUIDv7 {#dateTimeToUUIDv7}
 
-Introduit dans : v25.8.0
+Introduit dans : v25.8.0
 
 Convertit une valeur [DateTime](/fr/reference/data-types/datetime) en [UUIDv7](https://www.rfc-editor.org/rfc/rfc9562) pour l’instant donné, tel que défini par la [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 Voir la section [&quot;Génération des UUIDv7&quot;](#uuidv7-generation) pour plus de détails sur la structure des UUID, la gestion du compteur et les garanties de concurrence.
 
 <Note>
-  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -341,7 +341,7 @@ dateTimeToUUIDv7(value)
 
 **Arguments**
 
-* `value` — Date et heure. [`DateTime`](/fr/reference/data-types/datetime)
+* `value` — Date avec heure. [`DateTime`](/fr/reference/data-types/datetime)
 
 **Valeur renvoyée**
 
@@ -357,7 +357,7 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
 
 ```response title=Response
 ┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
-│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                 │
+│ 017b4976-0320-704b-b246-ff82ebc22cfd                                 │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 

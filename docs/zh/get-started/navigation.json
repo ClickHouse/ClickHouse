@@ -9,12 +9,12 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "快速入门",
+          "group": "Quickstarts",
           "pages": [
             "zh/get-started/quickstarts/home",
             {
               "expanded": false,
-              "group": "所有用例",
+              "group": "All use cases",
               "pages": [
                 "zh/get-started/setup/cloud",
                 "zh/get-started/quickstarts/obtain-your-cloud-connection-details",
@@ -26,7 +26,7 @@
             },
             {
               "expanded": false,
-              "group": "实时分析",
+              "group": "Real-time analytics",
               "pages": [
                 "zh/get-started/quickstarts/create-your-first-materialized-view",
                 "zh/get-started/quickstarts/create-your-first-projection"
@@ -34,7 +34,7 @@
             },
             {
               "expanded": false,
-              "group": "数据仓库",
+              "group": "Data warehousing",
               "pages": [
                 "zh/get-started/quickstarts/connect-your-iceberg-catalog",
                 "zh/get-started/quickstarts/mutations"
@@ -42,7 +42,7 @@
             },
             {
               "expanded": false,
-              "group": "可观测性",
+              "group": "Observability",
               "pages": [
                 "zh/get-started/quickstarts/working-with-the-map-type"
               ]

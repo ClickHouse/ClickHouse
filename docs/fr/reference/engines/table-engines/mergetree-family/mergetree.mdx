@@ -1388,12 +1388,14 @@ ne s’appuient pas sur elle.
 
 ## Paramètres au niveau des colonnes {#column-level-settings}
 
-Certains paramètres de MergeTree peuvent être redéfinis au niveau des colonnes :
+Certains paramètres de MergeTree peuvent être redéfinis au niveau des colonnes :
 
-* `max_compress_block_size` — Taille maximale des blocs de données non compressées avant leur compression pour l’écriture dans une table.
+* `max_compress_block_size` — Taille maximale des blocs de données non compressées avant leur compression pour l’écriture dans une table. Un bloc compressé contient au plus 256 Mio de données non compressées : toute valeur supérieure à 256 Mio est donc traitée comme 256 Mio. Les données écrites en blocs plus volumineux par des versions antérieures ne peuvent pas être lues.
 * `min_compress_block_size` — Taille minimale des blocs de données non compressées requise pour la compression lors de l’écriture du mark suivant.
 
-Exemple :
+Pour une colonne dotée d’un codec `Quantized`, ces deux paramètres s’appliquent uniquement à ses vecteurs (les éléments du tableau) ; les tailles de tableau et les codes quantifiés utilisent les valeurs définies au niveau de la table. Les tailles de tableau partagées par plusieurs colonnes d’une structure `Nested` ne sont écrites qu’une seule fois, avec les paramètres de la première colonne qui les écrit.
+
+Exemple :
 
 ```sql
 CREATE TABLE tab
@@ -1405,15 +1407,15 @@ ENGINE = MergeTree
 ORDER BY id
 ```
 
-Les paramètres au niveau des colonnes peuvent être modifiés ou supprimés à l’aide de [ALTER MODIFY COLUMN](/fr/reference/statements/alter/column), par exemple :
+Les paramètres au niveau des colonnes peuvent être modifiés ou supprimés à l’aide de [ALTER MODIFY COLUMN](/fr/reference/statements/alter/column), par exemple :
 
-* Supprimez `SETTINGS` de la déclaration de la colonne :
+* Supprimez `SETTINGS` de la déclaration de la colonne :
 
 ```sql
 ALTER TABLE tab MODIFY COLUMN document REMOVE SETTINGS;
 ```
 
-* Modifiez un paramètre :
+* Modifiez un paramètre :
 
 ```sql
 ALTER TABLE tab MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 8192;

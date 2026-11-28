@@ -1,0 +1,967 @@
+---
+description: 'ClickHouse のコマンドラインクライアントインターフェイスに関するドキュメント'
+sidebarTitle: 'ClickHouse クライアント'
+slug: /concepts/features/connect-to-clickhouse/native-tools/clickhouse-client
+title: 'ClickHouse クライアント'
+doc_type: 'reference'
+---
+
+ClickHouse には、ClickHouseサーバーに対して SQL クエリを直接実行できるネイティブのコマンドラインクライアントが用意されています。
+対話型モード (クエリをその場で実行する用途) とバッチモード (スクリプトや自動化の用途) の両方に対応しています。
+クエリ結果は端末に表示することも、ファイルにエクスポートすることもでき、Pretty、CSV、JSON をはじめとする ClickHouse のすべての出力[フォーマット](/ja/reference/formats/index)に対応しています。
+
+クライアントはクエリ実行中、プログレスバーに加えて読み取り行数、処理済みバイト数、クエリ実行時間をリアルタイムに表示します。
+[コマンドラインオプション](#command-line-options)と[設定ファイル](#configuration_files)の両方による設定が可能です。
+
+## インストール {#install}
+
+ClickHouse をダウンロードするには、次のコマンドを実行します。
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+あわせてインストールするには、次のコマンドを実行します。
+
+```bash
+sudo ./clickhouse install
+```
+
+その他のインストールオプションについては、[ClickHouse のインストール](/ja/get-started/setup/install) を参照してください。
+
+クライアントとサーバーはバージョンが異なっていても互換性がありますが、古いクライアントでは一部の機能を利用できない場合があります。クライアントとサーバーには同じバージョンを使用することを推奨します。
+
+## 実行 {#run}
+
+<Note>
+  ClickHouse をダウンロードしただけでインストールしていない場合は、`clickhouse-client` の代わりに `./clickhouse client` を使用してください。
+</Note>
+
+ClickHouseサーバーに接続するには、次のコマンドを実行します。
+
+```bash
+$ clickhouse-client --host server
+
+ClickHouse client version 24.12.2.29 (official build).
+Connecting to server:9000 as user default.
+Connected to ClickHouse server version 24.12.2.
+
+:)
+```
+
+必要に応じて、追加の接続情報を指定します。
+
+| オプション                            | 説明                                                                                                                                                                                                                                                        |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--port <port>`                  | ClickHouseサーバーが接続を受け付けるポートです。デフォルトのポートは 9440 (TLS) と 9000 (TLS なし) です。`--port` と `--secure` のどちらも指定されていない場合は、両方のデフォルトポートに同時に接続を試み、先に応答したほうを使用します。そのため、一方のポートでのみ待ち受けているサーバーにも、もう一方の接続タイムアウトを待たずに接続できます。なお、ClickHouse クライアントは HTTP(S) ではなくネイティブプロトコルを使用します。 |
+| `-s [ --secure ]`                | TLS を使用するかどうか (通常は自動検出されます)。                                                                                                                                                                                                                              |
+| `-u [ --user ] <username>`       | 接続に使用するデータベースユーザーです。デフォルトでは `default` ユーザーとして接続します。                                                                                                                                                                                                       |
+| `--password <password>`          | データベースユーザーのパスワードです。接続用のパスワードは設定ファイルで指定することもできます。パスワードを指定しない場合は、クライアントが入力を求めます。                                                                                                                                                                            |
+| `-c [ --config ] <path-to-file>` | ClickHouse クライアントの設定ファイルの場所です。設定ファイルがデフォルトの場所にない場合に指定します。[設定ファイル](#configuration_files)を参照してください。                                                                                                                                                         |
+| `--connection <name>`            | [設定ファイル](#connection-credentials)で事前に定義した接続情報の名前です。                                                                                                                                                                                                       |
+
+コマンドラインオプションの完全な一覧については、[コマンドラインオプション](#command-line-options)を参照してください。
+
+### ClickHouse Cloud への接続 {#connecting-cloud}
+
+ClickHouse Cloud サービスの接続情報は、ClickHouse Cloud コンソールで確認できます。接続するサービスを選択し、**接続** をクリックします。
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud サービスの接続ボタン](/images/_snippets/cloud-connect-button.webp)
+  </Frame>
+</div>
+
+<br />
+
+<br />
+
+**Native** を選択すると、接続情報が `clickhouse-client` コマンドの例とともに表示されます。
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud のネイティブTCP接続情報](/images/_snippets/connection-details-native.webp)
+  </Frame>
+</div>
+
+### 接続情報を設定ファイルに保存する {#connection-credentials}
+
+1台以上のClickHouseサーバーの接続情報を[設定ファイル](#configuration_files)に保存できます。
+
+フォーマットは次のとおりです。
+
+```xml
+<config>
+    <connections_credentials>
+        <connection>
+            <name>default</name>
+            <hostname>hostname</hostname>
+            <port>9440</port>
+            <secure>1</secure>
+            <user>default</user>
+            <password>password</password>
+            <!-- <history_file></history_file> -->
+            <!-- <history_max_entries></history_max_entries> -->
+            <!-- <accept-invalid-certificate>false</accept-invalid-certificate> -->
+            <!-- <prompt></prompt> -->
+        </connection>
+    </connections_credentials>
+</config>
+```
+
+詳細については、[設定ファイルのセクション](#configuration_files)を参照してください。
+
+<Note>
+  クエリ構文に焦点を当てるため、以降の例では接続情報 (`--host`、`--port` など) を省略しています。実際にコマンドを実行する際は、忘れずに指定してください。
+</Note>
+
+## 対話型モード {#interactive-mode}
+
+### 対話型モードを使用する {#using-interactive-mode}
+
+ClickHouse を対話型モードで実行するには、次のコマンドを実行します。
+
+```bash
+clickhouse-client
+```
+
+これにより Read-Eval-Print Loop (REPL) が起動し、SQL クエリを対話的に入力できるようになります。
+接続すると、クエリを入力するためのプロンプトが表示されます。
+
+```bash
+ClickHouse client version 25.x.x.x
+Connecting to localhost:9000 as user default.
+Connected to ClickHouse server version 25.x.x.x
+
+hostname :)
+```
+
+対話型モードでは、デフォルトの出力フォーマットは `PrettyCompact` です。
+フォーマットは、クエリの `FORMAT` 句で変更するか、`--format` コマンドラインオプションを指定して変更できます。
+Vertical形式を使用するには、`--vertical` を指定するか、クエリの末尾に `\G` を付けます。
+この形式では各値が1行ずつ出力されるため、列数の多いテーブルを扱う際に便利です。
+
+対話型モードでは、デフォルトで `Enter` キーを押すと入力した内容が実行されます。
+クエリの末尾にセミコロンを付ける必要はありません。
+
+`-m, --multiline` パラメーターを指定してクライアントを起動することもできます。
+複数行のクエリを入力するには、改行の前にバックスラッシュ `\` を入力します。
+`Enter` を押すと、クエリの次の行の入力を求められます。
+クエリを実行するには、末尾をセミコロンで終えてから `Enter` を押します。
+
+ClickHouse クライアントは `replxx` (`readline` に類似) をベースにしているため、使い慣れたキーボードショートカットを利用でき、履歴も保持されます。
+履歴はデフォルトで `~/.clickhouse-client-history` に書き込まれます。
+
+クライアントを終了するには、`Ctrl+D` を押すか、クエリの代わりに次のいずれかを入力します。
+
+* `exit` または `exit;`
+* `quit` または `quit;`
+* `q`、`Q` または `:q`
+* `logout` または `logout;`
+
+### ヘルプの表示 {#getting-help}
+
+クライアントを離れることなく、関数、テーブルエンジン、データ型、フォーマット、設定など、システムのあらゆる構成要素のドキュメントを参照できます。`help` に続けて名前を入力します (同等の形式である `/help`、`man`、`/man` も使用できます) 。
+
+```text
+help domainWithoutWWW
+```
+
+ルックアップは大文字と小文字を区別せずに行われ、[`system.documentation`](/ja/reference/system-tables/documentation) テーブルに対してクエリが実行されます。一致したドキュメントは Markdown から端末上にレンダリングされ、太字や斜体のテキスト、テーブル、シンタックスハイライトされたコードブロックが表示されます。同じ名前が複数のコンポーネントで使われている場合 (例えば `file` は関数であると同時にテーブルエンジンでもあります) 、それらがすべて表示されます。
+
+完全に一致するものがない場合、クライアントは類似した名前 (タイプミスも考慮) と、ドキュメント内でその語に言及しているコンポーネントを一覧表示します:
+
+```text
+help maxx_threads
+```
+
+`help` とだけ入力すると、使い方の簡単な説明が表示されます。
+
+### コマンド {#slash-commands}
+
+クライアントは、`/` で始まるいくつかのコマンドをサーバーに送信せず、自身で実行します。
+
+| コマンド                                                  | 説明                                                                            |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `/help <name>`, `/man <name>`                         | `<name>` のドキュメントを表示します。前述の `help` と同じです                                       |
+| `/clear`                                              | 端末をクリアします                                                                     |
+| `/dialect <name>`, `/lang <name>`, `/language <name>` | SQL方言を切り替えます。引数なしで入力すると、現在のSQL方言を表示します ([後述](#switching-the-sql-dialect)を参照)  |
+
+入力の先頭で `/` を入力すると、コマンドが[ヒント](#command-line-options-formatting)として一覧表示され、名前を続けて入力すると候補が絞り込まれます。`Tab` を押すと入力中のコマンドが補完されます。ヒントが無効化されている場合も、この方法でコマンドを補完できます。`/` を単独で送信した場合はコマンドとして扱われず、Oracle SQL*Plus と同様に直前の入力を再実行します。コマンド名を誤入力した場合は、クエリとして実行されずにエラーとして報告され、入力しようとしたと思われるコマンドの候補が提示されます。
+
+```text
+:) /hepl
+
+Exception on client:
+Code: 36. DB::Exception: Unknown command `/hepl`. Maybe you meant: ['/help']. Type `/` at the beginning of the line to see all the commands. (BAD_ARGUMENTS)
+```
+
+### SQL方言の切り替え {#switching-the-sql-dialect}
+
+クライアントは複数のダイアレクトでクエリをパースできます ([`dialect`](/ja/reference/settings/session-settings/other#dialect) 設定を参照してください) 。ダイアレクトを切り替えるには、`/dialect` に続けてダイアレクト名を入力します (同等の形式である `/language` や `/lang` も使用できます) 。
+
+```text
+/dialect polyglot
+```
+
+このコマンドは `SET dialect = 'polyglot'` と同等ですが、`SET` クエリとは異なり、現在のダイアレクトでパースされる必要がありません。そのため、現在のダイアレクトではそのようなクエリを表現できない場合 (たとえば PromQL には `SET`文がありません) でも使用できます。デフォルト以外のダイアレクトが有効になっている間は、プロンプト内のサーバー表示名の後にそのダイアレクト名が表示されます:
+
+```text
+clickhouse-cloud (polyglot) :)
+```
+
+カスタムプロンプト(`--prompt` オプションを参照)に `{display_name}` プレースホルダーを含める必要はありません。含めない場合、ダイアレクトはプロンプトの末尾に追記されます。
+
+`/dialect` だけを入力すると、現在のダイアレクトが表示されます。
+
+このコマンドは対話型モードでのみ認識されます。非対話型のスクリプトは全体が SQL としてパースされるため、ダイアレクトは `--dialect` オプション、または `SET dialect = ...` ステートメントで指定します。`clickhouse-local` のクエリテキスト全体がこのコマンドのみである場合(例: `clickhouse-local -q '/dialect kusto'`)、このコマンドは対話型モードでのみ使用できる旨のメッセージが表示され、拒否されます。より長いスクリプトの中では、このコマンドはまったく認識されず、他のテキストと同様にスクリプトの一部としてパースされます。
+
+### クエリ処理情報 {#processing-info}
+
+クエリの処理中、クライアントには次の情報が表示されます。
+
+1. 進捗。デフォルトでは、更新頻度は最大で 1 秒あたり 10 回です。
+   短時間で終わるクエリでは、進捗が表示される前に完了する場合があります。
+2. パース後のフォーマットされたクエリ (デバッグ用) 。
+3. 指定された形式での結果。
+4. 結果の行数、経過時間、およびクエリ処理の平均速度。
+   データ量はすべて非圧縮データ換算の値です。
+
+長時間かかっているクエリは、`Ctrl+C` を押してキャンセルできます。
+ただし、サーバーがリクエストを中止するまで、しばらく待つ必要があります。
+クエリの処理ステージによっては、キャンセルできない場合があります。
+待たずに `Ctrl+C` をもう一度押すと、クライアントは終了します。
+
+ClickHouse クライアントでは、クエリの実行時に外部データ (外部一時テーブル) を渡すことができます。
+詳細については、[クエリ処理のための外部データ](/ja/reference/engines/table-engines/special/external-data) セクションを参照してください。
+
+### 別名 {#cli_aliases}
+
+REPL 内では、次の別名を使用できます。
+
+* `\l` - `SHOW DATABASES`
+* `\d` - `SHOW TABLES`
+* `\d <TABLE>` - `DESCRIBE TABLE <TABLE>`
+* `\c <DATABASE>` - `USE <DATABASE>`
+* `.` - 直前のクエリを再実行
+
+`\d` の引数がテーブル名ではなく `SHOW TABLES` クエリの続きとなる場合 (`\d FROM system` や `\d LIKE 'hits%'` など) は、引き続き一覧表示として扱われます。これらの句と同じ名前のテーブルを指定する場合は、`` \d `format` `` のように引用符で囲む必要があります。
+
+### キーボードショートカット {#keyboard_shortcuts}
+
+* `Alt (Option) + Shift + e` - 現在のクエリをエディタで開きます。使用するエディタは環境変数 `EDITOR` で指定できます。デフォルトでは `vim` が使用されます。
+* `Alt (Option) + #` - 行をコメントアウトします。
+* `Ctrl + r` - 履歴をあいまい検索します。
+
+利用可能なキーボードショートカットの一覧は [replxx](https://github.com/AmokHuginnsson/replxx/blob/1f149bf/src/replxx_impl.cxx#L262) で確認できます。
+
+<Tip>
+  MacOS でメタキー (Option) が正しく動作するように設定するには、次の手順を実行します。
+
+  iTerm2: Preferences -&gt; Profile -&gt; Keys -&gt; Left Option key に移動し、Esc+ をクリックします。
+</Tip>
+
+### Vim モード {#vim-mode}
+
+`--vim` パラメーターを指定してクライアントを起動すると、`vim` 風のキー操作でクエリを編集できます。
+入力は挿入モードで始まります。`Esc` を押すとノーマルモードに切り替わり、モーション (`h`、`j`、`k`、`l`、`w`、`b`、`e`、`0`、`$`、`f`、`t`、`%`、`gg`、`G` など) 、カウント付きのオペレーター (`d`、`c`) とテキストオブジェクト (`iw`、`aw`、`i(`、`a(` など) 、および `x`、`r`、`s`、`o`、`A`、`I`、`D`、`C` などのコマンドを使用できます。
+vim モードでは、`Enter` を押すと、挿入モードでは改行が挿入され、ノーマルモードでは次の行へ移動します。クエリを送信するには `Ctrl + j` を押します。
+ノーマルモードで `v` を押すと、現在のクエリをエディタで開けます (埋め込みクライアントでは使用できません) 。
+履歴検索のショートカット (`Ctrl + r`、`Ctrl + s`、`Ctrl + t`、`Alt + r`) および `Alt + #` は、ノーマルモードでも使用できます。
+
+## バッチモード {#batch-mode}
+
+### バッチモードの使用 {#using-batch-mode}
+
+ClickHouse クライアントは、対話型で使用する代わりにバッチモードで実行することもできます。
+バッチモードでは、ClickHouse は単一のクエリを実行するとすぐに終了します。対話型のプロンプトやループはありません。
+
+単一のクエリは次のように指定します:
+
+```bash
+$ clickhouse-client "SELECT sum(number) FROM numbers(10)"
+45
+```
+
+`--query` コマンドラインオプションを使用することもできます:
+
+```bash
+$ clickhouse-client --query "SELECT uniq(number) FROM numbers(10)"
+10
+```
+
+`stdin` からクエリを渡すこともできます：
+
+```bash
+$ echo "SELECT avg(number) FROM numbers(10)" | clickhouse-client
+4.5
+```
+
+`messages` テーブルが存在する場合は、コマンドラインからデータを挿入することもできます。
+
+```bash
+$ echo "Hello\nGoodbye" | clickhouse-client --query "INSERT INTO messages FORMAT CSV"
+```
+
+`--query` を指定した場合、入力はすべて改行を挟んでリクエストの末尾に追記されます。
+
+### リモートの ClickHouse サービスへの CSV ファイルの挿入 {#cloud-example}
+
+この例では、サンプルデータセットの CSV ファイル `cell_towers.csv` を、`default` データベース内の既存テーブル `cell_towers` に挿入します。
+
+```bash
+clickhouse-client --host HOSTNAME.clickhouse.cloud \
+  --port 9440 \
+  --user default \
+  --password PASSWORD \
+  --query "INSERT INTO cell_towers FORMAT CSVWithNames" \
+  < cell_towers.csv
+```
+
+### コマンドラインからのデータ挿入の例 {#more-examples}
+
+コマンドラインからデータを挿入する方法はいくつかあります。
+次の例では、バッチモードを使用して、CSV データ 2 行を ClickHouse テーブルに挿入します。
+
+```bash
+echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | \
+  clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+```
+
+以下の例では、`cat <<_EOF` でヒアドキュメントを開始し、再び `_EOF` が現れるまでの内容をすべて読み取ってから出力します。
+
+```bash
+cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+3, 'some text', '2016-08-14 00:00:00'
+4, 'some more text', '2016-08-14 00:00:01'
+_EOF
+```
+
+以下の例では、`cat` を使用して file.csv の内容を stdout に出力し、パイプで `clickhouse-client` に入力として渡しています。
+
+```bash
+cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+```
+
+バッチモードでは、デフォルトのデータ[フォーマット](/ja/reference/formats/index)は `TabSeparated` です。
+上記の例のように、クエリの `FORMAT` 句でフォーマットを指定できます。
+
+## パラメーター付きクエリ {#cli-queries-with-parameters}
+
+クエリ内にパラメーターを指定し、その値をコマンドラインオプションで渡すことができます。
+これにより、クライアント側で特定の動的な値を埋め込んでクエリをフォーマットする必要がなくなります。
+例:
+
+```bash
+$ clickhouse-client --param_parName="[1, 2]" --query "SELECT {parName: Array(UInt16)}"
+[1,2]
+```
+
+[対話型 session](#interactive-mode) 内からパラメーターを設定することもできます。
+
+```text highlight={4,14}
+$ clickhouse-client
+ClickHouse client version 25.X.X.XXX (official build).
+
+:) SET param_parName='[1, 2]';
+
+SET param_parName = '[1, 2]'
+
+Query id: 7ac1f84e-e89a-4eeb-a4bb-d24b8f9fd977
+
+Ok.
+
+0 rows in set. Elapsed: 0.000 sec.
+
+:) SELECT {parName:Array(UInt16)}
+
+SELECT {parName:Array(UInt16)}
+
+Query id: 0358a729-7bbe-4191-bb48-29b063c548a7
+
+   ┌─_CAST([1, 2]⋯y(UInt16)')─┐
+1. │ [1,2]                    │
+   └──────────────────────────┘
+
+1 row in set. Elapsed: 0.006 sec.
+```
+
+### クエリ構文 {#cli-queries-with-parameters-syntax}
+
+クエリ内で、コマンドラインパラメータで指定したい値の箇所を、次のフォーマットで波かっこで囲んで記述します。
+
+```sql
+{<name>:<data type>}
+```
+
+| パラメーター      | 説明                                                                                                                                                                                                                                                                                                    |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`      | プレースホルダーの識別子です。対応するコマンドラインオプションは `--param_<name> = value` です。                                                                                                                                                                                                                                         |
+| `data type` | パラメーターの[データ型](/ja/reference/data-types/index)です。<br /><br />たとえば、`(integer, ('string', integer))` のようなデータ構造には、`Tuple(UInt8, Tuple(String, UInt8))` データ型を指定できます (他の[整数](/ja/reference/data-types/int-uint)型も使用できます)。<br /><br />テーブル名、データベース名、カラム名をパラメーターとして渡すこともできます。その場合は、データ型に `Identifier` を指定する必要があります。 |
+
+### 例 {#cli-queries-with-parameters-examples}
+
+```bash
+$ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" \
+    --query "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
+
+$ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --param_alias="top_ten" \
+    --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
+```
+
+## AI を活用した SQL クエリ生成 {#ai-sql-generation}
+
+ClickHouse クライアントには、自然言語による説明から SQL クエリを生成する AI アシスタンス機能が組み込まれています。この機能を使えば、SQL に関する深い知識がなくても複雑なクエリを作成できます。
+
+`OPENAI_API_KEY` または `ANTHROPIC_API_KEY` のいずれかの環境変数が設定されていれば、AI アシスタンスは追加の設定なしですぐに利用できます。より高度な設定については、[設定](#ai-sql-generation-configuration)セクションを参照してください。
+
+### 使用方法 {#ai-sql-generation-usage}
+
+AIによるSQL生成を使用するには、自然言語で記述したクエリの先頭に `??` を付けます。
+
+```bash
+:) ?? show all users who made purchases in the last 30 days
+```
+
+AI は次の処理を行います。
+
+1. データベーススキーマを自動的に探索する
+2. 検出したテーブルとカラムに基づいて適切な SQL を生成する
+3. 生成したクエリをただちに実行する
+
+### 例 {#ai-sql-generation-example}
+
+```bash
+:) ?? count orders by product category
+
+Starting AI SQL generation with schema discovery...
+──────────────────────────────────────────────────
+
+🔍 list_databases
+   ➜ system, default, sales_db
+
+🔍 list_tables_in_database
+   database: sales_db
+   ➜ orders, products, categories
+
+🔍 get_schema_for_table
+   database: sales_db
+   table: orders
+   ➜ CREATE TABLE orders (order_id UInt64, product_id UInt64, quantity UInt32, ...)
+
+✨ SQL query generated successfully!
+──────────────────────────────────────────────────
+
+SELECT
+    c.name AS category,
+    COUNT(DISTINCT o.order_id) AS order_count
+FROM sales_db.orders o
+JOIN sales_db.products p ON o.product_id = p.product_id
+JOIN sales_db.categories c ON p.category_id = c.category_id
+GROUP BY c.name
+ORDER BY order_count DESC
+```
+
+### 設定 {#ai-sql-generation-configuration}
+
+AIによるSQL生成を利用するには、ClickHouse クライアントの設定ファイルでAIプロバイダーを設定する必要があります。OpenAI、Anthropic のほか、任意のOpenAI-compatibleなAPIサービスを使用できます。
+
+#### 環境変数によるフォールバック {#ai-sql-generation-fallback}
+
+設定ファイルで AI の設定が指定されていない場合、ClickHouse クライアントは自動的に環境変数を使用しようとします。
+
+1. まず `OPENAI_API_KEY` 環境変数を確認します
+2. 見つからない場合は、`ANTHROPIC_API_KEY` 環境変数を確認します
+3. どちらも見つからない場合、AI 機能は無効になります
+
+これにより、設定ファイルを用意しなくてもすばやくセットアップできます。
+
+```bash
+# Using OpenAI
+export OPENAI_API_KEY=your-openai-key
+clickhouse-client
+
+# Using Anthropic
+export ANTHROPIC_API_KEY=your-anthropic-key
+clickhouse-client
+```
+
+#### 設定ファイル {#ai-sql-generation-configuration-file}
+
+AI 設定をより細かく制御するには、次のいずれかの場所にある ClickHouse クライアントの設定ファイルで設定します。
+
+* `$XDG_CONFIG_HOME/clickhouse/config.xml` (`XDG_CONFIG_HOME` が設定されていない場合は `~/.config/clickhouse/config.xml`)  (XML形式)
+* `$XDG_CONFIG_HOME/clickhouse/config.yaml` (`XDG_CONFIG_HOME` が設定されていない場合は `~/.config/clickhouse/config.yaml`)  (YAML 形式)
+* `~/.clickhouse-client/config.xml` (XML形式、レガシーな配置場所)
+* `~/.clickhouse-client/config.yaml` (YAML 形式、レガシーな配置場所)
+* または `--config-file` で任意の場所を指定
+
+<Tabs>
+  <Tab title="XML">
+    ```xml
+    <config>
+        <ai>
+            {/* 必須: APIキー（環境変数でも設定可能） */}
+            <api_key>your-api-key-here</api_key>
+
+            {/* 必須: プロバイダーの種類（openai, anthropic） */}
+            <provider>openai</provider>
+
+            {/* 使用するモデル（デフォルトはプロバイダーによって異なります） */}
+            <model>gpt-4o</model>
+
+            {/* 任意: OpenAI-compatible なサービス向けのカスタム API エンドポイント */}
+            {/* <base_url>https://openrouter.ai/api</base_url> */}
+
+            {/* スキーマ探索の設定 */}
+            <enable_schema_access>true</enable_schema_access>
+
+            {/* 生成パラメータ */}
+            {/* 任意: temperature はここで設定した場合にのみモデルへ送信されます。
+                 一部のモデルはこのパラメータを受け付けないため、デフォルトでは送信されません。 */}
+            {/* <temperature>0.0</temperature> */}
+            <max_tokens>1000</max_tokens>
+            <timeout_seconds>30</timeout_seconds>
+            <max_steps>10</max_steps>
+
+            {/* 任意: カスタムのシステムプロンプト */}
+            {/* <system_prompt>You are an expert ClickHouse SQL assistant...</system_prompt> */}
+        </ai>
+    </config>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ```yaml
+    ai:
+      # 必須: APIキー（環境変数でも設定可能）
+      api_key: your-api-key-here
+
+      # 必須: プロバイダーの種類（openai, anthropic）
+      provider: openai
+
+      # 使用するモデル
+      model: gpt-4o
+
+      # 任意: OpenAI-compatible なサービス向けのカスタム API エンドポイント
+      # base_url: https://openrouter.ai/api
+
+      # スキーマアクセスを有効化 - AI がデータベース/テーブル情報をクエリできるようにします
+      enable_schema_access: true
+
+      # 生成パラメータ
+      # temperature はここで設定した場合にのみモデルへ送信されます。一部のモデルは
+      # このパラメータを受け付けないため、デフォルトでは送信されません。
+      # temperature: 0.0    # ランダム性を制御します（0.0 = 決定的）
+      max_tokens: 1000      # 応答の最大長
+      timeout_seconds: 30   # リクエストタイムアウト
+      max_steps: 10         # スキーマ探索の最大ステップ数
+
+      # 任意: カスタムのシステムプロンプト
+      # system_prompt: |
+      #   You are an expert ClickHouse SQL assistant. Convert natural language to SQL.
+      #   Focus on performance and use ClickHouse-specific optimizations.
+      #   Always return executable SQL without explanations.
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+**OpenAI-compatible な API (例: OpenRouter) を使用する場合:**
+
+```yaml
+ai:
+  provider: openai  # Use 'openai' for compatibility
+  api_key: your-openrouter-api-key
+  base_url: https://openrouter.ai/api/v1
+  model: anthropic/claude-3.5-sonnet  # Use OpenRouter model naming
+```
+
+**最小限の設定例：**
+
+```yaml
+# Minimal config - uses environment variable for API key
+ai:
+  provider: openai  # Will use OPENAI_API_KEY env var
+
+# No config at all - automatic fallback
+# (Empty or no ai section - will try OPENAI_API_KEY then ANTHROPIC_API_KEY)
+
+# Only override model - uses env var for API key
+ai:
+  provider: openai
+  model: gpt-3.5-turbo
+```
+
+### パラメータ {#ai-sql-generation-parameters}
+
+<Accordion title="必須パラメータ">
+  * `api_key` - AIサービスのAPIキー。環境変数で設定している場合は省略できます:
+    * OpenAI: `OPENAI_API_KEY`
+    * Anthropic: `ANTHROPIC_API_KEY`
+    * 注記: 設定ファイル内のAPIキーは環境変数よりも優先されます
+  * `provider` - AIプロバイダー: `openai` または `anthropic`
+    * 省略した場合は、利用可能な環境変数に基づいて自動的にフォールバックします
+</Accordion>
+
+<Accordion title="モデル設定">
+  * `model` - 使用するモデル (デフォルト: プロバイダーによって異なる)
+    * OpenAI: `gpt-4o`、`gpt-4`、`gpt-3.5-turbo` など
+    * Anthropic: `claude-3-5-sonnet-20241022`、`claude-3-opus-20240229` など
+    * OpenRouter: `anthropic/claude-3.5-sonnet` のように、OpenRouter のモデル命名規則に従って指定します
+</Accordion>
+
+<Accordion title="接続設定">
+  * `base_url` - OpenAI-compatible なサービス向けのカスタムAPI エンドポイント (任意)
+  * `timeout_seconds` - リクエストタイムアウト (秒) (デフォルト: `30`)
+</Accordion>
+
+<Accordion title="スキーマの探索">
+  * `enable_schema_access` - AIによるデータベーススキーマの探索を許可します (デフォルト: `true`)
+  * `max_steps` - スキーマ探索時のツール呼び出しステップの最大数 (デフォルト: `10`)
+</Accordion>
+
+<Accordion title="生成パラメータ">
+  * `temperature` - 出力のランダム性を制御します (0.0 = 決定的、1.0 = 創造的)。一部のモデルはこのパラメータを受け付けないため、デフォルトでは送信されず、明示的に設定した場合にのみモデルに送信されます。
+  * `max_tokens` - 応答の最大長 (トークン数) (デフォルト: `1000`)
+  * `system_prompt` - AI向けのカスタム指示 (任意)
+</Accordion>
+
+### 仕組み {#ai-sql-generation-how-it-works}
+
+AI SQL ジェネレーターは、次の複数ステップのプロセスで動作します。
+
+1. **スキーマ検出**
+
+AI は組み込みツールを使用してデータベースを探索します。
+
+* 利用可能なデータベースを一覧表示します
+* 関連するデータベース内のテーブルを検出します
+* `CREATE TABLE` ステートメントを通じてテーブル構造を確認します
+
+2. **クエリ生成**
+
+検出したスキーマに基づいて、AI は次のような SQL を生成します。
+
+* 自然言語で表現された意図に一致する
+* 正しいテーブル名とカラム名を使用する
+* 適切な結合と集計を適用する
+
+3. **実行**
+
+生成された SQL は自動的に実行され、結果が表示されます。
+
+### 制限事項 {#ai-sql-generation-limitations}
+
+* インターネット接続が必要です
+* API の利用には、AIプロバイダーのレート制限および料金が適用されます
+* 複雑なクエリでは、何度か修正を重ねる必要がある場合があります
+* AI がアクセスできるのはスキーマ情報 (読み取り専用) のみで、実際のデータにはアクセスできません
+
+### セキュリティ {#ai-sql-generation-security}
+
+* APIキーがClickHouseサーバーに送信されることはありません
+* AIが参照するのはスキーマ情報 (テーブル名/カラム名と型) のみで、実際のデータは参照しません
+* 生成されるクエリはすべて、既存のデータベース権限に従います
+
+## 接続文字列 {#connection_string}
+
+### 使用方法 {#connection-string-usage}
+
+ClickHouse クライアントは、[MongoDB](https://www.mongodb.com/docs/manual/reference/connection-string/)、[PostgreSQL](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING)、[MySQL](https://dev.mysql.com/doc/refman/8.0/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri) と同様の接続文字列を使用して ClickHouseサーバーに接続することもできます。構文は次のとおりです。
+
+```text
+clickhouse:[//[user[:password]@][hosts_and_ports]][/database][?query_parameters]
+```
+
+| 構成要素 (すべて任意)       | 説明                                                                                                   | デフォルト            |
+| ------------------ | ---------------------------------------------------------------------------------------------------- | ---------------- |
+| `user`             | データベースのユーザー名。                                                                                        | `default`        |
+| `password`         | データベースユーザーのパスワード。`:` を指定してパスワードを空にした場合、クライアントはユーザーのパスワード入力を求めます。                                     | -                |
+| `hosts_and_ports`  | ホストとポート (任意) のリスト `host[:port] [, host:[port]], ...`。                                                | `localhost:9000` |
+| `database`         | データベース名。                                                                                             | `default`        |
+| `query_parameters` | キー・バリューのペアのリスト `param1=value1[,&param2=value2], ...`。一部のパラメータでは値を省略できます。パラメータ名と値は case-sensitive です。 | -                |
+
+### 注記 {#connection-string-notes}
+
+接続文字列でユーザー名、パスワード、またはデータベースを指定した場合、`--user`、`--password`、`--database` で同じ項目を指定することはできません (その逆も同様です) 。
+
+ホスト部分には、ホスト名、IPv4アドレス、IPv6アドレスのいずれかを指定できます。
+IPv6アドレスは次のように `[]` で囲む必要があります。
+
+```text
+clickhouse://[2001:db8::1234]
+```
+
+接続文字列には複数のホストを含めることができます。
+ClickHouse クライアントは、これらのホストに順番に (左から右へ) 接続を試みます。
+いずれかのホストへの接続が確立されると、残りのホストへの接続は試行されません。
+
+接続文字列は `clickhouse-client` の最初の引数として指定する必要があります。
+接続文字列は、`--host` と `--port` を除く任意の数の[コマンドラインオプション](#command-line-options)と組み合わせて使用できます。
+
+`query_parameters` には次のキーを指定できます。
+
+| キー                  | 説明                                                                                                  |
+| ------------------- | --------------------------------------------------------------------------------------------------- |
+| `secure` (または `s`)  | 指定すると、クライアントはセキュアな接続 (TLS) でサーバーに接続します。[コマンドラインオプション](#command-line-options)の `--secure` を参照してください。 |
+
+**パーセントエンコーディング**
+
+次のパラメータに含まれる US ASCII 以外の文字、スペース、特殊文字は [percent-encoded](https://en.wikipedia.org/wiki/URL_encoding) する必要があります。
+
+* `user`
+* `password`
+* `hosts`
+* `database`
+* `query parameters`
+
+### 例 {#connection_string_examples}
+
+`localhost` のポート 9000 に接続し、クエリ `SELECT 1` を実行します。
+
+```bash
+clickhouse-client clickhouse://localhost:9000 --query "SELECT 1"
+```
+
+ユーザー `john`、パスワード `secret`、ホスト `127.0.0.1`、ポート `9000` で `localhost` に接続します
+
+```bash
+clickhouse-client clickhouse://john:secret@127.0.0.1:9000
+```
+
+`default` ユーザーとして `localhost` に接続します。ホストは IPv6アドレス `[::1]`、ポートは `9000` です。
+
+```bash
+clickhouse-client clickhouse://[::1]:9000
+```
+
+複数行モードで `localhost` のポート 9000 に接続します。
+
+```bash
+clickhouse-client clickhouse://localhost:9000 '-m'
+```
+
+ユーザー `default` として、ポート 9000 で `localhost` に接続します。
+
+```bash
+clickhouse-client clickhouse://default@localhost:9000
+
+# equivalent to:
+clickhouse-client clickhouse://localhost:9000 --user default
+```
+
+`localhost` のポート 9000 に接続し、デフォルトのデータベースとして `my_database` を使用します。
+
+```bash
+clickhouse-client clickhouse://localhost:9000/my_database
+
+# equivalent to:
+clickhouse-client clickhouse://localhost:9000 --database my_database
+```
+
+`localhost` のポート 9000 に接続し、接続文字列で指定した `my_database` データベースをデフォルトとして使用します。また、短縮形の `s` パラメータを指定してセキュアな接続を使用します。
+
+```bash
+clickhouse-client clickhouse://localhost/my_database?s
+
+# equivalent to:
+clickhouse-client clickhouse://localhost/my_database -s
+```
+
+デフォルトのポート、defaultユーザー、デフォルトデータベースを使用して、デフォルトのホストに接続します。
+
+```bash
+clickhouse-client clickhouse:
+```
+
+デフォルトのポートを使用して、ユーザー `my_user`、パスワードなしでデフォルトのホストに接続します。
+
+```bash
+clickhouse-client clickhouse://my_user@
+
+# Using a blank password between : and @ means to asking the user to enter the password before starting the connection.
+clickhouse-client clickhouse://my_user:@
+```
+
+メールアドレスをユーザー名として `localhost` に接続します。`@` 記号はパーセントエンコードされて `%40` になります。
+
+```bash
+clickhouse-client clickhouse://some_user%40some_mail.com@localhost:9000
+```
+
+2つのホスト `192.168.1.15`、`192.168.1.25` のいずれかに接続します。
+
+```bash
+clickhouse-client clickhouse://192.168.1.15,192.168.1.25
+```
+
+## クエリ ID のフォーマット {#query-id-format}
+
+対話型モードでは、ClickHouse クライアントは各クエリのクエリ ID を表示します。デフォルトでは、ID は次のような形式になります。
+
+```sql
+Query id: 927f137d-00f1-4175-8914-0dd066365e96
+```
+
+カスタムフォーマットは、設定ファイル内の `query_id_formats` タグで指定できます。書式文字列内の `{query_id}` プレースホルダーはクエリ ID に置換されます。タグ内には複数の書式文字列を指定できます。
+この機能を利用すると、クエリのプロファイリングに役立つ URL を生成できます。
+
+**例**
+
+```xml
+<config>
+  <query_id_formats>
+    <speedscope>http://speedscope-host/#profileURL=qp%3Fid%3D{query_id}</speedscope>
+  </query_id_formats>
+</config>
+```
+
+上記の設定では、クエリの ID は次のフォーマットで表示されます。
+
+```response
+speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
+```
+
+## 設定ファイル {#configuration_files}
+
+ClickHouse クライアントは、以下の順序でファイルを探し、最初に見つかったものを使用します。
+
+* `-c [ -C, --config, --config-file ]` パラメータで指定されたファイル。
+* `./clickhouse-client.[xml|yaml|yml]`
+* `$XDG_CONFIG_HOME/clickhouse/config.[xml|yaml|yml]` (`XDG_CONFIG_HOME` が設定されていない場合は `~/.config/clickhouse/config.[xml|yaml|yml]`)
+* `~/.clickhouse-client/config.[xml|yaml|yml]`
+* `/etc/clickhouse-client/config.[xml|yaml|yml]`
+
+設定ファイルの例は、ClickHouse リポジトリの [`clickhouse-client.xml`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/client/clickhouse-client.xml) を参照してください。
+
+<Tabs>
+  <Tab title="XML">
+    ```xml
+    <config>
+        <user>username</user>
+        <password>password</password>
+        <secure>true</secure>
+        <openSSL>
+          <client>
+            <caConfig>/etc/ssl/cert.pem</caConfig>
+          </client>
+        </openSSL>
+    </config>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ```yaml
+    user: username
+    password: 'password'
+    secure: true
+    openSSL:
+      client:
+        caConfig: '/etc/ssl/cert.pem'
+    ```
+  </Tab>
+</Tabs>
+
+## 環境変数オプション {#environment-variable-options}
+
+ユーザー名、パスワード、ホストは、環境変数 `CLICKHOUSE_USER`、`CLICKHOUSE_PASSWORD`、`CLICKHOUSE_HOST` で設定できます。
+コマンドライン引数 `--user`、`--password`、`--host`、または[接続文字列](#connection_string) (指定されている場合) は、環境変数よりも優先されます。
+
+## コマンドラインオプション {#command-line-options}
+
+すべてのコマンドラインオプションは、コマンドラインで直接指定することも、[設定ファイル](#configuration_files)でデフォルト値として指定することもできます。
+
+### 一般オプション {#command-line-options-general}
+
+| オプション                                               | 説明                                                                               | デフォルト                |
+| --------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------- |
+| `-c [ -C, --config, --config-file ] <path-to-file>` | クライアントの設定ファイルがデフォルトの場所にない場合に、そのパスを指定します。[設定ファイル](#configuration_files)を参照してください。 | -                    |
+| `--help`                                            | 使用方法の概要を表示して終了します。`--verbose` と組み合わせると、クエリ設定を含むすべてのオプションを表示します。                  | -                    |
+| `--history_file <path-to-file>`                     | コマンド履歴を保存するファイルのパス。                                                              | -                    |
+| `--history_max_entries`                             | 履歴ファイルに保存するエントリの最大数。                                                             | `1000000` (1 百万)     |
+| `--prompt <prompt>`                                 | カスタムプロンプトを指定します。                                                                 | サーバーの `display_name` |
+| `--verbose`                                         | 出力の詳細度を上げます。                                                                     | -                    |
+| `--vim`                                             | 対話型モードで `vim` の編集モードをエミュレートします。[Vim モード](#vim-mode)を参照してください。                    | -                    |
+| `-V [ --version ]`                                  | バージョンを表示して終了します。                                                                 | -                    |
+
+### 接続オプション {#command-line-options-connection}
+
+| オプション                                | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | デフォルト                                                                                                                                                                                  |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--connection <name>`                | 設定ファイルであらかじめ設定された接続情報の名前。[接続の認証情報](#connection-credentials)を参照してください。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | *                                                                                                                                                                                      |
+| `-d [ --database ] <database>`       | この接続でデフォルトとして使用するデータベースを選択します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | サーバー設定で指定された現在のデータベース (デフォルトは `default`)                                                                                                                                               |
+| `-h [ --host ] <host>`               | 接続先のClickHouseサーバーのホスト名です。ホスト名、IPv4アドレス、IPv6アドレスのいずれかを指定できます。引数を複数指定することで、複数のホストを指定できます。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `localhost`                                                                                                                                                                            |
+| `--jwt <value>`                      | 認証に JSON Web Token (JWT) を使用します。<br /><br />サーバー側での JWT 認可は ClickHouse Cloud でのみ利用可能です。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | -                                                                                                                                                                                      |
+| `--login`                            | OAuth 2.0 のデバイス認可グラントを使用して、identity provider (IdP) 経由で認証します。<br /><br />ClickHouse Cloud のホストでは、`--oauth-*` オプションを指定しない場合、OAuth の設定が自動的に推論されます。それ以外の場合 (独自の IdP による JWT認証を使用する Cloud ホストを含む) は、`--oauth-url` (OIDC 発行元) と `--oauth-client-id` を指定するか、`--oauth-client-id` とあわせて `--oauth-device-uri` / `--oauth-token-uri` を明示的に指定してください。任意: `--oauth-audience`、`--oauth-scope`。                                                                                                                                                                                                                            | *                                                                                                                                                                                      |
+| `--oauth-url`                        | OAuth / OIDC の発行元のベースURL。クライアントは `/.well-known/openid-configuration`(および関連するメタデータURL)から `device_authorization_endpoint` と `token_endpoint` を自動検出します。ディスカバリーに失敗した場合はエラーとして報告されます。メタデータを取得できない場合は、`--oauth-device-uri` と `--oauth-token-uri` を指定してください。                                                                                                                                                                                                                                                                                                                                                      | -                                                                                                                                                                                      |
+| `--oauth-client-id`                  | デバイス認可グラントに使用する OAuth 2.0 クライアント ID。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | *                                                                                                                                                                                      |
+| `--oauth-client-secret`              | コンフィデンシャルクライアント用のクライアントシークレット (任意) 。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | -                                                                                                                                                                                      |
+| `--oauth-client-auth`                | コンフィデンシャルクライアントの認証方式：`basic` (HTTP Basic。シークレットが設定されている場合のデフォルト) または `post` (フォームボディで `client_secret` を送信) 。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | クライアントシークレット設定時は `basic`                                                                                                                                                               |
+| `--oauth-audience`                   | 任意の `audience` フォームパラメータ (Auth0 形式) 。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | *                                                                                                                                                                                      |
+| `--oauth-scope`                      | OAuth スコープを指定する文字列。デフォルトは `openid profile email offline_access` です。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | -                                                                                                                                                                                      |
+| `--oauth-device-uri`                 | 明示的に指定するデバイス認可エンドポイント。ディスカバリーをスキップするには、`--oauth-token-uri` と併せて設定する必要があります。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | *                                                                                                                                                                                      |
+| `--oauth-token-uri`                  | トークンエンドポイントを明示的に指定します。ディスカバリーをスキップするには、`--oauth-device-uri` と併せて設定する必要があります。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | -                                                                                                                                                                                      |
+| `--no-warnings`                      | クライアントがサーバーに接続する際の `system.warnings` の警告表示を無効化します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | *                                                                                                                                                                                      |
+| `--no-server-client-version-message` | クライアントがサーバーに接続する際に、サーバーとクライアントのバージョン不一致を示すメッセージを表示しません。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | -                                                                                                                                                                                      |
+| `--password <password>`              | データベースユーザーのパスワードです。接続用のパスワードは設定ファイルでも指定できます。パスワードを指定しない場合、クライアントが入力を求めます。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | *                                                                                                                                                                                      |
+| `--port <port>`                      | サーバーが接続を受け付けるポート。デフォルトのポートは 9440 (TLS あり) と 9000 (TLS なし) です。 <br /><br />注：クライアントは HTTP(S) ではなく、ネイティブプロトコルを使用します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `--secure` が指定されている場合は `9440`、それ以外の場合は `9000`。ホスト名が `.clickhouse.cloud` で終わる場合、デフォルトは常に `9440` です。`--port` も `--secure` も指定されていない場合は、ポート `9000` と `9440` への接続を並行して試行し、先に応答したポートを使用します。 |
+| `-s [ --secure ]`                    | TLS を使用するかどうか。<br /><br />ポート 9440 (デフォルトのセキュアポート) または ClickHouse Cloud に接続する場合、自動的に有効になります。また、`--port` も `--secure` も指定されておらず、セキュアポートが接続確認に先に応答した場合にも有効になります。セキュアポートでのみ応答するサーバー (例：非暗号化ポートがファイアウォールで遮断されている `play.clickhouse.com`) では必ずこの条件に該当し、両方のポートで待ち受けるサーバーでも該当する場合があります。この場合、TLS は明示的に要求されていないため、セキュアポートが使用できないことが判明しても (証明書が信頼されていない場合など) 、エラーにはなりません。クライアントは、自動選択を行わなければ接続していた非暗号化ポートにフォールバックします。TLS を必須にするには、`--secure` を指定してください。<br /><br />[設定ファイル](#configuration_files)で CA 証明書の設定が必要になる場合があります。使用できる設定項目は、[サーバー側の TLS設定](/ja/reference/settings/server-settings/settings/other#openssl)と同じです。 | ポート9440またはClickHouse Cloudへの接続時に自動的に有効化                                                                                                                                                |
+| `--ssh-key-file [path-to-file]`      | サーバーへの認証に使用するSSH秘密鍵を格納したファイル。<br /><br />ファイル名は省略できます。クライアントは、まず`~/.ssh/config`でこのホスト用に設定されたアイデンティティファイルのうち、最初に利用可能なものを選択します。見つからない場合は、`~/.ssh/id_ed25519`などのデフォルトのアイデンティティファイルを探します。各アイデンティティでは、パスフレーズが不要な`ssh-agent`内のコピーが優先されます。使用するエージェントは、該当する`IdentityAgent`設定で指定され、未設定の場合は`SSH_AUTH_SOCK`で指定されます。                                                                                                                                                                                                                                                                                                   | -                                                                                                                                                                                      |
+| `--ssh-key-passphrase <value>`       | `--ssh-key-file` で指定した SSH 秘密鍵のパスフレーズ。<br /><br />未指定で、秘密鍵ファイルが暗号化されている場合は、対話形式でパスフレーズの入力を求められます。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | *                                                                                                                                                                                      |
+| `--tls-sni-override <server name>`   | TLS を使用する場合に、ハンドシェイクで渡すサーバー名 (SNI)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `-h` または `--host` で指定されたホスト。                                                                                                                                                           |
+| `-u [ --user ] <username>`           | 接続に使用するデータベースユーザー。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `default`                                                                                                                                                                              |
+
+<Note>
+  クライアントでは、`--host`、`--port`、`--user`、`--password` オプションの代わりに[接続文字列](#connection_string)を使用することもできます。
+</Note>
+
+### クエリオプション {#command-line-options-query}
+
+| オプション                           | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--param_<name>=<value>`        | [パラメータ付きクエリ](#cli-queries-with-parameters)のパラメータに代入する値。                                                                                                                                                                                                                                                                                                                                                                                             |
+| `-q [ --query ] <query>`        | バッチモードで実行するクエリ。複数回指定する (`--query "SELECT 1" --query "SELECT 2"`) か、セミコロンで区切った複数のクエリを1回で指定する (`--query "SELECT 1; SELECT 2;"`) ことができます。後者の場合、`VALUES` 以外のフォーマットを使用する `INSERT` クエリは空行で区切る必要があります。<br /><br />単一のクエリであれば、オプションを付けずに指定することもできます: `clickhouse-client "SELECT 1"` <br /><br />`--queries-file` と併用することはできません。                                                                                                                             |
+| `--queries-file <path-to-file>` | クエリを記述したファイルへのパス。`--queries-file` は複数回指定できます (例: `--queries-file queries1.sql --queries-file queries2.sql`)。<br /><br />`--query` と併用することはできません。                                                                                                                                                                                                                                                                                                    |
+| `-m [ --multiline ]`            | 指定すると、複数行のクエリを入力できるようになります (Enter を押してもクエリは送信されません)。クエリはセミコロンで終わった時点で初めて送信されます。                                                                                                                                                                                                                                                                                                                                                                     |
+| `--ignore-error`                | クエリが失敗しても停止せず、エラーを `stderr` に出力して次のクエリに進みます。エラーは無視されるため、一部のクエリが失敗した場合でもプロセスは成功コードで終了します。バッチモードでのみ有効です。                                                                                                                                                                                                                                                                                                                                              |
+| `--inline-insert-data`          | `INSERT ... VALUES` (およびその他のインラインフォーマット) を、データを Native フォーマットのブロックに変換せず、クエリテキストのまま送信します。インラインデータはサーバー側でパースされるため、テーブル構造とカラムのデフォルト値をクライアントに送り返すための往復通信が不要になります。そのため、ネイティブプロトコル経由で小規模な挿入処理を多数行う場合にパフォーマンスが向上することがあります。[`send_table_structure_on_insert_with_inline_data`](/ja/reference/settings/session-settings/send#send_table_structure_on_insert_with_inline_data) は自動的に `0` に設定されます。インラインデータと外部データ (stdin または `INFILE` からのデータ) を組み合わせて使用することはできません。 |
+
+### クエリ設定 {#command-line-options-query-settings}
+
+クエリ設定は、次の例のようにクライアントのコマンドラインオプションとして指定できます。
+
+```bash
+$ clickhouse-client --max_threads 1
+```
+
+設定の一覧については、[設定](/ja/reference/settings/session-settings)を参照してください。
+
+### フォーマットオプション {#command-line-options-formatting}
+
+| オプション                             | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                                           | デフォルト                                    |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| `-f [ --format ] <format>`        | 指定されたフォーマットで結果を出力します。<br /><br />対応フォーマットの一覧については、[入出力データの形式](/ja/reference/formats/index)を参照してください。                                                                                                                                                                                                                                                                                                                                                            | `TabSeparated`                           |
+| `--pager <command>`               | すべての出力をこのコマンドにパイプで渡します。通常は `less` (例：列数の多い結果セットを表示する場合は `less -S`) などを指定します。                                                                                                                                                                                                                                                                                                                                                                                 | -                                        |
+| `-E [ --vertical ]`               | [Vertical形式](/ja/reference/formats/Vertical)で結果を出力します。`–-format Vertical` と同等です。この形式では各値が1行ずつ出力されるため、列数の多いテーブルを表示する際に便利です。                                                                                                                                                                                                                                                                                                                                      | -                                        |
+| `--echo [ <bool> ]`               | 実行前に各クエリを出力します。ブール値を任意で指定できます。                                                                                                                                                                                                                                                                                                                                                                                                                               | 対話型モードでは `true`、非対話型 (バッチ) モードでは `false` |
+| `--echo-formatted [ <bool> ]`     | エコーされるクエリを整形します。ブール値を任意で指定できます。                                                                                                                                                                                                                                                                                                                                                                                                                              | 対話型モードでは `true`、非対話型 (バッチ) モードでは `false` |
+| `--echo-query-id [ <bool> ]`      | 実行前にクエリIDを出力します。ブール値を任意で指定できます。                                                                                                                                                                                                                                                                                                                                                                                                                              | 対話型モードでは `true`、非対話型 (バッチ) モードでは `false` |
+| `--echo-query-separator <string>` | 整形してエコーされるクエリの前にこの区切り文字を出力します (`--echo-formatted` が必要) 。入力したクエリと、再整形されたエコーを見分けやすくなります。                                                                                                                                                                                                                                                                                                                                                                       | 空 (無効)                                   |
+| `--highlight [ --hilite ] <bool>` | コマンドプロンプトおよびエコーされるクエリの構文ハイライトの有効／無効を切り替えます。                                                                                                                                                                                                                                                                                                                                                                                                                  | `true`                                   |
+| `--hints <bool>`                  | カーソルが入力の末尾にあるとき、最も一致する候補を入力中に自動補完ヒント (インラインの「ゴースト」テキスト) として表示します。ヒントは Up/Down (または Ctrl-Up/Ctrl-Down) で切り替え、インラインヒントは Tab または Right で確定します。`Enter` は、ヒントを明示的に選択した場合にのみそのヒントを確定し、それ以外の場合はクエリを実行します。`Tab` では従来の補完リストも開けます。`--highlight` が必要です (ヒントの表示に色を使用するため) 。候補ヒントは候補生成の仕組みにも依存するため、`--disable_suggestion` を指定すると表示されなくなります。クライアントの [`/` コマンド](#slash-commands)は静的なリストのため、`--hints` と `--highlight` が有効であればヒントが表示されます。ヒントが無効な場合でも、`Tab` で `/` コマンドを補完できます。 | `true`                                   |
+
+### 実行の詳細 {#command-line-options-execution-details}
+
+| オプション                            | 説明                                                                                                                                                                                                                                                                             | デフォルト                                 |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- |
+| `--chime [N]`                    | `N` 秒以上実行されたクエリが終了したとき (成功時・エラー時とも) に、`BEL` 制御文字を `stderr` に書き込みます。`stderr` が端末 (TTY) にアタッチされている場合にのみ出力されます。`stderr` をリダイレクトすると (例: `2>err.log`) 出力されなくなりますが、`stdout` のリダイレクト (例: `> result.tsv`) は影響しません。値を指定せずに `--chime` を渡すと、デフォルトのしきい値が使用されます。無効化するには `--chime 0` を指定します。 | `5` 秒                                 |
+| `--enable-progress-table-toggle` | コントロールキー (Space) を押して進捗テーブルの表示を切り替えられるようにします。進捗テーブルの出力が有効な対話型モードでのみ適用されます。                                                                                                                                                                                                     | `enabled`                             |
+| `--hardware-utilization`         | プログレスバーにハードウェア使用率の情報を表示します。                                                                                                                                                                                                                                                    | -                                     |
+| `--memory-usage`                 | 指定すると、非対話型モードでメモリ使用量を `stderr` に出力します。 <br /><br />設定可能な値: <br />• `none` - メモリ使用量を出力しない <br />• `default` - バイト数を出力する <br />• `readable` - メモリ使用量を人間が読める形式で出力する                                                                                                               | -                                     |
+| `--print-profile-events`         | `ProfileEvents` パケットを出力します。                                                                                                                                                                                                                                                    | -                                     |
+| `--progress`                     | クエリ実行の進捗を出力します。 <br /><br />設定可能な値: <br />• `tty\|on\|1\|true\|yes` - 対話型モードで端末に出力する <br />• `err` - 非対話型モードで `stderr` に出力する <br />• `off\|0\|false\|no` - 進捗の出力を無効にする                                                                                                         | 対話型モードでは `tty`、非対話型 (バッチ) モードでは `off` |
+| `--progress-table`               | クエリ実行中に変化するメトリクスを示す進捗テーブルを出力します。 <br /><br />設定可能な値: <br />• `tty\|on\|1\|true\|yes` - 対話型モードで端末に出力する <br />• `err` - 非対話型モードで `stderr` に出力する <br />• `off\|0\|false\|no` - 進捗テーブルを無効にする                                                                                       | 対話型モードでは `tty`、非対話型 (バッチ) モードでは `off` |
+| `--stacktrace`                   | 例外のスタックトレースを出力します。                                                                                                                                                                                                                                                             | -                                     |
+| `-t [ --time ]`                  | 非対話型モードでクエリの実行時間を `stderr` に出力します (ベンチマーク用)。                                                                                                                                                                                                                                   | -                                     |

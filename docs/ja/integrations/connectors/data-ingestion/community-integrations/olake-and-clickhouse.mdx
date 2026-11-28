@@ -1,0 +1,84 @@
+---
+sidebarTitle: 'OLake Go'
+slug: /integrations/olake
+description: 'データベース、S3、Kafka のデータを、ClickHouse がネイティブに読み取れる Apache Iceberg テーブルへ複製します'
+title: 'OLake Go と ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://olake.io/'
+keywords: ['olake', 'olake go', 'データ取り込み', 'iceberg', 'parquet', 'cdc', 'レプリケーション', 'データインテグレーション']
+---
+
+import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[OLake Go](https://olake.io/) は、運用データベースとオープンなレイクハウスストレージをつなぐ、高性能なオープンソースの EL (Extract–Load) プラットフォームで、Amazon S3 上に Apache Iceberg テーブルまたは Parquet ファイルを書き込みます。OLake Go は、インクリメンタル同期、CDC (変更データキャプチャ) 、およびステートフルで再開可能な同期をサポートしています。
+
+ClickHouse は、[`iceberg`](/ja/reference/functions/table-functions/iceberg) テーブル関数と [`Iceberg`](/ja/reference/engines/table-engines/integrations/iceberg) テーブルエンジンによって Iceberg テーブルをネイティブに読み取ることができ、[`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) を使用して Iceberg カタログに接続できます。このページでは、OLake Go を使用して Iceberg テーブルにデータを投入し、それを ClickHouse からクエリする方法について説明します。
+
+## 前提条件 {#prerequisites}
+
+* OLake Go (Docker Compose、Kubernetes (Helm)、またはスタンドアロンの Docker コンテナでセルフホストしたもの)
+* OLake Go がサポートするソースシステム: PostgreSQL、MySQL、MongoDB、Oracle、MSSQL、DB2、Kafka、または Amazon S3
+* Iceberg の読み取りをサポートする ClickHouse Cloud またはセルフホスト型 ClickHouse
+* OLake Go の書き込み先であり、かつ ClickHouse から接続可能な Iceberg カタログ (例: AWS Glue、Hive Metastore、REST、Unity Catalog、Polaris、BigLake) 。詳細は [OLake Go のカタログ互換性マトリックス](https://olake.io/docs/understanding/compatibility-catalogs/) および ClickHouse の [`DataLakeCatalog` のカタログの種類](/ja/reference/engines/database-engines/datalake) を参照してください。
+
+## セットアップ {#setup}
+
+1. [OLake Go クイックスタート](https://olake.io/docs/getting-started/quickstart/)に従って OLake Go をデプロイします。
+2. ソース (PostgreSQL や MySQL など) と、S3 または S3 互換ストレージ上の Iceberg 宛先を設定します。
+3. サポートされている Iceberg カタログを選択します。カタログは OLake Go と ClickHouse の `DataLakeCatalog` の両方でサポートされている必要があります (カタログの種類: `glue`、`rest`、`hive`、`unity`、`onelake`、`horizon`)。
+4. 同期を実行して、Iceberg テーブルにデータを書き込みます。
+5. ClickHouse で、`iceberg` テーブル関数または `Iceberg` テーブルエンジンを使用して Iceberg データにクエリを実行するか、[`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) を介してカタログに接続します。
+
+## 例：PostgreSQL から Iceberg へ連携し、ClickHouse でクエリする {#example}
+
+1. OLake Go で、PostgreSQL のソースと、AWS Glue カタログを使用する Amazon S3 上の Iceberg の宛先を作成します。
+2. 完全更新または CDC (変更データキャプチャ) 同期を実行し、テーブルを Iceberg形式で複製します。
+3. ClickHouse で、Iceberg データを参照するテーブルを作成します。
+
+```sql
+CREATE TABLE my_iceberg_table
+ENGINE = IcebergS3(
+  's3://my-bucket/warehouse/my_database/my_table/',
+  'aws_access_key',
+  'aws_secret_key'
+)
+```
+
+4. 複製されたデータに対してクエリを実行します：
+
+```sql
+SELECT * FROM my_iceberg_table LIMIT 10;
+```
+
+または、`DataLakeCatalog` を使用して AWS Glue カタログを ClickHouse に接続し、カタログ内のテーブルを直接クエリすることもできます。
+
+## 既知の制限事項 {#known-limitations}
+
+* OLake Go は Iceberg テーブルを書き込み、ClickHouse はそれを読み取ります。ClickHouse はバージョン 25.7 以降、Iceberg テーブルの変更にも対応していますが、これは ClickHouse 側の別機能であり、OLake Go が提供するものではありません。
+* 等値比較削除 (equality deletes) は ClickHouse バージョン 25.8 以降でサポートされています。それより前のバージョンでは、OLake Go が書き込む削除フォーマットの一部を読み取れない場合があります。削除フォーマットの最新のサポート状況については、[ClickHouse Iceberg ドキュメント](/ja/reference/functions/table-functions/iceberg) を参照してください。
+* OLake Go がサポートするカタログのすべてが、ClickHouse の `DataLakeCatalog` のカタログの種類として利用できるわけではありません。カタログを選択する前に、[OLake Go カタログ互換性マトリックス](https://olake.io/docs/understanding/compatibility-catalogs/) と [`DataLakeCatalog` ドキュメント](/ja/reference/engines/database-engines/datalake) の両方を確認してください。
+
+## トラブルシューティング {#troubleshooting}
+
+### ClickHouse にテーブルが表示されない {#tables-not-visible}
+
+OLake Go の書き込み先である Iceberg カタログに ClickHouse から接続できること、およびカタログの接続パラメータと認証情報が正しいことを確認してください。サポートされているカタログの種類については、[`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) を参照してください。
+
+### 削除した行が引き続き表示される {#deleted-rows-visible}
+
+使用している ClickHouse のバージョンが、OLake Go が書き込んだ削除フォーマット(等値比較削除、位置依存削除、または削除ベクトル)に対応しているか確認してください。等値比較削除には ClickHouse 25.8 以降が必要です。詳細については、[Iceberg テーブル関数のドキュメント](/ja/reference/functions/table-functions/iceberg)を参照してください。
+
+## 関連資料 {#further-reading}
+
+* [OLake Go ドキュメント](https://olake.io/docs/)
+* [OLake Go のクエリエンジンと ClickHouse の互換性](https://olake.io/docs/understanding/compatibility-engines/)
+* [OLake Go の Iceberg カタログ互換性](https://olake.io/docs/understanding/compatibility-catalogs/)
+* [ClickHouse `iceberg` テーブル関数](/ja/reference/functions/table-functions/iceberg)
+* [ClickHouse `Iceberg` テーブルエンジン](/ja/reference/engines/table-engines/integrations/iceberg)
+* [ClickHouse `DataLakeCatalog`](/ja/reference/engines/database-engines/datalake)
+* [ClickHouse データカタログ](/ja/integrations/data-catalogs)

@@ -82,6 +82,8 @@ collector에 대한 프라이빗 연결을 구성하려면 **프라이빗 엔드
 
 **Terraform으로 내보내기**는 **실험적** 기능입니다. 포함할 리소스 유형을 선택한 다음 **Download import file**을 사용하여 Terraform 프로젝트에 추가하십시오. UI에서는 ClickHouse provider로 리소스 구성을 생성하는 명령을 제공합니다. 플랫폼에서 관리하는 연결은 참조 전용 locals로 내보내집니다.
 
+저장된 검색과 대시보드 타일에 설정된 알림도 함께 내보내집니다. 타일 알림이 포함된 파일을 사용하려면 ClickHouse Terraform 프로바이더 버전 3.28.0 이상이 필요합니다. 차트 탐색기 알림은 내보내지지 않으며, 대시보드 내에서 중복 없고 비어 있지 않은 이름을 가지지 않은 타일의 알림도 내보내지지 않습니다. 타일 알림용으로 생성된 구성은 `dashboard_id`와 `tile_id`를 리터럴(Literal) 값으로 설정합니다. 적용하기 전에 이 값들을 `clickhouse_clickstack_dashboard` 리소스에 대한 참조로 대체하십시오.
+
 ### 생성형 AI 구성 {#generative-ai}
 
 **생성형 AI 구성**에서 서비스의 생성형 AI 기능을 활성화하거나 비활성화할 수 있습니다. 이 기능에는 차트 탐색기의 차트 AI 어시스턴트와 [AI 노트북](/ko/clickstack/observability/notebooks)이 포함됩니다.

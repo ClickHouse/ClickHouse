@@ -13,71 +13,61 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="http_max_field_name_size">
-  ## http_max_field_name_size
-</div>
+## http_max_field_name_size {#http_max_field_name_size}
 
 <SettingsInfoBlock type="UInt64" default_value="4096" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4096"},{"label": "HTTP接続による認証前のメモリ使用量を抑えるため、デフォルト値を引き下げました。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4096"},{"label": "この変更は26.1にバックポートされており、そちらに記録されています。"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "4096"},{"label": "HTTP接続による認証前のメモリ使用量を抑えるため、デフォルト値を引き下げました。"}]}]} />
 
 HTTPリクエストヘッダー、クエリパラメータ、およびフォームデータ内のフィールド名の最大長。
 
-<div id="http_max_field_value_size">
-  ## http_max_field_value_size
-</div>
+また、`url`テーブル関数などで、ClickHouseがクライアントとして読み取るHTTPレスポンスのヘッダー内のフィールド名の長さも制限します。
+
+## http_max_field_value_size {#http_max_field_value_size}
 
 <SettingsInfoBlock type="UInt64" default_value="131072" />
 
 HTTPリクエストヘッダー、クエリパラメータ、フォームデータ内のフィールド値の最大長。
 
-<div id="http_max_fields">
-  ## http_max_fields
-</div>
+また、ClickHouseがクライアントとして (例: `url` テーブル関数で) 読み取るHTTPレスポンスについても、そのヘッダー内のフィールド値の長さを制限します。
+
+## http_max_fields {#http_max_fields}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "HTTP接続による認証前のメモリ使用量を制限するため、既定値を引き下げました。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "この変更は 26.1 にバックポートされており、変更履歴は 26.1 に記載されています。"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "1000"},{"label": "HTTP接続による認証前のメモリ使用量を制限するため、既定値を引き下げました。"}]}]} />
 
 HTTPリクエストヘッダー、クエリパラメータ、フォームデータに含められるフィールドの最大数。
 
-<div id="http_max_multipart_form_data_size">
-  ## http_max_multipart_form_data_size
-</div>
+また、ClickHouse がクライアントとして読み取る HTTP レスポンスのヘッダーに含まれるフィールド数も制限します (例: `url` テーブル関数) 。
+
+## http_max_multipart_form_data_size {#http_max_multipart_form_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
 multipart/form-data コンテンツのサイズの上限です。この設定は URLパラメータ からは解析できないため、ユーザープロファイルに設定する必要があります。コンテンツはクエリ実行の開始前にメモリ内で解析され、外部テーブルが作成される点に注意してください。また、この段階に影響する制限はこれだけです (最大メモリ使用量や最大実行時間の制限は、HTTP フォームデータの読み取り中には影響しません) 。
 
-<div id="http_max_request_header_size">
-  ## http_max_request_header_size
-</div>
+## http_max_request_header_size {#http_max_request_header_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "10485760"},{"label": "認証前の HTTPリクエストヘッダー全体のサイズを制限する新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "10485760"},{"label": "この変更は 26.1 にバックポートされ、そちらに記録されています。"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "10485760"},{"label": "認証前の HTTPリクエストヘッダー全体のサイズを制限する新しい設定。"}]}]} />
 
 すべての HTTPリクエストヘッダーの最大合計サイズ (名前と値を含む、単位はバイト) 。
 
-<div id="http_max_request_param_data_size">
-  ## http_max_request_param_data_size
-</div>
+## http_max_request_param_data_size {#http_max_request_param_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
 定義済みのHTTPリクエストでクエリパラメータとして使用されるリクエストデータの最大サイズ。
 
-<div id="http_max_tries">
-  ## http_max_tries
-</div>
+## http_max_tries {#http_max_tries}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
 HTTP 経由で読み取る際の最大試行回数。
 
-<div id="http_max_uri_size">
-  ## http_max_uri_size
-</div>
+## http_max_uri_size {#http_max_uri_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 

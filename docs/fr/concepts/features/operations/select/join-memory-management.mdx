@@ -25,14 +25,14 @@ Deux paramètres modifient ce comportement :
 
 Les limites se comportent différemment avec les autres algorithmes :
 
-* Pour [`ie_join`](/fr/concepts/features/operations/select/join-algorithms#ie-join), les limites s&#39;appliquent à l&#39;entrée cumulée des deux côtés.
+* Pour [`inequality`](/fr/concepts/features/operations/select/join-algorithms#inequality), les limites s&#39;appliquent à l&#39;entrée cumulée des deux côtés.
 * Pour le [repli block nested loop](/fr/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback), les limites s&#39;appliquent au côté droit matérialisé, y compris les blocs déversés sur disque.
 * Pour [`partial_merge`](/fr/concepts/features/operations/select/join-algorithms#partial-merge), atteindre une limite modifie la stratégie d&#39;exécution au lieu d&#39;arrêter la requête : la JOIN commence à écrire sur le disque ses blocs triés du côté droit.
 
 ## Seuils de déversement sur disque {#spill-thresholds}
 
 * [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) définit un seuil absolu de déversement sur disque, en octets, pour le côté droit d&#39;une JOIN hash-based.
-* [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) définit le seuil de déversement sur disque sous la forme d&#39;un ratio de la mémoire encore disponible dans les limites de mémoire de l&#39;utilisateur et du serveur. Si aucune limite de mémoire n&#39;est configurée, ce ratio est sans effet.
+* [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) définit le seuil de déversement sur disque sous la forme d&#39;un ratio de la mémoire encore disponible dans la limite `max_memory_usage` de la requête et dans les limites de mémoire de l&#39;utilisateur et du serveur. Si aucune limite de mémoire n&#39;est configurée, ce ratio est sans effet.
 
 Si les deux paramètres sont définis, c&#39;est le plus petit des seuils obtenus qui s&#39;applique. Ces seuils s&#39;appliquent à `hash`, `parallel_hash`, `grace_hash`, à la valeur `auto`, ainsi qu&#39;au repli block nested loop. Ils nécessitent qu&#39;un chemin de données temporaires soit configuré.
 
@@ -46,7 +46,7 @@ Chaque algorithme capable de déverser sur le disque écrit une partie différen
 * **`partial_merge`.** Les blocs triés du côté droit et leurs index min-max sont écrits dans des fichiers temporaires dès que le côté droit atteint une limite stricte.
 * **Repli block nested loop.** Les blocs du côté droit sont compressés en mémoire, puis écrits dans des fichiers temporaires une fois le seuil de déversement sur disque atteint.
 
-Les algorithmes [`direct`](/fr/concepts/features/operations/select/join-algorithms#direct) et [`ie_join`](/fr/concepts/features/operations/select/join-algorithms#ie-join) ne déversent pas sur le disque.
+Les algorithmes [`direct`](/fr/concepts/features/operations/select/join-algorithms#direct) et [`inequality`](/fr/concepts/features/operations/select/join-algorithms#inequality) ne déversent pas sur le disque.
 
 Les fichiers temporaires sont écrits sur le stockage configuré par le paramètre du serveur [`tmp_path`](/fr/reference/settings/server-settings/settings/tmp#tmp_path), [`tmp_policy`](/fr/reference/settings/server-settings/settings/tmp#tmp_policy) ou [`temporary_data_in_cache`](/fr/reference/settings/server-settings/settings/temporary-data#temporary_data_in_cache). La lecture et l&#39;écriture de fichiers temporaires génèrent des E/S disque supplémentaires : une JOIN qui déverse sur le disque est donc plus lente que la même JOIN exécutée en mémoire.
 

@@ -19,7 +19,9 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Nouveau paramètre."}]}]} />
 
-Autorise la copie multipartite dans S3.
+Autorise la copie d&#39;objets au sein de S3 (par exemple, lors d&#39;une sauvegarde vers S3 ou du déplacement de données entre disques S3) par copie multipartite (`UploadPartCopy`) lorsque la taille de l&#39;objet dépasse `s3_max_single_operation_copy_size`.
+
+S&#39;il est désactivé, les objets sont copiés au moyen d&#39;une seule requête `CopyObject`, quelle que soit leur taille ; si cela n&#39;est pas possible, les données sont lues puis téléversées à nouveau. Désactivez-le pour les composants de stockage compatibles S3 qui ne prennent pas en charge `UploadPartCopy`.
 
 ## s3_allow_parallel_part_upload {#s3_allow_parallel_part_upload}
 

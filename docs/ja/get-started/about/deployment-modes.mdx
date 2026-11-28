@@ -63,7 +63,7 @@ ClickHouse Cloud の SQL Console には強力な[ダッシュボード機能](/j
 
 [ClickHouse CLI](/ja/concepts/features/interfaces/cli) (`clickhousectl`、別名 `chctl`) は、ClickHouse および Postgres のローカル開発と ClickHouse Cloud管理のためのコマンドラインツールです。ClickHouse の各バージョンのインストール、ローカルサーバーの起動と管理、クエリの実行が行えます。
 
-ローカル開発では、`clickhousectl` で任意のバージョンの ClickHouse をインストールし、名前付きサーバーを実行できます。サーバーへの接続には `clickhousectl local client` を使用します。このコマンドは、該当バージョンの `clickhouse-client` を実行します。各サーバーはプロジェクトの `.clickhouse/` ディレクトリにデータを保持するため、互いに分離された複数の環境を並行して実行できます。また、Docker が稼働していれば、`clickhousectl local postgres` で同じようにローカルの Postgres サーバーを起動できます。
+ローカル開発では、`clickhousectl` で任意のバージョンの ClickHouse をインストールし、`clickhousectl local init` で指定したプロジェクトディレクトリ内で名前付きサーバーを実行できます。サーバーへの接続には `clickhousectl local client` を使用します。このコマンドは、該当バージョンの `clickhouse-client` を実行します。各サーバーはプロジェクトの `.clickhouse/` ディレクトリにデータを保持するため、互いに分離された複数の環境を並行して実行できます。また、Docker が稼働していれば、`clickhousectl local postgres` で同じようにローカルの Postgres サーバーを起動できます。
 
 `clickhousectl` では ClickHouse Cloud のリソースも管理できます。対象となるのは、サービス、スケーリング、バックアップ、Managed Postgres、ClickPipes、Managed ClickStack、APIキー、組織です。ブラウザログイン (`clickhousectl cloud auth login`) では読み取り専用のアクセスとなるため、リソースを作成・変更するには APIキーが必要です。
 
@@ -73,7 +73,8 @@ curl -fsSL https://clickhouse.com/cli | sh
 
 # Install the latest ClickHouse, set it as your default, and symlink it to ~/.local/bin/clickhouse
 clickhousectl local use latest
-clickhousectl local server start
+clickhousectl local init
+clickhousectl local clickhouse start
 clickhousectl local client
 ```
 

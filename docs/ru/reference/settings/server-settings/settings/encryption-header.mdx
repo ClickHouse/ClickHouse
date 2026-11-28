@@ -14,13 +14,13 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 ## encryption_header_cache_policy {#encryption_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Политика вытеснения для кэша заголовков шифрования, используемого на пути чтения ReaderExecutor. Возможные значения: `LRU`, `SLRU`, `SIEVE`. Ёмкость кэша задаётся настройкой [`encryption_header_cache_size`](/ru/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size), а размер защищённой очереди в политике SLRU — настройкой [`encryption_header_cache_size_ratio`](/ru/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio).
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Политика вытеснения для кэша заголовков шифрования. Возможные значения: `LRU`, `SLRU`, `SIEVE`. Ёмкость кэша задаётся настройкой [`encryption_header_cache_size`](/ru/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size), а размер защищённой очереди в политике SLRU — настройкой [`encryption_header_cache_size_ratio`](/ru/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio).
 
 ## encryption_header_cache_size {#encryption_header_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="52428800" changeable_without_restart="Yes" />
 
-Максимальный размер кэша заголовков шифрования, считываемых из зашифрованных файлов. Используется только в экспериментальном пути чтения ReaderExecutor.
+Максимальный размер кэша заголовков шифрования, считываемых из зашифрованных файлов на дисках со случайными путями бинарных объектов, например на дисках `s3`. Кэш позволяет избежать повторного чтения заголовка файла из объектного хранилища.
 
 <Note>
   Этот параметр можно изменять во время выполнения, и изменения вступят в силу немедленно.

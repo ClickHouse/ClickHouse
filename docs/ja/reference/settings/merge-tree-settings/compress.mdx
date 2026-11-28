@@ -13,18 +13,14 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で確認でき、ClickHouse のソースコードから自動生成されています。
 
-<div id="compress_marks">
-  ## compress_marks
-</div>
+## compress_marks {#compress_marks}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 マークは圧縮をサポートしており、マークファイルのサイズを削減し、ネットワーク
 経由の転送を高速化します。
 
-<div id="compress_per_column_in_compact_parts">
-  ## compress_per_column_in_compact_parts
-</div>
+## compress_per_column_in_compact_parts {#compress_per_column_in_compact_parts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -36,9 +32,21 @@ compact パーツの物理レイアウトを制御します。true (デフォル
 圧縮率は向上しますが、読み取り時により多くのデータを伸長する必要があります。
 これは、常にすべてのカラムを読み取るワークロード (例: プロジェクション) に適しています。
 
-<div id="compress_primary_key">
-  ## compress_primary_key
-</div>
+## compress_per_substream_in_compact_parts {#compress_per_substream_in_compact_parts}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "新しい設定：コンパクトパーツ内のカラムのサブストリーム境界で新しい圧縮ブロックを開始し、サブカラムの読み取りを高速化"}]}]} />
+
+コンパクトパーツの物理レイアウトを制御します。true (デフォルト) の場合、現在のブロックが `min_compress_block_size` に達すると、
+グラニュール内のカラムの次のサブストリームから新しい圧縮ブロックを開始します。このため、単一のサブカラム
+(例：`Array` のサイズ、`Tuple` の要素、JSON パス) を読み取る際は、そのサブストリームのみが伸長されます。
+ただし、小さなサブストリームは引き続きブロックを共有します。false の場合、グラニュール内のカラムのすべてのサブストリームが
+同じ圧縮ブロックに格納されるため、圧縮率は向上しますが、サブカラムの読み取り時に伸長が必要なデータ量が増えます。
+`write_marks_for_substreams_in_compact_parts` と
+`compress_per_column_in_compact_parts` が有効な場合にのみ効果があります。
+
+## compress_primary_key {#compress_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -107,7 +107,7 @@ Consistência sequencial em bancos de dados é quando as operações em um banco
 Na perspectiva do usuário, isso normalmente se manifesta como a necessidade de gravar dados no ClickHouse e, ao ler os dados, garantir que as linhas inseridas mais recentemente sejam retornadas.
 Isso pode ser alcançado de várias maneiras (em ordem de preferência):
 
-1. **Ler/gravar no mesmo nó** - Se você estiver usando o protocolo nativo ou uma [sessão para fazer a gravação/leitura via HTTP](/pt-BR/concepts/features/interfaces/http#default-database), deverá estar conectado à mesma réplica: nesse cenário, como você está lendo diretamente do nó em que grava, sua leitura sempre será consistente.
+1. **Ler/gravar no mesmo nó** - Se você estiver usando o protocolo nativo ou uma [sessão para fazer a gravação/leitura via HTTP](/pt-BR/concepts/features/connect-to-clickhouse/protocols/http#default-database), deverá estar conectado à mesma réplica: nesse cenário, como você está lendo diretamente do nó em que grava, sua leitura sempre será consistente.
 2. **Sincronizar réplicas manualmente** - Se você gravar em uma réplica e ler de outra, poderá executar `SYSTEM SYNC REPLICA LIGHTWEIGHT` antes da leitura.
 3. **Habilitar a consistência sequencial** - por meio da configuração da consulta [`select_sequential_consistency = 1`](/pt-BR/reference/settings/session-settings/other#select_sequential_consistency). No OSS, a configuração `insert_quorum = 'auto'` também deve ser especificada.
 

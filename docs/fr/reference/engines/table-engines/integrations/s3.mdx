@@ -362,7 +362,7 @@ Considération de sécurité : si un utilisateur malveillant peut spécifier de
 
 ## Paramètres propres à l’endpoint {#endpoint-settings}
 
-Les paramètres suivants peuvent être spécifiés dans le fichier de configuration pour un endpoint donné (qui sera mis en correspondance avec le préfixe exact d’une URL) :
+Les paramètres suivants peuvent être spécifiés dans le fichier de configuration pour un endpoint donné (qui sera mis en correspondance avec le préfixe exact d’une URL) :
 
 * `endpoint` — Spécifie le préfixe d’un endpoint. Obligatoire.
 * `access_key_id` et `secret_access_key` — Spécifie les identifiants à utiliser avec l’endpoint donné. Facultatif.
@@ -371,6 +371,7 @@ Les paramètres suivants peuvent être spécifiés dans le fichier de configurat
 * `use_insecure_imds_request` — Si défini sur `true`, le client S3 utilisera une requête IMDS non sécurisée lors de l’obtention des identifiants à partir des métadonnées Amazon EC2. Facultatif, la valeur par défaut est `false`.
 * `expiration_window_seconds` — Période de grâce permettant de vérifier si des identifiants expirables ont expiré. Facultatif, la valeur par défaut est `120`.
 * `no_sign_request` - Ignore tous les identifiants afin que les requêtes ne soient pas signées. Utile pour accéder à des buckets publics.
+* `request_payer` - Définir sur `requester` pour accéder à un bucket de type « requester-pays » : chaque requête vers l’endpoint donné inclut alors l’en-tête `x-amz-request-payer: requester`. Facultatif. Prioritaire sur le paramètre [`s3_request_payer`](/fr/reference/settings/session-settings/s3#s3_request_payer).
 * `header` — Ajoute l’en-tête HTTP spécifié à une requête vers l’endpoint donné. Facultatif, peut être spécifié plusieurs fois.
 * `access_header` - Ajoute l’en-tête HTTP spécifié à une requête vers l’endpoint donné lorsqu’aucun autre identifiant n’est disponible depuis une autre source.
 * `server_side_encryption_customer_key_base64` — Si spécifié, les en-têtes requis pour accéder à des objets S3 avec un chiffrement SSE-C seront définis. Facultatif.
@@ -378,9 +379,9 @@ Les paramètres suivants peuvent être spécifiés dans le fichier de configurat
 * `server_side_encryption_kms_encryption_context` - Si spécifié avec `server_side_encryption_kms_key_id`, l’en-tête de contexte de chiffrement fourni pour SSE-KMS sera défini. Facultatif.
 * `server_side_encryption_kms_bucket_key_enabled` - Si spécifié avec `server_side_encryption_kms_key_id`, l’en-tête permettant d’activer les clés de bucket S3 pour SSE-KMS sera défini. Facultatif, peut être `true` ou `false`, et n’a pas de valeur par défaut (correspond au paramètre défini au niveau du bucket).
 * `max_single_read_retries` — Nombre maximal de tentatives lors d’une lecture unique. La valeur par défaut est `4`. Facultatif.
-* `max_put_rps`, `max_put_burst`, `max_get_rps` et `max_get_burst` - Paramètres de limitation de débit (voir la description ci-dessus) à utiliser pour un endpoint spécifique plutôt que par query. Facultatif.
+* `max_put_rps`, `max_put_burst`, `max_get_rps` et `max_get_burst` - Paramètres de limitation de débit (voir la description ci-dessus) à utiliser pour un endpoint spécifique plutôt que par requête. Facultatif.
 
-**Exemple :**
+**Exemple :**
 
 ```xml
 <s3>

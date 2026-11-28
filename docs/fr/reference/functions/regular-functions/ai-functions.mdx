@@ -21,7 +21,7 @@ Les fonctions d’IA sont des fonctions intégrées de ClickHouse que vous pouve
 <Warning>
   **Injection de prompt**
 
-  Le texte d’entrée est envoyé au modèle et peut orienter sa sortie (injection de prompt). Le texte provenant de sources externes, non vérifiées ou non nettoyées peut contenir des instructions qui amènent le modèle à renvoyer du contenu contrôlé par un attaquant, à ignorer le format demandé ou à émettre des payloads malveillants. Considérez la sortie des fonctions d’IA comme non fiable : validez-la ou nettoyez-la avant de l’utiliser dans des étapes ultérieures, telles que la construction de SQL, de commandes shell, de requêtes supplémentaires ou de décisions de contrôle d’accès.
+  Le texte d’entrée est envoyé au modèle et peut orienter sa sortie (injection de prompt). Le texte provenant de sources externes, non vérifiées ou non nettoyées peut contenir des instructions qui amènent le modèle à renvoyer du contenu contrôlé par un attaquant, à ignorer le format demandé ou à émettre des charges utiles malveillantes. Considérez la sortie des fonctions d’IA comme non fiable : validez-la ou nettoyez-la avant de l’utiliser dans des étapes ultérieures, telles que la construction de SQL, de commandes shell, de requêtes supplémentaires ou de décisions de contrôle d’accès.
 </Warning>
 
 Toutes les fonctions partagent une infrastructure commune qui fournit :
@@ -29,6 +29,7 @@ Toutes les fonctions partagent une infrastructure commune qui fournit :
 * **Application des quotas** : limites par requête sur les jetons ([`ai_function_max_input_tokens_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) et sur les appels d’API ([`ai_function_max_api_calls_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **Nouvelle tentative avec backoff** : les échecs temporaires sont réessayés ([`ai_function_max_retries`](/fr/reference/settings/session-settings/ai-function#ai_function_max_retries)) avec un backoff exponentiel ([`ai_function_retry_initial_delay_ms`](/fr/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 * **Requêtes concurrentes** : les requêtes sont émises par lots de plusieurs à la fois depuis un thread pool partagé à l’échelle du serveur (paramètre [`ai_function_max_concurrent_requests_per_thread`](/fr/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
+* **Suppression des caractères d’espacement** : `aiClassify`, `aiExtract` et `aiFilter` demandent une sortie structurée et suppriment les caractères d’espacement en début et en fin de réponse du modèle ; ainsi, une réponse comme `\n\nbug` devient `bug`.
 
 ## Configuration {#configuration}
 

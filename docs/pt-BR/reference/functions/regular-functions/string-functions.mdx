@@ -851,6 +851,41 @@ GROUP BY concatWithSeparatorAssumeInjective('-', first_name, last_name);
 └─────────────┴─────────────┘
 ```
 
+## concatWithSeparatorIgnoreNulls {#concatWithSeparatorIgnoreNulls}
+
+Introduzido em: v26.12.0
+
+Concatena os valores em ordem com um separador constante, ignorando valores `NULL` de nível superior.
+Strings vazias são mantidas. Se nenhum valor for fornecido ou se todos os valores forem `NULL`, um separador não `NULL` retorna `''`.
+Valores de tipos diferentes de `String` e `FixedString` são convertidos em strings usando a serialização de texto padrão de cada tipo.
+
+**Sintaxe**
+
+```sql
+concatWithSeparatorIgnoreNulls(separator[, value1, value2, ...])
+```
+
+**Argumentos**
+
+* `separator` — Uma `String` ou `FixedString` constante, incluindo as formas anuláveis e de baixa cardinalidade, ou o literal `NULL`. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`Nullable(String)`](/pt-BR/reference/data-types/nullable) ou [`Nullable(FixedString)`](/pt-BR/reference/data-types/nullable) ou [`LowCardinality`](/pt-BR/reference/data-types/lowcardinality) ou [`NULL`](/pt-BR/reference/syntax#null)
+* `value1, value2, ...` — Valores a serem concatenados. [`Any`](/pt-BR/reference/data-types/index)
+
+**Valor retornado**
+
+Retorna a string concatenada. O resultado é `Nullable(String)` se o tipo do separador for anulável (incluindo o literal `NULL`); caso contrário, é `String`. Se o separador for `NULL`, retorna `NULL`. [`String`](/pt-BR/reference/data-types/string) ou [`Nullable(String)`](/pt-BR/reference/data-types/nullable)
+
+**Exemplos**
+
+**Ignorar valores NULL**
+
+```sql title=Query
+SELECT concatWithSeparatorIgnoreNulls(',', 'x', NULL, 'y') AS result
+```
+
+```response title=Response
+x,y
+```
+
 ## conv {#conv}
 
 Introduzido em: v25.10.0
@@ -2066,23 +2101,29 @@ münchen
 
 Introduzido em: v26.3.0
 
-A função é usada para ordenação natural.
+Retorna uma chave para ordenação natural: strings ordenadas por suas chaves ficam em ordem natural, na qual uma sequência de dígitos é comparada como um número; assim, `a2` vem antes de `a10`.
+
+O argumento opcional `mode` define como são comparados os caracteres que não são dígitos:
+
+* `0` (padrão): os caracteres são comparados um a um com os caracteres ou com o número na mesma posição da outra string. Assim, `host-1` vem antes de `host2`, porque `-` é comparado com o número `2`.
+* `1`: uma sequência de caracteres que não são dígitos é comparada como um todo com a sequência na mesma posição da outra string, e um número só é comparado se as sequências anteriores a ele forem iguais. Assim, `host2` vem antes de `host-1`, porque `host` é comparado com `host-`. Essa é a ordem usada pela função PromQL `sort_by_label`.
 
 **Sintaxe**
 
 ```sql
-naturalSortKey(s)
+naturalSortKey(s[, mode])
 ```
 
-**Aliases**: `NATURAL_SORT_KEY`
+**aliases**: `NATURAL_SORT_KEY`
 
 **Argumentos**
 
-* `s` — Uma string a ser convertida em uma chave de ordenação natural. [`String`](/pt-BR/reference/data-types/string)
+* `s` — String a ser convertida em chave de ordenação natural. [`String`](/pt-BR/reference/data-types/string)
+* `mode` — Opcional. Define como os caracteres não numéricos são comparados: `0` (padrão) ou `1`. [`const UInt*`](/pt-BR/reference/data-types/int-uint)
 
 **Valor retornado**
 
-Retorna uma string de chave de ordenação natural a partir de `s`. [`String`](/pt-BR/reference/data-types/string)
+Retorna uma string de chave de ordenação natural gerada a partir de `s`. [`String`](/pt-BR/reference/data-types/string)
 
 **Exemplos**
 
@@ -2100,6 +2141,20 @@ SELECT s FROM t ORDER BY naturalSortKey(s);
 │ a1  │
 │ a02 │
 └─────┘
+```
+
+**Os dois modos**
+
+```sql title=Query
+SELECT
+    arraySort(s -> naturalSortKey(s), ['host-1', 'host10', 'host2']) AS default_mode,
+    arraySort(s -> naturalSortKey(s, 1), ['host-1', 'host10', 'host2']) AS mode_1;
+```
+
+```response title=Response
+┌─default_mode────────────────┬─mode_1──────────────────────┐
+│ ['host-1','host2','host10'] │ ['host2','host10','host-1'] │
+└─────────────────────────────┴─────────────────────────────┘
 ```
 
 ## normalizeUTF8NFC {#normalizeUTF8NFC}

@@ -13,6 +13,27 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## iceberg_insert_commit_retry_initial_backoff_ms {#iceberg_insert_commit_retry_initial_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "10"},{"label": "Nouveau paramètre. La validation d'un `INSERT` dans Iceberg qui a perdu face à une validation concurrente est réessayée après un délai exponentiel aléatoire plutôt qu'immédiatement."}]}]} />
+
+Borne supérieure du délai avant la première nouvelle tentative d&#39;un `INSERT` dans une table Iceberg dont la validation a perdu face à une validation concurrente.
+La borne double à chaque nouvelle tentative, jusqu&#39;à `iceberg_insert_commit_retry_max_backoff_ms`, et chaque délai est choisi aléatoirement
+entre zéro et la borne, afin que les rédacteurs ayant perdu la même condition de concurrence ne réessaient pas au même moment et n&#39;entrent pas à nouveau en conflit.
+Le délai est appliqué avant la recherche des métadonnées les plus récentes ; avec de nombreux rédacteurs concurrents, il limite donc également la fréquence de listage du répertoire
+des métadonnées. Avec `0`, les nouvelles tentatives sont effectuées sans délai.
+
+## iceberg_insert_commit_retry_max_backoff_ms {#iceberg_insert_commit_retry_max_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "5000"},{"label": "Nouveau paramètre. Lorsque la validation d'un `INSERT` dans Iceberg échoue face à une validation concurrente, elle est réessayée après un délai exponentiel aléatoire plutôt qu'immédiatement."}]}]} />
+
+Valeur maximale de la borne du délai avant une nouvelle tentative d&#39;un `INSERT` dans une table Iceberg dont la validation a échoué face à une validation concurrente ;
+voir `iceberg_insert_commit_retry_initial_backoff_ms`.
+
 ## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
@@ -26,6 +47,17 @@ voir https://iceberg.apache.org/docs/1.5.2/configuration/. La limite est compar�
 écrites dans le fichier, c&#39;est-à-dire à leur taille compressée ; un fichier peut donc la dépasser de ce que le writer conserve encore en tampon, comme
 les groupes de lignes Parquet incomplets et ceux en cours d&#39;encodage. `iceberg_insert_max_rows_in_data_file` limite le fichier
 indépendamment de sa taille.
+
+## iceberg_insert_max_data_files_in_upload {#iceberg_insert_max_data_files_in_upload}
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "Nouveau paramètre. Un INSERT dans Iceberg sur S3 ou Azure n'attend plus la fin du téléversement de chaque fichier de données terminé."}]}]} />
+
+Nombre maximal de fichiers de données terminés d&#39;un même flux d&#39;insertion dont le téléversement peut se poursuivre, sans être attendu, pendant que l&#39;`INSERT` écrit le fichier
+suivant. S&#39;applique aux stockages d&#39;objet qui effectuent le téléversement en arrière-plan (S3, Azure). Chacun de ces fichiers conserve ses tampons de téléversement jusqu&#39;à la fin
+de son téléversement : des valeurs plus élevées masquent donc davantage la latence de téléversement, au prix d&#39;une consommation de mémoire accrue. Avec `0`, l&#39;insertion attend la fin du téléversement de chaque fichier de données avant
+d&#39;écrire le suivant.
 
 ## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
 
@@ -42,6 +74,15 @@ Nombre maximal de partitions autorisé pour une seule opération d’insertion a
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1000000"},{"label": "Nouveau paramètre."}]}]} />
 
 Nombre maximal de lignes dans le fichier de données Parquet Iceberg lors d&#39;une opération d&#39;insertion.
+
+## iceberg_insert_max_sort_buffer_bytes {#iceberg_insert_max_sort_buffer_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1073741824"},{"label": "Nouveau paramètre."}]}]} />
+
+Nombre maximal d’octets décompressés qu’une opération `INSERT` dans une table Iceberg dotée d’un ordre de tri conserve en tampon, toutes partitions confondues, avant
+de les écrire dans l’ordre de tri. Au-delà de ce seuil, le contenu du plus grand tampon est écrit de façon anticipée dans un fichier de données trié de plus petite taille. 0 signifie qu’aucune limite n’est imposée.
 
 ## iceberg_insert_single_manifest_for_all_partitions {#iceberg_insert_single_manifest_for_all_partitions}
 

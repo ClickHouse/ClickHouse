@@ -113,24 +113,35 @@ hyperdx:
 
 ### Uso de un secreto externo {#using-external-secret}
 
-Para implementaciones de producción en las que desee mantener las credenciales separadas de los valores de Helm, utilice un secreto externo de Kubernetes:
+Para no incluir la clave de API de HyperDX en sus valores de Helm, guárdela en su propio secreto de Kubernetes:
 
 ```bash
-# Crea tu secreto
 kubectl create secret generic my-clickstack-secrets \
-  --from-literal=HYPERDX_API_KEY=my-secret-api-key \
-  --from-literal=CLICKHOUSE_PASSWORD=my-ch-password \
-  --from-literal=CLICKHOUSE_APP_PASSWORD=my-ch-app-password \
-  --from-literal=MONGODB_PASSWORD=my-mongo-password
+  --from-literal=HYPERDX_API_KEY=my-secret-api-key
 ```
 
-Luego, haz referencia a esto en tus values:
+Después, elimínelo del secret del gráfico y léalo desde el suyo:
 
 ```yaml
 hyperdx:
-  useExistingConfigSecret: true
-  existingConfigSecret: "my-clickstack-secrets"
+  secrets:
+    HYPERDX_API_KEY: null
+  deployment:
+    env:
+      - name: HYPERDX_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: my-clickstack-secrets
+            key: HYPERDX_API_KEY
 ```
+
+Cualquier otra variable de entorno de HyperDX puede leerse desde un secret de la misma manera.
+
+Las contraseñas de ClickHouse y MongoDB deben permanecer en `hyperdx.secrets` mientras los componentes incluidos estén habilitados. El gráfico las utiliza para configurar los usuarios de las instancias incluidas de ClickHouse y MongoDB, y el OTel collector las lee del secret del gráfico.
+
+<Note>
+  `hyperdx.deployment.useExistingConfigSecret` solo carga desde un secret las conexiones y fuentes predeterminadas (`connections.json` y `sources.json`). No lee la clave de API ni las contraseñas. Consulte [ClickHouse externo](/es/clickstack/deployment/helm-deployment-options#external-clickhouse-secret).
+</Note>
 
 ## Configuración del ingreso {#ingress-setup}
 

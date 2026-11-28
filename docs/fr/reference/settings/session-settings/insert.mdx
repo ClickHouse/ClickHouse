@@ -17,7 +17,9 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Si ce paramètre est activé, les colonnes matérialisées sont autorisées dans INSERT.
+Si ce paramètre est activé, les colonnes `MATERIALIZED` peuvent figurer dans la liste de colonnes d&#39;une requête `INSERT`, et les valeurs insérées sont stockées au lieu d&#39;être calculées à partir des expressions des colonnes. Pour les tables `Distributed`, les valeurs des colonnes `MATERIALIZED` sont alors également envoyées aux shards.
+
+Si ce paramètre est désactivé, l&#39;inclusion d&#39;une colonne `MATERIALIZED` dans une requête `INSERT` lève une exception, et les valeurs de ces colonnes sont toujours calculées à partir de leurs expressions.
 
 ## insert_deduplicate {#insert_deduplicate}
 

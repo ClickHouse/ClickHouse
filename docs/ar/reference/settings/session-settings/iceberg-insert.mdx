@@ -13,6 +13,26 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متوفرة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## iceberg_insert_commit_retry_initial_backoff_ms {#iceberg_insert_commit_retry_initial_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "10"},{"label": "إعداد جديد. عندما يخسر تثبيت عملية `INSERT` في Iceberg أمام تثبيت متزامن، تُعاد محاولته بعد تأخير أُسّي عشوائي بدلًا من إعادتها فورًا."}]}]} />
+
+الحد الأعلى للتأخير قبل أول إعادة محاولة لعملية `INSERT` في جدول Iceberg خسر تثبيتها أمام تثبيت متزامن.
+يتضاعف هذا الحدّ مع كل إعادة محاولة لاحقة، حتى يبلغ `iceberg_insert_commit_retry_max_backoff_ms`، ويُختار كل تأخير عشوائيًا
+بين الصفر وهذا الحدّ، كي لا تعيد عمليات الكتابة التي خسرت حالة التسابق نفسها المحاولة في اللحظة ذاتها فتتصادم مجددًا.
+يُطبَّق التأخير قبل البحث عن أحدث البيانات الوصفية، ولذلك فإنه يحدّ أيضًا، عند وجود عدد كبير من عمليات الكتابة المتزامنة، من عدد مرات استعراض دليل البيانات الوصفية. تعني القيمة `0` إعادة المحاولة دون تأخير.
+
+## iceberg_insert_commit_retry_max_backoff_ms {#iceberg_insert_commit_retry_max_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "5000"},{"label": "إعداد جديد. تُعاد محاولة تثبيت عملية `INSERT` في Iceberg التي فشل تثبيتها بسبب عملية تثبيت متزامنة، بعد تأخير أُسّي عشوائي بدلاً من إعادتها فوراً."}]}]} />
+
+القيمة القصوى لحدّ التأخير قبل إعادة محاولة عملية `INSERT` في جدول Iceberg فشل تثبيتها بسبب عملية تثبيت متزامنة،
+راجع `iceberg_insert_commit_retry_initial_backoff_ms`.
+
 ## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
@@ -26,6 +46,17 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 حتى تلك اللحظة، أي الحجم المضغوط، لذا قد يتجاوزه الملف بمقدار ما لا يزال الكاتب يحتفظ به في الذاكرة المؤقتة، مثل
 مجموعات الصفوف غير المكتملة في Parquet وتلك التي يجري ترميزها. كما أن `iceberg_insert_max_rows_in_data_file` يحدّ من الملف
 بصرف النظر عن حجمه.
+
+## iceberg_insert_max_data_files_in_upload {#iceberg_insert_max_data_files_in_upload}
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "إعداد جديد. لم يعد الإدراج في Iceberg على S3 أو Azure ينتظر اكتمال تحميل كل ملف بيانات مكتمل."}]}]} />
+
+الحد الأقصى لعدد ملفات البيانات المكتملة في دفق إدراج واحد التي لا يُنتظر انتهاء تحميلها أثناء كتابة `INSERT` للملف
+التالي، وذلك في أنظمة تخزين الكائنات التي تُجري التحميل في الخلفية (S3 وAzure). ويحتفظ كل ملف من هذه الملفات بالمخازن المؤقتة الخاصة بتحميله إلى أن يكتمل
+التحميل، ولذلك تُخفي القيم الأعلى قدرًا أكبر من زمن الانتقال الناتج عن التحميل، لكن على حساب استهلاك الذاكرة. أما القيمة `0` فتعني انتظار اكتمال تحميل كل ملف بيانات قبل
+كتابة الملف التالي.
 
 ## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
 
@@ -42,6 +73,15 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1000000"},{"label": "إعداد جديد."}]}]} />
 
 الحد الأقصى لعدد الصفوف في ملف بيانات Parquet لـ Iceberg أثناء عملية إدراج.
+
+## iceberg_insert_max_sort_buffer_bytes {#iceberg_insert_max_sort_buffer_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1073741824"},{"label": "إعداد جديد."}]}]} />
+
+الحد الأقصى للبايتات غير المضغوطة التي تحتفظ بها عملية `INSERT` في الذاكرة المؤقتة عبر جميع الأقسام عند الإدراج في جدول Iceberg ذي ترتيب فرز، وذلك قبل
+كتابتها مرتّبةً. وعند تجاوز هذا الحد، تُكتب أكبر ذاكرة مؤقتة مبكرًا في صورة ملف بيانات مرتّب أصغر حجمًا. تعني القيمة 0 عدم وجود حد.
 
 ## iceberg_insert_single_manifest_for_all_partitions {#iceberg_insert_single_manifest_for_all_partitions}
 

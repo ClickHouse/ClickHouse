@@ -124,6 +124,7 @@ Os principais parâmetros de cada `<server>` são:
 * `hostname` — Hostname em que este servidor está localizado.
 * `port` — Porta na qual este servidor aceita conexões.
 * `can_become_leader` — Defina como `false` para configurar o servidor como `learner`. Se omitido, o valor será `true`.
+  Pelo menos um servidor deve mantê-lo como `true`; caso contrário, o Keeper não será iniciado.
 
 <Note>
   Em caso de mudança na topologia do seu cluster do ClickHouse Keeper (por exemplo, ao substituir um servidor), certifique-se de manter consistente o mapeamento de `server_id` para `hostname` e evite trocar ou reutilizar um `server_id` existente para servidores diferentes (por exemplo, isso pode acontecer se você depender de scripts de automação para implantar o ClickHouse Keeper)
@@ -132,7 +133,7 @@ Os principais parâmetros de cada `<server>` são:
 </Note>
 
 <Note>
-  `async_replication` é desabilitado por padrão para evitar quebrar a compatibilidade com versões anteriores. Se todas as instâncias do Keeper no cluster estiverem executando uma versão com suporte a `async_replication` (v23.9+), recomendamos habilitá-lo, pois isso pode melhorar o desempenho sem desvantagens.
+  `async_replication` é Disabled por padrão para evitar quebrar a compatibilidade com versões anteriores. Se todas as instâncias do Keeper no cluster estiverem executando uma versão com suporte a `async_replication` (v23.9+), recomendamos habilitá-lo, pois isso pode melhorar o desempenho sem desvantagens.
 </Note>
 
 Exemplos de configuração de quórum com três nós podem ser encontrados nos [testes de integração](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration) com o prefixo `test_keeper_`. Exemplo de configuração para o servidor #1:

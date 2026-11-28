@@ -13,7 +13,7 @@ doc_type: 'guide'
 
 تشمل أوامر `clickhousectl cloud` ما يلي:
 
-* **الخدمات:** إنشاء خدمات ClickHouse Cloud وتوسيع نطاقها وتشغيلها وإيقافها، وتنفيذ استعلامات SQL عليها عبر واجهة برمجة تطبيقات الاستعلام.
+* **الخدمات:** إنشاء خدمات ClickHouse Cloud وتوسيع نطاقها وتشغيلها وإيقافها، وحمايتها من الحذف، وكتابة إعدادات الاتصال الخاصة بها في ملف `.env`، وتنفيذ استعلامات SQL عليها عبر واجهة برمجة تطبيقات الاستعلام أو في جلسة `clickhouse client` تفاعلية.
 * **[Managed Postgres](/ar/products/managed-postgres/overview):** إنشاء خدمات Postgres والنسخ المتماثلة للقراءة وعمليات الاستعادة إلى نقطة زمنية محددة، وتعديل تهيئتها.
 * **[ClickPipes](/ar/integrations/clickpipes/home):** استيعاب البيانات من التخزين الكائني وKafka وKinesis وPub/Sub وPostgres وMySQL وMongoDB وBigQuery.
 * **[ClickStack](/ar/clickstack/overview):** إدارة المصادر ولوحات المعلومات والتنبيهات وخطافات الويب وعمليات البحث المحفوظة والأدوار في خدمة [Self-managed ClickHouse Observability](/ar/clickstack/self-configured/deployment/managed).
@@ -21,7 +21,7 @@ doc_type: 'guide'
 * **النسخ الاحتياطية:** عرض النسخ الاحتياطية، وتعديل جدول النسخ الاحتياطي، واستعادة نسخة احتياطية إلى خدمة جديدة.
 * **الوصول على مستوى المؤسسة:** المؤسسات والأعضاء والدعوات ومفاتيح API وسجل النشاط.
 
-شغّل `clickhousectl cloud <command> --help` لعرض الخيارات المتاحة لأي أمر وصلاحيات مفتاح API التي يحتاجها.
+تندرج أوامر الخدمات ضمن `clickhousectl cloud clickhouse`، أو `cloud ch` اختصارًا. شغّل `clickhousectl cloud <command> --help` لعرض الخيارات المتاحة لأي أمر وصلاحيات مفتاح API التي يحتاجها.
 
 ## التثبيت {#installation}
 
@@ -50,23 +50,28 @@ clickhousectl cloud auth login --api-key <key> --api-secret <secret>
 
 ## أمثلة {#examples}
 
-### إنشاء خدمة والاستعلام عنها {#create-and-query-a-service}
+### إنشاء خدمة والاستعلام منها {#create-and-query-a-service}
 
 ```bash
-# Create a service. Save the initial password; it is printed only once.
+# Create a service. The initial password is shown only once, so --dotenv
+# writes it and the connection settings to .env.local.
 # Omitting --ip-allow allows all addresses (0.0.0.0/0).
-clickhousectl cloud service create --name analytics \
+clickhousectl cloud clickhouse create --name analytics \
   --provider aws --region us-east-1 \
-  --ip-allow '203.0.113.10/32=Office'
+  --ip-allow '203.0.113.10/32=Office' \
+  --dotenv .env.local
 
 # Look up the service ID, then run SQL over the Query API
-CH_ID=$(clickhousectl cloud service get --name analytics --json | jq -r .id)
-clickhousectl cloud service query "$CH_ID" --query "SELECT version()"
+CH_ID=$(clickhousectl cloud clickhouse get --name analytics --json | jq -r .id)
+clickhousectl cloud clickhouse query "$CH_ID" --query "SELECT version()"
+
+# Open an interactive clickhouse client session
+clickhousectl cloud clickhouse client "$CH_ID"
 ```
 
-يعود أمر الإنشاء قبل أن تصبح الخدمة قيد التشغيل. استطلع حالة الخدمة باستخدام `clickhousectl cloud service get "$CH_ID"` إلى أن تصبح قيمة `state` هي `running`.
+يكتمل أمر الإنشاء قبل أن تصبح الخدمة قيد التشغيل. استطلع حالتها باستخدام `clickhousectl cloud clickhouse get "$CH_ID"` إلى أن تصبح قيمة `state` هي `running`. أما للخدمات الموجودة مسبقًا، فيكتب الأمر `clickhousectl cloud clickhouse dotenv "$CH_ID" --local` الإعدادات نفسها في `.env.local` دون كلمة المرور. ولحماية خدمة في بيئة الإنتاج، فعّل الحماية من الحذف باستخدام `clickhouse update "$CH_ID" --deletion-protection true`؛ وعندها يرفض الأمر `clickhouse delete` حذفها إلى أن تضبط `--deletion-protection false`.
 
-عند أول استعلام باستخدام مفتاح API، يضيف clickhousectl مفتاح API الخاص بك إلى نقطة نهاية API للاستعلام الخاصة بالخدمة، وينشئ نقطة النهاية إن لم تكن موجودة، دون إنشاء أي مفتاح جديد. لجعل العملية تفشل بدلاً من ذلك، مرّر الخيار `--no-auto-enable`. وعند استخدام OAuth، لا ينفّذ `service query` سوى عبارات `SELECT` للقراءة فقط. تنتهي مهلة واجهة برمجة تطبيقات الاستعلام بعد نحو 30 ثانية، لذا استخدم `clickhouse client` للاستعلامات الطويلة وعمليات التحميل المجمّع.
+عند استخدام مفتاح API، يضيف الأمر `clickhouse query` مفتاحك إلى نقطة نهاية API للاستعلام الخاصة بالخدمة إن لم يكن مربوطًا بها بعد، وينشئ نقطة النهاية عند الحاجة، دون إنشاء أي مفتاح جديد. مرّر `--no-auto-enable` إذا أردت أن يفشل الأمر بدلًا من ذلك. ولا يستطيع المفتاح المخصص للقراءة فقط ربط نفسه، لذا اربطه مرة واحدة باستخدام مفتاح يملك صلاحية الكتابة. وعند استخدام OAuth، يقتصر الأمر `clickhouse query` على تشغيل عبارات `SELECT` للقراءة فقط. تنتهي مهلة واجهة برمجة تطبيقات الاستعلام بعد نحو 30 ثانية، ولا تشغّل سوى عبارة واحدة في كل طلب، لذا استخدم `cloud clickhouse client` للاستعلامات الطويلة والنصوص البرمجية وعمليات التحميل المجمّع. يفتح هذا الأمر `clickhouse client` عبر اتصال TLS أصلي، ويسجّل دخولك عبر المتصفح بصفتك مستخدم Cloud، دون الحاجة إلى كلمة مرور الخدمة. ويتطلب تثبيت ClickHouse 25.12 أو إصدار أحدث محليًا (`clickhousectl local install latest`)، ووجود شخص أمام المتصفح.
 
 ### إنشاء خدمة Postgres مُدارة {#create-a-managed-postgres-service}
 
@@ -101,7 +106,7 @@ clickhousectl cloud udf deploy my_udf --service "$CH_ID"
 
 ## إخراج JSON ووكلاء البرمجة {#json-output}
 
-تقبل أوامر Cloud الخيار `--json`، كما تعتمد واجهة سطر الأوامر صيغة JSON تلقائيًا عند اكتشاف وكيل برمجة. وفي هذه الحالة يستخدم الأمر `cloud service query` الصيغة `JSONEachRow` افتراضيًا، لذا ينبغي للنصوص البرمجية التي تحلّل إخراجه أن تمرّر الخيار `--format`، مثل `--format TabSeparated`. راجع [إخراج JSON](/ar/concepts/features/interfaces/cli#json-output) و[رموز الخروج](/ar/concepts/features/interfaces/cli#exit-codes). ثبّت ClickHouse agent skills باستخدام `clickhousectl skills`.
+تقبل أوامر Cloud الخيار `--json`، كما تعتمد واجهة سطر الأوامر صيغة JSON تلقائيًا عند اكتشاف وكيل برمجة. وفي هذه الحالة يستخدم الأمر `cloud clickhouse query` الصيغة `JSONEachRow` افتراضيًا، لذا ينبغي للنصوص البرمجية التي تحلّل إخراجه أن تمرّر الخيار `--format`، مثل `--format TabSeparated`. راجع [إخراج JSON](/ar/concepts/features/interfaces/cli#json-output) و[رموز الخروج](/ar/concepts/features/interfaces/cli#exit-codes). ثبّت ClickHouse agent skills باستخدام `clickhousectl skills`.
 
 ## لمعرفة المزيد {#learn-more}
 

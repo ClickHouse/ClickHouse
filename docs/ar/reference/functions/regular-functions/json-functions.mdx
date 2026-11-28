@@ -900,6 +900,130 @@ SELECT JSONExtractKeysCaseInsensitive('{"User": {"name": "John", "AGE": 25}}', '
 ['name','AGE']
 ```
 
+## JSONExtractLeafPathsAndValues {#JSONExtractLeafPathsAndValues}
+
+أُضيف في: v26.11.0
+
+مماثلة لـ [`JSONExtractLeafValues`](#JSONExtractLeafValues)، لكنها تُعيد Tuple بالشكل `(path, value)` لكل عقدة ورقية مفردة.
+راجع وصف `JSONExtractLeafValues` للاطلاع على قواعد المسارات والوسيطتين `skip_regex` و`arrays`.
+
+<Note>
+  لا تتأثر النتيجة بالإعدادات، مثل `allow_simdjson` و`input_format_json_max_depth` و`json_type_escape_dots_in_keys`.
+  ولذلك يُعيد الفهرس المُنشأ على هذه الدالة الصفوف نفسها التي يُعيدها المسح الكامل.
+</Note>
+
+**الصيغة**
+
+```sql
+JSONExtractLeafPathsAndValues(json[, skip_regex[, arrays]])
+```
+
+**الوسيطات**
+
+* `json` — سلسلة JSON المراد تحليلها. [`String`](/ar/reference/data-types/string)
+* `skip_regex` — اختياري. تعبير نمطي ثابت (بصيغة [re2](https://github.com/google/re2/wiki/Syntax)). تُتجاهَل المسارات المطابقة وكل ما يتفرع منها. لا تؤدي السلسلة الفارغة (القيمة الافتراضية) إلى تجاهل أي شيء. [`const String`](/ar/reference/data-types/string)
+* `arrays` — اختياري. ثابت وحساس لحالة الأحرف. يحدد كيفية التعامل مع المصفوفات: `'skip'` أو `'string'` أو `'elements'` (القيمة الافتراضية). [`const String`](/ar/reference/data-types/string)
+
+**القيمة المعادة**
+
+تُعيد مسارات العقد الورقية ذات القيم المفردة وقيمها. [`Array(Tuple(path String, value String))`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**المسارات والقيم**
+
+```sql title=Query
+SELECT arrayMap(x -> (x.1, x.2), JSONExtractLeafPathsAndValues('{"a": {"b": "x"}, "c": [1, {"d": true}]}')) AS res;
+```
+
+```response title=Response
+┌─res──────────────────────────────────────────┐
+│ [('a.b','x'),('c[0]','1'),('c[1].d','true')] │
+└──────────────────────────────────────────────┘
+```
+
+## JSONExtractLeafValues {#JSONExtractLeafValues}
+
+أُضيف في: v26.11.0
+
+تحلّل سلسلة نصية بتنسيق JSON وتُعيد قيم جميع العُقد الورقية ذات القيم المفردة (scalar) في الكائن ذي المستوى الأعلى على شكل مصفوفة من السلاسل النصية، وفق ترتيب ظهورها في المستند.
+العقدة الورقية هي سلسلة نصية أو رقم أو قيمة منطقية. ولا تُنتج القيمة `null` ولا الكائنات الفارغة ولا المصفوفات الفارغة أي قيمة.
+تُعاد السلاسل النصية بعد إلغاء الإفلات، أما الأرقام والقيم المنطقية فتُعاد كنص JSON (بالطريقة نفسها التي تُعيدها بها [`JSONExtractRaw`](#JSONExtractRaw)).
+إذا كان JSON غير صالح، أو لم يكن مستواه الأعلى كائنًا، فالنتيجة مصفوفة فارغة.
+وإذا تكرر مفتاح عدة مرات، فستُعاد جميع قيمه.
+
+يتكوّن مسار القيمة من المفاتيح مفصولةً بـ `.`، ومن `[i]` لفهرس عنصر المصفوفة، على سبيل المثال `a.b` و`a[0]` و`a[0].b` و`a[0][1]`.
+لا يُطبَّق الإفلات على المفاتيح: فالمفتاح `a.b` والمفتاح المتداخل `b` داخل `a` يُعطيان المسار نفسه `a.b`.
+وعلى خلاف نوع البيانات `JSON`، لا ينطبق الإعداد [`json_type_escape_dots_in_keys`](/ar/reference/settings/formats/other#json_type_escape_dots_in_keys).
+
+يُطابَق `skip_regex` مع كل مسار يُمرّ به (أعضاء الكائنات على أي عمق، والأعضاء داخل المصفوفات، ومسارات عناصر المصفوفات مثل `a[0]`).
+ويؤدي التطابق إلى تخطي القيمة وكل ما يندرج تحتها.
+ويكفي التطابق الجزئي، كما في [`match`](/ar/reference/functions/regular-functions/string-search-functions#match): استخدم `^` و`$` لمطابقة المسار كاملًا.
+وعلى خلاف `SKIP REGEXP` في نوع البيانات `JSON`، لا ينطبق الإعداد [`type_json_use_partial_match_to_skip_paths_by_regexp`](/ar/reference/settings/formats/type-json#type_json_use_partial_match_to_skip_paths_by_regexp).
+
+في الوضع `'string'`، تُعاد المصفوفة كاملةً دون حدّ للعمق.
+
+<Note>
+  لا تتأثر النتيجة بالإعدادات، مثل `allow_simdjson` و`input_format_json_max_depth` و`json_type_escape_dots_in_keys`.
+  لذا فإن الفهرس المبني على الدالة يُعطي الصفوف نفسها التي يُعطيها المسح الكامل.
+</Note>
+
+استخدم [`JSONAllValues`](/ar/reference/functions/regular-functions/json-functions#JSONAllValues) مع الأعمدة من نوع البيانات `JSON`.
+
+**الصيغة**
+
+```sql
+JSONExtractLeafValues(json[, skip_regex[, arrays]])
+```
+
+**الوسيطات**
+
+* `json` — سلسلة JSON المراد تحليلها. [`String`](/ar/reference/data-types/string)
+* `skip_regex` — اختياري. تعبير نمطي ثابت (بصيغة [re2](https://github.com/google/re2/wiki/Syntax)). تُتجاهَل المسارات المطابقة وكل ما يندرج تحتها. عند استخدام سلسلة فارغة (القيمة الافتراضية)، لا يُتجاهَل أي شيء. [`const String`](/ar/reference/data-types/string)
+* `arrays` — اختياري. ثابت وحساس لحالة الأحرف. يحدد كيفية التعامل مع المصفوفات: لا يُنتج `'skip'` أي قيم للمصفوفات، ويُعيد `'string'` كل مصفوفة كقيمة واحدة بتنسيق JSON موجز، ويمرّ `'elements'` (الافتراضي) على العناصر، وتكون مساراتها `a[0]` و`a[1]` وهكذا. [`const String`](/ar/reference/data-types/string)
+
+**قيمة معادة**
+
+تُعيد قيم العقد الورقية المفردة. [`Array(String)`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**كائنات ومصفوفات متداخلة**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": {"b": "x", "c": 1.50}, "d": [true, null, {"e": "y"}], "f": null}') AS res;
+```
+
+```response title=Response
+┌─res────────────────────┐
+│ ['x','1.5','true','y'] │
+└────────────────────────┘
+```
+
+**تخطي المسارات**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": "x", "b_noindex": {"c": "y"}, "d": [{"e_noindex": "z", "f": "w"}]}', '.*_noindex$') AS res;
+```
+
+```response title=Response
+┌─res───────┐
+│ ['x','w'] │
+└───────────┘
+```
+
+**المصفوفات كسلاسل نصية**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": [1, 2], "b": "x"}', '', 'string') AS res;
+```
+
+```response title=Response
+┌─res───────────┐
+│ ['[1,2]','x'] │
+└───────────────┘
+```
+
 ## JSONExtractRaw {#JSONExtractRaw}
 
 أُضيف في: v20.1.0

@@ -17,7 +17,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-이 설정을 활성화하면 INSERT에서 materialized 컬럼을 허용합니다.
+활성화하면 `INSERT` 쿼리의 열 목록(column list)에 `MATERIALIZED` 컬럼을 지정할 수 있으며, 삽입된 값은 컬럼 표현식으로 계산되지 않고 그대로 저장됩니다. `Distributed` 테이블에서는 `MATERIALIZED` 컬럼의 값도 세그먼트로 함께 전송됩니다.
+
+비활성화하면 `INSERT` 쿼리에 `MATERIALIZED` 컬럼을 지정할 때 쿼리가 예외를 발생시키며, 해당 컬럼의 값은 항상 표현식으로 계산됩니다.
 
 ## insert_deduplicate {#insert_deduplicate}
 

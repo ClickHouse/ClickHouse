@@ -76,7 +76,7 @@ DDL で 名前付きコレクション を管理するには、ユーザーに `
 名前付きコレクションの保存先を設定するには、`type` を指定する必要があります。指定できる値は `local` または `keeper`/`zookeeper` です。暗号化ストレージの場合は、
 `local_encrypted` または `keeper_encrypted`/`zookeeper_encrypted` を使用できます。
 
-ZooKeeper/Keeper を使用する場合は、設定ファイルの
+ZooKeeper/Keeper を使用する場合は、configuration file の
 `named_collections_storage` セクションに `path` (名前付きコレクションの保存先となる ZooKeeper/Keeper 内のパス) も設定する必要があります。次の例では、暗号化と ZooKeeper/Keeper を使用しています。
 
 ```xml
@@ -93,7 +93,36 @@ ZooKeeper/Keeper を使用する場合は、設定ファイルの
 
 省略可能な設定パラメータ `update_timeout_ms` のデフォルト値は `5000` です。
 
-有効なストレージタイプは、`system.server_settings` および `getServerSetting` で確認できます。
+#### キーのローテーション {#named-collections-key-rotation}
+
+複数のキーを設定でき、それぞれに `id` 属性を指定します。新しいエントリの暗号化に使用するキーは `current_key_id` で選択します (代わりに `current_key_hex` を使うと、値でキーを選択できます) 。設定済みのすべてのキーが
+復号に使用されます。実行中のサーバーはキーの変更を反映せず、
+`SYSTEM RELOAD CONFIG` を実行しても反映されないため、再起動が必要です。既存のコレクションは
+古いキーで引き続き読み取ることができ、次に書き込まれる際に現在のキーで再暗号化されます。この書き込みは
+`ALTER NAMED COLLECTION`、`CREATE OR REPLACE NAMED COLLECTION`、またはバックアップからの復元によって行われます。コレクションの暗号化に使用されたキーを持たないサーバーは、
+そのキーのフィンガープリントを含むエラーを報告し、読み込み時にそのコレクションをスキップします。このコレクションは、
+そのキーを設定してサーバーを再起動するか、そのキーを持つサーバーがコレクションを書き換えると、再び読み込まれるようになります。古いキーを
+設定から削除するのは、そのキーで暗号化されたすべてのコレクションが書き換えられた後にしてください。
+
+```xml
+<clickhouse>
+  <named_collections_storage>
+    <type>local_encrypted</type>
+    <key_hex id="0">bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <key_hex id="1">00112233445566778899aabbccddeeff</key_hex>
+    <current_key_id>1</current_key_id>
+  </named_collections_storage>
+</clickhouse>
+```
+
+`local_encrypted` ストレージのキーをローテーションするには、新しいキーを追加し、上記の
+例と同様にそれを現在のキーに設定してから、サーバーを再起動します。`keeper_encrypted` または
+`zookeeper_encrypted` ストレージを共有するサーバーでは、いずれかのサーバーが新しいキーで書き込みを行う前に、すべてのサーバーが新しいキーを認識している必要があります。新しいキーを現在のキーとして
+再起動したサーバーが書き込んだエントリは、まだ再起動していないサーバーでは復号できないためです。
+キーのローテーションは 2 段階で行います。まず、古いキーを現在のキーとしたまま新しいキーを追加し、
+すべてのサーバーを再起動します。次に、新しいキーを現在のキーに設定し、もう一度すべてのサーバーを再起動します。
+
+有効なストレージの種別は、`system.server_settings` および `getServerSetting` で確認できます。
 
 ```sql
 SELECT value, getServerSetting('named_collections_storage_type')
@@ -101,7 +130,7 @@ FROM system.server_settings
 WHERE name = 'named_collections_storage.type';
 ```
 
-保存タイプを変更するには server の再起動が必要です。`SYSTEM RELOAD CONFIG` ではアクティブな backend は変更されません。
+ストレージの種類を変更するにはサーバーの再起動が必要です。`SYSTEM RELOAD CONFIG` を実行しても、現在有効なバックエンドは切り替わりません。
 
 ## 設定ファイルに named collections を保存する {#storing-named-collections-in-configuration-files}
 
@@ -553,19 +582,48 @@ kafka_max_block_size = '1048576';
 
 ### TLS とクライアント証明書 {#kafka-mtls-named-collection}
 
-TLS 関連のパスおよび `ssl.key.password` は [librdkafka の拡張設定](/ja/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections) であり、Kafka テーブルエンジンの `kafka_*` 設定ではありません。名前付きコレクションでこれらを設定する場合、DDL では `kafka.` プレフィックスを付けて指定し (例: `kafka.ssl_ca_location`)、XML では `<kafka>` 配下に指定します (例: `<ssl_ca_location>`)。`ENGINE = Kafka(collection)` でこのコレクションを使用する場合、サーバー全体の `<kafka>` 設定はマージされません。
+TLS証明書、秘密鍵、および `ssl.key.password` は [librdkafka の拡張設定](/ja/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections) であり、Kafka テーブルエンジンの `kafka_*` 設定ではありません。名前付きコレクションでは、DDL の場合は `kafka.` プレフィックスを付けて (例: `kafka.ssl_ca_pem`)、XML の場合は `<kafka>` の下に (例: `<ssl_ca_location>`) 設定します。`ENGINE = Kafka(collection)` でコレクションを使用する場合、サーバー全体の `<kafka>` 設定はマージされません。
+
+SQL で作成した名前付きコレクションでは、明示的に許可された `librdkafka` プロパティしか指定できません。TLS の場合は、証明書または秘密鍵の内容を `ssl.ca.pem`、`ssl.certificate.pem`、または `ssl.key.pem` に指定します。ファイルパスや、許可リストに含まれないその他のプロパティを使用するには、サーバー設定ファイルでコレクションを定義してください。詳しくは [名前付きコレクションによる TLS と SASL](/ja/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections) を参照してください。
+
+DDL を使用した例:
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 ```
 
-これらの値をテーブルごとに変える必要がある場合は、`kafka_broker_list`、`kafka_topic_list`、`kafka_group_name`、`kafka_format`、`kafka_sasl_username`、`kafka_sasl_password` をテーブルの `SETTINGS` で指定します。`CREATE TABLE` の完全な例については、[名前付きコレクションを使用した TLS と SASL](/ja/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections) を参照してください。
+サーバー上のファイルを参照できる XML を使用した例：
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
+```
+
+テーブルごとに異なる値を使用する場合は、`kafka_broker_list`、`kafka_topic_list`、`kafka_group_name`、`kafka_format`、`kafka_sasl_username`、`kafka_sasl_password` をテーブルの `SETTINGS` で指定してください。`CREATE TABLE` の完全な例については、[名前付きコレクションを使用した TLS と SASL](/ja/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections) を参照してください。
 
 ### OAUTHBEARER/OIDC 認証 {#oauthbearer-oidc-authentication}
 

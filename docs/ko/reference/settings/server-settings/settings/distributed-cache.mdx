@@ -20,6 +20,30 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="No" />Distributed Cache가 유휴 상태로 유지하려는 활성 연결 수의 소프트 리밋입니다. 사용 가능한 연결 수가 distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections 아래로 내려가면, 연결 수가 다시 이 리밋을 넘을 때까지 가장 오래 활동이 없었던 연결부터 닫힙니다.
 
+## distributed_cache_max_request_processing_time_ms {#distributed_cache_max_request_processing_time_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="60000" changeable_without_restart="No" />분산 캐시 서버(Distributed Cache server)는 요청의 마지막 `StartRequest` 또는 `ContinueRequest` 이후 처리 시간이 이 값(밀리초)에 도달한 요청을 종료합니다. 클라이언트를 기다리는 데 소요된 시간은 포함되지 않으며, 새로운 읽기 범위가 시작되면 처리 시간 한도가 다시 적용됩니다. 요청은 서버가 이를 보고할 수 있는 시점에 즉시 종료되며, 그 시점에 도달하지 못한 요청은 `distributed_cache_stuck_request_scan_interval_ms`만큼 시간이 지난 후 연결이 종료됩니다. 값이 0이면 제한이 없습니다.
+
+## distributed_cache_slow_down_min_stuck_requests {#distributed_cache_slow_down_min_stuck_requests}
+
+<SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />분산 캐시 서버(Distributed Cache server)는 클라이언트의 요청 중 멈춘 요청이 이 개수 이상일 때에만 해당 클라이언트에 속도를 늦추도록 요청합니다. 따라서 처리 중인 요청이 몇 개뿐인 클라이언트는 요청 하나가 멈췄다는 이유만으로 속도 저하 요청을 받지 않습니다. 값이 0 또는 1이면 판단을 `distributed_cache_slow_down_stuck_requests_ratio`에만 맡깁니다.
+
+## distributed_cache_slow_down_stuck_requests_ratio {#distributed_cache_slow_down_stuck_requests_ratio}
+
+<SettingsInfoBlock type="Double" default_value="0.2" changeable_without_restart="No" />분산 캐시 서버(Distributed Cache server)는 처리 중인 요청 가운데 멈춘 요청의 비율이 이 값 이상이 되면 클라이언트에 속도를 늦추도록 요청합니다. 유휴 상태의 연결은 계산에 포함되지 않습니다. 값을 0으로 설정하면 속도 저하를 요청하지 않습니다.
+
+## distributed_cache_slow_down_window_ms {#distributed_cache_slow_down_window_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />분산 캐시 서버(Distributed Cache server)에서 처리가 멈춘 요청이 너무 많아졌을 때, 해당 서버가 클라이언트에게 접근을 자제하도록 요청하는 시간(밀리초)입니다. 스캔(Scan)으로 윈도우가 갱신되지 않을 때에만 윈도우가 만료되도록 `distributed_cache_stuck_request_scan_interval_ms`의 2배 이상이어야 합니다. 값 0은 허용되지 않습니다.
+
+## distributed_cache_stuck_request_no_progress_timeout_ms {#distributed_cache_stuck_request_no_progress_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />분산 캐시 서버(Distributed Cache server)는 요청이 이 설정값(밀리초) 동안 데이터를 전혀 주고받지 않으면 해당 요청의 연결을 닫습니다. 이때 클라이언트를 기다리는 데 소요된 시간은 포함하지 않습니다. 값을 0으로 설정하면 이 제한이 비활성화됩니다. 단, 멈춘 요청에 대한 스캔(Scan)은 `distributed_cache_max_request_processing_time_ms`도 0인 경우에만 중지됩니다.
+
+## distributed_cache_stuck_request_scan_interval_ms {#distributed_cache_stuck_request_scan_interval_ms}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="5000" changeable_without_restart="No" />분산 캐시 서버(Distributed Cache server)가 멈춘 요청을 스캔(Scan)하는 인터벌(밀리초)입니다.
+
 ## distributed_cache_temporary_data_background_retry_delay_milliseconds {#distributed_cache_temporary_data_background_retry_delay_milliseconds}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="30000" changeable_without_restart="No" />커밋된 임시 데이터에 대한 백그라운드 재시도를 수행하기 전의 지연 시간(밀리초)입니다.
@@ -75,6 +99,10 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 ## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />ClickHouse Cloud에서만 적용됩니다. 로컬 파일 시스템 캐시가 없는 디스크에서 캐시 워머가 큐에 보관할 수 있는 범위의 최대 개수입니다. 이 값을 초과하면 가장 오래된 범위부터 삭제됩니다(로컬 캐시가 있으면 워머는 해당 캐시의 `max_elements`를 사용합니다). 0으로 설정하면 무제한입니다.
+
+## distributed_cache_warmer_skip_parts_produced_in_current_availability_zone {#distributed_cache_warmer_skip_parts_produced_in_current_availability_zone}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />ClickHouse Cloud에서만 적용됩니다. 캐시 워머가 Distributed Cache만 워밍하는 경우(파트의 디스크에 로컬 파일 시스템 캐시가 없거나 읽기 시 캐시가 비활성화된 경우), 현재 가용 영역의 레플리카가 생성한 파트는 건너뜁니다. 이러한 파트는 Distributed Cache를 통해 기록되었으므로 이미 이 영역의 캐시에 있습니다. 시작점을 알 수 없는 파트는 항상 워밍됩니다.
 
 ## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
 

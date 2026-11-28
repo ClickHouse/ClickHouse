@@ -2,14 +2,14 @@
 slug: /clickstack/observability/faq
 title: 'ClickHouse Observability 자주 묻는 질문'
 sidebarTitle: '자주 묻는 질문'
-description: '완전 관리형 및 자체 관리형 ClickHouse Observability, 데이터 수집, 알림, 대시보드, 메트릭 탐색에 대해 자주 묻는 질문을 정리했습니다.'
+description: '완전 관리형 및 자체 관리형 ClickHouse Observability, 데이터 수집, 청구, 알림, 대시보드, 메트릭 탐색에 대해 자주 묻는 질문을 정리했습니다.'
 doc_type: 'guide'
-keywords: ['ClickHouse Observability', '자주 묻는 질문', '알림', '대시보드', '드릴다운', '메트릭 탐색']
+keywords: ['ClickHouse Observability', '자주 묻는 질문', '청구', '요금', '알림', '대시보드', '드릴다운', '메트릭 탐색']
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
-이 페이지에서는 ClickHouse Observability의 완전 관리형 모드와 자체 관리형 모드를 설명하고, 데이터 수집, 알림, 대시보드, 메트릭 탐색에 관해 자주 묻는 질문에 답변합니다.
+이 페이지에서는 ClickHouse Observability의 완전 관리형 모드와 자체 관리형 모드를 설명하고, 데이터 수집, 청구, 알림, 대시보드, 메트릭 탐색에 관해 자주 묻는 질문에 답변합니다.
 
 ## 배포 및 데이터 수집 {#data-collection}
 
@@ -39,6 +39,12 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
   **자체 관리형:** 직접 운영하는 collector의 OTLP 엔드포인트와, 해당 리시버에 인증 토큰이 구성되어 있다면 그 토큰을 사용하십시오. ClickStack 수집기에서 `OTLP_AUTH_TOKEN`을 활성화한 경우 해당 토큰을 `authorization` 헤더에 담아 전송하십시오. 이 정보는 collector가 데이터를 기록할 때 사용하는 ClickHouse Cloud 데이터베이스 엔드포인트 및 자격 증명과는 별개입니다. 예시는 [OpenTelemetry를 사용한 데이터 수집](/ko/clickstack/observability/ingesting-data/opentelemetry#sending-data-to-collector-managed-self-configured)을 참조하십시오.
 
   엔드포인트 형식은 사용 중인 도구의 요구 사항에 맞추십시오. [샘플 데이터 및 데모](/ko/clickstack/observability/example-datasets)에서 도구별 구성 예시를 확인할 수 있습니다.
+</Accordion>
+
+<Accordion title="ClickHouse Observability 요금은 어떻게 청구됩니까?">
+  **완전 관리형:** 컴퓨트와 스토리지가 아니라 전송한 텔레메트리 양에 따라 요금이 부과됩니다. 로그와 트레이스는 압축 전 데이터 양을 기준으로, 메트릭은 시계열 단위가 아닌 데이터 포인트 수를 기준으로 청구됩니다. 퍼블릭 베타 기간에는 데이터가 30일간 보존됩니다. 현재 요금은 [ClickHouse 요금](https://clickhouse.com/pricing)을 참조하십시오.
+
+  **자체 관리형:** ClickHouse Cloud 서비스의 컴퓨트와 스토리지 사용량에 따라 요금이 부과됩니다. 요금은 이 옵션의 이전 명칭인 Managed ClickStack과 동일합니다. 자세한 내용은 [ClickHouse Cloud 요금](/ko/products/cloud/reference/billing/billing-overview)을 참조하십시오.
 </Accordion>
 
 ## 알림 {#alerting}

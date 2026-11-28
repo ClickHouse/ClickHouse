@@ -1,0 +1,85 @@
+---
+description: 'نقطة نهاية مقاييس Prometheus في ClickHouse: إتاحة مقاييس الخادم على منفذ مخصص لجلب المقاييس.'
+sidebarTitle: 'نقطة نهاية مقاييس Prometheus'
+slug: /concepts/features/connect-to-clickhouse/prometheus/metrics
+title: 'نقطة نهاية مقاييس Prometheus'
+doc_type: 'reference'
+---
+
+يُتيح ClickHouse مقاييسه الخاصة على منفذ مخصص بالتنسيق النصي لـ Prometheus، كي يتمكن خادم Prometheus من سحبها.
+
+أما لتخزين مقاييس Prometheus في ClickHouse والاستعلام عنها باستخدام PromQL، فراجع [واجهة برمجة تطبيقات HTTP لـ Prometheus وPromQL](/ar/concepts/features/connect-to-clickhouse/prometheus).
+
+<Note>
+  إذا كنت تستخدم ClickHouse Cloud، فيمكنك إتاحة المقاييس لـ Prometheus عبر [التكامل مع Prometheus](/ar/products/cloud/features/monitoring/prometheus).
+</Note>
+
+## تهيئة منفذ المقاييس {#configure-the-metrics-port}
+
+هيّئ منفذًا مخصصًا عندما يحتاج خادم Prometheus إلى سحب المقاييس الخاصة بـ ClickHouse نفسه:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <endpoint>/metrics</endpoint>
+    <metrics>true</metrics>
+    <asynchronous_metrics>true</asynchronous_metrics>
+    <events>true</events>
+    <errors>true</errors>
+    <histograms>true</histograms>
+    <dimensional_metrics>true</dimensional_metrics>
+</prometheus>
+```
+
+## تهيئة معالجات الطلبات الموسّعة {#configure-extended-handlers}
+
+يمكن استخدام القسم `<prometheus.handlers>` لإنشاء معالجات طلبات موسّعة إضافية على المنفذ نفسه.
+يشبه هذا القسم [`<http_handlers>`](/ar/concepts/features/connect-to-clickhouse/protocols/http)، لكنه مخصّص لبروتوكولات Prometheus:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+                <labels>
+                    <environment>production</environment>
+                    <shard from_env="SHARD_NAME"></shard>
+                </labels>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+## الإعدادات {#settings}
+
+للاطلاع على السلوك الكامل لهذه الإعدادات، راجع [قسم Prometheus](/ar/reference/settings/server-settings/settings/other#prometheus) في مرجع إعدادات الخادم.
+
+| الاسم                        | القيمة الافتراضية | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | none              | المنفذ الذي تُقدَّم عبره مقاييس ClickHouse.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `endpoint`                   | `/metrics`        | نقطة نهاية HTTP لجلب المقاييس. تبدأ بـ `/`. لا ينبغي استخدامها مع القسم `<handlers>`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `url` / `headers` / `method` | none              | عوامل تصفية تُستخدم للعثور على معالج مطابق للطلب. وهي مماثلة للحقول التي تحمل الأسماء نفسها في القسم [`<http_handlers>`](/ar/concepts/features/connect-to-clickhouse/protocols/http).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `info`                       | true              | يعرض المقياس `ClickHouse_Info` من نوع gauge مع وسوم هوية الخادم (`name`، `version`، `version_describe`، `version_major`، `version_minor`، `version_patch`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `metrics`                    | true              | يعرض المقاييس من [`system.metrics`](/ar/reference/system-tables/metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `asynchronous_metrics`       | true              | يعرض المقاييس من [`system.asynchronous_metrics`](/ar/reference/system-tables/asynchronous_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `events`                     | true              | يعرض المقاييس من [`system.events`](/ar/reference/system-tables/events).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `errors`                     | true              | يعرض أعداد مرات ظهور الأخطاء من [`system.errors`](/ar/reference/system-tables/errors).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `histograms`                 | true              | يعرض المقاييس من [`system.histogram_metrics`](/ar/reference/system-tables/histogram_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `dimensional_metrics`        | true              | يعرض المقاييس من [`system.dimensional_metrics`](/ar/reference/system-tables/dimensional_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `labels`                     | none              | وسوم ثابتة تُضاف إلى كل مقياس معروض. يعرّف كل عنصر فرعي وسمًا واحدًا: اسم العنصر هو اسم الوسم (ويجب أن يطابق `[a-zA-Z_][a-zA-Z0-9_]*`)، وقيمة العنصر هي قيمة الوسم. تدعم قيم الوسوم استبدالات الإعداد القياسية مثل الـ attribute `from_env`. يُرفض اسم الوسم إذا بدأ بـ `__` (محجوز لـ Prometheus)، أو إذا تعارض مع وسم تكتبه نقطة النهاية هذه أصلًا لأحد أقسامها المفعّلة. ومن ثَمّ تتحدد مجموعة الأسماء المحجوزة وفق نطاق التصدير النشط لنقطة النهاية: `le` عندما يكون `histograms` مفعّلًا؛ ووسوم `ClickHouse_Info` (`name`، `version`، `version_describe`، `version_major`، `version_minor`، `version_patch`) عندما يكون `info` مفعّلًا؛ وأي وسم تستخدمه عائلة مقاييس معروضة من نوع المُدرَّج التكراري أو المقاييس متعددة الأبعاد (مثل `group` أو `direction` أو `operation_type`) عندما يكون `histograms` أو `dimensional_metrics` مفعّلًا. ولأن ذلك يعتمد على ما تعرضه نقطة النهاية فعليًا، فقد يكون الاسم صالحًا في نقطة نهاية ومرفوضًا في أخرى. |
+
+## التحقق من نقطة النهاية {#check-the-endpoint}
+
+```bash
+curl http://127.0.0.1:9363/metrics
+```

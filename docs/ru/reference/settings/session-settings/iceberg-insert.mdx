@@ -13,6 +13,27 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## iceberg_insert_commit_retry_initial_backoff_ms {#iceberg_insert_commit_retry_initial_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "10"},{"label": "Новая настройка. Коммит `INSERT` в Iceberg, проигравший конкуренцию параллельному коммиту, повторно выполняется не сразу, а после случайной экспоненциальной задержки."}]}]} />
+
+Верхняя граница задержки перед первой повторной попыткой `INSERT` в таблицу Iceberg, если коммит проиграл конкуренцию параллельному коммиту.
+Граница удваивается с каждой следующей повторной попыткой вплоть до `iceberg_insert_commit_retry_max_backoff_ms`, а каждая задержка выбирается случайным образом
+в диапазоне от нуля до границы, чтобы пишущие стороны, проигравшие одну и ту же гонку, не повторяли попытку одновременно и снова не сталкивались.
+Задержка выполняется до получения актуальных метаданных, поэтому при большом количестве параллельных пишущих сторон она также ограничивает частоту получения списка содержимого каталога
+метаданных. При значении `0` повторные попытки выполняются без задержки.
+
+## iceberg_insert_commit_retry_max_backoff_ms {#iceberg_insert_commit_retry_max_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "5000"},{"label": "Новая настройка. Если коммит `INSERT` в Iceberg проигрывает параллельному коммиту, он повторно выполняется не сразу, а после случайной экспоненциальной задержки."}]}]} />
+
+Максимальное значение границы задержки перед повторной попыткой `INSERT` в таблицу Iceberg, если её коммит проиграл параллельному коммиту;
+см. `iceberg_insert_commit_retry_initial_backoff_ms`.
+
 ## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
@@ -26,6 +47,17 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 записанного к текущему моменту, то есть с размером сжатых данных, поэтому файл может превысить его на объём данных, которые ещё удерживаются в буфере записи, например
 незавершённых групп строк Parquet и групп, находящихся в процессе кодирования. `iceberg_insert_max_rows_in_data_file` ограничивает файл
 независимо от его размера.
+
+## iceberg_insert_max_data_files_in_upload {#iceberg_insert_max_data_files_in_upload}
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "Новая настройка. INSERT в Iceberg на S3 или Azure больше не ожидает завершения загрузки каждого готового файла данных."}]}]} />
+
+Максимальное количество готовых файлов данных одного потока вставки, загрузка которых может продолжаться, пока `INSERT` записывает следующий
+файл. Применяется к объектным хранилищам с фоновой загрузкой (S3, Azure). Буферы загрузки такого файла остаются в памяти до завершения
+загрузки, поэтому увеличение значения позволяет лучше компенсировать задержку загрузки за счёт большего потребления памяти. При `0` перед записью
+следующего файла ожидается завершение загрузки каждого файла данных.
 
 ## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
 
@@ -42,6 +74,15 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1000000"},{"label": "Новая настройка"}]}]} />
 
 Максимальное количество строк в файле данных Parquet Iceberg при выполнении операции вставки.
+
+## iceberg_insert_max_sort_buffer_bytes {#iceberg_insert_max_sort_buffer_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1073741824"},{"label": "Новая настройка"}]}]} />
+
+Максимальный объём несжатых данных в байтах, который `INSERT` в таблицу Iceberg с заданным порядком сортировки буферизует по всем партициям, прежде
+чем записать их в отсортированном виде. При превышении этого порога самый большой буфер досрочно записывается в виде отсортированного файла данных меньшего размера. 0 означает отсутствие ограничения.
 
 ## iceberg_insert_single_manifest_for_all_partitions {#iceberg_insert_single_manifest_for_all_partitions}
 

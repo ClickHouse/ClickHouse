@@ -2,13 +2,11 @@
 title: توسيع الإعدادات
 ---
 
-<div id="extending-collector-config">
-  ### توسيع تهيئة الـ مُجمِّع
-</div>
+### توسيع تهيئة جامع البيانات {#extending-collector-config}
 
-يدعم توزيع ClickStack من OTel مُجمِّع توسيع التهيئة الأساسية من خلال تركيب ملف تهيئة مخصص وتعيين متغير بيئة.
+يدعم توزيع ClickStack من OTel جامع البيانات توسيع التهيئة الأساسية من خلال تركيب ملف تهيئة مخصص وتعيين متغير بيئة.
 
-لإضافة receivers أو processors أو pipelines مخصصة:
+لإضافة المستقبِلات أو معالجات أو مسارات تنفيذ الاستعلام مخصصة:
 
 1. أنشئ ملف تهيئة مخصصًا يتضمن التهيئة الإضافية
 2. ركّب الملف في `/etc/otelcol-contrib/custom.config.yaml`
@@ -67,12 +65,11 @@ service:
         - clickhouse
 ```
 
-**النشر باستخدام المُجمِّع المستقل:**
+**النشر باستخدام جامع البيانات المستقل:**
 
 ```bash
 docker run -d \
   -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
-  # -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} \
   -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
   -e CLICKHOUSE_USER=default \
   -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
@@ -81,14 +78,79 @@ docker run -d \
   clickhouse/clickstack-otel-collector:latest
 ```
 
+لكي تتم إدارة جامع البيانات عبر OpAMP، مرِّر أيضًا `-e OPAMP_SERVER_URL=${OPAMP_SERVER_URL}`.
+
 <Note>
-  لا تُعرِّف في التهيئة المخصّصة سوى `receivers` و`processors` و`pipelines` الجديدة. أمّا `processors` الأساسية (`memory_limiter` و`batch`) و`exporters` (`clickhouse`) فهي معرّفة مسبقًا، لذا اكتفِ بالإشارة إليها بالاسم. تُدمَج التهيئة المخصّصة مع التهيئة الأساسية، ولا يمكنها تجاوز المكوّنات الموجودة.
+  لا تُعرِّف في التهيئة المخصّصة سوى `receivers` و`connectors` و`processors` و`pipelines` الجديدة. أمّا `processors` الأساسية (`memory_limiter` و`batch`) و`exporters` (`clickhouse`) فهي معرّفة مسبقًا، لذا اكتفِ بالإشارة إليها بالاسم. تُدمَج التهيئة المخصّصة مع التهيئة الأساسية، ولا يمكنها تجاوز المكوّنات الموجودة.
+
+  يمكن للتهيئة المخصّصة أن تستبدل قائمة `processors` في أحد مسارات تنفيذ الاستعلام الافتراضية. وبدءًا من الإصدار 2.44.0، أبقِ `transform/session_id` ضمن قوائم المعالجات في مساري تنفيذ الاستعلام للتتبّع والسجلات الافتراضيين، وإلا فلن تحمل الأحداث الواردة من حزم SDK للمتصفح الأقدم الحقلَ `session.id`.
+
+  عند العمل عبر OpAMP (صورة الكل في واحد، أو أي جامع بيانات عُيِّن فيه `OPAMP_SERVER_URL`)، تُحذَف المستقبِلات والمُصدِّرات والموصلات التي تضيفها إلى مسار تنفيذ الاستعلام الافتراضي دون ظهور أي خطأ. لذا أضفها في مسارات تنفيذ الاستعلام بأسماء خاصة بها، كما في الأمثلة أدناه.
 </Note>
 
-بالنسبة إلى التهيئات الأكثر تعقيدًا، راجع [التهيئة الافتراضية لمجمّع ClickStack](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml) و[وثائق مُصدِّر ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options).
+بالنسبة إلى التهيئات الأكثر تعقيدًا، راجع [التهيئة الافتراضية لجامع بيانات ClickStack](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml) و[وثائق مُصدِّر ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options).
 
-<div id="configuration-structure">
-  #### هيكل التهيئة
-</div>
+#### استقبال مقاييس StatsD {#statsd-receiver}
+
+بدءًا من الإصدار 2.40.0، يتضمن مُجمِّع ClickStack [مستقبِل StatsD](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/statsdreceiver)، مما يتيح للتطبيقات التي تُصدر مقاييس StatsD أو DogStatsD إرسالها إلى جامع البيانات. وتتحول وسوم DogStatsD بصيغة `key:value`، مثل `|#env:prod,team:payments`، إلى سمات للمقاييس.
+
+يكون المستقبِل معطّلًا افتراضيًا. أضِفه باستخدام تهيئة مخصصة، ضمن مسار تنفيذ الاستعلام يحمل اسمًا خاصًا به:
+
+```yaml
+receivers:
+  statsd:
+    endpoint: 0.0.0.0:8125
+
+service:
+  pipelines:
+    metrics/statsd:
+      receivers: [statsd]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+انشر منفذ UDP رقم `8125` على حاوية جامع البيانات، مثلًا باستخدام `-p 8125:8125/udp`. لا تتضمن مقاييس StatsD الحقل `service.name`، ولذلك لن يعثر عليها عامل تصفية يعتمد على الخدمة. يُجمِّع المستقبِل المقاييس داخل عملية جامع البيانات، لذا أرسل كل مقياس إلى مثيل واحد فقط من جامع البيانات، وإلا فستتوزع قيمه على النسخ المتماثلة.
+
+#### اشتقاق المقاييس من مقاطع التتبع {#span-metrics}
+
+بدءًا من الإصدار 2.39.0، يتضمن مُجمِّع ClickStack [موصل مقاييس مقاطع التتبع (span metrics connector)](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/spanmetricsconnector). يُولِّد هذا الموصل أعداد الاستدعاءات والمدرجات التكرارية للمدة من مقاطع التتبع التي يستقبلها جامع البيانات، فتحصل بذلك على مقاييس الطلبات والأخطاء والمدة لكل خدمة دون الحاجة إلى إضافة أدوات رصد منفصلة للمقاييس.
+
+الموصل معطّل افتراضيًا. أضِفه عبر تهيئة مخصصة يُصدِّر فيها مسارُ تنفيذ الاستعلام للتتبّع مقاطعَ التتبع إلى الموصل، ويستقبل منه مسارُ تنفيذ الاستعلام للمقاييس المقاييسَ المُولَّدة. خصِّص لكل من مساري تنفيذ الاستعلام اسمًا مستقلًا:
+
+```yaml
+connectors:
+  span_metrics:
+    namespace: traces.span.metrics
+    aggregation_temporality: AGGREGATION_TEMPORALITY_DELTA
+    histogram:
+      exponential:
+        max_size: 160
+    aggregation_cardinality_limit: 10000
+    series_expiration: 5m
+
+service:
+  pipelines:
+    traces/spanmetrics:
+      receivers: [otlp/hyperdx]
+      processors:
+        - memory_limiter
+      exporters: [span_metrics]
+    metrics/spanmetrics:
+      receivers: [span_metrics]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+يكتب جامع البيانات أعداد مرات الاستدعاء باسم `traces.span.metrics.calls` والمُدد باسم `traces.span.metrics.duration`. احتفظ بكلٍّ من `aggregation_temporality` و`aggregation_cardinality_limit` و`series_expiration`، فهي تضع حدًّا لاستهلاك الموصل للذاكرة، وهو ما لا يحميه `memory_limiter`، كما تحافظ على صحة أعداد مرات الظهور عند إخلاء سلسلة بيانات متقادمة.
+
+لتضمين بيانات التتبّع الواردة من وكيل Datadog، أضف `datadog` إلى `receivers` الخاصة بـ `traces/spanmetrics`. يجب تعريف المستقبِل `datadog`، وإلا رفض جامع البيانات التهيئة: فمع OpAMP، اضبط متغير البيئة `ENABLE_DATADOG_RECEIVER=true` لواجهة مستخدم ClickStack، التي تتولى إنشاء تهيئة جامع البيانات؛ أما من دون OpAMP، فعرّف مستقبِل `datadog` في التهيئة المخصصة.
+
+#### هيكل التهيئة {#configuration-structure}
 
 للاطلاع على تفاصيل حول إعداد مكوّنات OTel مُجمِّع، بما في ذلك [`receivers`](https://opentelemetry.io/docs/collector/transforming-telemetry/)، و[`operators`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md)، و[`processors`](https://opentelemetry.io/docs/collector/configuration/#processors)، نوصي بالرجوع إلى [الوثائق الرسمية لـ OpenTelemetry مُجمِّع](https://opentelemetry.io/docs/collector/configuration).

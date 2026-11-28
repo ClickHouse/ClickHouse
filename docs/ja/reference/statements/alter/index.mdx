@@ -81,16 +81,16 @@ ALTER TABLE visits DROP COLUMN page_id, MODIFY COLUMN duration UInt64, ADD COLUM
 
 ## ミューテーション {#mutations}
 
-テーブルデータの操作を目的とする `ALTER` クエリは、「ミューテーション」と呼ばれる仕組みによって実装されています。代表的なものとして、[ALTER TABLE ... DELETE](/ja/reference/statements/alter/delete) や [ALTER TABLE ... UPDATE](/ja/reference/statements/alter/update) があります。これらは、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/index) テーブルにおけるマージと同様、新しい「変更後」のパーツを生成する非同期のバックグラウンド処理です。
+テーブルデータの操作を目的とする `ALTER` クエリは、「ミューテーション」と呼ばれる仕組みによって実装されています。代表的なものとして、[ALTER TABLE ... DELETE](/ja/reference/statements/alter/delete) や [ALTER TABLE ... UPDATE](/ja/reference/statements/alter/update) があります。これらは、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/index) テーブルにおけるマージと同様、新しい「ミューテーション適用済み」のパーツを生成する非同期のバックグラウンド処理です。
 
 `*MergeTree` テーブルでは、ミューテーションは**データパーツ全体を書き換える**ことで実行されます。
-アトミック性はありません。パーツは準備ができ次第、変更後のパーツに置き換えられるため、ミューテーションの実行中に開始された `SELECT` クエリでは、すでに変更済みのパーツのデータと、まだ変更されていないパーツのデータの両方が見えることがあります。
+アトミック性はありません。パーツは準備ができ次第、ミューテーション適用済みのパーツに置き換えられるため、ミューテーションの実行中に開始された `SELECT` クエリでは、すでにミューテーション適用済みのパーツのデータと、まだミューテーションが適用されていないパーツのデータの両方が見えることがあります。
 
-ミューテーションは作成順に完全に順序付けられ、その順序で各パーツに適用されます。また、`INSERT INTO` クエリに対しては部分的な順序関係もあります。ミューテーションの送信前にテーブルへ挿入されたデータは変更対象になりますが、その後に挿入されたデータは変更されません。なお、ミューテーションが insert をブロックすることはありません。
+ミューテーションは作成順に完全に順序付けられ、その順序で各パーツに適用されます。また、`INSERT INTO` クエリに対しては部分的な順序関係もあります。ミューテーションの送信前にテーブルへ挿入されたデータはミューテーション適用済みになりますが、その後に挿入されたデータはミューテーションが適用されません。なお、ミューテーションが insert をブロックすることはありません。
 
-ミューテーションのクエリは、ミューテーションエントリが追加されるとすぐに返ります (レプリケートテーブルの場合は ZooKeeper に、非レプリケートテーブルの場合は filesystem に追加されます) 。ミューテーション自体は、システムの profile 設定を使用して非同期に実行されます。ミューテーションの進行状況を追跡するには、[`system.mutations`](/ja/reference/system-tables/mutations) テーブルを使用できます。正常に送信されたミューテーションは、ClickHouse server が再起動しても実行が継続されます。いったん送信されたミューテーションをロールバックする方法はありませんが、何らかの理由で停止している場合は、[`KILL MUTATION`](/ja/reference/statements/kill#kill-mutation) クエリでキャンセルできます。
+ミューテーションのクエリは、ミューテーションエントリが追加されるとすぐに返ります (レプリケートテーブルの場合は ZooKeeper に、非レプリケートテーブルの場合は filesystem に追加されます) 。ミューテーション自体は、システムの profile 設定を使用して非同期に実行されます。ミューテーションの進行状況を追跡するには、[`system.mutations`](/ja/reference/system-tables/mutations) テーブルを使用できます。正常に送信されたミューテーションは、ClickHouse サーバーが再起動しても実行が継続されます。いったん送信されたミューテーションをロールバックする方法はありませんが、何らかの理由で停止している場合は、[`KILL MUTATION`](/ja/reference/statements/kill#kill-mutation) クエリでキャンセルできます。
 
-完了したミューテーションのエントリはすぐには削除されません (保持するエントリ数は、ストレージエンジンのパラメータ `finished_mutations_to_keep` で決まります) 。古いミューテーションエントリは削除されます。
+完了したミューテーションのエントリはすぐには削除されません (保持するエントリ数は、ストレージエンジンのパラメータ `finished_mutations_to_keep` で決まります。0 に設定すると、完了したミューテーションのエントリは一切保持されません) 。古いミューテーションエントリは削除されます。
 
 ## 実行コストと完了 {#execution-cost-and-completion}
 

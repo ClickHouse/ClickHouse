@@ -31,11 +31,11 @@ Usa la caché de páginas en espacio de usuario al leer desde discos locales. Se
 
 ## use_page_cache_for_object_storage {#use_page_cache_for_object_storage}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Nueva configuración para usar la caché de páginas en espacio de usuario en las funciones de tabla para almacenamiento de objetos"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Nueva configuración para utilizar la caché de páginas en espacio de usuario con las funciones de tabla de almacenamiento de objetos"}]}, {"id": "row-2","items": [{"label": "26.12"},{"label": "1"},{"label": "Utilizar de forma predeterminada la caché de páginas en espacio de usuario con los motores de tablas y las funciones de tabla de almacenamiento de objetos si la caché de páginas está configurada en el servidor."}]}]} />
 
-Use la caché de páginas en espacio de usuario al leer desde funciones de tabla para almacenamiento de objetos (s3, azure, hdfs) y motores de tabla (S3, Azure, HDFS).
+Utiliza la caché de páginas en espacio de usuario al leer desde funciones de tabla (s3, azure, hdfs, Iceberg, Delta Lake, etc.) y motores de tablas (S3, Azure, HDFS, Iceberg, Delta Lake, etc.) de almacenamiento de objetos. Solo tiene efecto si la caché de páginas en espacio de usuario está configurada en el servidor (`page_cache_max_size`), y únicamente para objetos con un ETag fuerte o con una identity inmutable obtenida de los registros de la table (archivos de datos de Iceberg y Delta Lake). No se utiliza junto con la caché del sistema de archivos. Solo se utiliza junto con Distributed Cache si `use_page_cache_with_distributed_cache` también está habilitado.
 
 ## use_page_cache_lookahead_for_text_index {#use_page_cache_lookahead_for_text_index}
 

@@ -136,6 +136,11 @@ integration:
       ويجب إزالته يدويًا إذا لم تعد بحاجة إليه.
     </Note>
 
+    <Tip>
+      يُربط Resource-Share بـ Reverse Private Endpoint بمجرد أن يقبله ClickPipes، ولا يمكن بعد ذلك استخدامه مع أي endpoint آخر.
+      نوصي بإنشاء Reverse Private Endpoint فور إنشاء Resource-Share، مع الحفاظ على سرية تفاصيل Resource-Share حتى ذلك الحين.
+    </Tip>
+
     يمكنك إضافة Resource-Configuration إلى Resource-Share عبر [وحدة تحكم AWS](https://docs.aws.amazon.com/ram/latest/userguide/working-with-sharing-create.html) أو بتشغيل الأمر التالي باستخدام معرّف حساب ClickPipes `072088201116` ‏(arn:aws:iam::072088201116:root):
 
     ```bash

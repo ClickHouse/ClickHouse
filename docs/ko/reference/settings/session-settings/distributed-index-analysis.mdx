@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHistory.jsx";
+import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
@@ -39,6 +40,16 @@ cluster&#95;for&#95;parallel&#95;replicas의 레플리카를 사용합니다.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
 SharedMergeTree가 아닌 엔진(Cloud 전용 엔진)에서도 분산 인덱스 분석을 활성화합니다.
+
+## distributed_index_analysis_on_stateless_workers {#distributed_index_analysis_on_stateless_workers}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+분산 실행 계획(distributed plan)(`make_distributed_plan`)으로 실행되면서 worker를 보유하고 있거나 임대할 수 있는 원본 쿼리에서, `distributed_index_analysis`와는 별개로 상태 비저장 워커를 사용해 분산 인덱스 분석(distributed index analysis)을 수행합니다. worker는 공유 테이블의 객체 스토리지에 있는 테이블(tables)을 분석합니다. 현재는 이 설정을 활성화하면 레플리카에서 수행되는 인덱스 분석(Index Analysis)(`distributed_index_analysis`)이 비활성화됩니다. 따라서 worker가 맡지 않은 읽기와 다른 쿼리의 읽기는 로컬에서 분석됩니다. worker를 사용하려면 스트리밍 exchange가 필요합니다. `Persisted` exchange를 사용하는 경우(`distributed_plan_force_exchange_kind`로 지정했거나 스트리밍 리스너가 구성되지 않은 경우)에는 읽기가 로컬에서 분석됩니다. MergeTree 설정인 `distributed_index_analysis_min_parts_to_activate` 및 `distributed_index_analysis_min_indexes_bytes_to_activate`가 적용됩니다.
 
 ## distributed_index_analysis_only_on_coordinator {#distributed_index_analysis_only_on_coordinator}
 

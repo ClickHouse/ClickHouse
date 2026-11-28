@@ -1,0 +1,145 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-10-15
+title: '演示日 - 2026-10-15'
+sidebarTitle: '2026-10-15'
+description: 'ClickStack 演示日（2026-10-15）'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-10-15"
+---
+
+## 在保存前校验 Webhook 请求正文模板 {#validating-webhook-body-templates-before-they-save}
+
+*演示者 [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，即使 Generic 或 incident.io Webhook 的请求正文模板有误，也能直接保存，且不会有任何警告。之后每次投递告警都会失败，而错误只会出现在 ClickStack 的链路追踪和服务器日志中。常见原因之一是在 Handlebars 表达式中对引号做了 JSON 转义，例如 `{{#if (eq state \"ALERT\")}}`：它是有效的 JSON，却是无效的模板。
+
+现在，Webhook 表单会在您编辑时实时检查模板，并在编辑器下方显示错误及其所在的行和列，例如 `Template error on line 1, column 29`。检查会在您停止输入 300 ms 后才触发，因此不会在您输入 `{{ … }}` 表达式到一半时就报错。空请求正文会被跳过，因为它会使用服务的默认模板；Slack 请求正文不会被渲染，因此同样会被跳过。编辑器下方还会列出支持的变量，包括 `{{alertId}}`、`{{status}}`、`{{value}}` 和 `{{groupKey}}`，并为每个变量附上简短说明。
+
+同样的校验现在也会在服务端执行，覆盖内部 API、外部 API v2 以及 MCP `clickstack_save_webhook` 工具。在创建、更新或测试时，无效模板会返回 400，并附带 Handlebars 错误及其所在的行和列。测试会在发送任何内容之前就失败。校验仅检查模板能否编译，不会渲染结果，也不会检查输出是否为有效的 JSON。
+
+对于自动化工作流，新增的 `POST /api/v2/webhooks/validate` 端点可让 Terraform 在 plan 阶段检查 Webhook 配置。与 `POST /api/v2/dashboards/validate` 类似，它只做验证，不会保存。它执行与创建时相同的 URL 和请求正文检查，并始终返回 200 及 `{ valid, errors, normalized }`。该端点不检查名称是否唯一。
+
+**相关 PR：** [#3350](https://github.com/hyperdxio/hyperdx/pull/3350) 在编辑器中显示 Webhook 请求正文模板的编译错误；[#3365](https://github.com/hyperdxio/hyperdx/pull/3365) 拒绝无法编译的 Webhook 请求正文模板，并新增 /api/v2/webhooks/validate
+
+## 在引导过程中自动检测 PromQL source {#auto-detecting-a-promql-source-during-onboarding}
+
+*演示者 [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=96" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+当某个连接下没有任何 source 时，ClickStack 会查找 OpenTelemetry 表，并自动创建 Logs、Traces、Metrics 和 Sessions 数据源。启用 PromQL (`NEXT_PUBLIC_ENABLE_PROMQL=true`) 后，如果发现 ClickHouse `TimeSeries` 表，ClickStack 现在还会一并创建 PromQL source。
+
+检测时会查找 `engine = 'TimeSeries'` 的表，并忽略这些表自动创建的内部 MergeTree 表。如果存在多个候选结果，则按以下顺序检查：
+
+* `prometheus.metrics`，即 [ClickHouse Prometheus 文档](https://clickhouse.com/docs/concepts/features/interfaces/prometheus#create-a-timeseries-table)中使用的表。
+* 与 OpenTelemetry 表位于同一数据库中的 `metrics_ts`，由采集器的 PromQL 迁移创建。
+* 任意数据库中的 `metrics_ts`。
+
+如果只有一个 `TimeSeries` 表，则无论表名如何，ClickStack 都会使用该表。
+
+对于仅包含 `TimeSeries` 表的连接，现在也会自动创建 PromQL source，而无需转入手动设置流程。即使检测或 PromQL source 创建失败，其他数据源也不受影响。
+
+**相关 PR：** [#3310](https://github.com/hyperdxio/hyperdx/pull/3310) 在引导过程中自动检测 PromQL source，[#3311](https://github.com/hyperdxio/hyperdx/pull/3311) 在开发环境默认数据源中预配 PromQL source
+
+## PromQL 图表的数据系列数量上限与最小粒度 {#series-limits-and-minimum-granularity-for-promql-charts}
+
+*演示者 [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=176" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+PromQL 折线图和堆叠条形图现在也提供与构建器图表和原始 SQL 图表相同的 **数据系列数量上限** 显示设置。此前，这类图表会在浏览器中将已渲染的数据系列限制为 250 个，并提供加载其余数据系列的选项，但该设置处于隐藏状态，也不会随卡片一起保存。
+
+与原始 SQL 图表一样，该上限在浏览器端生效。Prometheus 自带的 `limit` 参数返回的是按标签排序的子集，而非按值排名靠前的数据系列，并且 ClickHouse 表函数回退路径会忽略该参数。隐藏数据系列的提示现在也会给出针对 PromQL 的建议：收窄标签匹配器的范围或添加 `sum by (...)`，而不是使用 `GROUP BY` 或 `WHERE`。
+
+PromQL 数据源现在也提供 **最小自动粒度** 设置，与指标数据源保持一致。该设置用于指定自动粒度在折线图、数值图、表、饼图和条形图 (包括其生成的 PromQL 预览) 中可选的最小桶大小。`$__rate_interval` 也会将此值用作抓取时间间隔，未设置时回退为 15s。显式设置的卡片粒度不受影响。
+
+**相关 PR：** [#3292](https://github.com/hyperdxio/hyperdx/pull/3292) 在 PromQL 数据源上支持最小自动粒度，[#3294](https://github.com/hyperdxio/hyperdx/pull/3294) 在 PromQL 时间图表上支持数据系列数量上限
+
+## PromQL 数据源的数据源级访问控制 {#source-level-access-control-for-promql-sources}
+
+*演示者：[@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=301" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**此功能仅适用于托管 ClickStack。**
+
+与日志、链路追踪和指标一样，基于角色的访问控制现在也适用于 PromQL 数据源。通过细粒度的 source 角色，可以授予对某个 PromQL 数据源的**只读**访问权限，同时限制对另一个数据源的访问。
+
+现在，所有 `/v1/prometheus/*` 路由都会检查对该数据源的**只读**访问权限，若无此权限则返回 403 `RBAC_PERMISSION_DENIED`。如果调用方的数据源访问规则将该数据源完全隐藏，则返回 404 `Source not found`，与数据源 API 的行为一致。此变更不会在 ClickHouse 端新增角色强制校验：在 ClickStack Cloud 中，PromQL 查询本身就已使用用户自己的令牌。
+
+## 仪表盘的即席筛选条件 {#ad-hoc-filters-for-dashboards}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=401" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+除了已有的变量和筛选条件之外，仪表盘现在新增了 **Ad hoc keys and values** (即席键和值) 筛选类型。每个即席筛选条件可基于一个或多个 ClickHouse source (例如日志和链路追踪) 或一个 Prometheus source 来提示可用的键和值。默认情况下，条件会应用于使用这些 source 的所有卡片，但您也可以限制其作用的 source。该功能由 `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS` 开关控制，目前已完成约一半的计划工作。
+
+在仪表盘筛选栏中点击该筛选条件的输入框，即可选择键、运算符和值，键和值均有自动提示。SQL source 支持 equals、not equals、regex、not regex、`LIKE` 和 `NOT LIKE`。PromQL source 使用 Prometheus 标签而非列键。已应用的条件以标签块形式显示，可对其进行编辑、切换为排除条件或清除。所选条件会保存在 URL 中，也可以保存为仪表盘默认筛选状态的一部分。
+
+条件如何作用于卡片取决于卡片类型：
+
+* 构建器卡片使用现有的 `filter` 配置属性，因此无需在 `WHERE` 子句中添加变量。
+* 原始 SQL 卡片使用 `$__filters`。查询中需要包含此宏，缺失时会显示警告。未应用任何条件时，该宏会展开为 `1 = 1`。
+* PromQL 卡片使用与 Grafana 相同的解析库，将条件作为标签匹配器添加到每个指标选择器中。
+
+您可以在生成的 SQL 和 PromQL 预览中查看已应用的条件。
+
+您还可以直接在**搜索卡片**中进行筛选。将鼠标悬停在单元格上，即可调出与搜索页面相同的复制、筛选和排除选项。执行筛选会将该值添加到相应的即席筛选条件中；再次点击同一值则会将其移除。在侧边面板中打开某一行后，其中的筛选按钮同样会作用于仪表盘。目前，点击筛选功能仅适用于搜索卡片。
+
+导入仪表盘时，您可以重新映射即席筛选条件所查询的 source 及其作用的 source。外部 API 和 MCP 暂不支持即席筛选条件。
+
+**相关 PR：** [#3335](https://github.com/hyperdxio/hyperdx/pull/3335) 为即席仪表盘筛选条件添加 schema 和类型，[#3317](https://github.com/hyperdxio/hyperdx/pull/3317) 提取 FilterPill，添加筛选编辑器组件，[#3341](https://github.com/hyperdxio/hyperdx/pull/3341) 添加用于配置即席仪表盘筛选条件的 UI，[#3343](https://github.com/hyperdxio/hyperdx/pull/3343) 渲染即席仪表盘筛选输入框，[#3366](https://github.com/hyperdxio/hyperdx/pull/3366) 广播即席仪表盘筛选条件，[#3367](https://github.com/hyperdxio/hyperdx/pull/3367) 支持在导入即席筛选条件时重新映射 source，[#3380](https://github.com/hyperdxio/hyperdx/pull/3380) 支持在搜索卡片上点击添加即席筛选条件
+
+## 将 SELECT 和 ORDER BY 移入结果表 {#moving-select-and-order-by-into-the-results-table}
+
+*演示者：[@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=636" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**这是一项探索性工作，不承诺一定会发布。**
+
+目前，搜索页面把 `SELECT` 和 `ORDER BY` 放在 `WHERE` 旁边，但它们其实只作用于结果表。切换到事件模式或事件差异后，它们依然显示，修改却不会产生任何效果。我们访谈过的用户也没有意识到可以在 `SELECT` 中选择列，他们一直在找列和排序控件。
+
+该原型将这两项移入结果表工具栏，分别作为 **Columns** 和 **Sort**，并在事件差异和事件模式中将其隐藏。**Columns** 会列出当前的 `SELECT` 项，可拖动调整顺序或将其移除。选择一个建议项，或输入表达式 (例如 `upper(Body) as message`) ，然后点击 **Add**。在 **SQL** 选项卡中，您可以直接编辑完整的 `SELECT`。
+
+**Sort** 会列出每个 `ORDER BY` 字段及其排序方向，包括 `(toDateTime(Timestamp), Timestamp) DESC` 这样的元组。您也可以在 **SQL** 下编辑原始子句。控件无法拆分的表达式 (例如 `Timestamp DESC NULLS LAST`) 会在 SQL 选项卡中打开。在控件中所做的更改会自动生成 SQL，您也仍然可以自行编写。
+
+**Apply** 会更新子句并执行搜索，**Cancel** 会放弃更改，**Reset to default** 会恢复为 source 的默认值。重置列宽、自动换行、查看生成的 SQL 和导出 CSV 等表格操作，则改为工具栏右侧的图标按钮。
+
+这样一来，搜索表单也多了一些空间。source 位于第一行左侧，**Update** 和 **告警** 位于右侧。`WHERE` 子句独占一整行，与 Live Tail、刷新时间间隔和 **Run** 位于同一行。
+
+该 PR 仍处于草稿阶段，欢迎告诉我们您的使用感受。
+
+**相关 PR：** [#3387](https://github.com/hyperdxio/hyperdx/pull/3387) 在结果表中编辑搜索列和排序 (未合并)
+
+## 在手机上也好用的搜索页面 {#a-usable-search-page-on-a-phone}
+
+*演示者：[@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=843" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+在手机上打开告警时，应当能够直接跳转到日志。此前，筛选侧边栏无法缩小到 200px 以下，查询行不会自动换行，结果还被裁剪在 `100vh` 的容器内，甚至连滚动到日志都做不到。
+
+现在，当宽度低于 900px (即导航栏本已折叠的宽度) 时，搜索页面会切换为紧凑布局。筛选条件默认收起，可通过 **Show filters** 在抽屉面板中展开，从而把整个宽度留给日志表。`SELECT` 和 `ORDER BY` 被收进 **Columns** 开关中，而搜索框始终可见。直方图同样保留，高度缩减为 72px，结果则在工具栏下方的区域内滚动。打开筛选抽屉面板不会更改您的桌面端偏好设置，将窗口宽度调整到 900px 以上即可恢复桌面布局。
+
+紧凑视口钩子和响应式侧边面板位于 `packages/app/src/components/CompactViewport/`，可供其他页面复用，搜索页面是首个采用它们的页面。此改动早于本文介绍的列与排序原型上线；该原型会在所有屏幕宽度下将 `SELECT` 和 `ORDER BY` 移入结果表。
+
+**相关 PR：** [#3376](https://github.com/hyperdxio/hyperdx/pull/3376) 让已保存的搜索在手机上保持可用
+
+## 以流式方式将筛选条件的键和值加载到侧边栏 {#streaming-filter-keys-and-values-into-the-sidebar}
+
+*演示者：[@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=899" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，搜索页面的筛选侧边栏要等所有筛选查询全部完成后才会显示内容，在此之前只有一个加载指示器。虽然这些查询本身早已以流式方式返回结果，但您仍需等最慢的那个查询完成，才能使用任何筛选条件。
+
+现在，键会率先显示，并各自带有独立的加载指示器，值则会随着每个查询返回而逐步填充。查询本身并未改变，只是侧边栏会在结果到达时立即显示。在较长的时间范围内 (例如搜索两天的数据) ，这一改进尤为明显。
+
+我们还修复了侧边栏无法保留浏览状态的问题。为保持浏览器响应流畅，筛选分组滚动出可视区域后会从 DOM 中移除。此前，滚动回来时会发现已展开的分组被折叠，已加载的分布数据也不见了。现在，两者都会保持您离开时的状态。
+
+**相关 PRs：** [#3348](https://github.com/hyperdxio/hyperdx/pull/3348) 将筛选条件的键和值结果以流式方式传输到 UI，[#3377](https://github.com/hyperdxio/hyperdx/pull/3377) 滚动时持久化筛选分组的展开状态

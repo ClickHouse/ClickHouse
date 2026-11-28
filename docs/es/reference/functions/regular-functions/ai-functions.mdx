@@ -29,6 +29,7 @@ Todas las funciones comparten una infraestructura común que proporciona:
 * **Aplicación de cuotas**: Límites por consulta de tokens ([`ai_function_max_input_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) y llamadas a la API ([`ai_function_max_api_calls_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **Reintentos con backoff**: Los fallos transitorios se reintentan ([`ai_function_max_retries`](/es/reference/settings/session-settings/ai-function#ai_function_max_retries)) con backoff exponencial ([`ai_function_retry_initial_delay_ms`](/es/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 * **Solicitudes concurrentes**: Las solicitudes se envían desde un pool de hilos compartido por todo el servidor, varias a la vez (controladas mediante [`ai_function_max_concurrent_requests_per_thread`](/es/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
+* **Eliminación de espacios en blanco**: `aiClassify`, `aiExtract` y `aiFilter` solicitan una salida estructurada y eliminan los espacios en blanco iniciales y finales de la respuesta del modelo, de modo que una respuesta como `\n\nbug` se convierte en `bug`.
 
 ## Configuración {#configuration}
 

@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'ClickHouse Managed Postgres OpenAPI'
 description: 'Управляйте сервисами ClickHouse Managed Postgres с помощью нашего OpenAPI'
-keywords: ['managed postgres', 'openapi', 'api', 'curl', 'руководство', 'командная строка', 'query insights', 'медленные запросы', 'серверные журналы', 'журналы']
+keywords: ['managed postgres', 'openapi', 'api', 'curl', 'руководство', 'командная строка', 'query insights', 'медленные запросы', 'блокирующие запросы', 'серверные журналы', 'журналы']
 doc_type: 'guide'
 ---
 
@@ -295,7 +295,8 @@ curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
 Телеметрия по отдельным операторам SQL, лежащая в основе вкладки [Query Insights] в облачной
 консоли, также доступна программно. Две конечные точки позволяют получить доступ к самым медленным
 шаблонам запросов в сервисе: одна возвращает список всех шаблонов, ранжированных по влиянию, другая —
-один шаблон вместе с его недавними выполнениями.
+один шаблон вместе с его недавними выполнениями. Третья возвращает список
+запросов, ожидавших снятия блокировок, и сеансов, которые их блокировали.
 
 ### Получить список шаблонов медленных запросов {#list-slow-query-patterns}
 
@@ -416,6 +417,78 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 В примере оба объекта сокращены для краткости; API возвращает полный
 набор счётчиков, описанный в разделе [счётчики по каждому выполнению].
 
+### Получение списка блокирующих запросов {#list-blocking-queries}
+
+[API блокирующих запросов] возвращает те же группы, что и
+таблица [Блокирующий запрос] в консоли: каждый результат связывает один ожидающий запрос
+с одним непосредственно блокирующим его запросом, причём наиболее частые пары идут первыми. Данные доступны только за
+периоды, когда для сервиса был включён сбор блокирующих запросов. Передайте
+`from_date` и `to_date` в виде временных меток в формате RFC 3339. Значение `to_date` должно быть позже
+`from_date`, а диапазон не должен превышать 31 день:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/blockingQueries?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+Фильтровать можно по `db_name`, `db_user` или `app` ожидающих сеансов; пустое значение
+`app=` соответствует сеансам без имени приложения. Для постраничного просмотра результатов
+используйте `limit` (до 2000, по умолчанию 50) и `offset`, а по `totalCount` можно
+узнать, сколько групп удовлетворяет условиям.
+
+Поля, начинающиеся с `blocked`, описывают ожидающие сеансы, а поля,
+начинающиеся с `blocking`, — блокирующий сеанс. Значения `lockType`, `blockedMode`
+и полей `latest*` берутся из самой последней выборки:
+
+```json
+{
+  "result": [
+    {
+      "database": "sales",
+      "blockedQueryId": "9184467440737095516",
+      "blockedQuery": "UPDATE orders SET status = $1 WHERE id = $2",
+      "blockedUsers": ["orders_service"],
+      "blockedApps": ["orders-api"],
+      "blockedPids": [8121, 8119],
+      "lockType": "transactionid",
+      "blockedMode": "ShareLock",
+      "blockingDatabase": "sales",
+      "blockingQueryId": "1311768467294899695",
+      "blockingQuery": "SELECT * FROM orders WHERE id = $1 FOR UPDATE",
+      "blockingUsers": ["batch"],
+      "blockingApps": ["nightly-job"],
+      "blockingPids": [7744],
+      "blockingPrepared": false,
+      "blockingInternal": false,
+      "latestBlockingState": "idle in transaction",
+      "latestBlockingXactSeconds": 190.5,
+      "latestBlockingBackendType": "client backend",
+      "blockingSeenWaiting": false,
+      "sessions": 2,
+      "samples": 4,
+      "longestWaitSeconds": 182.25,
+      "lastSeen": "2026-05-25T14:06:00Z"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "totalCount": 1,
+  "requestId": "4f8d2c1e-6a3b-4e9f-9c7d-2b1a0e5f8c36",
+  "status": 200
+}
+```
+
+Как и в консоли, `blockingQuery` — это текущий или последний оператор блокирующего сеанса,
+который может не совпадать с оператором, захватившим блокировку. Поля `blockedQuery` и
+`blockingQuery` пусты, если в Query Insights нет текста оператора,
+а `blockingQuery` также пуст, если `blockingInternal` или
+`blockingPrepared` имеет значение `true`. Для подготовленной транзакции в `blockingPids`
+возвращается `[0]`.
+
 ## Серверные журналы {#server-logs}
 
 Серверные журналы PostgreSQL, доступные в средстве просмотра журналов в облачной
@@ -493,16 +566,20 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [конечная точка Prometheus]: /products/managed-postgres/monitoring/prometheus "Конечная точка Prometheus для ClickHouse Managed Postgres"
 
-[metrics reference]: /products/managed-postgres/monitoring/metrics "Справочник метрик ClickHouse Managed Postgres"
+[Справочник метрик]: /products/managed-postgres/monitoring/metrics "Справочник метрик ClickHouse Managed Postgres"
 
 [Query Insights]: /products/managed-postgres/monitoring/query-insights "Query Insights для Postgres"
 
 [выдвижная панель сведений]: /products/managed-postgres/monitoring/query-insights#detail "Выдвижная панель сведений Query Insights"
 
+[Блокирующий запрос]: /products/managed-postgres/monitoring/query-insights#blocking-queries "Блокирующие запросы в Query Insights"
+
 [счётчики по каждому выполнению]: /products/managed-postgres/monitoring/query-insights#counters "Счётчики Query Insights по каждому выполнению"
 
-[API шаблонов медленных запросов]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Список шаблонов медленных запросов Postgres"
+[API шаблонов медленных запросов]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Получить список шаблонов медленных запросов Postgres"
 
 [API шаблона медленного запроса]: /products/cloud/api-reference/postgres/slow-query-pattern-get "Получить шаблон медленного запроса Postgres с последними выполнениями"
+
+[API блокирующих запросов]: /products/cloud/api-reference/postgres/postgres-blocking-queries-get-list "Получить список блокирующих запросов Postgres"
 
 [API журналов]: /products/cloud/api-reference/postgres/postgres-logs-get-list "Получить список серверных журналов Postgres"

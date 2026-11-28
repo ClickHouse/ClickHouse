@@ -80,7 +80,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-فعِّل تحسين DISTINCT إذا كانت بعض الأعمدة فيه تُشكّل بادئة للفرز. على سبيل المثال، بادئة مفتاح الفرز في MergeTree أو في عبارة ORDER BY
+فعِّل تحسين DISTINCT إذا كانت بعض الأعمدة فيه تُشكّل بادئة للفرز. على سبيل المثال، بادئة مفتاح الفرز في MergeTree أو في عبارة ORDER BY. لا يُطبَّق هذا التحسين على قراءة `FINAL` تستخدم `FINAL` العمودي (انظر `enable_vertical_final`)، إلا إذا أتاح `LIMIT` لعملية `DISTINCT` التوقف عن القراءة مبكرًا، أو كانت القراءة تتم بالترتيب بالفعل لسبب آخر، مثل `ORDER BY`.
 
 ## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
 
@@ -335,7 +335,9 @@ SELECT * FROM test2;
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-حسِّن الفرز استنادًا إلى خصائص فرز تدفق الإدخال
+إذا كانت البيانات الواردة إلى `ORDER BY` مرتّبة مسبقًا وفق بادئة من مفتاح الفرز (على سبيل المثال، بعد استعلام فرعي يتضمن `ORDER BY` أو بعد الربط بالفرز والدمج)، فلا تُفرز إلا الصفوف المتساوية في قيم تلك البادئة بدلًا من فرز البيانات كلها. كما يُعاد استخدام ترتيب نتيجة الربط بالفرز والدمج عند الفرز اللازم لعملية ربط لاحقة.
+
+لا يسري هذا الإعداد إلا إذا كان `query_plan_enable_optimizations` مفعّلًا.
 
 ## optimize_substitute_columns {#optimize_substitute_columns}
 

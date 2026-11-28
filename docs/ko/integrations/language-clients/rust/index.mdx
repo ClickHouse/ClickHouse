@@ -143,7 +143,7 @@ while let Some(row) = cursor.next().await? { .. }
 * 첫 번째 행 또는 모든 행을 각각 가져오려면 `fetch_one::<Row>()` 및 `fetch_all::<Row>()` 메서드를 편리하게 사용할 수 있습니다.
 * 테이블 이름을 바인딩하는 데 `sql::Identifier`를 사용할 수 있습니다.
 
-참고: 전체 응답이 스트리밍되므로 커서는 일부 행을 반환한 후에도 오류를 반환할 수 있습니다. 사용 사례에서 이런 문제가 발생하면 서버 측 응답 버퍼링을 활성화하기 위해 `query(...).with_option("wait_end_of_query", "1")`를 시도해 볼 수 있습니다. [자세한 내용](/ko/concepts/features/interfaces/http#response-buffering). `buffer_size` 옵션도 유용할 수 있습니다.
+참고: 전체 응답이 스트리밍되므로 커서는 일부 행을 반환한 후에도 오류를 반환할 수 있습니다. 사용 사례에서 이런 문제가 발생하면 서버 측 응답 버퍼링을 활성화하기 위해 `query(...).with_option("wait_end_of_query", "1")`를 시도해 볼 수 있습니다. [자세한 내용](/ko/concepts/features/connect-to-clickhouse/protocols/http#response-buffering). `buffer_size` 옵션도 유용할 수 있습니다.
 
 <Warning>
   행을 조회할 때는 `wait_end_of_query`를 주의해서 사용하십시오. 서버 측 메모리 사용량이 증가할 수 있으며, 전체 성능도 저하될 가능성이 높습니다.
@@ -169,7 +169,7 @@ insert.end().await?;
 
 * `end()`가 호출되지 않으면 `INSERT`가 취소됩니다.
 * 네트워크 부하를 분산하기 위해 행은 스트림 형태로 순차적으로 전송됩니다.
-* ClickHouse는 모든 행이 동일한 파티션에 속하고 행 수가 [`max_insert_block_size`](/ko/reference/settings/session-settings#max_insert_block_size) 미만인 경우에만 배치를 원자적으로 삽입합니다.
+* ClickHouse는 모든 행이 동일한 파티션에 속하고 행 수가 [`max_insert_block_size`](/ko/reference/settings/session-settings/max-insert#max_insert_block_size) 미만인 경우에만 배치를 원자적으로 삽입합니다.
 
 ### Async insert (서버 측 배칭) {#async-insert-server-side-batching}
 

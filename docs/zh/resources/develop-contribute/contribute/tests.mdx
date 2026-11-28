@@ -488,6 +488,13 @@ Clang 还提供了更多有用的警告；你可以通过 `-Weverything` 查看�
 我们会在每次提交时都使用 UBSan 运行功能、集成、压力和单元测试。
 某些第三方库的代码未经过 UB 检查。
 
+我们还额外启用了 `unsigned-integer-overflow` 检查。该检查并不包含在
+`-fsanitize=undefined` 中，因为无符号整数溢出是定义明确的行为——其结果会按
+2<sup>N</sup> 取模回绕。不过，*非预期*的回绕仍属缺陷，因此所有有意回绕的位置——哈希函数、校验和、伪随机数生成器，以及
+ClickHouse 无符号类型算术运算的语义——都使用 `NO_SANITIZE_UNSIGNED_OVERFLOW`
+属性进行了标注 (参见 `base/base/sanitizer_defs.h`) 。对于整个文件以及仅含头文件的第三方代码，
+则改为在 `tests/ubsan_ignorelist.txt` 中关闭该检查。
+
 ### Valgrind (memcheck) {#valgrind-memcheck}
 
 我们过去会在夜间使用 Valgrind 运行功能测试，但现在已经不这么做了。

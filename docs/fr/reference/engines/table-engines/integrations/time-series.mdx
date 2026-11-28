@@ -59,16 +59,16 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
 
 ## Utilisation {#usage}
 
-Il est plus facile de commencer en laissant tous les paramètres par défaut (il est possible de créer une table `TimeSeries` sans préciser de liste de colonnes) :
+Il est plus facile de commencer en laissant tous les paramètres par défaut (il est possible de créer une table `TimeSeries` sans préciser de liste de colonnes) :
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
-Cette table peut ensuite être utilisée avec les protocoles suivants (un port doit être défini dans la configuration du serveur) :
+Cette table peut ensuite être utilisée avec les protocoles suivants (un port doit être défini dans la configuration du serveur) :
 
-* [prometheus remote-write](/fr/concepts/features/interfaces/prometheus#remote-write)
-* [prometheus remote-read](/fr/concepts/features/interfaces/prometheus#remote-read)
+* [prometheus remote-write](/fr/concepts/features/connect-to-clickhouse/prometheus#remote-write)
+* [prometheus remote-read](/fr/concepts/features/connect-to-clickhouse/prometheus#remote-read)
 
 ### Colonnes externes {#outer-columns}
 

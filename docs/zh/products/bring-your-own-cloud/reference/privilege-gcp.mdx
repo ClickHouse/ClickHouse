@@ -1,0 +1,58 @@
+---
+title: 'GCP 上的 BYOC 特权'
+slug: /cloud/reference/byoc/reference/privilege-gcp
+sidebarTitle: 'GCP'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'privilege', 'gcp', 'iam', 'service account']
+description: 'ClickHouse BYOC 在您的 Google Cloud 项目中使用的自定义角色、服务账号和 IAM 授权，以及它们各自的权限、作用域和用途'
+doc_type: 'reference'
+---
+
+本页列出 ClickHouse BYOC 在您的 Google Cloud 项目中使用的各个自定义角色、服务账号和 IAM 授权，并说明其权限、作用域和用途。如需了解 BYOC 权限模型的概要，请参阅 [BYOC 特权](/zh/products/bring-your-own-cloud/reference/privilege)。
+
+## 引导服务账号 {#bootstrap-service-account}
+
+下表介绍了引导服务账号 `clickhouse-management@<project>.iam.gserviceaccount.com` 的各个自定义角色。只有 ClickHouse 预配服务账号可以通过该服务账号上的 `roles/iam.serviceAccountTokenCreator` 模拟它。GCP 自定义角色无法按资源名称加以限制，因此每个角色都作用于整个项目。为此，我们建议为 BYOC 单独使用一个 Google Cloud 项目。
+
+| 自定义角色                          | 权限                                                                                      | 作用域                                           | 用途                                                                                                                 |
+| ------------------------------ | --------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `clickhouseCommonRole`         | 读取区域、可用区、项目以及已启用的服务。获取服务账号。将服务账号附加到资源 (`iam.serviceAccounts.actAs`) 。                   | 项目                                            | 健康检查。将 BYOC 服务账号附加到 GKE 节点池。                                                                                       |
+| `clickhouseVPCRole`            | 读取并使用网络、子网、路由和 Cloud Router。创建、修改和删除 Private Service Connect 服务附件及静态 IP 地址。             | 项目                                            | Private Service Connect 端点以及负载均衡器的 IP 地址                                                                           |
+| `clickhouseVPCWriteRole`       | 创建、修改和删除网络、子网、路由和 Cloud Router。修改网络对等互连和子网 IAM 策略。                                      | 项目                                            | BYOC VPC。如果您[自带 VPC](/zh/products/bring-your-own-cloud/onboarding/customization-gcp#customer-managed-vpc-gcp)，则无需此角色。 |
+| `clickhouseClusterRole`        | 创建、修改和删除 GKE 集群及节点池，并修改其托管实例组。获取集群凭据。读取和写入集群中的所有 Kubernetes 资源，包括 secret、RBAC 和自定义资源定义。 | 项目                                            | 管理 GKE 集群并安装 BYOC 软件                                                                                               |
+| `clickhouseStorageRole`        | 创建、修改和删除桶。读取和设置桶 IAM 策略。无对象读写权限。                                                        | 项目                                            | 管理用于存储 ClickHouse 表数据、备份和监控数据的桶                                                                                    |
+| `clickhouseStorageObjectsRole` | 列出、读取和删除对象                                                                              | 仅限名称以 `_gcp_clickhouse_cloud-monitoring` 结尾的桶 | 在 ClickHouse 删除监控桶之前将其清空                                                                                           |
+| `clickhouseIamRole`            | 读取和设置项目 IAM 策略。创建、修改、停用和删除服务账号，并设置其 IAM 策略。创建、修改和删除自定义角色。无创建服务账号密钥的权限。                  | 项目                                            | 创建下一节所述的服务账号并为其授予相应角色                                                                                              |
+| `clickhouseTdeRole`            | 创建和读取 KMS 密钥环及密钥。修改密钥。读取和设置密钥 IAM 策略。无销毁密钥版本的权限。                                        | 项目                                            | 用于 [TDE](/zh/products/cloud/guides/security/cmek#transparent-data-encryption-tde)。可选，默认关闭                             |
+
+如果您使用[共享 VPC](/zh/products/bring-your-own-cloud/onboarding/customization-gcp#shared-vpc-host-project)，该模块还会在宿主项目中授予以下角色：
+
+| 自定义角色                                                                | 权限                                                                                                          | 作用域                                                                             | 用途                                        |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------- |
+| `clickhouseSharedVPCHostRole`                                        | 读取网络和子网。使用子网。                                                                                               | 宿主项目                                                                            | 读取宿主网络。使用 Private Service Connect NAT 子网。 |
+| `clickhouseGKESharedVPCFirewallRole`                                 | 创建、修改和删除防火墙规则。授予您 BYOC 项目的 GKE 服务代理，而非 `clickhouse-management`。                                             | 宿主项目                                                                            | 宿主网络中 GKE 集群及其负载均衡器的防火墙规则                 |
+| `roles/container.hostServiceAgentUser` 和 `roles/compute.networkUser` | 共享 VPC 所需的标准 GKE 角色。授予 GKE 服务代理和 Google APIs 服务代理。`clickhouse-management` 也会获得 `roles/compute.networkUser`。 | `roles/container.hostServiceAgentUser`：宿主项目。`roles/compute.networkUser`：仅限节点子网。 | 共享 VPC 的标准 GKE 要求                         |
+
+如需了解确切的角色定义，请参阅 [Terraform 模块](https://github.com/ClickHouse/terraform-byoc-onboarding/blob/main/modules/gcp/roles.tf)。
+
+## 控制器创建的其他服务账号 {#additional-service-accounts-created-by-the-controller}
+
+除了通过 Terraform 创建的 `clickhouse-management` 服务账号之外，控制器还会为每个 BYOC 基础设施额外创建若干服务账号和角色。
+每个服务账号的名称格式为 `<infra>-<suffix>`，其中 `<infra>` 是您的 BYOC 基础设施名称，例如 `infra-ab-123`。该基础设施上的所有 ClickHouse 服务共用这些服务账号。ClickHouse 不会创建服务账号密钥，所有访问均使用短期令牌。
+
+| 服务账号                                 | 权限                                                                                                                                                 | 用途                                                                        |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `<infra>-dp-mgmt`                    | 项目级自定义角色：管理 Private Service Connect 服务附件；创建、修改和删除桶，并设置其 IAM 策略；列出和删除对象；创建、修改和删除服务账号，并设置其 IAM 策略；读取并连接 GKE 集群。无权更改项目 IAM 策略。由 ClickHouse 管理服务模拟该账号。 | 日常管理您的 ClickHouse 服务：桶、ClickHouse 服务器 Pod 的访问权限以及 Private Service Connect |
+| `<infra>-gke-node`                   | 项目级 `roles/container.defaultNodeServiceAccount`；ClickHouse 容器镜像仓库的只读访问权限。                                                                          | 所有 GKE 节点池的节点身份：用于日志、指标和镜像拉取                                              |
+| `<infra>-clickhouse`                 | 每个 ClickHouse 服务的数据桶和备份桶上的 `roles/storage.admin`；从备份恢复服务时，对源备份桶的只读访问权限；向 ClickHouse 写入用量数据。由每个 ClickHouse 服务的 Pod 通过 Workload Identity 使用。         | ClickHouse 服务器 Pod 的身份，用于读写表数据和备份。                                        |
+| `<infra>-monitoring`                 | 仅限 BYOC 监控桶上的 `roles/storage.objectAdmin`。由 Prometheus 和 Thanos 通过 Workload Identity 使用。                                                           | 存储监控指标                                                                    |
+| `<infra>-scraper`                    | 在您的项目中无任何权限；向 ClickHouse 写入用量数据。                                                                                                                   | 向 ClickHouse 发送计费用量数据                                                     |
+| `<infra>-kmf`                        | 在您的项目中无任何权限；向 ClickHouse 写入指标；仅能在该集群内使用。                                                                                                           | 向 ClickHouse 发送 Kubernetes 指标，用于自动扩缩容                                     |
+| `<infra>-tde-delegate` (仅在启用 TDE 时)  | 仅限密钥环 `<infra>-tde` 中 TDE 密钥 `tde-default-kek` 上的 `roles/cloudkms.cryptoKeyEncrypterDecrypter` 和 `roles/cloudkms.viewer`                           | 加密和解密 TDE 数据密钥。您可以随时撤销其对该密钥的访问权限。                                         |
+
+控制器还会针对每个 BYOC 基础设施，在您的项目中授予以下授权：
+
+| 授权                                                                                                                        | 授予对象                                          | 用途                                        |
+| ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------- |
+| 仅包含 `container.clusters.connect` 的自定义角色                                                                                   | ClickHouse 管理服务账号                             | 允许 ClickHouse 管理服务连接 GKE API 端点           |
+| 项目级 `roles/container.clusterViewer`                                                                                       | ClickHouse 部署服务账号                             | 在集群中部署和升级 BYOC 软件                         |
+| 密钥环 `<infra>-snc` 中密钥 `snc-kek` 上的 `roles/cloudkms.cryptoKeyEncrypter` 和 `roles/cloudkms.cryptoKeyDecrypter` (仅在启用命名集合时)  | 加密：`<infra>-dp-mgmt`。解密：`<infra>-clickhouse`。 | 加密命名集合中的机密信息，且只有 ClickHouse 服务器 Pod 能够解密。 |

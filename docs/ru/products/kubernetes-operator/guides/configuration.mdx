@@ -889,13 +889,10 @@ spec:
   ## Настройки ClickHouse {#clickhouse-settings}
 </div>
 
-<div id="default-user-password">
-  ### Пароль пользователя `default` {#default-user-password}
-</div>
+### Пароль пользователя `default` {#default-user-password}
 
 `spec.settings.defaultUserPassword` задаёт пароль для встроенного
-пользователя `default`. Укажите значение из ключа в Secret
-(рекомендуется) или в ConfigMap, который вы создадите, вместо того чтобы
+пользователя `default`. Укажите значение из ключа в Secret, который вы создадите, вместо того чтобы
 задавать его напрямую в CR:
 
 ```yaml
@@ -903,13 +900,12 @@ spec:
   settings:
     defaultUserPassword:
       passwordType: password   # default; see "Password types" below
-      secret:                  # exactly one of secret or configMap
-        name: clickhouse-password   # name of the Secret/ConfigMap
+      secret:
+        name: clickhouse-password   # name of the Secret
         key: password               # the key inside it, not the password value
 ```
 
-Укажите ровно одно из `secret` или `configMap`; при этом должны быть заданы и `name` (объект),
-и `key` (запись, в которой хранится пароль).
+Задайте и `name` (Secret), и `key` (запись, в которой хранится пароль).
 
 <div id="password-types">
   #### Типы паролей {#password-types}
@@ -969,13 +965,15 @@ spec:
         key: password
 ```
 
-<div id="using-configmap-for-user-passwords">
-  #### Использование ConfigMap {#using-configmap-for-user-passwords}
-</div>
+#### Использование ConfigMap (устаревший способ) {#using-configmap-for-user-passwords}
 
-ConfigMap работает так же, но его содержимое не защищено так, как содержимое Secret.
-Используйте его только для неконфиденциальных или уже хешированных значений, например
-дайджеста `password_sha256_hex`:
+<Warning>
+  Источник `configMap` устарел и удалён в `v1alpha2`. ConfigMap
+  не защищены так, как Secrets, а хеши паролей без соли можно подобрать методом перебора (brute-force).
+  Вместо этого храните пароль — в открытом виде или в хешированном — в Secret.
+</Warning>
+
+ConfigMap работает так же, как Secret, но его содержимое не защищено:
 
 ```yaml
 spec:

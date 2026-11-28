@@ -180,13 +180,13 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 └───┴────┴─────┘
 ```
 
-## 对不同表中的列使用带不等条件的连接 {#join-with-inequality-conditions-for-columns-from-different-tables}
+## 对不同表中的列使用带不等式条件的连接 {#join-with-inequality-conditions-for-columns-from-different-tables}
 
-除相等条件外，`ON` 子句还可以包含使用其他运算符比较不同表中列的条件。在 `ALL`、`ANY`、`SEMI` 和 `ANTI` 严格性下，只要是该严格性所允许的 JOIN 类型，均支持此类条件。`ASOF` 严格性不支持此类条件。
+除等值条件外，`ON` 部分还可以包含使用其他运算符比较不同表中列的条件。在 `ALL`、`ANY`、`SEMI` 和 `ANTI` 严格性下，只要是该严格性所允许的 JOIN 类型，均支持此类条件。`ASOF` 严格性不支持此类条件。
 
-当 `ON` 子句中除不等条件外还包含两个表之间的相等条件时，该相等条件将作为 JOIN 键，不等条件则在其匹配到的行上进行检查。此类混合条件由 [`hash`](/zh/concepts/features/operations/select/join-algorithms#hash)、[`parallel_hash`](/zh/concepts/features/operations/select/join-algorithms#parallel-hash) 和 [`grace_hash`](/zh/concepts/features/operations/select/join-algorithms#grace-hash) 算法执行。如果在 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm) 中 [`ie_join`](/zh/concepts/features/operations/select/join-algorithms#ie-join) 排在这些算法之前，且 `ON` 子句包含两个不等条件，则改由 `ie_join` 执行该 JOIN，并将相等条件作为过滤器应用。
+当 `ON` 部分中除不等式条件外还包含两个表之间的等值条件时，该等值条件将作为连接键，不等式条件则在其匹配到的行上进行检查。此类混合条件由 [`hash`](/zh/concepts/features/operations/select/join-algorithms#hash)、[`parallel_hash`](/zh/concepts/features/operations/select/join-algorithms#parallel-hash) 和 [`grace_hash`](/zh/concepts/features/operations/select/join-algorithms#grace-hash) 算法执行。如果在 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm) 中 [`inequality`](/zh/concepts/features/operations/select/join-algorithms#inequality) 排在这些算法之前，且 `ON` 部分包含两个不等式条件，则改由 `inequality` 执行该 JOIN，并将等值条件作为过滤器应用。
 
-当 `ON` 子句中不包含两个表之间的相等条件时，就没有可供匹配的 JOIN 键。此时，如果条件是一对不等式，该 JOIN 将由 [`ie_join`](/zh/concepts/features/operations/select/join-algorithms#ie-join) 执行；否则将以 [block nested loop 连接](#join-with-an-arbitrary-on-condition) 方式执行。
+当 `ON` 部分中不包含两个表之间的等值条件时，就没有可供匹配的连接键。此时，如果条件是一对不等式，该 JOIN 将由 [`inequality`](/zh/concepts/features/operations/select/join-algorithms#inequality) 执行；否则将以 [块嵌套循环连接](#join-with-an-arbitrary-on-condition) 方式执行。
 
 连接过程中求值的条件不能包含 `arrayJoin`，因为此类条件必须保持行数不变；请改为在子查询中使用 `ARRAY JOIN`。
 
@@ -238,9 +238,9 @@ key4    f    2    3    4            0    0    \N
 
 ## 使用任意 ON 条件的 JOIN {#join-with-an-arbitrary-on-condition}
 
-`ON` 子句可以是基于两个表中列的任意布尔表达式，例如范围检查、算术比较或标量函数调用。如果其中不包含两个表之间的相等条件，就没有可用于匹配行的 JOIN 键。只要 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm) 中列出了 `ie_join` 算法，一对不等式条件就会由 `ie_join` 执行，且不要求它排在首位，因为其他任何 `join_algorithm` 值都无法执行此类条件。自 26.8 版本起，`join_algorithm` 的默认值已包含 `ie_join`。其他任何条件都将以 [block nested loop join](https://en.wikipedia.org/wiki/Nested_loop_join) 的方式执行：先物化右表，再对每一对行计算该条件。`ALL INNER JOIN` 则等价于以该条件作为过滤器的 `CROSS JOIN`。
+`ON` 部分可以是基于两个表中列的任意布尔表达式，例如范围检查、算术比较或标量函数调用。如果其中不包含两个表之间的相等条件，就没有可用于匹配行的连接键。只要 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm) 中列出了 `inequality` 算法，一对不等式条件就会由 `inequality` 执行，且不要求它排在首位，因为其他任何 `join_algorithm` 值都无法执行此类条件。自 26.8 版本起，`join_algorithm` 的默认值已包含 `inequality`。其他任何条件都将以 [块嵌套循环连接](https://en.wikipedia.org/wiki/Nested_loop_join) 的方式执行：先物化右表，再对每一对行计算该条件。`ALL INNER JOIN` 则等价于以该条件作为过滤器的 `CROSS JOIN`。
 
-block nested loop join 支持除 `ASOF JOIN`、`PASTE JOIN` 和 `ANY FULL JOIN` 之外的所有 JOIN 类型和严格性。它并不是 `join_algorithm` 的可选值之一，而是最后的兜底方案，仅在没有其他算法能够执行该条件时才会使用。在 `EXPLAIN` 输出中，它显示为 `BlockNestedLoopJoin` 步骤。如果禁用了 [`allow_block_nested_loop_join`](/zh/reference/settings/session-settings/allow#allow_block_nested_loop_join)，则需要使用该算法的查询将被拒绝，并返回 `INVALID_JOIN_ON_EXPRESSION` 错误。
+块嵌套循环连接 支持除 `ASOF JOIN`、`PASTE JOIN` 和 `ANY FULL JOIN` 之外的所有 JOIN 类型和严格性。它并不是 `join_algorithm` 的可选值之一，而是最后的兜底方案，仅在没有其他算法能够执行该条件时才会使用。在 `EXPLAIN` 输出中，它显示为 `BlockNestedLoopJoin` 步骤。如果禁用了 [`allow_block_nested_loop_join`](/zh/reference/settings/session-settings/allow#allow_block_nested_loop_join)，则需要使用该算法的查询将被拒绝，并返回 `INVALID_JOIN_ON_EXPRESSION` 错误。
 
 **示例**
 
@@ -269,11 +269,11 @@ ORDER BY o.id;
 
 **严格性**
 
-`ANY` 和 `SEMI` 通常会为共享同一 JOIN 键的每组行保留一行。此处不存在这样的分组，因此它们会为驱动 JOIN 的那张表的每一行保留一行：`LEFT ANY` 和 `LEFT SEMI` 对每个左表行最多输出一次，`RIGHT ANY` 和 `RIGHT SEMI` 对每个右表行最多输出一次。`ANY INNER` 会同时限制两侧：任一张表的每一行最多只使用一次，因此结果行数不会超过较小那张表的行数。结果具体由哪些行对构成是任意的，这正是 `ANY` 的语义所在，同一查询的两次运行结果也可能不同。对于 `ANY INNER`，这种不确定性还会波及行数：按照行被检查的任意顺序，以贪心方式为两侧的每一行配对，最终未配对的行数可能各不相同。因此，对没有 JOIN 键的 `ANY INNER` JOIN 执行 `count()` 的结果不可复现，具体取决于线程数量以及右表的物理顺序。
+`ANY` 和 `SEMI` 通常会为共享同一连接键的每组行保留一行。此处不存在这样的分组，因此它们会为驱动 JOIN 的那张表的每一行保留一行：`LEFT ANY` 和 `LEFT SEMI` 对每个左表行最多输出一次，`RIGHT ANY` 和 `RIGHT SEMI` 对每个右表行最多输出一次。`ANY INNER` 会同时限制两侧：任一张表的每一行最多只使用一次，因此结果行数不会超过较小那张表的行数。结果具体由哪些行对构成是任意的，这正是 `ANY` 的语义所在，同一查询的两次运行结果也可能不同。对于 `ANY INNER`，这种不确定性还会波及行数：按照行被检查的任意顺序，以贪心方式为两侧的每一行配对，最终未配对的行数可能各不相同。因此，对没有连接键的 `ANY INNER` JOIN 执行 `count()` 的结果不可复现，具体取决于线程数量以及右表的物理顺序。
 
 **性能**
 
-block nested loop join 会检查每一对行，因此其开销随两张表行数的乘积增长，详见 [Block nested loop 回退](/zh/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback)。物化后的右表受 [JOIN 内存管理与溢写](/zh/concepts/features/operations/select/join-memory-management) 中所述的硬限制和落盘阈值约束。
+块嵌套循环连接 会检查每一对行，因此其开销随两张表行数的乘积增长，详见 [Block nested loop 回退](/zh/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback)。物化后的右表受 [JOIN 内存管理与溢写](/zh/concepts/features/operations/select/join-memory-management) 中所述的硬限制和落盘阈值约束。
 
 ## JOIN 连接键中的 NULL 和 NaN 值 {#null-values-in-join-keys}
 
@@ -339,12 +339,12 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 
 ## 隐式类型转换 {#implicit-type-conversion}
 
-当左表和右表的 JOIN 键类型不同时，ClickHouse 会先将它们转换为最小共同超类型，再进行比较。此规则适用于所有 JOIN 类型和严格性：
+当左表和右表的连接键类型不同时，ClickHouse 会先将它们转换为最小共同超类型，再进行比较。此规则适用于所有 JOIN 类型和严格性：
 
 * 使用 `ON` 时，转换仅作用于比较过程，键列在结果中保留其原始类型。
 * 使用 `USING` 时，已合并的列在结果中采用公共类型。当 `semi_join_include_columns_from_both_sides` 或 `anti_join_include_columns_from_both_sides` 被禁用时，`SEMI JOIN` 或 `ANTI JOIN` 中已合并的列沿用被保留一侧表的类型。
 
-如果键类型没有共同超类型，且两者均为整数类型或由整数类型组成的元组 (例如 `UInt64` 和 `Int64`) ，ClickHouse 会将两个键都转换为一种能够容纳两种键类型共有取值的类型。对于 `UInt64` 和 `Int64`，该类型为 `UInt64`。该类型无法表示的键值不会与任何值匹配。此转换适用于 `ON` 中的等值条件 (`isNotDistinctFrom` 除外) ，以及 `INNER JOIN` 或 `SEMI JOIN` 中的 `USING`。它不适用于 `ASOF JOIN` 的最近匹配条件、由 `ie_join` 执行的不等式条件，也不适用于其他连接中的 `USING`，因为这些连接的结果列还必须容纳未匹配的值。此转换自 26.9 版本起可用。
+如果键类型没有共同超类型，且两者均为整数类型或由整数类型组成的元组 (例如 `UInt64` 和 `Int64`) ，ClickHouse 会将两个键都转换为一种能够容纳两种键类型共有取值的类型。对于 `UInt64` 和 `Int64`，该类型为 `UInt64`。该类型无法表示的键值不会与任何值匹配。此转换适用于 `ON` 中的等值条件 (`isNotDistinctFrom` 除外) ，以及 `INNER JOIN` 或 `SEMI JOIN` 中的 `USING`。它不适用于 `ASOF JOIN` 的最近匹配条件、由 `inequality` 执行的不等式条件，也不适用于其他连接中的 `USING`，因为这些连接的结果列还必须容纳未匹配的值。此转换自 26.9 版本起可用。
 
 如果键类型没有共同超类型，且此转换不适用 (例如 `String` 和 `Int32`，或 `UInt64` 和 `Float64`) ，查询将失败并抛出异常，例如 `NO_COMMON_TYPE`。
 

@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は ClickHouseサーバーを構成するもので、ClickHouse のソースコードから自動生成されています。
 
-<div id="query_cache.max_entries">
-  ## query_cache.max_entries
-</div>
+## query_cache.max_entries {#query_cache.max_entries}
 
-<SettingsInfoBlock type="UInt64" default_value="1024" changeable_without_restart="No" />cache に格納できる SELECT クエリ結果の最大数。
+<SettingsInfoBlock type="UInt64" default_value="1024" changeable_without_restart="Yes" />cache に格納できる SELECT クエリ結果の最大数。
 
-<div id="query_cache.max_entry_size_in_bytes">
-  ## query_cache.max_entry_size_in_bytes
-</div>
+## query_cache.max_entry_size_in_bytes {#query_cache.max_entry_size_in_bytes}
 
-<SettingsInfoBlock type="UInt64" default_value="1048576" changeable_without_restart="No" />cache に保存できる SELECT クエリの結果の最大サイズ (バイト単位) 。
+<SettingsInfoBlock type="UInt64" default_value="1048576" changeable_without_restart="Yes" />cache に保存できる SELECT クエリ結果の最大サイズ (バイト単位) 。
 
-<div id="query_cache.max_entry_size_in_rows">
-  ## query_cache.max_entry_size_in_rows
-</div>
+## query_cache.max_entry_size_in_rows {#query_cache.max_entry_size_in_rows}
 
 <SettingsInfoBlock type="UInt64" default_value="30000000" changeable_without_restart="No" />cache に保存できる SELECT クエリ結果の最大行数。
 
-<div id="query_cache.max_size_in_bytes">
-  ## query_cache.max_size_in_bytes
-</div>
+## query_cache.max_size_in_bytes {#query_cache.max_size_in_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />バイト単位で指定する cache の最大サイズです。0 の場合、query cache は無効です。
 

@@ -2,7 +2,7 @@
 title: Сведения о подключении в CLI
 ---
 
-На этой странице описано, как получить сведения о подключении к существующему сервису ClickHouse Cloud — имя хоста, номера портов, имя пользователя и пароль — из командной строки с помощью [ClickHouse CLI](/ru/concepts/features/interfaces/cli) (`clickhousectl`). Все команды, кроме входа в систему, выполняются в неинтерактивном режиме. `clickhousectl` выводит результат в формате JSON при указании флага `--json`, а также автоматически, если его запускает агент для программирования.
+На этой странице описано, как получить сведения о подключении к существующему сервису ClickHouse Cloud — имя хоста, номера портов, имя пользователя и пароль — из командной строки с помощью [ClickHouse CLI](/ru/concepts/features/interfaces/cli) (`clickhousectl`). Все команды, кроме входа в систему и входа через браузер для `cloud clickhouse client`, выполняются в неинтерактивном режиме. `clickhousectl` выводит результат в формате JSON при указании флага `--json`, а также автоматически, если его запускает агент для программирования.
 
 ## Предварительные требования {#prerequisites}
 
@@ -16,15 +16,15 @@ curl -fsSL https://clickhouse.com/cli | sh
 
 Также потребуется `jq`.
 
-Для шагов, требующих доступа только для чтения (`service list`, `service get`), достаточно входа через браузер. При этом открывается окно браузера, поэтому завершить вход должен человек:
+Для шагов, требующих доступа только для чтения (`clickhouse list`, `clickhouse get`, `clickhouse dotenv`, `clickhouse client`), достаточно входа через браузер. При этом открывается окно браузера, поэтому завершить вход должен человек:
 
 ```bash
 clickhousectl cloud auth login
 ```
 
-Вход через браузер даёт доступ только для чтения. Для описанных ниже шагов, изменяющих данные, нужен [ключ API](/ru/products/cloud/features/admin-features/api/openapi): `cloud service start` или `cloud service wake` (только если ваш сервис находится в состоянии `stopped` или `idle`) и `reset-password`. Чтобы войти с помощью ключа, выполните `clickhousectl cloud auth login --interactive`: команда запросит ключ и секрет, при этом секрет не попадёт в историю командной оболочки. Также можно передать параметры `--api-key` и `--api-secret` или задать переменные окружения `CLICKHOUSE_CLOUD_API_KEY` и `CLICKHOUSE_CLOUD_API_SECRET`. Агенту для программирования или скрипту следует использовать переменные окружения.
+Вход через браузер даёт доступ только для чтения. Для описанных ниже шагов, изменяющих данные, нужен [ключ API](/ru/products/cloud/features/admin-features/api/openapi): `cloud clickhouse start` или `cloud clickhouse wake` (только если ваш сервис находится в состоянии `stopped` или `idle`) и `reset-password`. Чтобы войти с помощью ключа, выполните `clickhousectl cloud auth login --interactive`: команда запросит ключ и секрет, при этом секрет не попадёт в историю командной оболочки. Также можно передать параметры `--api-key` и `--api-secret` или задать переменные окружения `CLICKHOUSE_CLOUD_API_KEY` и `CLICKHOUSE_CLOUD_API_SECRET`. Агенту для программирования или скрипту следует использовать переменные окружения.
 
-При входе проверяются учётные данные и выводится идентичность пользователя; её можно проверить в любой момент командой `clickhousectl cloud auth whoami`. Если вы состоите в нескольких организациях, добавляйте `--org-id <org-id>` (или `--org-name <name>`) к каждой команде `cloud service` в этом руководстве.
+При входе проверяются учётные данные и выводится идентичность пользователя; её можно проверить в любой момент командой `clickhousectl cloud auth whoami`. Если вы состоите в нескольких организациях, добавляйте `--org-id <org-id>` (или `--org-name <name>`) к каждой команде `cloud clickhouse` в этом руководстве.
 
 Кроме того, вам понадобится существующий сервис ClickHouse Cloud, из которого можно получить сведения о подключении, например созданный по руководству [Быстрый старт с Cloud](/ru/get-started/setup/cloud).
 
@@ -33,7 +33,7 @@ clickhousectl cloud auth login
 Выведите список сервисов в вашей организации и запомните ID того, к которому хотите подключиться:
 
 ```bash
-clickhousectl cloud service list --json | jq -r '.[] | [.id, .name, .state] | @tsv'
+clickhousectl cloud clickhouse list --json | jq -r '.[] | [.id, .name, .state] | @tsv'
 ```
 
 ```text
@@ -43,26 +43,26 @@ clickhousectl cloud service list --json | jq -r '.[] | [.id, .name, .state] | @t
 Сохраните ID сервиса — все остальные команды в этом руководстве принимают его в качестве аргумента. Чтобы найти его по имени:
 
 ```bash
-CH_ID=$(clickhousectl cloud service get --name my-first-service --json | jq -r .id)
+CH_ID=$(clickhousectl cloud clickhouse get --name my-first-service --json | jq -r .id)
 ```
 
-Сервис должен быть запущен, чтобы на одном из следующих шагов проверить подключение. Если он находится в состоянии `stopped`, запустите его и опрашивайте состояние, пока оно не станет `running`:
+Сервис должен быть запущен, чтобы на одном из следующих шагов проверить соединение. Если он находится в состоянии `stopped`, запустите его и опрашивайте состояние, пока оно не станет `running`:
 
 ```bash
-clickhousectl cloud service start "$CH_ID"
-while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+clickhousectl cloud clickhouse start "$CH_ID"
+while [ "$(clickhousectl cloud clickhouse get "$CH_ID" --json | jq -r .state)" != "running" ]; do
   sleep 15
 done
 ```
 
-Сервис в состоянии `idle` из-за масштабирования при простое пробуждается автоматически при первом подключении, поэтому здесь никаких действий не требуется. Чтобы пробудить его заранее, выполните `clickhousectl cloud service wake "$CH_ID"` и опрашивайте состояние тем же способом.
+Сервис в состоянии `idle` из-за масштабирования при простое пробуждается автоматически при первом соединении, поэтому здесь никаких действий не требуется. Чтобы пробудить его заранее, выполните `clickhousectl cloud clickhouse wake "$CH_ID"` и опрашивайте состояние тем же способом.
 
 ## Получение сведений о подключении {#get-your-connection-details}
 
-`clickhousectl cloud service get` возвращает полные сведения о сервисе, включая по одной конечной точке для каждого открытого протокола. Сохраните ответ и извлеките из него нужные данные:
+`clickhousectl cloud clickhouse get` возвращает полные сведения о сервисе, включая по одной конечной точке для каждого открытого протокола. Сохраните ответ и извлеките из него нужные данные:
 
 ```bash
-clickhousectl cloud service get "$CH_ID" --json > service.json
+clickhousectl cloud clickhouse get "$CH_ID" --json > service.json
 jq '.endpoints' service.json
 ```
 
@@ -100,7 +100,7 @@ CH_HTTPS_PORT=$(jq -r '.endpoints[] | select(.protocol == "https") | .port' serv
 
 ## Получение пароля {#get-a-password}
 
-Пароль пользователя `default` возвращается ровно один раз — командой `clickhousectl cloud service create`; впоследствии его нельзя получить ни через API, ни через CLI. Если вы сохранили пароль при создании сервиса, присвойте его переменной, которая используется в последующих шагах, и пропустите сброс:
+Пароль пользователя `default` возвращается ровно один раз — командой `clickhousectl cloud clickhouse create` (или записывается в файл при использовании `create --dotenv`); впоследствии его нельзя получить ни через API, ни через CLI. Если вы сохранили пароль при создании сервиса, присвойте его переменной, которая используется в последующих шагах, и пропустите сброс:
 
 ```bash
 CH_PASSWORD='<your saved password>'
@@ -109,7 +109,7 @@ CH_PASSWORD='<your saved password>'
 Если он утерян, сгенерируйте новый:
 
 ```bash
-CH_PASSWORD=$(clickhousectl cloud service reset-password "$CH_ID" --json | jq -r .password)
+CH_PASSWORD=$(clickhousectl cloud clickhouse reset-password "$CH_ID" --json | jq -r .password)
 ```
 
 <Warning>
@@ -127,8 +127,14 @@ export CLICKHOUSE_PASSWORD=$CH_PASSWORD
 ```
 
 <Warning>
-  Эти переменные окружения действуют только в рамках текущего сеанса терминала. Не храните пароли в файлах профиля shell (`.bashrc`, `.zshrc`) и не коммитьте их в систему контроля версий.
+  Эти переменные окружения действуют только в рамках текущего сеанса терминала. Не храните пароли в файлах профиля командной оболочки (`.bashrc`, `.zshrc`) и не коммитьте их в систему контроля версий.
 </Warning>
+
+Если приложение читает файл `.env`, команда `clickhousectl cloud clickhouse dotenv` запишет настройки подключения в файл `.env` в текущем каталоге (с флагом `--local` — в `.env.local`): `CLICKHOUSE_HOST`, `CLICKHOUSE_PORT` (нативный TLS-порт), `CLICKHOUSE_HTTP_PORT`, `CLICKHOUSE_USER` (`default`) и `CLICKHOUSE_SECURE=true`. Пароль команда записать не может, поэтому добавьте `CLICKHOUSE_PASSWORD` самостоятельно. Существующий файл изменяется на месте, и заменяются только эти ключи, поэтому уже указанный в нём пароль сохраняется:
+
+```bash
+clickhousectl cloud clickhouse dotenv "$CH_ID"
+```
 
 ## Проверка подключения {#verify-connectivity}
 
@@ -143,7 +149,20 @@ curl --user "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" \
 1
 ```
 
-Проверьте собственный протокол (порт 9440) с помощью [**клиента ClickHouse**](/ru/concepts/features/interfaces/client). ClickHouse CLI сам управляет бинарным файлом `clickhouse`, поэтому, если его у вас ещё нет, команда `clickhousectl local use latest` установит последнюю версию ClickHouse и создаст символическую ссылку `~/.local/bin/clickhouse`. Затем:
+Проверьте собственный протокол (порт 9440) с помощью [**клиента ClickHouse**](/ru/concepts/features/interfaces/client). ClickHouse CLI сам управляет бинарным файлом `clickhouse`, поэтому, если его у вас ещё нет, команда `clickhousectl local use latest` установит последнюю версию ClickHouse, сделает её версией по умолчанию и создаст символическую ссылку `~/.local/bin/clickhouse`.
+
+Самая быстрая проверка не требует пароля: `clickhousectl cloud clickhouse client` определяет хост и порт и открывает `clickhouse client` по собственному протоколу с TLS, выполняя вход через браузер от имени вашего пользователя Cloud, а не `default`. Для этого требуется ClickHouse 25.12 или новее, а завершить вход в браузере должен человек:
+
+```bash
+clickhousectl cloud clickhouse client "$CH_ID" \
+  --query "SELECT concat('Connected to ClickHouse ', version())"
+```
+
+```text
+Connected to ClickHouse 26.2.1.558
+```
+
+Чтобы проверить пароль пользователя `default` через собственный протокол, подключитесь так же, как это делает приложение:
 
 ```bash
 clickhouse client --host "$CLICKHOUSE_HOST" --secure --port 9440 \
@@ -162,7 +181,7 @@ Connected to ClickHouse 26.2.1.558 as default
 Единственное исключение: если ваш сервис находился в состоянии `stopped`, а вы запустили его только для проверки подключения, то теперь он продолжает работать, и за вычислительные ресурсы начисляется плата. Остановите его снова, если он вам пока не нужен:
 
 ```bash
-clickhousectl cloud service stop "$CH_ID"
+clickhousectl cloud clickhouse stop "$CH_ID"
 ```
 
 ## Дальнейшие шаги {#next-steps}

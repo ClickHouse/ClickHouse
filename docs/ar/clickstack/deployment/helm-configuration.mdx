@@ -111,26 +111,37 @@ hyperdx:
     MONGODB_PASSWORD: "your-mongodb-password"
 ```
 
-### استخدام Secret خارجي في Kubernetes {#using-external-secret}
+### استخدام سر خارجي {#using-external-secret}
 
-في عمليات النشر في بيئة الإنتاج، عندما تريد إبقاء بيانات الاعتماد منفصلة عن قيم Helm، استخدم Secret خارجيًا في Kubernetes:
+لإبقاء مفتاح API الخاص بـ HyperDX خارج قيم Helm، خزّنه في سرّ Kubernetes خاص بك:
 
 ```bash
-# Create your secret
 kubectl create secret generic my-clickstack-secrets \
-  --from-literal=HYPERDX_API_KEY=my-secret-api-key \
-  --from-literal=CLICKHOUSE_PASSWORD=my-ch-password \
-  --from-literal=CLICKHOUSE_APP_PASSWORD=my-ch-app-password \
-  --from-literal=MONGODB_PASSWORD=my-mongo-password
+  --from-literal=HYPERDX_API_KEY=my-secret-api-key
 ```
 
-ثم أشر إليه ضمن `values` لديك:
+ثم أزِلها من الـ secret الخاص بالمخطط، واقرأها من الـ secret الخاص بك:
 
 ```yaml
 hyperdx:
-  useExistingConfigSecret: true
-  existingConfigSecret: "my-clickstack-secrets"
+  secrets:
+    HYPERDX_API_KEY: null
+  deployment:
+    env:
+      - name: HYPERDX_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: my-clickstack-secrets
+            key: HYPERDX_API_KEY
 ```
+
+يمكن قراءة أي متغير بيئة آخر خاص بـ HyperDX من secret بالطريقة نفسها.
+
+يجب أن تبقى كلمات مرور ClickHouse وMongoDB في `hyperdx.secrets` ما دامت المكوّنات المضمّنة مفعّلة، إذ يستخدمها المخطط لإعداد مستخدمي ClickHouse وMongoDB المضمّنين، ويقرؤها OTel collector من الـ secret الخاص بالمخطط.
+
+<Note>
+  لا يحمّل `hyperdx.deployment.useExistingConfigSecret` من الـ secret سوى الاتصالات والمصادر الافتراضية (`connections.json` و`sources.json`)، ولا يقرأ مفتاح API أو كلمات المرور. راجع [ClickHouse الخارجي](/ar/clickstack/deployment/helm-deployment-options#external-clickhouse-secret).
+</Note>
 
 ## إعداد الدخول {#ingress-setup}
 

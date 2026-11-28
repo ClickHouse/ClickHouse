@@ -488,6 +488,14 @@ Ejecutamos pruebas funcionales, de integración, de estrés y unitarias con MSan
 Ejecutamos pruebas funcionales, de integración, de estrés y unitarias con UBSan para cada commit.
 El código de algunas bibliotecas de terceros no está sanitizado para detectar UB.
 
+Además, activamos la comprobación `unsigned-integer-overflow`, que no forma parte de
+`-fsanitize=undefined`, ya que el desbordamiento de un entero sin signo es un comportamiento bien definido: el valor se reinicia
+cíclicamente módulo 2<sup>N</sup>. Aun así, un reinicio cíclico *no intencionado* es un error, por lo que los lugares que
+se reinician cíclicamente a propósito (funciones hash, sumas de comprobación, generadores de números pseudoaleatorios o la semántica de
+la aritmética de ClickHouse sobre tipos sin signo) se anotan con el atributo `NO_SANITIZE_UNSIGNED_OVERFLOW`
+(consulte `base/base/sanitizer_defs.h`). En el caso de archivos completos y de código de terceros compuesto solo por encabezados,
+la comprobación se desactiva, en cambio, en `tests/ubsan_ignorelist.txt`.
+
 ### Valgrind (memcheck) {#valgrind-memcheck}
 
 Antes solíamos ejecutar pruebas funcionales con Valgrind durante la noche, pero ya no lo hacemos.

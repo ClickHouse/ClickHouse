@@ -43,7 +43,14 @@
       "group": "Reference",
       "pages": [
         "zh/products/bring-your-own-cloud/reference/network-security",
-        "zh/products/bring-your-own-cloud/reference/privilege",
+        {
+          "group": "Privilege",
+          "root": "zh/products/bring-your-own-cloud/reference/privilege",
+          "pages": [
+            "zh/products/bring-your-own-cloud/reference/privilege-aws",
+            "zh/products/bring-your-own-cloud/reference/privilege-gcp"
+          ]
+        },
         "zh/products/bring-your-own-cloud/reference/clickhouse-data-access",
         "zh/products/bring-your-own-cloud/reference/observability-aws",
         "zh/products/bring-your-own-cloud/reference/billable-aws-services",

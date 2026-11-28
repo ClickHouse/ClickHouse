@@ -201,32 +201,31 @@ python -m ci.praktika run "<BUILD_JOB_NAME>"
 
 No se requieren más dependencias que Python 3 y Docker.
 
-#### Jobs de compilación disponibles {#available-build-jobs}
+#### Jobs de build disponibles {#available-build-jobs}
 
-Los nombres de los jobs de compilación son exactamente los que aparecen en el informe de CI:
+Los nombres de los jobs de build son exactamente los que aparecen en el informe de CI:
 
-**Compilaciones AMD64:**
+**Builds AMD64:**
 
-* `Build (amd_debug)` - Compilación de depuración con símbolos
-* `Build (amd_release)` - Compilación optimizada de release
-* `Build (amd_asan)` - Compilación con Address Sanitizer
-* `Build (amd_tsan)` - Compilación con Thread Sanitizer
-* `Build (amd_msan)` - Compilación con Memory Sanitizer
-* `Build (amd_ubsan)` - Compilación con Undefined Behavior Sanitizer
-* `Build (amd_binary)` - Compilación rápida de release sin Thin LTO
-* `Build (amd_compat)` - Compilación de compatibilidad para sistemas más antiguos
-* `Build (amd_musl)` - Compilación con musl libc
-* `Build (amd_darwin)` - Compilación para macOS
-* `Build (amd_freebsd)` - Compilación para FreeBSD
+* `Build (amd_debug)` - Build de depuración con símbolos
+* `Build (amd_release)` - Build optimizado de release
+* `Build (amd_asan)` - Build con Address Sanitizer
+* `Build (amd_tsan)` - Build con Thread Sanitizer
+* `Build (amd_msan)` - Build con Memory Sanitizer
+* `Build (amd_ubsan)` - Build con Undefined Behavior Sanitizer
+* `Build (amd_binary)` - Build rápido de release sin Thin LTO
+* `Build (amd_compat)` - Build de compatibilidad para sistemas más antiguos
+* `Build (amd_darwin)` - Build para macOS
+* `Build (amd_freebsd)` - Build para FreeBSD
 
-**Compilaciones ARM64:**
+**Builds ARM64:**
 
-* `Build (arm_release)` - Compilación optimizada de release para ARM64
-* `Build (arm_asan)` - Compilación con Address Sanitizer para ARM64
-* `Build (arm_coverage)` - Compilación para ARM64 con instrumentación de cobertura
-* `Build (arm_binary)` - Compilación rápida de release para ARM64 sin Thin LTO
-* `Build (arm_darwin)` - Compilación para macOS ARM64
-* `Build (arm_v80compat)` - Compilación de compatibilidad para ARMv8.0
+* `Build (arm_release)` - Build optimizado de release para ARM64
+* `Build (arm_asan)` - Build con Address Sanitizer para ARM64
+* `Build (arm_coverage)` - Build para ARM64 con instrumentación de cobertura
+* `Build (arm_binary)` - Build rápido de release para ARM64 sin Thin LTO
+* `Build (arm_darwin)` - Build para macOS ARM64
+* `Build (arm_v80compat)` - Build de compatibilidad para ARMv8.0
 
 **Otras arquitecturas:**
 
@@ -236,9 +235,9 @@ Los nombres de los jobs de compilación son exactamente los que aparecen en el i
 * `Build (loongarch64)` - LoongArch de 64 bits
 * `Build (wasm64)` - WebAssembly de 64 bits, mediante Emscripten. Experimental: compila el binario `clickhouse` y verifica que `clickhouse local` ejecute consultas en Node.js ≥ 24 (el módulo también se ejecuta en navegadores, pero CI todavía no lo verifica)
 
-Si el job se completa correctamente, los resultados de la compilación estarán disponibles en el directorio `<repo_root>/ci/tmp/build`.
+Si el job se completa correctamente, los resultados del build estarán disponibles en el directorio `<repo_root>/ci/tmp/build`.
 
-**Nota:** En las compilaciones que no pertenecen a la categoría &quot;Otras arquitecturas&quot; (que usan compilación cruzada), la arquitectura de la máquina local debe coincidir con el tipo de compilación para generar la compilación solicitada por `BUILD_JOB_NAME`.
+**Nota:** En los builds que no pertenecen a la categoría &quot;Otras arquitecturas&quot; (que usan compilación cruzada), la arquitectura de la máquina local debe coincidir con el tipo de build para generar el build solicitado por `BUILD_JOB_NAME`.
 
 #### Ejemplo {#example-run-local}
 
@@ -302,7 +301,7 @@ Ejecuta las [pruebas de integración](/es/resources/develop-contribute/contribut
 
 En la rama master, con cada commit se ejecutan las pruebas sin estado, de integración y unitarias sobre una build con instrumentación de cobertura de LLVM, y se publica el informe de cobertura.
 En los pull requests, estos Jobs solo se ejecutan si tienen la etiqueta `ci-coverage` (o si modifican el código que recopila la cobertura y genera sus informes); añádala para obtener el informe de cobertura del pull request y la cobertura de las líneas modificadas.
-Sin la etiqueta, los pull requests ejecutan en su lugar las mismas configuraciones de pruebas sin estado y de integración sobre la build `arm_binary`; las pruebas unitarias se ejecutan en todos los pull requests sobre la build `amd_debug` y sobre las builds con sanitizadores.
+Sin la etiqueta, los pull requests ejecutan en su lugar las mismas configuraciones de pruebas sin estado y de integración sobre la build `arm_binary`; las pruebas unitarias se ejecutan en todos los pull requests sobre las builds `arm_debug`, `arm_asan_ubsan`, `arm_tsan` y `amd_msan`.
 Los módulos de pruebas de integración que se omiten a sí mismos en ARM se ejecutan en los Jobs de sanitizador específicos cuando el cambio afecta al código que cubren.
 Un pull request que solo añada pruebas sin estado y necesite el informe de cobertura puede usar en su lugar la etiqueta `ci-llvm-coverage`: con ella se ejecutan los Jobs de cobertura, los Jobs de las pruebas excluidas de la cobertura, las comprobaciones de inestabilidad de las pruebas sin estado modificadas, la comprobación de estilo y la revisión de código con IA, y se omiten todos los demás Jobs. Un pull request de este tipo puede fusionarse con la etiqueta; uno que modifique cualquier otra cosa, no.
 

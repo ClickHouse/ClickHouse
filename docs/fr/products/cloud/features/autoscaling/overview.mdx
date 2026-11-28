@@ -14,6 +14,10 @@ La mise à l’échelle permet d’ajuster les ressources disponibles pour répo
 <ScalePlanFeatureBadge feature="Mise à l’échelle verticale automatique" />
 
 <Note>
+  La [capacité de calcul Gen 2](/fr/products/cloud/features/compute-generations) est en aperçu privé et ne prend en charge ni la mise à l’échelle automatique ni la mise en veille. Les paramètres de mise à l’échelle manuelle et de mise à l’échelle planifiée restent disponibles.
+</Note>
+
+<Note>
   Les niveaux Scale et Enterprise prennent en charge les services à réplique unique comme les services à plusieurs répliques. Les services Scale à réplique unique et les services Enterprise avec des profils standard `1:4` prennent en charge la mise à l’échelle verticale automatique en libre-service. Les services Enterprise avec des profils personnalisés nécessitent un redimensionnement vertical avec l’assistance du support. Les services Scale et Enterprise peuvent être mis à l’échelle horizontalement sur plusieurs répliques. Les services du niveau Basic disposent d’une seule réplique, ont une taille fixe et ne permettent pas de mise à l’échelle verticale ou horizontale. Pour plus d’informations, consultez [Services à réplique unique de grande taille](/fr/products/cloud/features/large-single-replica-services).
 </Note>
 
@@ -40,7 +44,15 @@ Pour les services du niveau Enterprise, la mise à l&#39;échelle fonctionne com
 * **Mise à l&#39;échelle horizontale** : la mise à l&#39;échelle horizontale manuelle est disponible pour tous les profils standard et personnalisés du niveau Enterprise.
 * **Mise à l&#39;échelle verticale** :
   * Les profils standard `1:4` prennent en charge la mise à l&#39;échelle verticale automatique.
-  * Les profils personnalisés (`highMemory` et `highCPU`) ne prennent pas en charge la mise à l&#39;échelle verticale automatique ni la mise à l&#39;échelle verticale manuelle. Toutefois, ces services peuvent faire l&#39;objet d&#39;une mise à l&#39;échelle verticale en contactant le support.
+  * Les profils personnalisés (`highMemory` et `highCPU`) ne prennent pas en charge la mise à l&#39;échelle verticale automatique ni la mise à l&#39;échelle verticale manuelle. Toutefois, ces services peuvent faire l&#39;objet d&#39;une mise à l&#39;échelle verticale en contactant l&#39;Assistance.
+
+Pour les services [BYOC (Bring Your Own Cloud)](/fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview), la mise à l&#39;échelle fonctionne comme suit :
+
+* **Mise à l&#39;échelle horizontale** : la mise à l&#39;échelle horizontale peut être effectuée manuellement. La mise à l&#39;échelle horizontale automatique n&#39;est disponible que pour les déploiements BYOC dont la mise à l&#39;échelle automatique est activée. Elle ajuste le nombre de répliques dans les limites configurées, sans modifier la taille de chaque réplique. Contactez l&#39;Assistance pour vérifier sa disponibilité pour votre déploiement.
+* **Mise à l&#39;échelle verticale** : la mise à l&#39;échelle verticale automatique n&#39;est disponible que si elle est activée pour votre organisation. Contactez l&#39;Assistance pour vérifier sa disponibilité. La mise à l&#39;échelle verticale s&#39;appuie sur des tailles discrètes qui correspondent aux tailles des nœuds de votre infrastructure BYOC.
+  * Avec BYOC, chaque serveur s&#39;exécute sur son propre nœud. ClickHouse dimensionne chaque serveur pour qu&#39;il occupe l&#39;intégralité du nœud, afin de ne gaspiller aucune capacité.
+  * Dans ClickHouse Cloud, plusieurs serveurs partagent un même nœud ; les serveurs évoluent donc par incréments continus.
+  * Lorsque vous définissez les tailles minimale et maximale d&#39;un service BYOC, vous les choisissez dans une liste de tailles discrètes, et non dans une plage continue.
 
 <Note>
   Dans ClickHouse Cloud, la mise à l&#39;échelle repose sur une approche que nous appelons [&quot;Make Before Break&quot; (MBB)](/fr/products/cloud/features/autoscaling/make-before-break).

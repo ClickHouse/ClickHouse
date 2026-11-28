@@ -15,9 +15,9 @@ ClickStack의 세션 리플레이는 웹 애플리케이션에서의 사용자 �
   ## 애플리케이션 계측하기 {#instrumentation}
 </div>
 
-ClickStack은 OpenTelemetry와 완전히 호환되므로, 표준 OpenTelemetry JavaScript SDK 또는 [ClickStack language SDKs](/ko/clickstack/ingesting-data/sdks)를 사용해 브라우저 텔레메트리(트레이스, 예외)를 전송할 수 있습니다. 하지만 **세션 리플레이에는 ClickStack Browser SDK** (`@hyperdx/browser`)가 필요합니다. 이 SDK는 OpenTelemetry SDK를 확장해 세션 기록, 콘솔 캡처, 네트워크 요청 캡처를 지원합니다. 세션 리플레이 없이 트레이스만 필요하다면 OTel 호환 브라우저 SDK는 모두 ClickStack과 함께 사용할 수 있습니다.
+ClickStack은 OpenTelemetry와 완전히 호환되므로, 표준 OpenTelemetry JavaScript SDK 또는 [ClickStack language SDKs](/ko/clickstack/ingesting-data/sdks)를 사용해 브라우저 텔레메트리(트레이스, 예외)를 전송할 수 있습니다. 하지만 **세션 리플레이에는 ClickStack 브라우저 SDK** (`@hyperdx/browser`)가 필요합니다. 이 SDK는 OpenTelemetry SDK를 확장해 세션 기록, 콘솔 캡처, 네트워크 요청 캡처를 지원합니다. 세션 리플레이 없이 트레이스만 필요하다면 OTel 호환 브라우저 SDK는 모두 ClickStack과 함께 사용할 수 있습니다.
 
-아래 예시에서는 ClickStack Browser SDK를 사용합니다. 애플리케이션에 세션 리플레이를 추가하는 데는 세 단계만 거치면 됩니다. 패키지를 설치하고 SDK를 초기화하면 모든 사용자 상호작용이 자동으로 캡처되며, 추가 코드 변경은 필요하지 않습니다.
+아래 예시에서는 ClickStack 브라우저 SDK를 사용합니다. 애플리케이션에 세션 리플레이를 추가하는 데는 세 단계만 거치면 됩니다. 패키지를 설치하고 SDK를 초기화하면 모든 사용자 상호작용이 자동으로 캡처되며, 추가 코드 변경은 필요하지 않습니다.
 
 <Tip>
   앱 시작 시 반드시 로드되는 위치에서 SDK를 초기화하세요. 예를 들어 Next.js 애플리케이션에서는 루트 `layout.js`가 그 위치가 될 수 있습니다. 이렇게 하면 세션 기록이 즉시 시작되어 전체 사용자 경험을 캡처할 수 있습니다.
@@ -34,7 +34,7 @@ ClickStack은 OpenTelemetry와 완전히 호환되므로, 표준 OpenTelemetry J
 
     HyperDX.init({
       url: 'http://your-otel-collector:4318',
-      apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack에서는 생략
+      apiKey: 'YOUR_INGESTION_API_KEY',
       service: 'my-frontend-app',
       tracePropagationTargets: [/api.myapp.domain/i],
       consoleCapture: true,
@@ -53,7 +53,7 @@ ClickStack은 OpenTelemetry와 완전히 호환되므로, 표준 OpenTelemetry J
 
     HyperDX.init({
       url: 'http://your-otel-collector:4318',
-      apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack에서는 생략
+      apiKey: 'YOUR_INGESTION_API_KEY',
       service: 'my-frontend-app',
       tracePropagationTargets: [/api.myapp.domain/i],
       consoleCapture: true,
@@ -70,7 +70,7 @@ ClickStack은 OpenTelemetry와 완전히 호환되므로, 표준 OpenTelemetry J
     <script>
       window.HyperDX.init({
         url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack에서는 생략
+        apiKey: 'YOUR_INGESTION_API_KEY',
         service: 'my-frontend-app',
         tracePropagationTargets: [/api.myapp.domain/i],
         consoleCapture: true,
@@ -82,10 +82,10 @@ ClickStack은 OpenTelemetry와 완전히 호환되므로, 표준 OpenTelemetry J
 </Tabs>
 
 <Note>
-  `tracePropagationTargets` 옵션은 세션 리플레이를 백엔드 트레이스와 연결하는 데 핵심적인 역할을 합니다. 전체 프런트엔드-백엔드 분산 추적을 사용하려면 API 도메인으로 설정하세요. 개인정보 보호 제어, 사용자 지정 액션, React 오류 경계, 소스 맵을 포함한 전체 SDK 옵션 목록은 [Browser SDK 참고](/ko/clickstack/ingesting-data/sdks/browser)를 참조하세요.
+  `tracePropagationTargets` 옵션은 세션 리플레이를 백엔드 트레이스와 연결하는 데 핵심적인 역할을 합니다. 전체 프런트엔드-백엔드 분산 추적을 사용하려면 API 도메인으로 설정하세요. 개인정보 보호 제어, 사용자 지정 액션, React 오류 경계, 소스 맵을 포함한 전체 SDK 옵션 목록은 [브라우저 SDK 참고](/ko/clickstack/ingesting-data/sdks/browser)를 참조하세요.
 </Note>
 
-Browser SDK는 개인정보 보호가 중요한 애플리케이션을 위해 [입력값과 텍스트 마스킹](/ko/clickstack/ingesting-data/sdks/browser#initialization-options)도 지원하며, [사용자 정보 연결](/ko/clickstack/ingesting-data/sdks/browser#users-and-errors)을 통해 ClickStack UI에서 사용자별로 세션을 검색하고 필터링할 수 있습니다.
+브라우저 SDK는 개인정보 보호가 중요한 애플리케이션을 위해 [입력값과 텍스트 마스킹](/ko/clickstack/ingesting-data/sdks/browser#initialization-options)도 지원하며, [사용자 정보 연결](/ko/clickstack/ingesting-data/sdks/browser#users-and-errors)을 통해 ClickStack UI에서 사용자별로 세션을 검색하고 필터링할 수 있습니다.
 
 ## 세션 리플레이 보기 {#viewing-replays}
 

@@ -13,8 +13,15 @@ doc_type: 'reference'
 ## 테이블 생성 {#create-table}
 
 ```sql
+-- Account key
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
-    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, extra_credentials(client_id=, tenant_id=)])
+    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+
+-- Workload identity (mutually exclusive with account_name / account_key)
+CREATE TABLE azure_blob_storage_table (name String, value UInt32)
+    ENGINE = AzureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, partition_columns_in_data_file])
     [PARTITION BY expr]
     [SETTINGS ...]
 ```
@@ -32,7 +39,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 * `compression` — 지원되는 값: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. 기본적으로 파일 확장자를 기준으로 압축을 자동 감지합니다. (`auto`로 설정한 것과 동일합니다.) `snappy`의 wire 형식은 [snappy&#95;mode](/ko/reference/settings/session-settings/other#snappy_mode) 설정으로 선택됩니다(기본값은 `basic`).
 * `partition_strategy` – 옵션: `wildcard` 또는 `hive`. `wildcard`는 경로에 `{_partition_id}`가 있어야 하며, 이 값은 파티션 키로 대체됩니다. `hive`는 와일드카드를 허용하지 않으며, 경로를 테이블 루트로 간주하고, 파일 이름으로 Snowflake ID를 사용하며 파일 포맷을 확장자로 하는 Hive 스타일의 파티션 디렉터리를 생성합니다. 명시적 전략이 없을 때 `{_partition_id}`가 있는 경로는 `wildcard`를 사용합니다. 다른 글롭이 있는 경로는 파티션 전략을 사용하지 않으며 `PARTITION BY`를 무시합니다. 글롭이 없는 경로는 `file_like_engine_default_partition_strategy`가 `hive`이면 `hive`를 사용하고, 그렇지 않으면 파티션 전략을 사용하지 않습니다.
 * `partition_columns_in_data_file` - `hive` 파티션 전략에서만 사용됩니다. 데이터 파일에 파티션 컬럼이 기록되어 있다고 ClickHouse가 예상할지 여부를 지정합니다. 기본값은 `false`입니다.
-* `extra_credentials` - 인증에 `client_id`와 `tenant_id`를 사용합니다. `extra_credentials`가 제공되면 `account_name`과 `account_key`보다 우선 적용됩니다.
+* `extra_credentials` - Azure Workload Identity 인증에 `client_id`와 `tenant_id`를 사용합니다. `account_name` / `account_key`와 함께 사용할 수 없으며, `storage_account_url`이 필요합니다(`connection_string`은 사용할 수 없습니다).
 
 **예시**
 

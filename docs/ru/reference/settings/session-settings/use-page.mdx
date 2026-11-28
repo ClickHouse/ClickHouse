@@ -31,11 +31,11 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 ## use_page_cache_for_object_storage {#use_page_cache_for_object_storage}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Новая настройка для использования кэша страниц в пространстве пользователя для табличных функций объектного хранилища"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Новая настройка для использования кэша страниц в пространстве пользователя в табличных функциях объектного хранилища"}]}, {"id": "row-2","items": [{"label": "26.12"},{"label": "1"},{"label": "По умолчанию кэш страниц в пространстве пользователя используется для движков таблиц и табличных функций объектного хранилища, если страничный кэш настроен на сервере."}]}]} />
 
-Используйте кэш страниц в пространстве пользователя при чтении из табличных функций для объектных хранилищ (s3, azure, hdfs) и движков таблиц (S3, Azure, HDFS).
+Использовать кэш страниц в пространстве пользователя при чтении из табличных функций объектного хранилища (s3, azure, hdfs, Iceberg, Delta Lake и т. д.) и движков таблиц (S3, Azure, HDFS, Iceberg, Delta Lake и т. д.). Настройка действует, только если кэш страниц в пространстве пользователя настроен на сервере (`page_cache_max_size`), и только для объектов с сильным ETag или с неизменяемой идентичностью, полученной из записей таблицы (файлы данных Iceberg и Delta Lake). Одновременно с файловым кэшем не используется. Вместе с distributed cache используется, только если дополнительно включена настройка `use_page_cache_with_distributed_cache`.
 
 ## use_page_cache_lookahead_for_text_index {#use_page_cache_lookahead_for_text_index}
 

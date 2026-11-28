@@ -389,13 +389,14 @@ SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date 
 
 ## Acessando buckets requester-pays {#accessing-requester-pays-buckets}
 
-Para acessar um bucket requester-pays, é preciso enviar o header `x-amz-request-payer = requester` em qualquer solicitação. Isso é feito passando o parâmetro `headers('x-amz-request-payer' = 'requester')` para a função s3. Por exemplo:
+Para acessar um bucket requester-pays, é preciso enviar o cabeçalho `x-amz-request-payer = requester` em qualquer requisição. Isso é feito definindo a configuração [`s3_request_payer`](/pt-BR/reference/settings/session-settings/s3#s3_request_payer) como `requester` ou por meio da chave `request_payer` da seção de endpoint na configuração do servidor. Por exemplo:
 
 ```sql
 SELECT
     count() AS num_rows,
     uniqExact(_file) AS num_files
-FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-100*.parquet', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', headers('x-amz-request-payer' = 'requester'))
+FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-100*.parquet', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY')
+SETTINGS s3_request_payer = 'requester'
 
 ┌───num_rows─┬─num_files─┐
 │ 1110000000 │       111 │
@@ -404,6 +405,8 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 1 row in set. Elapsed: 3.089 sec. Processed 1.09 billion rows, 0.00 B (353.55 million rows/s., 0.00 B/s.)
 Peak memory usage: 192.27 KiB.
 ```
+
+Passar o parâmetro `headers('x-amz-request-payer' = 'requester')` para a função `s3` também funciona.
 
 ## Resolução de URLs relativas {#resolving-relative-urls}
 

@@ -80,6 +80,13 @@ Esto se aplica tanto a `INSERT SELECT` como a un `INSERT` simple cuyos datos se 
 (la combinación de bloques y la escritura en la tabla de destino) se paraleliza
 en hasta este número de hilos.
 
+Los destinos cuyos resultados dependen del orden de inserción mantienen un único flujo de escritura cuando la entrada tiene un solo flujo:
+`CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, `ReplacingMergeTree`
+(incluidas sus variantes replicadas), tablas `MergeTree` con una `UNIQUE KEY`, `EmbeddedRocksDB` y `Distributed`
+(no se conoce el motor de la tabla en el fragmento). Un `SELECT` con varios flujos de salida no tiene un orden de entrada
+que conservar, por lo que en estos destinos pueden mantenerse varios receptores (sinks) en paralelo. `KeeperMap` siempre mantiene un único flujo de escritura.
+Estas restricciones también se aplican a los destinos a los que se llega a través de una vista materializada o de una tabla `Alias`.
+
 Valores posibles:
 
 * 0 — Automático. Usa el número de núcleos de CPU disponibles en el servidor (el mismo valor automático que [`max_threads`](/es/reference/settings/session-settings/max-threads#max_threads)), reducido si hay presión de memoria mediante [`max_insert_threads_min_free_memory_per_thread`](/es/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread).

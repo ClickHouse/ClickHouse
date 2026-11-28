@@ -403,6 +403,14 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
   ستنتظر الاستعلامات المحجوبة إلى أجل غير مسمّى، ولن تظهر في `SHOW PROCESSLIST` حتى تُستوفى جميع القيود.
 </Note>
 
+## الحدود على مستوى الخادم {#server_wide_limits}
+
+يطبّق إعدادا الخادم `workloads_respect_server_cpu_limit` و`workloads_respect_server_memory_limit` الحدودَ المفروضة على مستوى الخادم، وهي `concurrent_threads_soft_limit_num` و`max_server_memory_usage`، من خلال مُجدول أحمال العمل. إذ ينشئ هذان الإعدادان المورِدين `__server_cpu__` (`MASTER THREAD, WORKER THREAD`) و`__server_memory__` (`MEMORY RESERVATION`) ما لم يكن هناك مورد معرَّف للدور نفسه، ويضبطان `max_concurrent_threads` و`max_memory` لعبء العمل الجذر (أي عبء العمل ذي الاسم الفارغ)، بحيث تتشارك جميع أحمال العمل ميزانية واحدة.
+
+<Note>
+  فعِّل `implicit_default_workload` إلى جانبهما، أو عرِّف عبء عمل باسم `default`. فهذه الميزانيات لا تُقيِّد إلا الاستعلامات المصنَّفة ضمن عبء عمل. وفي غياب عبء العمل `default`، لا تخضع الاستعلامات التي تستخدم القيمة الافتراضية لإعداد `workload`، ولا عمليات الدمج والتعديل التابعة لعبء العمل الافتراضي، لأي حدّ على استخدام CPU إطلاقًا، لأن آلية التحكم المدمجة في التزامن تتوقف عن العمل بمجرد أن يتولى مُجدول أحمال العمل جدولة CPU. كما أن عمليات الدمج والتعديل في الخلفية لا تحجز ذاكرة من أحمال العمل، ولذلك لا تُحتسب الذاكرة التي تستهلكها ضمن ميزانية الذاكرة.
+</Note>
+
 ## تخزين أحمال العمل والموارد {#workload_entity_storage}
 
 تُخزَّن تعريفات جميع أحمال العمل والموارد، بصيغة استعلامات `CREATE WORKLOAD` و`CREATE RESOURCE`، تخزينًا دائمًا إما على القرص في `workload_path` أو في ZooKeeper عند `workload_zookeeper_path`. ويُوصى باستخدام التخزين في ZooKeeper لتحقيق الاتساق بين العُقد. وبدلًا من ذلك، يمكن استخدام البند `ON CLUSTER` إلى جانب التخزين على القرص.
@@ -427,7 +435,7 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
 </clickhouse>
 ```
 
-تستخدم هذه التهيئة صياغة SQL نفسها المستخدمة في عبارتي `CREATE WORKLOAD` و`CREATE RESOURCE`. يجب أن تكون جميع الاستعلامات صحيحة.
+تستخدم هذه التهيئة صياغة SQL نفسها المستخدمة في عبارتي `CREATE WORKLOAD` و`CREATE RESOURCE`. يجب أن تكون جميع الاستعلامات صحيحة. لا يمكن أن يكون لعبء العمل المعرَّف في التهيئة عبء عمل أب وموارد `FOR` إلا إذا كانت معرَّفة في التهيئة أيضًا. يمكن أن تكون أحمال العمل المعرّفة بلغة SQL أحمالًا فرعية لأحمال العمل القائمة على التكوين. لا تُزِل عبء عمل أو موردًا من التهيئة ما دامت أحمال عمل معرّفة بلغة SQL تشير إليه، إذ يتعذّر على الخادم حينئذٍ تحميل أحمال العمل تلك.
 
 ### توصيات الاستخدام {#config_based_workloads_usage_recommendations}
 
@@ -537,6 +545,8 @@ RESTORE TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' FR
 
 ## راجع أيضًا {#see-also}
 
+* [CREATE WORKLOAD](/ar/reference/statements/create/workload)
+* [CREATE RESOURCE](/ar/reference/statements/create/resource)
 * [system.scheduler](/ar/reference/system-tables/scheduler)
 * [system.workloads](/ar/reference/system-tables/workloads)
 * [system.resources](/ar/reference/system-tables/resources)

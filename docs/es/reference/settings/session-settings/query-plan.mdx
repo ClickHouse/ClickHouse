@@ -184,13 +184,25 @@ Solo tiene efecto si la configuración [query&#95;plan&#95;enable&#95;optimizati
   Esta es una configuración de nivel experto que solo deben usar los desarrolladores para depuración. La configuración puede cambiar en el futuro de forma incompatible con versiones anteriores o eliminarse.
 </Note>
 
+## query_plan_join_multiway_merge {#query_plan_join_multiway_merge}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+
+Ejecuta un subárbol de uniones internas `full_sorting_merge` cuyas claves son iguales entre sí como una única unión por mezcla de todas sus entradas, en lugar de como un árbol de uniones de dos entradas. Cada entrada se lee una sola vez en el orden de la clave y cada columna se copia una sola vez al resultado.
+
+Se aplica a uniones `INNER` con estrictez `ALL` y una única condición. Con `query_plan_join_shard_by_pk_ranges`, la unión se divide por rangos de clave primaria de todas sus tablas.
+
 ## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
 
 <BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración, habilitada de forma predeterminada: el algoritmo de orden de JOIN DPsub elige entre joins hash y sort-merge según el orden de las entradas."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "El cambio se aplicó mediante backport a 26.10 y está registrado allí."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración, habilitada de forma predeterminada: el algoritmo de orden de JOIN DPsub elige entre uniones hash y sort-merge según el orden de las entradas."}]}]} />
 
 Solo afecta al algoritmo de orden de JOIN `dpsub`. Hace que tenga en cuenta el orden de las tablas unidas: para cada equi-join interno elige por coste entre una unión hash y `full_sorting_merge`, y conserva los planes parciales cuyo resultado esté ordenado por una join key que pueda aprovechar una unión posterior.
 
@@ -333,9 +345,9 @@ Lo utiliza el comparador de proyección de agregación (y cualquier comparador d
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "500"},{"label": "Nuevo ajuste"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "500"},{"label": "Nueva configuración"}]}]} />
 
-Longitud máxima de la descripción de un paso en EXPLAIN PLAN.
+Longitud máxima, en bytes, de la descripción de un paso del plan de consulta. Las descripciones más largas se truncan a esta longitud allí donde se muestren.
 
 ## query_plan_merge_expression_into_join {#query_plan_merge_expression_into_join}
 
@@ -375,7 +387,9 @@ Permite fusionar el filtro con la condición de `JOIN` y convertir `CROSS JOIN` 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Permite fusionar filtros en el plan de consulta"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "Permite fusionar filtros en el plan de consulta. Esto es necesario para admitir correctamente el push-down de filtros con el analizador."}]}]} />
 
-Permite fusionar filtros en el plan de consulta.
+Permite fusionar en uno solo los pasos de filtro consecutivos del plan de consulta. Para conservar la evaluación en cortocircuito de la condición fusionada, un filtro sobre una cadena `AND` se ejecuta entonces como varios filtros consecutivos, uno por cada condición.
+
+Esto es necesario para que el push-down de filtros funcione correctamente con el analizador. La fusión solo surte efecto si `query_plan_enable_optimizations` está habilitado.
 
 ## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
@@ -400,14 +414,14 @@ Solo tiene efecto cuando `query_plan_direct_read_from_text_index` está habilita
 
 <SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "`dpsub` es ahora el algoritmo de orden de los joins predeterminado; las consultas con más de 12 relaciones recurren a `greedy`."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Nueva configuración experimental."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "El cambio se aplicó mediante backport a 26.10 y está registrado allí."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "dpsub,greedy"},{"label": "`dpsub` es ahora el algoritmo de orden de los joins predeterminado; las consultas con más de 12 relaciones recurren a `greedy`."}]}, {"id": "row-3","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Nueva configuración experimental."}]}]} />
 
-Especifica qué algoritmos de orden de JOIN se intentan durante la optimización del plan de consulta. Están disponibles los siguientes algoritmos:
+Especifica qué algoritmos de orden de los joins se intentan durante la optimización del plan de consulta. Están disponibles los siguientes algoritmos:
 
-* &#39;greedy&#39; - algoritmo voraz básico: funciona rápido, pero puede no producir el mejor orden de join
-* &#39;dpsize&#39; - implementa el algoritmo DPsize, actualmente solo para INNER JOIN: considera todos los órdenes de join posibles y encuentra el más óptimo, pero puede ser lento para consultas con muchas tablas y predicados de join.
-* &#39;dpsub&#39; - implementa el algoritmo DPsub, que admite tanto INNER JOIN como joins que no son INNER: considera todos los órdenes de join posibles y encuentra el más óptimo. Solo se aplica a consultas con un máximo de 12 relaciones; por encima de ese número, cede el paso al siguiente algoritmo de la lista.
-* &#39;dphyp&#39; - implementa el algoritmo DPhyp (programación dinámica mediante partición de hipergrafos), actualmente solo para INNER JOIN: explora el mismo espacio de búsqueda que `dpsize`, pero enumera solo pares de subgrafos conectados, lo que genera menos joins intermedios en grafos de join dispersos, a costa de no considerar productos cartesianos
+* &#39;greedy&#39; - algoritmo voraz básico: funciona rápido, pero puede no producir el mejor orden de los joins
+* &#39;dpsize&#39; - implementa el algoritmo DPsize, actualmente solo para uniones INNER: considera todos los órdenes de los joins posibles y encuentra el más óptimo, pero puede ser lento para consultas con muchas tablas y predicados de unión.
+* &#39;dpsub&#39; - implementa el algoritmo DPsub, que admite tanto uniones INNER como uniones que no son INNER: considera todos los órdenes de los joins posibles y encuentra el más óptimo. Solo se aplica a consultas con un máximo de 12 relaciones; por encima de ese número, cede el paso al siguiente algoritmo de la lista.
+* &#39;dphyp&#39; - implementa el algoritmo DPhyp (programación dinámica mediante partición de hipergrafos), actualmente solo para uniones INNER: explora el mismo espacio de búsqueda que `dpsize`, pero enumera solo pares de subgrafos conectados, lo que genera menos uniones intermedias en grafos de unión dispersos, a costa de no considerar productos cartesianos
   Se pueden especificar varios algoritmos como una lista separada por comas; por ejemplo, `dphyp,greedy`. Se prueban en orden; si un algoritmo no puede procesar la consulta (p. ej., debido a un exceso de relaciones o a componentes desconectados), se usa el siguiente como fallback.
 
 ## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
@@ -416,7 +430,7 @@ Especifica qué algoritmos de orden de JOIN se intentan durante la optimización
 
 <SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nueva configuración que selecciona el conflict detector que determina la validez del reordenamiento de JOIN en el algoritmo de orden de JOIN DPsub: `a` para el CD-A (correcto pero incompleto), `c` para el CD-C (correcto y completo), vacío para ninguno."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "Nueva configuración que selecciona el conflict detector que determina la validez del reordenamiento de JOIN en el algoritmo de orden de JOIN DPsub: `a` para el CD-A (correcto pero incompleto), `c` para el CD-C (correcto y completo), vacío para ninguno. De forma predeterminada usa CD-C, junto con el valor predeterminado `dpsub` de `query_plan_optimize_join_order_algorithm`, lo que también permite que los semi joins y anti joins participen en el reordenamiento."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nueva configuración que selecciona el conflict detector que determina la validez del reordenamiento de JOIN en el algoritmo de orden de JOIN DPsub: `a` para el CD-A (correcto pero incompleto), `c` para el CD-C (correcto y completo), vacío para ninguno."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "El cambio se aplicó mediante backport a 26.10 y figura en el historial de esa versión."}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "c"},{"label": "Nueva configuración que selecciona el conflict detector que determina la validez del reordenamiento de JOIN en el algoritmo de orden de JOIN DPsub: `a` para el CD-A (correcto pero incompleto), `c` para el CD-C (correcto y completo), vacío para ninguno. De forma predeterminada usa CD-C, junto con el valor predeterminado `dpsub` de `query_plan_optimize_join_order_algorithm`, lo que también permite que los semi joins y anti joins participen en el reordenamiento."}]}]} />
 
 Solo afecta al algoritmo de orden de JOIN `dpsub`. Selecciona el conflict detector que DPsub emplea para
 determinar qué reordenamientos de JOIN son válidos. Los valores disponibles son los siguientes:
@@ -472,7 +486,9 @@ Optimiza la lectura con FINAL en ReplacingMergeTree creando un conjunto de clave
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "Se añadió una nueva configuración para usar el plan de consulta para la optimización de materialización diferida"}]}]} />
 
-Usar el plan de consulta para la optimización de materialización diferida.
+Habilita la optimización de materialización diferida para consultas `ORDER BY ... LIMIT n`: las columnas que no se necesitan para la ordenación ni para el filtrado se leen solo para las `n` filas que quedan después de `LIMIT`, en lugar de leerse para todas las filas leídas. Esto reduce la cantidad de datos leídos en las consultas top-N sobre tablas anchas.
+
+La optimización no se utiliza si `n` es mayor que `query_plan_max_limit_for_lazy_materialization`, ni con `LIMIT ... WITH TIES`.
 
 ## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
@@ -494,17 +510,19 @@ Utiliza la optimización de materialización diferida al leer archivos Parquet y
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva configuración que propaga las conjunciones de un filtro a través de las claves de equi-join para que el pruning por clave primaria se active en ambos lados."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva configuración que propaga las conjunciones de un filtro a través de las claves de equi-join para que el pruning por clave primaria se active en ambos lados."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "1"},{"label": "También copia las conjunciones de un filtro a columnas de tipo integer, Date y Decimal de lecturas de Parquet, que omiten grupos de filas según sus estadísticas."}]}]} />
 
 Activa o desactiva una optimización a nivel del plan de consulta que copia las conjunciones de un filtro
 desde un lado de un equi-join hacia el otro mediante la sustitución de claves equivalentes, de modo que el
 pruning por clave primaria o por índice del otro lado pueda aprovecharlas.
 
-Se aplica cuando el filtro y la lectura de `MergeTree` están separados del join únicamente por pasos de
-expresión y de filtrado, y cuando la conjunción copiada compara una columna de la clave primaria con una constante
-(incluido `IN` con un conjunto constante). Un predicado situado por debajo de un join anidado o por debajo de `DISTINCT`, o una
-comparación entre dos columnas clave, se deja intacto: no permitiría aplicar el pruning por clave primaria en el
-otro lado, por lo que copiarlo solo supondría trabajo adicional.
+Se aplica cuando el filtro y la lectura están separados de la unión únicamente por pasos de expresión y de filtrado,
+y cuando la conjunción copiada compara una constante (incluido `IN` con un conjunto constante) con
+una columna de la clave primaria de una lectura de `MergeTree`, o con una columna de una lectura de `Parquet` (`file`, `url`,
+almacenamiento de objetos que no sea un lago de datos) de tipo integer de hasta 64 bits, `Date`, `Date32` o `Decimal` sin una
+expresión por defecto, cuyos grupos de filas la lectura pueda omitir mediante estadísticas min/max. Un predicado situado por debajo de una
+unión anidada o por debajo de `DISTINCT`, o una comparación entre dos columnas clave, se deja intacto: no permitiría
+aplicar el pruning en el otro lado, por lo que copiarlo solo supondría trabajo adicional.
 
 Solo tiene efecto si `query_plan_enable_optimizations` es 1.
 
@@ -621,6 +639,14 @@ Valores posibles:
 * 0 - Deshabilitar
 * 1 - Habilitar
 
+## query_plan_remove_unused_joins {#query_plan_remove_unused_joins}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nueva configuración para eliminar un `LEFT` o `RIGHT` `JOIN` cuyo otro lado no se lee y que devuelve cada fila del lado preservado exactamente una vez."}]}]} />
+
+Elimina un `LEFT` o `RIGHT` `JOIN` si no se lee ninguna columna de su otro lado y devuelve cada fila del lado preservado exactamente una vez: una unión `ANY`, o una unión cuyo otro lado es único según las claves de unión, como una subconsulta con `GROUP BY` o `DISTINCT` sobre ellas, o una tabla sin clave de partición cuya `UNIQUE KEY` esté cubierta por dichas claves. En ese caso, el otro lado no llega a leerse.
+
 ## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -633,15 +659,15 @@ Reemplaza un paso de filtro por un paso de expresión cuando la condición de fi
 
 **Alias**: `optimize_read_in_window_order`
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Desactiva esta lógica de forma predeterminada. Esto también se aplica al alias `optimize_read_in_window_order`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Se vuelve a activar de forma predeterminada: la ordenación ahora distribuye el stream fusionado según las columnas de `PARTITION BY`, de modo que las funciones de ventana se ejecutan en paralelo. Esto también se aplica al alias `optimize_read_in_window_order`."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "Desactiva esta lógica de forma predeterminada. Esto también se aplica al alias `optimize_read_in_window_order`."}]}]} />
 
 Activa una optimización a nivel del plan de consulta que aprovecha el orden de almacenamiento al ordenar para funciones de ventana.
 Solo surte efecto si la configuración [`query_plan_enable_optimizations`](/es/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) es 1.
 
 <Note>
-  Esta es una configuración de nivel experto que solo deberían usar los desarrolladores para depuración. La configuración puede cambiar en el futuro de formas incompatibles con versiones anteriores o eliminarse.
+  Este es un ajuste de nivel experto que solo deberían usar los desarrolladores para depuración. La configuración puede cambiar en el futuro de formas incompatibles con versiones anteriores o eliminarse.
 </Note>
 
 Valores posibles:

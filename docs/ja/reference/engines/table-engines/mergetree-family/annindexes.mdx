@@ -445,11 +445,11 @@ ENGINE = MergeTree ORDER BY id;
 
 まず、索引作成は並列化できます。
 索引作成スレッドの最大数は、サーバー設定[max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/ja/reference/settings/server-settings/settings/max#max_build_vector_similarity_index_thread_pool_size)で設定できます。
-最適な性能を得るには、この設定値を CPU コア数に合わせて設定してください。
+最適なパフォーマンスを得るには、この設定値を CPU コア数に合わせて設定してください。
 
 次に、INSERT ステートメントを高速化するために、ユーザーはセッション設定[materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ja/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert)を使用して、新たに挿入されたパーツでのスキップ索引の作成を無効にできます。
 そのようなパーツに対する SELECT クエリは、厳密検索にフォールバックします。
-挿入されたパーツはテーブル全体のサイズと比べて小さい傾向があるため、性能への影響はごくわずかであると見込まれます。
+挿入されたパーツはテーブル全体のサイズと比べて小さい傾向があるため、パフォーマンスへの影響はごくわずかであると見込まれます。
 
 3 つ目に、マージを高速化するために、ユーザーはセッション設定[materialize&#95;skip&#95;indexes&#95;on&#95;merge](/ja/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge)を使用して、マージ後のパーツでのスキップ索引の作成を無効にできます。
 これにより、ステートメント[ALTER TABLE [...] MATERIALIZE INDEX [...]](/ja/reference/statements/alter/skipping-index#materialize-index)と組み合わせて、ベクトル類似度索引のライフサイクルを明示的に制御できます。
@@ -461,7 +461,11 @@ SELECT クエリでベクトル類似度索引を使用するには、それを�
 同じベクトル類似度索引がメインメモリに繰り返し読み込まれるのを防ぐため、ClickHouse はこの種の索引専用のインメモリ cache を提供しています。
 この cache が大きいほど、不要な読み込みは少なくなります。
 キャッシュサイズの最大サイズは、サーバー設定[vector&#95;similarity&#95;index&#95;cache&#95;size](/ja/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size)で設定できます。
-デフォルトでは、cache は最大 5 GB まで拡張できます。
+ClickHouse OSS では、デフォルトで cache は最大 5 GB まで拡張できます。
+
+ClickHouse Cloud では、キャッシュサイズの最大値は Pod のサイズによって異なります。
+正確なサイズは [system.server&#95;settings](/ja/reference/system-tables/server_settings) で確認できます。
+サーバー設定は SQL やコンソールから変更できないため、より大きなサイズを設定するにはサポートに問い合わせてください。
 
 次のログメッセージ (`system.text_log`) は、ベクトル類似度索引が読み込まれていることを示します。
 異なるベクトル検索クエリに対してこのようなメッセージが繰り返し表示される場合は、キャッシュサイズが小さすぎることを示しています。
@@ -475,14 +479,14 @@ SELECT クエリでベクトル類似度索引を使用するには、それを�
 ```
 
 <Note>
-  ベクトル類似度索引キャッシュには、ベクトル索引のインデックスグラニュールが格納されます。
-  個々のベクトル索引のインデックスグラニュールがキャッシュサイズより大きい場合は、キャッシュされません。
-  したがって、ベクトル索引のサイズ (「ストレージとメモリ消費量の見積もり」の式、または [system.data&#95;skipping&#95;indices](/ja/reference/system-tables/data_skipping_indices) に基づく) を必ず計算し、それに応じてキャッシュサイズを設定してください。
+  ベクトル類似度索引キャッシュには、ベクトル索引のグラニュールが格納されます。
+  個々のベクトル索引グラニュールがキャッシュサイズより大きい場合、それらはキャッシュされません。
+  そのため、ベクトル索引のサイズを (「ストレージとメモリの使用量の見積もり」の計算式、または [system.data&#95;skipping&#95;indices](/ja/reference/system-tables/data_skipping_indices) に基づいて) 算出し、それに応じてキャッシュサイズを設定してください。
 </Note>
 
-*ベクトル検索クエリが遅い場合は、まずベクトル索引キャッシュを確認し、必要に応じて増やすことが最初のステップであることを、改めて強調しておきます。*
+*繰り返しになりますが、低速なベクトル検索クエリを調査する際は、まずベクトルインデックスキャッシュのサイズを確認し、必要に応じて拡張してください。*
 
-現在のベクトル類似度索引キャッシュのサイズは、[system.metrics](/ja/reference/system-tables/metrics) に表示されます。
+ベクトル類似度索引キャッシュの現在のサイズは、[system.metrics](/ja/reference/system-tables/metrics) で確認できます。
 
 ```sql
 SELECT metric, value
@@ -499,6 +503,13 @@ SELECT ProfileEvents['VectorSimilarityIndexCacheHits'], ProfileEvents['VectorSim
 FROM system.query_log
 WHERE type = 'QueryFinish' AND query_id = '<...>'
 ORDER BY event_time_microseconds;
+```
+
+[`SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE`](/ja/reference/statements/system#drop-vector-similarity-index-cache) ステートメントは、cache からすべてのベクトル類似度索引を削除します。
+特定のテーブルの索引のみを cache から削除するには、`FOR TABLE` 句を追加します。
+
+```sql
+SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE FOR TABLE tab;
 ```
 
 本番環境でのユースケースでは、すべてのベクトル索引が常時メモリ上に保持されるよう、cache のサイズを十分に大きくすることを推奨します。
@@ -689,7 +700,7 @@ LIMIT 3;
 
 #### コーデックの適用 {#quantized-codecs-declaring}
 
-`Array(Float32)` (または `Array(Float64)` / `Array(BFloat16)`) カラムに `Quantized(...)` コーデックを指定します。
+`Array(Float32)` (または `Array(Float64)` / `Array(BFloat16)` / `Array(Int8)` / `Array(UInt8)`) カラムに `Quantized(...)` コーデックを指定します。
 
 ```sql
 SET enable_quantized_codec = 1;
@@ -709,13 +720,17 @@ ORDER BY ...;
 
 各量子化方式には、サイズと精度の間で異なるトレードオフがあります。`dimensions` 引数はベクトル長です。
 
-* `Quantized('rabitq', dimensions)` — 各座標に 1 ビットの符号ビットと、バイアスのないコサイン補正係数 (`dimensions/8 + 4` バイト) を持ちます。小さく、`popcount` での計算負荷が低い、強力なデフォルトです。`cosineDistance` のみ対応。
-* `Quantized('turboquant', dimensions)` — 各座標に 2 ビット (1 ビットの MSE コードと 1 ビットの残差コード) を使い、より高忠実度な候補を実現します (`dimensions/4 + 4` バイト) 。`cosineDistance` のみ対応。
+* `Quantized('rabitq', dimensions)` — 各座標に 1 ビットの符号ビットと、バイアスのないコサイン補正係数 (`dimensions/8 + 4` バイト) を持ちます。小さく、`popcount` での計算負荷が低い、強力なデフォルトです。推定できるのはコサイン距離のみです。`L2Distance` については後述を参照してください。
+* `Quantized('turboquant', dimensions)` — 各座標に 2 ビット (1 ビットの MSE コードと 1 ビットの残差コード) を使い、より高忠実度な候補を実現します (`dimensions/4 + 4` バイト) 。推定できるのはコサイン距離のみです。`L2Distance` については後述を参照してください。
 * `Quantized('int8', dimensions)` — 各座標に 1 つの `Int8` コードとベクトルノルムを持ちます (`dimensions + 4` バイト) 。サイズは最大ですが、最も忠実なフラットコードです。`L2Distance` と `cosineDistance` に対応します。
 * `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka: 先頭の `leading_dimensions` 個の座標だけを、`Int8` (ベクトルごとの scale 付き) または `BFloat16` として保持します。Matryoshka Representation Learning で学習した埋め込み向けの非常に小さなコードです。`L2Distance` と `cosineDistance` に対応します。
 * `Quantized('product', dimensions, nbits, m)` — Product Quantization: パーツごとのコードブックを k-means で学習し、各ベクトルを `nbits` ビットの `m` 個のコードに変換します (そのため `dimensions` は `m` の倍数である必要があります) 。最もコンパクトな選択肢で、1 バイトあたりの再現率も最も高い一方、insert 時に学習ステップが必要です。`L2Distance` と `cosineDistance` に対応します。
 
 `rabitq` と `turboquant` では、`dimensions` は 8 の倍数である必要があります。
+
+`Array(Int8)` および `Array(UInt8)` カラムでは、`int8` 方式と、フォーマット `int8` を指定した `prefix` 方式はサポートされていません。これらのコードは元のベクトルより小さくならないためです。
+`UInt8` の埋め込みは、通常、符号付きの値を 128 だけシフトしたものです。`rabitq` と `turboquant` 方式は原点の周囲に分布するベクトルを前提としているため、`Array(UInt8)` カラムでは、エンコード前に保存済みベクトルと参照ベクトルの各要素から 128 を減算します。
+そのため、候補リストはシフト後のベクトルのコサイン距離で順位付けされますが、最終結果は元のベクトルに対する厳密な `cosineDistance` で再スコアリングされます。
 
 #### コーデック の使用 {#quantized-codecs-searching}
 
@@ -733,9 +748,12 @@ SETTINGS vector_search_use_quantized_codes = 1;
 `vector_search_use_quantized_codes = 1` を設定すると、オプティマイザはクエリを2フェーズのスキャンに書き換えます。
 この設定はデフォルトで無効です。
 この設定を使用しない場合、同じクエリは元のベクトルに対する通常の完全スキャンとして実行されます。
-すべての手法で距離関数 `cosineDistance` がサポートされます。手法 `int8`、`prefix`、`product` では、距離関数として `L2Distance` もサポートされます。
+すべての手法で距離関数 `cosineDistance` と `L2Distance` がサポートされます。
+手法 `int8`、`prefix`、`product` は、両方の距離を推定します。
+手法 `rabitq` と `turboquant` はベクトルのノルムを保存しないため、コサイン距離のみを推定します。`L2Distance` の場合は、候補リストをコサイン距離で順位付けし、結果を正確な `L2Distance` で再スコアリングします。
+返される距離は正確ですが、再現率はベクトルのノルムのばらつきの大きさに左右されます。正規化されたベクトルであれば、どちらの順位付けも同じになります。
 
-`vector_search_index_fetch_multiplier` の設定では、クエリの `LIMIT` に対してショートリストに含める候補数を指定します。
+`vector_search_index_fetch_multiplier` の設定では、クエリの `LIMIT` に対して候補リストに含める候補数を指定します。
 乗数を大きくすると、再スコアリングが増える代わりに再現率が向上します。
 デフォルトは `1` (オーバーサンプリングなし) です。良好な再現率を得るには、通常これを (たとえば `10` に) 増やす必要があります。
 

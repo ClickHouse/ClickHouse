@@ -110,8 +110,10 @@
                 "es/reference/statements/create/masking-policy",
                 "es/reference/statements/create/function",
                 "es/reference/statements/create/handler",
+                "es/reference/statements/create/skipping-index",
                 "es/reference/statements/create/named-collection",
                 "es/reference/statements/create/quota",
+                "es/reference/statements/create/resource",
                 "es/reference/statements/create/role",
                 "es/reference/statements/create/row-policy",
                 "es/reference/statements/create/settings-profile",
@@ -127,7 +129,8 @@
                 },
                 "es/reference/statements/create/token",
                 "es/reference/statements/create/user",
-                "es/reference/statements/create/view"
+                "es/reference/statements/create/view",
+                "es/reference/statements/create/workload"
               ]
             },
             "es/reference/statements/delete",
@@ -1055,6 +1058,7 @@
         "es/reference/system-tables/blob_storage_log",
         "es/reference/system-tables/build_options",
         "es/reference/system-tables/certificates",
+        "es/reference/system-tables/changelog",
         "es/reference/system-tables/clusters",
         "es/reference/system-tables/codecs",
         "es/reference/system-tables/collations",

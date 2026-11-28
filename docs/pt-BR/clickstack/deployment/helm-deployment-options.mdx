@@ -27,6 +27,8 @@ O chart do Helm do ClickStack oferece suporte a várias configurações de impla
 
 Se você já tiver um cluster do ClickHouse (incluindo o ClickHouse Cloud), poderá desativar o ClickHouse integrado e se conectar à sua instância externa.
 
+O OTel collector incluído no pacote continua habilitado. Configure o endpoint do protocolo nativo e as credenciais dele separadamente da conexão HTTP de consultas do HyperDX. O usuário do coletor precisa de permissão para criar o schema de telemetria e inserir dados.
+
 ### Opção 1: Configuração inline (desenvolvimento/testes) {#external-clickhouse-inline}
 
 Use esta abordagem para testes rápidos ou ambientes não produtivos. Forneça os detalhes de conexão por meio de `hyperdx.config` e `hyperdx.secrets`:
@@ -34,24 +36,29 @@ Use esta abordagem para testes rápidos ou ambientes não produtivos. Forneça o
 ```yaml
 # values-external-clickhouse.yaml
 clickhouse:
-  enabled: false  # Desabilita o ClickHouse gerenciado pelo operator
+  enabled: false  # Disable the operator-managed ClickHouse
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-clickhouse-server:9000?dial_timeout=10s"
+    CLICKHOUSE_USER: "your-username"
   secrets:
     CLICKHOUSE_PASSWORD: "your-password"
     CLICKHOUSE_APP_PASSWORD: "your-password"
 
-  defaultConnections: |
-    [
-      {
-        "name": "External ClickHouse",
-        "host": "http://your-clickhouse-server:8123",
-        "port": 8123,
-        "username": "your-username",
-        "password": "your-password"
-      }
-    ]
+  deployment:
+    defaultConnections: |
+      [
+        {
+          "name": "Local ClickHouse",
+          "host": "http://your-clickhouse-server:8123",
+          "username": "your-username",
+          "password": "your-password"
+        }
+      ]
 ```
+
+Mantenha o nome da conexão `Local ClickHouse`, pois as fontes de dados padrão do chart fazem referência a ele, mesmo quando o servidor é externo.
 
 Instale com esta configuração:
 
@@ -65,21 +72,22 @@ Para implantações em produção em que você queira manter as credenciais sepa
 
 #### Crie seus arquivos de configuração {#create-configuration}
 
+Inclua a porta HTTP(S) na URL `host` de cada conexão. Este exemplo usa a porta HTTPS `8443`; use a porta configurada no seu servidor.
+
 ```bash
-# Criar connections.json
+# Create connections.json
 cat <<EOF > connections.json
 [
   {
     "name": "Production ClickHouse",
-    "host": "https://your-production-clickhouse.com",
-    "port": 8123,
+    "host": "https://your-production-clickhouse.com:8443",
     "username": "hyperdx_user",
     "password": "your-secure-password"
   }
 ]
 EOF
 
-# Criar sources.json
+# Create sources.json
 cat <<EOF > sources.json
 [
   {
@@ -97,6 +105,7 @@ cat <<EOF > sources.json
     "bodyExpression": "Body",
     "eventAttributesExpression": "LogAttributes",
     "resourceAttributesExpression": "ResourceAttributes",
+    "defaultTableSelectExpression": "Timestamp,ServiceName,SeverityText,Body",
     "severityTextExpression": "SeverityText",
     "traceIdExpression": "TraceId",
     "spanIdExpression": "SpanId"
@@ -115,7 +124,12 @@ cat <<EOF > sources.json
     "serviceNameExpression": "ServiceName",
     "traceIdExpression": "TraceId",
     "spanIdExpression": "SpanId",
-    "durationExpression": "Duration"
+    "durationExpression": "Duration",
+    "durationPrecision": 9,
+    "defaultTableSelectExpression": "Timestamp,ServiceName,StatusCode,round(Duration/1e6),SpanName",
+    "parentSpanIdExpression": "ParentSpanId",
+    "spanNameExpression": "SpanName",
+    "spanKindExpression": "SpanKind"
   }
 ]
 EOF
@@ -134,16 +148,24 @@ rm connections.json sources.json
 
 #### Configure o Helm para usar o Secret {#configure-helm-secret}
 
+O Secret de configuração fornece a conexão de consulta e as fontes de dados do HyperDX. Defina separadamente, a seguir, o endpoint e as credenciais do coletor, usando a porta TLS nativa do seu servidor (`9440` no exemplo).
+
 ```yaml
 # values-external-clickhouse-secret.yaml
 clickhouse:
   enabled: false
 
 hyperdx:
-  useExistingConfigSecret: true
-  existingConfigSecret: "hyperdx-external-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-production-clickhouse.com:9440?secure=true"
+    CLICKHOUSE_USER: "hyperdx_user"
+  secrets:
+    CLICKHOUSE_PASSWORD: "your-secure-password"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "hyperdx-external-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
 ```shell
@@ -160,14 +182,18 @@ clickhouse:
   enabled: false
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-cloud-instance.clickhouse.cloud:9440?secure=true"
+    CLICKHOUSE_USER: "default"
   secrets:
     CLICKHOUSE_PASSWORD: "your-cloud-password"
     CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
 
-  useExistingConfigSecret: true
-  existingConfigSecret: "clickhouse-cloud-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "clickhouse-cloud-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
 ## OTel collector externo {#external-otel-collector}
@@ -177,10 +203,11 @@ Se você já tiver uma infraestrutura de OTel collector existente, desative o su
 ```yaml
 # values-external-otel.yaml
 otel-collector:
-  enabled: false  # Desabilitar o OTel collector do subchart
+  enabled: false  # Disable the subchart OTEL collector
 
 hyperdx:
-  otelExporterEndpoint: "http://your-otel-collector:4318"
+  config:
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://your-otel-collector:4318"
 ```
 
 ```shell
@@ -202,25 +229,26 @@ otel-collector:
   enabled: false
 
 hyperdx:
-  otelExporterEndpoint: "http://your-otel-collector:4318"
+  config:
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://your-otel-collector:4318"
 
-  # Option 1: Inline (for testing)
-  defaultConnections: |
-    [
-      {
-        "name": "External ClickHouse",
-        "host": "http://your-clickhouse-server:8123",
-        "port": 8123,
-        "username": "your-username",
-        "password": "your-password"
-      }
-    ]
+  deployment:
+    # Option 1: Inline (for testing)
+    defaultConnections: |
+      [
+        {
+          "name": "Local ClickHouse",
+          "host": "http://your-clickhouse-server:8123",
+          "username": "your-username",
+          "password": "your-password"
+        }
+      ]
 
-  # Option 2: External secret (production)
-  # useExistingConfigSecret: true
-  # existingConfigSecret: "my-external-config"
-  # existingConfigConnectionsKey: "connections.json"
-  # existingConfigSourcesKey: "sources.json"
+    # Option 2: External secret (production)
+    # useExistingConfigSecret: true
+    # existingConfigSecret: "my-external-config"
+    # existingConfigConnectionsKey: "connections.json"
+    # existingConfigSourcesKey: "sources.json"
 ```
 
 ```shell

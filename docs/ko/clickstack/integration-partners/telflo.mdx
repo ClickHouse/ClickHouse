@@ -17,7 +17,7 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
   이 가이드에서는 Telflo가 관리하는 OpenTelemetry Collector에서 ClickStack으로 텔레메트리를 전송하는 방법을 설명합니다. 다음 내용을 다룹니다:
 
   * Telflo의 시각적 편집기 또는 CLI로 collector 구성 만들기
-  * 텔레메트리를 오픈 소스 또는 자체 관리형 ClickHouse Observability로 전송하거나 ClickHouse에 직접 기록하기
+  * 텔레메트리를 ClickStack Open Source로 전송하거나 ClickHouse에 직접 기록하기
   * collector 플릿에 구성을 원격으로 배포하기
   * 텔레메트리가 ClickStack 또는 ClickHouse 테이블에 정상적으로 수집되었는지 확인하기
 
@@ -59,11 +59,10 @@ Telflo는 다음 기능을 제공합니다:
 
 ## 사전 요구 사항 {#prerequisites}
 
-* 대상: [오픈 소스 ClickStack](/ko/clickstack/getting-started/oss), [자체 관리형 ClickHouse Observability](/ko/clickstack/self-configured/getting-started/managed) 또는 자체 관리형 ClickHouse instance
+* 대상: [오픈 소스 ClickStack](/ko/clickstack/getting-started/oss) 또는 자체 관리형 ClickHouse instance
 * Telflo 계정([telflo.com에서 계정 생성](https://telflo.com))
 * collector를 실행할 환경: VM 또는 Kubernetes cluster
 * **오픈 소스 ClickStack**: ClickStack OTLP endpoint(HTTP는 `4318`, gRPC는 `4317`)와 수집 API Key. API Key는 ClickStack UI의 **Team Settings → API Keys**에서 확인할 수 있습니다([참고 문서 보기](/ko/clickstack/ingesting-data/opentelemetry#sending-otel-data))
-* **자체 관리형 ClickHouse Observability**: ClickHouse Cloud 서비스 endpoint(포트 `8443`)와 수집 사용자([수집 사용자 생성](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user) 참고)
 * **자체 관리형 ClickHouse**: ClickHouse endpoint, [ClickStack 테이블](/ko/clickstack/ingesting-data/schemas)을 저장할 데이터베이스, 해당 테이블을 생성하고 쓸 수 있는 사용자([수집 사용자 생성](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user-oss) 참고)
 * collector에서 ClickStack 또는 ClickHouse endpoint까지의 네트워크 연결
 
@@ -82,7 +81,7 @@ Telflo는 다음 기능을 제공합니다:
   </Step>
 
   <Step title="exporter 추가" id="add-exporter">
-    세 가지 경로 모두 동일한 편집기, 동일한 게시(publish) 단계, 동일한 플릿을 사용하며, 익스포터만 다릅니다. 사용 중인 배포 방식에 맞는 탭을 선택하십시오. Open Source ClickStack은 수집 키와 함께 OTLP를 사용하고, 자체 관리형 ClickHouse Observability와 자가 관리형 ClickHouse는 ClickStack 테이블에 직접 쓰기를 수행합니다.
+    두 가지 경로 모두 동일한 편집기, 동일한 게시(publish) 단계, 동일한 플릿을 사용하며, 익스포터만 다릅니다. 사용 중인 배포 방식에 맞는 탭을 선택하십시오. Open Source ClickStack은 수집 키와 함께 OTLP를 사용하고, 자가 관리형 ClickHouse는 ClickStack 테이블에 직접 쓰기를 수행합니다.
 
     <Tabs>
       <Tab title="Open Source ClickStack">
@@ -91,17 +90,6 @@ Telflo는 다음 기능을 제공합니다:
         3. **HTTP Headers**에서 **Add header**를 클릭한 다음, **Header name**에 `authorization`을, **Header value**에 `${env:CLICKSTACK_INGESTION_KEY}`를 입력합니다. Telflo는 collector를 설치할 때 이 값을 물어보므로, 키가 구성에 저장되지 않습니다.
 
         gRPC를 사용하려면 포트 `4317`에서 **OTLP** exporter를 사용하고, 동일한 header를 **gRPC Metadata Headers**에 지정하십시오.
-      </Tab>
-
-      <Tab title="자체 관리형 ClickHouse Observability">
-        자체 관리형 ClickHouse Observability에는 gateway collector가 포함되어 있지 않으므로, telemetry를 보낼 호스팅형 OTLP endpoint가 없습니다. 여기서 구성하는 collector가 바로 그 [gateway](/ko/clickstack/ingesting-data/collector#collector-roles) 역할을 합니다. ClickHouse exporter와 함께 **OTLP** 수신기를 지정하면 ClickHouse Cloud 서비스에 데이터를 기록합니다. 이후 SDK와 agent collector는 `4318`(HTTP) 또는 `4317`(gRPC)로 이 collector에 OTLP를 전송합니다.
-
-        1. **ClickHouse** exporter를 캔버스로 끌어다 놓습니다.
-        2. **Endpoint**에 ClickHouse Cloud 서비스 endpoint(포트 `8443`)를 입력하고, **Database**는 `default`로, **Username**은 수집용 사용자로 설정합니다.
-        3. **Password**를 `${env:CLICKHOUSE_PASSWORD}`로 설정합니다. Telflo는 collector를 설치할 때 이 값을 물어보므로, credential이 구성에 저장되지 않습니다.
-        4. **Schema &amp; Tables**에서: [ClickStack 테이블](/ko/clickstack/ingesting-data/schemas)이 아직 없다면 **Create Schema on Startup**을 켜 둔 상태로 두십시오. exporter가 테이블을 생성합니다. 테이블이 생성된 후에는 이 옵션을 끄십시오.
-
-        **Batch**는 exporter 앞단에 유지하십시오. ClickHouse는 배치 삽입에서 최상의 성능을 발휘합니다. 이미 [ClickStack collector](/ko/clickstack/ingesting-data/collector#configuring-the-collector)를 OTLP gateway로 운영하고 있다면, 해당 collector에 설정한 [`OTLP_AUTH_TOKEN`](/ko/clickstack/ingesting-data/collector#securing-the-collector)을 header 값으로 사용하여 Open Source ClickStack 단계를 대신 따를 수 있습니다.
       </Tab>
 
       <Tab title="자가 관리형 ClickHouse">
@@ -147,7 +135,7 @@ Telflo는 다음 기능을 제공합니다:
   </Step>
 
   <Step title="텔레메트리 확인" id="verify-telemetry">
-    ClickStack UI를 열고 **Search** 뷰에서 서비스 중 하나를 검색하십시오. 메트릭은 **Chart Explorer**를 사용하십시오. 자체 관리형 ClickHouse Observability를 사용하는 경우 ClickHouse Cloud 콘솔에서 서비스를 열고 **Launch ClickStack**을 클릭하십시오. 자가 관리형 ClickHouse를 사용하는 경우 [ClickStack 테이블](/ko/clickstack/ingesting-data/schemas)을 직접 쿼리하십시오. 예를 들면 `SELECT ServiceName, count() FROM otel_logs GROUP BY ServiceName`과 같습니다.
+    ClickStack UI를 열고 **Search** 뷰에서 서비스 중 하나를 검색하십시오. 메트릭은 **Chart Explorer**를 사용하십시오. 자가 관리형 ClickHouse를 사용하는 경우 [ClickStack 테이블](/ko/clickstack/ingesting-data/schemas)을 직접 쿼리하십시오. 예를 들면 `SELECT ServiceName, count() FROM otel_logs GROUP BY ServiceName`과 같습니다.
   </Step>
 </Steps>
 

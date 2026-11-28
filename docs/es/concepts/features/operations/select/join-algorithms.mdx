@@ -1,8 +1,8 @@
 ---
 title: 'Algoritmos de JOIN'
 sidebarTitle: 'Algoritmos'
-description: 'Cómo funcionan los algoritmos de JOIN de ClickHouse, qué tipos de JOIN admiten y cómo elegir uno.'
-keywords: ['algoritmos de JOIN', 'join_algorithm', 'unión hash', 'unión hash en paralelo', 'join hash Grace', 'unión por fusión con ordenación completa', 'unión por fusión parcial', 'join directo', 'IEJoin']
+description: 'Cómo funcionan los algoritmos de JOIN de ClickHouse, qué tipos de unión admiten y cómo elegir uno.'
+keywords: ['algoritmos de JOIN', 'join_algorithm', 'unión hash', 'unión hash en paralelo', 'join hash Grace', 'unión por fusión con ordenación completa', 'unión por fusión parcial', 'join directo', 'join por desigualdad', 'IEJoin']
 doc_type: 'guide'
 ---
 
@@ -120,22 +120,24 @@ El parámetro de configuración [`max_rows_in_set_to_optimize_join`](/es/referen
   </Frame>
 </div>
 
-El algoritmo `partial_merge` es una variante del JOIN de ordenación y fusión (sort-merge) en la que solo el lado derecho se ordena por completo. ClickHouse divide el lado derecho en bloques de hasta [`partial_merge_join_rows_in_right_blocks`](/es/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks) filas, ordena cada bloque por la clave de JOIN y crea un índice min-max para cada uno. A continuación, ordena en memoria cada bloque del lado izquierdo y lo fusiona con los bloques del lado derecho. Gracias al índice min-max, se omiten los bloques del lado derecho que no pueden contener coincidencias.
+El algoritmo `partial_merge` es una variante del JOIN de ordenación y fusión (sort-merge) en la que solo el lado derecho se ordena por completo. ClickHouse divide el lado derecho en bloques de hasta [`partial_merge_join_rows_in_right_blocks`](/es/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks) filas, ordena cada bloque por la join key y crea un índice min-max para cada uno. A continuación, ordena en memoria cada bloque del lado izquierdo y lo fusiona con los bloques del lado derecho. Gracias al índice min-max, se omiten los bloques del lado derecho que no pueden contener coincidencias.
 
-**Cuándo se utiliza.** Está diseñado para minimizar el uso de memoria al unir tablas grandes, a costa de la velocidad de ejecución. Resulta más eficiente cuando el orden físico de las filas del lado izquierdo coincide con el orden de la clave de JOIN, ya que en ese caso el índice min-max permite omitir la mayoría de los bloques del lado derecho. Es menos eficiente cuando cada bloque del lado izquierdo abarca un rango amplio de valores de clave. Con el valor `auto` de `join_algorithm`, se puede cambiar a `partial_merge` en tiempo de ejecución. El algoritmo admite JOINs `INNER`, `LEFT`, `RIGHT` y `FULL` con estrictez `ALL`, JOINs `INNER` y `LEFT` con estrictez `ANY`, y JOINs `LEFT` con estrictez `SEMI`.
+**Cuándo se utiliza.** Está diseñado para minimizar el uso de memoria al unir tablas grandes, a costa de la velocidad de ejecución. Resulta más eficiente cuando el orden físico de las filas del lado izquierdo coincide con el orden de la join key, ya que en ese caso el índice min-max permite omitir la mayoría de los bloques del lado derecho. Es menos eficiente cuando cada bloque del lado izquierdo abarca un rango amplio de valores de clave. Con el valor `auto` de `join_algorithm`, se puede cambiar a `partial_merge` en tiempo de ejecución. El algoritmo admite JOINs `INNER`, `LEFT`, `RIGHT` y `FULL` con estrictez `ALL`, JOINs `INNER` y `LEFT` con estrictez `ANY`, y JOINs `LEFT` con estrictez `SEMI`.
 
 **Memoria y volcado a disco.** ClickHouse mantiene en memoria los bloques ordenados del lado derecho hasta que se alcanza [`max_rows_in_join`](/es/reference/settings/session-settings/max-rows#max_rows_in_join) o [`max_bytes_in_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_in_join). Si no se ha configurado ninguno de los dos, se aplica [`default_max_bytes_in_join`](/es/reference/settings/session-settings/default#default_max_bytes_in_join). A partir de ese momento, ClickHouse escribe los bloques ordenados y sus índices en almacenamiento temporal. [`join_on_disk_max_files_to_merge`](/es/reference/settings/session-settings/join#join_on_disk_max_files_to_merge) limita el número de archivos que se fusionan en paralelo.
 
-**Limitaciones.** Los JOINs `RIGHT` y `FULL` solo se admiten con estrictez `ALL`. No se admiten las estricteces `ANTI` ni `ASOF`, varias claves de JOIN combinadas con `OR`, ni condiciones que comparen columnas de ambas tablas.
+**Limitaciones.** Los JOINs `RIGHT` y `FULL` solo se admiten con estrictez `ALL`. No se admiten las estricteces `ANTI` ni `ASOF`, varias join keys combinadas con `OR`, ni condiciones que comparen columnas de ambas tablas.
 
-## `ie_join` {#ie-join}
+<a id="ie-join" />
 
-El algoritmo `ie_join` implementa el algoritmo [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf), basado en ordenación, para un JOIN cuya cláusula `ON` contiene dos comparaciones de desigualdad (`<`, `<=`, `>` o `>=`) entre expresiones de las tablas unidas. ClickHouse ordena ambas entradas según las expresiones de las dos comparaciones y encuentra los pares coincidentes sin tener que comparar todos los pares de filas. El algoritmo está disponible a partir de la versión 26.8.
+## `inequality` {#inequality}
+
+El algoritmo `inequality` implementa el algoritmo de [join por desigualdad](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) basado en ordenación, también conocido como IEJoin, para un JOIN cuya cláusula `ON` contiene dos comparaciones de desigualdad (`<`, `<=`, `>` o `>=`) entre expresiones de las tablas unidas. ClickHouse ordena ambas entradas según las expresiones de las dos comparaciones y encuentra los pares coincidentes sin tener que comparar todos los pares de filas. El algoritmo está disponible a partir de la versión 26.8. Antes de la versión 26.12 se llamaba `ie_join`, y este nombre se sigue aceptando.
 
 **Cuándo se usa.** Su posición en `join_algorithm` determina su prioridad:
 
 * Si aparece después de otros algoritmos, solo se usa cuando la cláusula `ON` no contiene ninguna condición de igualdad entre las tablas.
-* Si aparece en primer lugar, se usa siempre que la cláusula `ON` contenga dos condiciones de desigualdad. Las demás condiciones, incluidas las condiciones de igualdad, se aplican como filtro sobre el resultado de JOIN o como condición residual dentro del operador. Una igualdad aplicada de este modo se evalúa con `equals`, no como clave de JOIN. Consulte [Comparación de claves de JOIN](#comparison-of-join-keys).
+* Si aparece en primer lugar, se usa siempre que la cláusula `ON` contenga dos condiciones de desigualdad. Las demás condiciones, incluidas las condiciones de igualdad, se aplican como filtro sobre el resultado de JOIN o como condición residual dentro del operador. Una igualdad aplicada de este modo se evalúa con `equals`, no como join key. Consulte [Comparación de join keys](#comparison-of-join-keys).
 
 Cuando la cláusula `ON` contiene más de dos condiciones de desigualdad aptas, ClickHouse elige las dos condiciones clave según su selectividad estimada a partir de las estadísticas de columna. Si no hay estadísticas, usa las dos primeras según el orden en que aparecen en la sintaxis. El algoritmo admite JOINs `INNER`, `LEFT`, `RIGHT` y `FULL` con estrictez `ALL`, y JOINs `LEFT` y `RIGHT` con estrictez `SEMI` y `ANTI`.
 
@@ -147,15 +149,15 @@ Cuando la cláusula `ON` contiene más de dos condiciones de desigualdad aptas, 
 
 El JOIN de bucles anidados por bloques ejecuta un JOIN cuya cláusula `ON` no contiene ninguna condición de igualdad entre las tablas y que ningún otro algoritmo puede ejecutar. ClickHouse materializa el lado derecho y evalúa la condición `ON` sobre cada par formado por una fila del lado izquierdo y una fila del lado derecho. Una igualdad dentro de la condición, como `t1.a = t2.a` en `t1.a = t2.a OR t1.b < 0`, se evalúa con `equals`, no como join key. Consulte [Comparación de claves de join](#comparison-of-join-keys). No es un valor de `join_algorithm`, sino el último recurso de la planificación de JOIN.
 
-**Cuándo se utiliza.** Se aplica a una cláusula `ON` que sea una expresión booleana arbitraria sobre columnas de ambas tablas, como una comprobación de rango o una llamada a una función, cuando no es aplicable `ie_join`. Si `hash` figura en `join_algorithm`, un JOIN `INNER` con estrictez `ALL` se ejecuta, en cambio, como un `CROSS JOIN` con la condición como filtro. Esta alternativa de respaldo está disponible a partir de la versión 26.10. El parámetro de configuración [`allow_block_nested_loop_join`](/es/reference/settings/session-settings/allow#allow_block_nested_loop_join) determina si puede utilizarse. Si no se permite la alternativa de respaldo, este tipo de consultas se rechaza con `INVALID_JOIN_ON_EXPRESSION`. Admite todos los tipos de unión y niveles de estrictez excepto `ASOF`, `PASTE` y `ANY FULL`.
+**Cuándo se utiliza.** Se aplica a una cláusula `ON` que sea una expresión booleana arbitraria sobre columnas de ambas tablas, como una comprobación de rango o una llamada a una función, cuando no es aplicable `inequality`. Si `hash` figura en `join_algorithm`, un JOIN `INNER` con estrictez `ALL` se ejecuta, en cambio, como un `CROSS JOIN` con la condición como filtro. Esta alternativa de respaldo está disponible a partir de la versión 26.10. El parámetro de configuración [`allow_block_nested_loop_join`](/es/reference/settings/session-settings/allow#allow_block_nested_loop_join) determina si puede utilizarse. Si no se permite la alternativa de respaldo, este tipo de consultas se rechaza con `INVALID_JOIN_ON_EXPRESSION`. Admite todos los tipos de unión y niveles de estrictez excepto `ASOF`, `PASTE` y `ANY FULL`.
 
 **Memoria y volcado a disco.** El consumo de memoria está acotado por el lado derecho materializado y no crece con el tamaño del resultado. Los bloques del lado derecho se comprimen en memoria y se escriben en disco una vez alcanzado el umbral de volcado a disco. Los [límites estrictos](/es/concepts/features/operations/select/join-memory-management#hard-limits) se aplican al lado derecho, incluidos los bloques volcados a disco.
 
-**Limitaciones.** El coste crece en proporción al producto del número de filas de ambas tablas, por lo que resulta varios órdenes de magnitud más costoso que un JOIN hash sobre los mismos datos. Para obtener más información sobre la semántica de estrictez, consulte [JOIN con una condición ON arbitraria](/es/reference/statements/select/join#join-with-an-arbitrary-on-condition).
+**Limitaciones.** El coste crece en proporción al producto del número de filas de ambas tablas, por lo que resulta varios órdenes de magnitud más costoso que una unión hash sobre los mismos datos. Para obtener más información sobre la semántica de estrictez, consulte [JOIN con una condición ON arbitraria](/es/reference/statements/select/join#join-with-an-arbitrary-on-condition).
 
-## Tipos de JOIN compatibles por algoritmo {#supported-join-types-per-algorithm}
+## Tipos de unión compatibles por algoritmo {#supported-join-types-per-algorithm}
 
-La siguiente tabla muestra los tipos de JOIN que admite cada algoritmo para cada valor de estrictez. Se basa en las comprobaciones de compatibilidad del código fuente de ClickHouse. Una celda vacía indica que esa estrictez no es compatible.
+La siguiente tabla muestra los tipos de unión que admite cada algoritmo para cada valor de estrictez. Se basa en las comprobaciones de compatibilidad del código fuente de ClickHouse. Una celda vacía indica que esa estrictez no es compatible.
 
 | Algoritmo                                            | `ALL`                            | `ANY`                    | `SEMI`          | `ANTI`          | `ASOF`          |
 | ---------------------------------------------------- | -------------------------------- | ------------------------ | --------------- | --------------- | --------------- |
@@ -164,7 +166,7 @@ La siguiente tabla muestra los tipos de JOIN que admite cada algoritmo para cada
 | `grace_hash`                                         | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
 | `full_sorting_merge`, `parallel_full_sorting_merge`  | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` |                 |                 | `INNER`, `LEFT` |
 | `partial_merge`                                      | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`          | `LEFT`          |                 |                 |
-| `ie_join`                                            | `INNER`, `LEFT`, `RIGHT`, `FULL` |                          | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
+| `inequality`                                         | `INNER`, `LEFT`, `RIGHT`, `FULL` |                          | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
 | Alternativa de respaldo de bucle anidado por bloques | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
 
 Además, se aplican las siguientes reglas:
@@ -178,24 +180,24 @@ Además, se aplican las siguientes reglas:
 * El algoritmo `direct` solo se aplica a los lados derechos indicados en [`direct`](#direct). Con tablas `MergeTree`, no admite la estrictez `ANY`.
 * `CROSS JOIN`, los JOIN con una condición `ON` constante y `PASTE JOIN` tienen implementaciones propias que no dependen de `join_algorithm`.
 
-## Comparación de las claves de JOIN {#comparison-of-join-keys}
+## Comparación de las join keys {#comparison-of-join-keys}
 
-Todos los algoritmos, excepto `ie_join` y la alternativa de respaldo de bucle anidado por bloques, utilizan como clave de JOIN una igualdad entre columnas de ambas tablas en la cláusula `ON`. El algoritmo compara las claves por sí mismo, sin recurrir a la función [`equals`](/es/reference/functions/regular-functions/comparison-functions#equals), y una clave coincide con algunos pares de valores para los que `equals` no devuelve `1`. `ie_join` evalúa dicha igualdad con `equals` sobre los pares que sus dos condiciones de desigualdad emparejaron, y la alternativa de respaldo de bucle anidado por bloques la evalúa con `equals` como parte de la condición `ON`.
+Todos los algoritmos, excepto `inequality` y la alternativa de respaldo de bucle anidado por bloques, utilizan como join key una igualdad entre columnas de ambas tablas en la cláusula `ON`. El algoritmo compara las claves por sí mismo, sin recurrir a la función [`equals`](/es/reference/functions/regular-functions/comparison-functions#equals), y una clave coincide con algunos pares de valores para los que `equals` no devuelve `1`. `inequality` evalúa dicha igualdad con `equals` sobre los pares que sus dos condiciones de desigualdad emparejaron, y la alternativa de respaldo de bucle anidado por bloques la evalúa con `equals` como parte de la condición `ON`.
 
 | Algoritmo                                                            | Igualdad entre las tablas | Dos valores `NaN`                                 | Dos valores `Tuple` `(1, NULL)` |
 | -------------------------------------------------------------------- | ------------------------- | ------------------------------------------------- | ------------------------------- |
-| `direct`, `hash`, `parallel_hash`, `grace_hash`                      | Clave de JOIN             | Coinciden si ambos tienen el mismo patrón de bits | Coinciden                       |
-| `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge` | Clave de JOIN             | Coinciden                                         | Coinciden                       |
-| `ie_join`                                                            | `equals`                  | No coinciden                                      | No coinciden                    |
+| `direct`, `hash`, `parallel_hash`, `grace_hash`                      | Join key             | Coinciden si ambos tienen el mismo patrón de bits | Coinciden                       |
+| `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge` | Join key             | Coinciden                                         | Coinciden                       |
+| `inequality`                                                         | `equals`                  | No coinciden                                      | No coinciden                    |
 | Alternativa de respaldo de bucle anidado por bloques                 | `equals`                  | No coinciden                                      | No coinciden                    |
 
-Un valor `NULL` de una clave `Variant` se comporta como la `Tuple` con un elemento `NULL`. Una clave que en sí misma es `NULL` no coincide con ningún algoritmo, igual que ocurre con `equals`. Consulte [Valores NULL y NaN en claves de JOIN](/es/reference/statements/select/join#null-values-in-join-keys).
+Un valor `NULL` de una clave `Variant` se comporta como la `Tuple` con un elemento `NULL`. Una clave que en sí misma es `NULL` no coincide con ningún algoritmo, igual que ocurre con `equals`. Consulte [Valores NULL y NaN en join keys](/es/reference/statements/select/join#null-values-in-join-keys).
 
 Las condiciones de igualdad de un JOIN `ASOF` siguen la fila de `hash` o la de `full_sorting_merge`, según cuál lo ejecute, y un lado derecho con el motor de tabla `Join` sigue la fila de `hash`.
 
-Un JOIN `direct` con un diccionario que tiene la disposición `complex_key_direct`, `complex_key_cache` o `complex_key_ssd_cache` y una fuente `CLICKHOUSE` envía las claves a la fuente como texto, que escribe cada `NaN` como `nan`, de modo que dos claves `NaN` solo coinciden si ambas tienen el patrón de bits de `nan`. Con un valor distinto de cero en [`max_rows_in_set_to_optimize_join`](/es/reference/settings/session-settings/max-rows#max_rows_in_set_to_optimize_join), `full_sorting_merge` y `parallel_full_sorting_merge` pueden filtrar primero las entradas mediante un conjunto de claves de JOIN que compara los valores `NaN` por su patrón de bits, por lo que, si dos valores `NaN` tienen patrones de bits distintos, que coincidan o no puede variar de una ejecución a otra.
+Un JOIN `direct` con un diccionario que tiene la disposición `complex_key_direct`, `complex_key_cache` o `complex_key_ssd_cache` y una fuente `CLICKHOUSE` envía las claves a la fuente como texto, que escribe cada `NaN` como `nan`, de modo que dos claves `NaN` solo coinciden si ambas tienen el patrón de bits de `nan`. Con un valor distinto de cero en [`max_rows_in_set_to_optimize_join`](/es/reference/settings/session-settings/max-rows#max_rows_in_set_to_optimize_join), `full_sorting_merge` y `parallel_full_sorting_merge` pueden filtrar primero las entradas mediante un conjunto de join keys que compara los valores `NaN` por su patrón de bits, por lo que, si dos valores `NaN` tienen patrones de bits distintos, que coincidan o no puede variar de una ejecución a otra.
 
-Por lo tanto, un JOIN que compara este tipo de valores puede devolver filas diferentes según el algoritmo que lo ejecute. Por ejemplo, colocar `ie_join` en primer lugar en `join_algorithm` puede hacer que este ejecute un JOIN que tenga una igualdad junto a dos condiciones de desigualdad, en cuyo caso la igualdad se evalúa con `equals` en lugar de como clave de JOIN.
+Por lo tanto, un JOIN que compara este tipo de valores puede devolver filas diferentes según el algoritmo que lo ejecute. Por ejemplo, colocar `inequality` en primer lugar en `join_algorithm` puede hacer que este ejecute un JOIN que tenga una igualdad junto a dos condiciones de desigualdad, en cuyo caso la igualdad se evalúa con `equals` en lugar de como join key.
 
 ## Cómo elegir un algoritmo de JOIN {#choosing-a-join-algorithm}
 
@@ -205,7 +207,7 @@ Por lo tanto, un JOIN que compara este tipo de valores puede devolver filas dife
   </Frame>
 </div>
 
-El gráfico anterior muestra el uso de memoria y el tiempo de ejecución relativos de seis algoritmos de JOIN. El JOIN hash en paralelo que aparece en él corresponde a `hash` con una tabla hash dividida. Las posiciones son cualitativas; los valores reales dependen del tamaño de los datos, de los tipos de clave y de la distribución de los valores de la clave. El gráfico no incluye `ie_join`, `parallel_full_sorting_merge` ni la alternativa de respaldo de bucle anidado por bloques.
+El gráfico anterior muestra el uso de memoria y el tiempo de ejecución relativos de seis algoritmos de JOIN. El JOIN hash en paralelo que aparece en él corresponde a `hash` con una tabla hash dividida. Las posiciones son cualitativas; los valores reales dependen del tamaño de los datos, de los tipos de clave y de la distribución de los valores de la clave. El gráfico no incluye `inequality`, `parallel_full_sorting_merge` ni la alternativa de respaldo de bucle anidado por bloques.
 
 ### Optimización del rendimiento de JOIN {#optimizing-join-performance}
 
@@ -215,13 +217,13 @@ La página de prácticas recomendadas incluye un árbol de decisión para elegir
 
 El parámetro de configuración [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm) acepta una lista de algoritmos separados por comas. Para conocer el valor predeterminado y todos los valores admitidos, consulte la referencia de [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm).
 
-ClickHouse prueba los algoritmos de la lista en orden y selecciona el primero que admita el tipo de JOIN, la estrictez, la condición `ON` y el almacenamiento del lado derecho. Si no se puede aplicar ninguno de los algoritmos de la lista, la consulta falla con un error que enumera los algoritmos habilitados. Los siguientes casos no dependen del orden de la lista:
+ClickHouse prueba los algoritmos de la lista en orden y selecciona el primero que admita el tipo de unión, la estrictez, la condición `ON` y el almacenamiento del lado derecho. Si no se puede aplicar ninguno de los algoritmos de la lista, la consulta falla con un error que enumera los algoritmos habilitados. Los siguientes casos no dependen del orden de la lista:
 
 * Cuando el lado derecho usa el motor de tabla `Join`, la unión siempre se realiza con la tabla hash que almacena dicha tabla.
 * `CROSS JOIN`, los JOIN con una condición `ON` constante y `PASTE JOIN` usan implementaciones específicas.
-* Una cláusula `ON` sin una condición de igualdad entre las tablas se resuelve mediante `ie_join` o mediante la alternativa de respaldo de bucle anidado por bloques.
+* Una cláusula `ON` sin una condición de igualdad entre las tablas se resuelve mediante `inequality` o mediante la alternativa de respaldo de bucle anidado por bloques.
 
-Cuando hay un umbral de volcado a disco en vigor y el almacenamiento temporal está configurado, `parallel_hash` y `hash` se ejecutan como un JOIN hash con volcado a disco que pasa a `grace_hash` cuando el lado derecho supera el umbral. Consulte [umbrales de volcado a disco](/es/concepts/features/operations/select/join-memory-management#spill-thresholds).
+Cuando hay un umbral de volcado a disco en vigor y el almacenamiento temporal está configurado, `parallel_hash` y `hash` se ejecutan como una unión hash con volcado a disco que pasa a `grace_hash` cuando el lado derecho supera el umbral. Consulte [umbrales de volcado a disco](/es/concepts/features/operations/select/join-memory-management#spill-thresholds).
 
 ### El valor `auto` {#the-auto-value}
 

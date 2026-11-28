@@ -77,6 +77,33 @@ import OtelTracesSchema from '/snippets/zh/clickstack/_schema_otel_traces.mdx';
 
 下面介绍的所有优化都可以通过标准 ClickHouse SQL 直接应用于底层表，可在 [ClickHouse Cloud SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console) 中执行，也可通过 [ClickHouse 客户端](/zh/concepts/features/interfaces/client) 执行。
 
+## 找出查询负载的来源 {#query-attribution}
+
+在优化之前，先找出哪些仪表盘、告警及其他功能产生的工作量最大。ClickStack 会为发送到 ClickHouse 的每条查询打上标记，因此 [`system.query_log`](/zh/reference/system-tables/query_log) 或 [`system.processes`](/zh/reference/system-tables/processes) 中的任何查询都可以追溯到其发起方：
+
+* 其 `query_id` 以 `hdx-` 开头，后接发起该查询的入口名称，例如 `hdx-alert-<uuid>` 或 `hdx-mcp-<uuid>`。可以用它在 `system.processes` 中查找正在运行的查询；该表没有 `log_comment` 列，注释位于 `Settings['log_comment']` 中。
+* 其 `log_comment` 是一个小型 JSON 对象。`surface` 表示发起查询的入口，例如 `dashboard`、`search`、`chart-explorer`、`alert`、`mcp` 或 `api`。视入口不同，它还会包含 `dashboard` 和 `tile`、已保存的 `search`、`alert` 以及 `source` 的 ID，外加一个 `label`，例如 MCP 工具名称、API 路由或内置仪表盘的名称。例如：`{"v":1,"surface":"mcp","label":"clickstack_service_health"}`。
+
+该注释只记录请求的内容，而不记录请求者：不会写入任何用户或团队标识符。 (如需在查询日志中记录用户的电子邮件，请使用连接的 **Query Log Setting Prefix**；参见[连接](/zh/clickstack/managing/config#connection-settings)。) 少数内部查询 (例如版本检查) 带有 `hdx-` 查询 ID，但 `log_comment` 为空。PromQL 查询同样带有这些来源标识。
+
+以下查询按入口和仪表盘展示读取负载的来源：
+
+```sql
+SELECT
+    JSONExtractString(log_comment, 'surface') AS surface,
+    JSONExtractString(log_comment, 'dashboard') AS dashboard,
+    count() AS queries,
+    formatReadableSize(sum(read_bytes)) AS read
+FROM system.query_log
+WHERE (type = 'QueryFinish') AND startsWith(query_id, 'hdx-')
+GROUP BY
+    surface,
+    dashboard
+ORDER BY sum(read_bytes) DESC
+```
+
+在 ClickHouse Cloud 上，`system.query_log` 和 `system.processes` 仅包含各个副本的本地数据。若要涵盖该服务的所有副本，请改为从 `clusterAllReplicas(default, system.query_log)` 或 `clusterAllReplicas(default, system.processes)` 读取数据。在没有 `default` 集群的单服务器上 (例如 all-in-one 镜像) ，直接查询这些表即可。
+
 <div id="materialize-frequently-queried-attributes">
   ## 优化 1. 将频繁查询的属性物化 {#materialize-frequently-queried-attributes}
 </div>

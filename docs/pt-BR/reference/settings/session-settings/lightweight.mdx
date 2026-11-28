@@ -31,7 +31,7 @@ Para `DELETE FROM ... ON CLUSTER`, cada host que executa a operação obtém o m
 hosts cujos perfis definem padrões diferentes podem executar a exclusão em modos diferentes. Um shard
 replicado executa em uma única réplica e, nesse caso, são as configurações dessa réplica que prevalecem. Definir a configuração na
 sessão da consulta iniciadora sobrepõe esse comportamento, pois a entrada de DDL distribuído transporta
-as alterações da sessão a partir de `distributed_ddl_entry_format_version` 2, requisito atendido pelo valor padrão.
+as alterações da sessão.
 Se um host impõe restrições à configuração, o valor é ajustado de volta ao limite permitido.
 
 ## lightweight_deletes_sync {#lightweight_deletes_sync}

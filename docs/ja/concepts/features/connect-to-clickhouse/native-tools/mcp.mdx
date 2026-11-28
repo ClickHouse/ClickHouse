@@ -1,0 +1,50 @@
+---
+description: 'Model Context Protocol と ClickHouse MCP サーバーの概要'
+keywords: ['ClickHouse', 'MCP', 'Model Context Protocol', 'AI', 'interfaces']
+sidebarTitle: 'Model Context Protocol (MCP)'
+slug: /concepts/features/connect-to-clickhouse/native-tools/mcp
+title: 'Model Context Protocol (MCP)'
+doc_type: 'reference'
+---
+
+[Model Context Protocol](https://www.anthropic.com/news/model-context-protocol) (MCP) は、AIアシスタントが外部システムに接続できるようにするオープン標準です。
+モデルがデータソース、API、データベース、ツールにアクセスするための共通のインターフェイスを提供するため、モデルとサービスの組み合わせごとに個別のインテグレーションを開発する必要がありません。
+
+AIアプリケーションは、MCPを一度実装するだけで、互換性のある任意のサーバーに接続できます。
+同様に、MCPサーバーは、互換性のある任意のクライアントに機能を公開できます。
+
+## アーキテクチャ {#architecture}
+
+MCPはクライアントサーバーアーキテクチャを採用しています。
+
+* Claude Desktop、Cursor、VS CodeなどのMCPクライアントは、MCPサーバーとの接続を確立します。
+* MCPサーバーは、標準化されたインターフェイスを通じてツールや機能を公開します。
+* AIモデルは、公開されたツールを使用して、必要に応じて外部のデータや機能にアクセスします。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![MCPクライアントサーバーアーキテクチャ](/images/use-cases/AI_ML/MCP/mcp_overview.webp)
+  </Frame>
+</div>
+
+GitHubでは、コミュニティが管理する[MCPクライアント](https://github.com/punkpeye/awesome-mcp-clients)と[MCPサーバー](https://github.com/punkpeye/awesome-mcp-servers)の一覧を参照できます。
+
+[ClickHouse Loomは、コーディングエージェント向けの共有メモリを提供します](https://loom.clickhouse.com/docs/use-cases/agent-memory)。この共有メモリは、セルフホストのMCPサーバーを通じて利用できます。
+プロジェクトの決定事項をセッション間で引き継ぎ、保存した知見を索引化されたコードに関連付けます。
+
+## ClickHouse MCP サーバー {#clickhouse-mcp-server}
+
+[ClickHouse MCP サーバー](https://github.com/ClickHouse/mcp-clickhouse)を使用すると、AIアシスタントがデータベースやテーブルを検出し、スキーマを確認し、ClickHouse クラスターに対してSQLクエリを実行できます。
+サーバーが公開するツールはバージョンによって異なる場合があるため、サンプルで使用するツール名については、対応するインテグレーションガイドを参照してください。
+
+このサーバーでは、デフォルトで読み取り専用のクエリが許可されています。
+アシスタントに必要なアクセス許可のみを付与した専用の ClickHouse ユーザーを使用してください。
+
+ローカルのMCPクライアントを接続するには、[ClickHouse MCP サーバーのセットアップ](/ja/guides/use-cases/ai-ml/MCP/claude-desktop)を参照してください。
+マネージドのリモートサーバーについては、[ClickHouse Cloudのリモート MCP サーバー](/ja/products/cloud/features/ai-ml/remote-mcp)を参照してください。
+
+<Tip>
+  **エージェントスキル**
+
+  [ClickHouse Agent Skillsリポジトリ](https://github.com/ClickHouse/agent-skills)では、スキーマ設計、クエリ最適化、データ取り込みのパターンなど、ClickHouse 固有の専門知識をAIコーディングエージェントに追加するための指示をパッケージ化して提供しています。
+</Tip>

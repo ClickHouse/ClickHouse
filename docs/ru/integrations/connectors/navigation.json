@@ -91,6 +91,7 @@
             "ru/integrations/connectors/data-visualization/community-integrations/explo-and-clickhouse",
             "ru/integrations/connectors/data-visualization/community-integrations/fabi-and-clickhouse",
             "ru/integrations/connectors/data-visualization/community-integrations/hashboard-and-clickhouse",
+            "ru/integrations/connectors/data-visualization/community-integrations/hypequery-and-clickhouse",
             "ru/integrations/connectors/data-visualization/community-integrations/luzmo-and-clickhouse",
             "ru/integrations/connectors/data-visualization/community-integrations/mitzu-and-clickhouse",
             "ru/integrations/connectors/data-visualization/community-integrations/rocketbi-and-clickhouse",
@@ -186,12 +187,14 @@
             "ru/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline"
           ]
         },
+        "ru/integrations/connectors/data-ingestion/etl-tools/workos",
         {
           "expanded": false,
           "group": "Community integrations",
           "pages": [
             "ru/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "ru/integrations/connectors/data-ingestion/community-integrations/erathos",
+            "ru/integrations/connectors/data-ingestion/community-integrations/olake-and-clickhouse",
             "ru/integrations/connectors/data-ingestion/community-integrations/sqlflow",
             {
               "group": "Estuary",

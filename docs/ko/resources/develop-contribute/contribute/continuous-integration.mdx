@@ -209,21 +209,20 @@ Python 3와 Docker 외에는 추가 의존성이 필요하지 않습니다.
 
 * `Build (amd_debug)` - 심볼이 포함된 디버그 빌드
 * `Build (amd_release)` - 최적화된 릴리스 빌드
-* `Build (amd_asan)` - Address Sanitizer 빌드
-* `Build (amd_tsan)` - Thread Sanitizer 빌드
-* `Build (amd_msan)` - Memory Sanitizer 빌드
-* `Build (amd_ubsan)` - Undefined Behavior Sanitizer 빌드
+* `Build (amd_asan)` - Address 새니타이저 빌드
+* `Build (amd_tsan)` - Thread 새니타이저 빌드
+* `Build (amd_msan)` - Memory 새니타이저 빌드
+* `Build (amd_ubsan)` - Undefined Behavior 새니타이저 빌드
 * `Build (amd_binary)` - Thin LTO 없이 빠르게 생성하는 릴리스 빌드
 * `Build (amd_compat)` - 구형 시스템용 호환성 빌드
-* `Build (amd_musl)` - musl libc를 사용한 빌드
 * `Build (amd_darwin)` - macOS 빌드
 * `Build (amd_freebsd)` - FreeBSD 빌드
 
 **ARM64 빌드:**
 
 * `Build (arm_release)` - ARM64용 최적화 릴리스 빌드
-* `Build (arm_asan)` - ARM64 Address Sanitizer 빌드
-* `Build (arm_coverage)` - 커버리지 계측이 포함된 ARM64 빌드
+* `Build (arm_asan)` - ARM64 Address 새니타이저 빌드
+* `Build (arm_coverage)` - instrumentation이 포함된 ARM64 빌드
 * `Build (arm_binary)` - Thin LTO 없이 빠르게 생성하는 ARM64 릴리스 빌드
 * `Build (arm_darwin)` - macOS ARM64 빌드
 * `Build (arm_v80compat)` - ARMv8.0 호환성 빌드
@@ -302,7 +301,7 @@ Debug 및 일반 바이너리 구성에서도 전체 테스트 모음을 실행�
 
 master 브랜치에서는 커밋할 때마다 LLVM 커버리지 instrumentation이 적용된 빌드로 무상태 테스트, 통합 테스트, 단위 테스트를 실행하고 커버리지 보고서를 게시합니다.
 풀 리퀘스트에서는 `ci-coverage` 레이블이 지정된 경우(또는 커버리지를 수집하고 보고하는 코드를 변경한 경우)에만 이 작업을 실행합니다. 풀 리퀘스트의 커버리지 보고서와 변경된 코드 줄의 커버리지를 확인하려면 이 레이블을 추가하십시오.
-레이블이 없으면 풀 리퀘스트에서는 대신 `arm_binary` 빌드로 동일한 무상태 테스트 및 통합 테스트 구성을 실행합니다. 단위 테스트는 모든 풀 리퀘스트에서 `amd_debug` 빌드와 새니타이저가 적용된 빌드로 실행됩니다.
+레이블이 없으면 풀 리퀘스트에서는 대신 `arm_binary` 빌드로 동일한 무상태 테스트 및 통합 테스트 구성을 실행합니다. 단위 테스트는 모든 풀 리퀘스트에서 `arm_debug`, `arm_asan_ubsan`, `arm_tsan`, `amd_msan` 빌드로 실행됩니다.
 ARM에서 자체적으로 실행을 건너뛰는 통합 테스트 모듈은 변경 사항이 해당 모듈이 다루는 코드에 영향을 주는 경우 선별적으로 실행되는 새니타이저 작업에서 실행됩니다.
 무상태 테스트만 추가하면서 커버리지 보고서가 필요한 풀 리퀘스트에서는 대신 `ci-llvm-coverage` 레이블을 사용할 수 있습니다. 이 레이블을 지정하면 커버리지 작업, 커버리지에서 제외된 테스트용 작업, 변경된 테스트에 대한 무상태 간헐적 실패 검사, Style Check, AI 코드 리뷰만 실행하고 나머지 작업은 모두 건너뜁니다. 이러한 풀 리퀘스트는 이 레이블을 지정한 상태로 머지할 수 있지만, 그 외의 변경 사항이 포함된 풀 리퀘스트는 머지할 수 없습니다.
 

@@ -112,7 +112,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   #### أنواع بيانات Avro المدعومة {#supported-avro-data-types}
 </div>
 
-تدعم ClickPipes جميع أنواع Avro البدائية والمركبة، وجميع أنواع Avro المنطقية باستثناء `local-timestamp-millis` و`local_timestamp-micros`. تُحوَّل أنواع Avro `record` إلى Tuple، وأنواع `array` إلى Array، و`map` إلى Map (بمفاتيح نصية فقط). وبوجه عام، تتوفر التحويلات المذكورة [هنا](/ar/concepts/features/interfaces/schema-inference#avro). نوصي باستخدام المطابقة الدقيقة للأنواع الرقمية في Avro، لأن ClickPipes لا تتحقق من تجاوز السعة أو فقدان الدقة عند تحويل الأنواع. وبدلاً من ذلك، يمكن إدراج جميع أنواع Avro في عمود `String`، وستُمثَّل في هذه الحالة كسلسلة JSON صالحة.
+تدعم ClickPipes جميع أنواع Avro البدائية والمركبة، وجميع أنواع Avro المنطقية باستثناء `local-timestamp-millis` و`local_timestamp-micros`. تُحوَّل أنواع Avro `record` إلى Tuple، وأنواع `array` إلى مصفوفة، و`map` إلى Map (بمفاتيح نصية فقط). وبوجه عام، تتوفر التحويلات المذكورة [هنا](/ar/concepts/features/operations/insert/schema-inference#avro). نوصي باستخدام المطابقة الدقيقة للأنواع الرقمية في Avro، لأن ClickPipes لا تتحقق من تجاوز السعة أو فقدان الدقة عند تحويل الأنواع. وبدلاً من ذلك، يمكن إدراج جميع أنواع Avro في عمود `String`، وستُمثَّل في هذه الحالة كسلسلة JSON صالحة.
 
 #### أنواع Nullable واتحاد في Avro {#nullable-types-and-avro-unions}
 

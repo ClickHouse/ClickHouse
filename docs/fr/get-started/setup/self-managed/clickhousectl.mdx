@@ -42,14 +42,14 @@ Si vous avez utilisé le script d’[installation rapide](/fr/get-started/setup/
     ```
 
     <Accordion title="Autres méthodes d'installation">
-      | Outil                                       | Commande                        |
-      | ------------------------------------------- | ------------------------------- |
-      | npm                                         | `npm install -g clickhousectl`  |
-      | uv                                          | `uv tool install clickhousectl` |
-      | pipx                                        | `pipx install clickhousectl`    |
-      | pip                                         | `pip install clickhousectl`     |
-      | cargo-binstall                              | `cargo binstall clickhousectl`  |
-      | Cargo, à partir du code source (Rust 1.94+) | `cargo install clickhousectl`   |
+      | Outil                                         | Commande                        |
+      | --------------------------------------------- | ------------------------------- |
+      | npm                                           | `npm install -g clickhousectl`  |
+      | uv                                            | `uv tool install clickhousectl` |
+      | pipx                                          | `pipx install clickhousectl`    |
+      | pip                                           | `pip install clickhousectl`     |
+      | cargo-binstall                                | `cargo binstall clickhousectl`  |
+      | Cargo, à partir du code source (Rust 1.94.1+) | `cargo install clickhousectl`   |
 
       Seuls le script d&#39;installation et npm créent l&#39;alias `chctl`.
     </Accordion>
@@ -60,6 +60,9 @@ Si vous avez utilisé le script d’[installation rapide](/fr/get-started/setup/
     clickhousectl update --check
     clickhousectl update
     ```
+
+    `update` remplace les installations effectuées à l&#39;aide du script, par téléchargement ou avec Cargo. Pour les installations via npm, uv,
+    pipx et pip, elle affiche plutôt la commande du gestionnaire de paquets à exécuter.
   </Step>
 
   <Step title="Installer ClickHouse" id="cli-install-clickhouse">
@@ -103,12 +106,13 @@ Si vous avez utilisé le script d’[installation rapide](/fr/get-started/setup/
   </Step>
 
   <Step title="Démarrer clickhouse-server" id="cli-start-clickhouse-server">
-    `clickhousectl` rattache les serveurs locaux au répertoire depuis lequel vous l&#39;exécutez. Créez un
-    répertoire de projet et démarrez-y un serveur :
+    `clickhousectl` rattache les serveurs locaux à un projet. Créez un répertoire de projet,
+    définissez-le comme racine du projet avec `local init`, puis démarrez-y un serveur :
 
     ```bash
     mkdir my-project && cd my-project
-    clickhousectl local server start
+    clickhousectl local init
+    clickhousectl local clickhouse start
     ```
 
     ```response
@@ -118,17 +122,18 @@ Si vous avez utilisé le script d’[installation rapide](/fr/get-started/setup/
       Version:   26.9.1.1312
     ```
 
-    Le serveur s&#39;exécute en arrière-plan et porte le nom `default`. Ses données sont stockées dans
-    `./.clickhouse/` : exécutez donc les commandes `clickhousectl local` suivantes depuis ce même
-    répertoire, car `clickhousectl` ne recherche pas dans les répertoires parents. Le serveur écoute
-    sur le port HTTP `8123` et le port TCP `9000`, ou sur des ports libres si ceux-ci sont déjà occupés.
-    Pour choisir les ports, utilisez `--http-port` et `--tcp-port`. Pour exécuter plusieurs
-    serveurs, attribuez un nom à chacun, par exemple `clickhousectl local server start dev`.
+    Le serveur s’exécute en arrière-plan et s’appelle `default`. Ses données se trouvent dans
+    `.clickhouse/` à la racine du projet. Comme avec Git, les commandes `clickhousectl local`
+    suivantes fonctionnent depuis ce répertoire ou depuis n’importe lequel de ses sous-répertoires. Le serveur
+    écoute sur le port HTTP `8123` et le port TCP `9000`, ou sur des ports libres si ceux-ci sont
+    déjà utilisés. Pour choisir les ports, utilisez les options `--http-port` et `--tcp-port`. Pour exécuter plusieurs
+    serveurs, attribuez un nom à chacun, par exemple `clickhousectl local clickhouse start dev`.
+    `local ch` est l’abréviation de `local clickhouse`.
 
-    Pour vérifier qu&#39;il est en cours d’exécution :
+    Pour vérifier qu’il est en cours d’exécution :
 
     ```bash
-    clickhousectl local server list
+    clickhousectl local clickhouse list
     ```
 
     ```response
@@ -138,17 +143,21 @@ Si vous avez utilisé le script d’[installation rapide](/fr/get-started/setup/
 
     1 server, 1 running
     ```
+
+    `clickhousectl local status` répertorie tous les serveurs ClickHouse et toutes les instances Postgres
+    du projet, qu’ils soient en cours d’exécution ou arrêtés.
   </Step>
 
   <Step title="Démarrez clickhouse-client" id="cli-start-clickhouse-client">
-    Depuis le même répertoire, connectez-vous au serveur avec `clickhouse-client` :
+    Depuis n&#39;importe quel emplacement du projet, connectez-vous au serveur avec `clickhouse-client` :
 
     ```bash
     clickhousectl local client
     ```
 
-    `local client` se connecte au serveur nommé `default` et utilise la même
-    version de ClickHouse que le serveur. Pour vous connecter à un autre serveur, indiquez son nom,
+    `local client` se connecte au serveur nommé `default`, ou à l&#39;unique serveur du
+    projet si aucun ne s&#39;appelle `default`, et utilise la même version de ClickHouse que le
+    serveur. Pour vous connecter à un autre serveur, indiquez son nom,
     par exemple `clickhousectl local client dev`. Vous obtiendrez un résultat semblable à celui-ci :
 
     ```response
@@ -174,17 +183,17 @@ Si vous avez utilisé le script d’[installation rapide](/fr/get-started/setup/
   </Step>
 
   <Step title="Arrêtez le serveur" id="cli-stop-clickhouse-server">
-    Le serveur continue de tourner en arrière-plan jusqu’à ce que vous l’arrêtiez. Pour l’arrêter, exécutez la commande suivante depuis le
-    même répertoire :
+    Le serveur continue de tourner en arrière-plan jusqu’à ce que vous l’arrêtiez. Pour l’arrêter, exécutez la commande suivante depuis
+    n’importe quel emplacement du projet :
 
     ```bash
-    clickhousectl local server stop
+    clickhousectl local clickhouse stop
     ```
 
-    L&#39;arrêt du serveur conserve ses données jusqu&#39;au prochain `clickhousectl local server start`.
+    L&#39;arrêt du serveur conserve ses données jusqu&#39;au prochain `clickhousectl local clickhouse start`.
 
     <Warning>
-      `clickhousectl local server remove` supprime définitivement les données d&#39;un serveur arrêté.
+      `clickhousectl local clickhouse remove` supprime définitivement les données d&#39;un serveur arrêté.
     </Warning>
   </Step>
 </Steps>

@@ -901,6 +901,130 @@ SELECT JSONExtractKeysCaseInsensitive('{"User": {"name": "John", "AGE": 25}}', '
 ['name','AGE']
 ```
 
+## JSONExtractLeafPathsAndValues {#JSONExtractLeafPathsAndValues}
+
+Introduit dans : v26.11.0
+
+Identique à [`JSONExtractLeafValues`](#JSONExtractLeafValues), mais renvoie un tuple `(path, value)` pour chaque feuille scalaire.
+Consultez la description de `JSONExtractLeafValues` pour connaître les règles relatives aux chemins et aux arguments `skip_regex` et `arrays`.
+
+<Note>
+  Le résultat ne dépend pas des paramètres tels que `allow_simdjson`, `input_format_json_max_depth` et `json_type_escape_dots_in_keys`.
+  Un index sur la fonction renvoie donc les mêmes lignes qu’un parcours complet.
+</Note>
+
+**Syntaxe**
+
+```sql
+JSONExtractLeafPathsAndValues(json[, skip_regex[, arrays]])
+```
+
+**Arguments**
+
+* `json` — Chaîne JSON à analyser. [`String`](/fr/reference/data-types/string)
+* `skip_regex` — Facultatif. Expression régulière constante (syntaxe [re2](https://github.com/google/re2/wiki/Syntax)). Les chemins correspondants sont ignorés, ainsi que tous leurs descendants. Une chaîne vide (par défaut) n’exclut rien. [`const String`](/fr/reference/data-types/string)
+* `arrays` — Facultatif. Constante, sensible à la casse. Mode de traitement des tableaux : `'skip'`, `'string'` ou `'elements'` (par défaut). [`const String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie les chemins et les valeurs des feuilles scalaires. [`Array(Tuple(path String, value String))`](/fr/reference/data-types/array)
+
+**Exemples**
+
+**Chemins et valeurs**
+
+```sql title=Query
+SELECT arrayMap(x -> (x.1, x.2), JSONExtractLeafPathsAndValues('{"a": {"b": "x"}, "c": [1, {"d": true}]}')) AS res;
+```
+
+```response title=Response
+┌─res──────────────────────────────────────────┐
+│ [('a.b','x'),('c[0]','1'),('c[1].d','true')] │
+└──────────────────────────────────────────────┘
+```
+
+## JSONExtractLeafValues {#JSONExtractLeafValues}
+
+Introduit dans : v26.11.0
+
+Analyse une string JSON et renvoie les valeurs de toutes les feuilles scalaires de l’objet de premier niveau sous forme de tableau de strings, dans l’ordre du document.
+Une feuille est une string, un nombre ou un booléen. `null`, les objets vides et les tableaux vides ne produisent aucune valeur.
+Les strings sont renvoyées sans échappement, les nombres et les booléens sous forme de texte JSON (comme avec [`JSONExtractRaw`](#JSONExtractRaw)).
+Si le JSON est invalide ou si son premier niveau n’est pas un objet, le résultat est un tableau vide.
+Si une clé apparaît plusieurs fois, toutes ses valeurs sont renvoyées.
+
+Le chemin d’une valeur est formé des clés séparées par `.`, avec la notation `[i]` pour l’index d’un élément de tableau, par exemple `a.b`, `a[0]`, `a[0].b`, `a[0][1]`.
+Les clés ne sont pas échappées : une clé `a.b` et une clé `b` imbriquée dans `a` donnent le même chemin `a.b`.
+Contrairement à ce qui se passe avec le type de données `JSON`, le paramètre [`json_type_escape_dots_in_keys`](/fr/reference/settings/formats/other#json_type_escape_dots_in_keys) ne s’applique pas.
+
+L’expression régulière `skip_regex` est testée sur chaque chemin parcouru (membres d’objet à n’importe quelle profondeur, membres au sein des tableaux et chemins d’éléments de tableau tels que `a[0]`).
+Toute correspondance entraîne l’exclusion de la valeur et de tout ce qu’elle contient.
+Une correspondance partielle suffit, comme avec [`match`](/fr/reference/functions/regular-functions/string-search-functions#match) : utilisez `^` et `$` pour faire correspondre le chemin complet.
+Contrairement à ce qui se passe avec `SKIP REGEXP` pour le type de données `JSON`, le paramètre [`type_json_use_partial_match_to_skip_paths_by_regexp`](/fr/reference/settings/formats/type-json#type_json_use_partial_match_to_skip_paths_by_regexp) ne s’applique pas.
+
+En mode `'string'`, un tableau est renvoyé en entier, sans limite de profondeur.
+
+<Note>
+  Le résultat ne dépend pas des paramètres tels que `allow_simdjson`, `input_format_json_max_depth` et `json_type_escape_dots_in_keys`.
+  Un index sur la fonction renvoie donc les mêmes lignes qu’un parcours complet.
+</Note>
+
+Utilisez [`JSONAllValues`](/fr/reference/functions/regular-functions/json-functions#JSONAllValues) pour les colonnes du type de données `JSON`.
+
+**Syntaxe**
+
+```sql
+JSONExtractLeafValues(json[, skip_regex[, arrays]])
+```
+
+**Arguments**
+
+* `json` — String JSON à analyser. [`String`](/fr/reference/data-types/string)
+* `skip_regex` — Facultatif. Expression régulière constante (syntaxe [re2](https://github.com/google/re2/wiki/Syntax)). Les chemins correspondant à cette expression sont ignorés, ainsi que tout leur contenu. Une string vide (par défaut) n’exclut rien. [`const String`](/fr/reference/data-types/string)
+* `arrays` — Facultatif. Constante, sensible à la casse. Mode de traitement des tableaux : `'skip'` ne produit rien pour les tableaux, `'string'` renvoie chaque tableau sous forme d’une seule valeur au format JSON compact, `'elements'` (par défaut) parcourt les éléments, dont les chemins sont `a[0]`, `a[1]` et ainsi de suite. [`const String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie les valeurs des feuilles scalaires. [`Array(String)`](/fr/reference/data-types/array)
+
+**Exemples**
+
+**Objets et tableaux imbriqués**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": {"b": "x", "c": 1.50}, "d": [true, null, {"e": "y"}], "f": null}') AS res;
+```
+
+```response title=Response
+┌─res────────────────────┐
+│ ['x','1.5','true','y'] │
+└────────────────────────┘
+```
+
+**Exclusion de chemins**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": "x", "b_noindex": {"c": "y"}, "d": [{"e_noindex": "z", "f": "w"}]}', '.*_noindex$') AS res;
+```
+
+```response title=Response
+┌─res───────┐
+│ ['x','w'] │
+└───────────┘
+```
+
+**Tableaux sous forme de strings**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": [1, 2], "b": "x"}', '', 'string') AS res;
+```
+
+```response title=Response
+┌─res───────────┐
+│ ['[1,2]','x'] │
+└───────────────┘
+```
+
 ## JSONExtractRaw {#JSONExtractRaw}
 
 Introduit dans : v20.1.0

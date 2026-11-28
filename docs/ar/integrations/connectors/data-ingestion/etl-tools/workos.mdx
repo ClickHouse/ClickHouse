@@ -1,0 +1,270 @@
+---
+sidebarTitle: "WorkOS"
+keywords:
+  [
+    "workos",
+    "sync engine",
+    "authkit",
+    "sso",
+    "directory sync",
+    "identity",
+    "sign-in events",
+    "data ingestion",
+    "integrate",
+  ]
+slug: /integrations/workos
+description: "انسخ مستخدمي WorkOS ومؤسساته وأحداث تسجيل الدخول إلى ClickHouse باستخدام أداة WorkOS Sync Engine مفتوحة المصدر"
+title: "ربط WorkOS بـ ClickHouse"
+doc_type: "guide"
+integration:
+  - support_level: "partner"
+  - category: "data_ingestion"
+  - website: "https://workos.com/"
+---
+
+import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+import ConnectionDetails from "/snippets/ar/_gather_your_details_http.mdx";
+
+<PartnerBadge />
+
+يوفّر [WorkOS](https://workos.com/) واجهات برمجة تطبيقات للمصادقة وإدارة الهوية في التطبيقات الموجّهة للشركات (B2B): إدارة المستخدمين
+وتسجيل الدخول، وتسجيل الدخول الموحّد، ومزامنة الدليل (SCIM)، والأدوار والصلاحيات.
+يحتفظ التطبيق المبني على WorkOS ببيانات مستخدميه ومؤسساته وعضويات المستخدمين ونشاط تسجيل الدخول في WorkOS، ويقرأها عبر واجهة برمجة تطبيقات WorkOS.
+
+[WorkOS Sync Engine](https://github.com/workos/sync-engine) أداة مفتوحة المصدر تتولى WorkOS صيانتها، وتنسخ تلك البيانات إلى قاعدة بيانات تشغّلها أنت وتُبقيها محدّثة. وتحلّ وجهة ClickHouse الخاصة به، [`@workos/sync-clickhouse`](https://www.npmjs.com/package/@workos/sync-clickhouse)، مشكلتين:
+
+* **سجل تسجيل دخول يتجاوز فترة الاحتفاظ لدى WorkOS.** يحتفظ WorkOS بالأحداث لمدة 90 يومًا، ولا تتوفر نقطة نهاية لسرد أحداث `authentication.*` (كل عملية تسجيل دخول، سواء نجحت أم فشلت). يتتبّع (tail) المحرك الأحداث الجديدة عبر واجهة برمجة تطبيقات الأحداث (Events API) وينقلها إلى جداول ClickHouse التي لا تسمح إلا بإلحاق البيانات، ليبقى السجل تحت سيطرتك طوال المدة التي تختار الاحتفاظ به فيها.
+* **ربط البيانات ببقية بيانات التحليلات لديك.** تُنسخ بيانات المستخدمين والمؤسسات والعضويات والأدلة واتصالات SSO والأدوار وتُزامَن إلى جانب جداول الأحداث، بحيث يمكن الإجابة عن سؤال مثل &quot;عدد محاولات تسجيل الدخول الفاشلة لكل مؤسسة في كل ساعة&quot; باستعلام واحد بدلًا من عدة استدعاءات API لجلب النتائج على صفحات.
+
+تتناول هذه الصفحة توصيل المحرك بـ ClickHouse Cloud وبـ ClickHouse مستضاف ذاتيًا، والمصادقة، ومثالًا متكاملًا، والقيود التي ينبغي مراعاتها عند التخطيط.
+
+## آلية العمل {#how-it-works}
+
+يعمل المحرك داخل البنية التحتية الخاصة بك، إما كأمر Node.js أو كحاوية Docker، ويتصل بـ ClickHouse عبر واجهة HTTP باستخدام [عميل JavaScript](/ar/integrations/language-clients/js/index) الرسمي. ويؤدي ثلاث مهام:
+
+1. **استكمال البيانات التاريخية** (Backfill): يحمّل الحالة الحالية من نقاط النهاية الخاصة بسرد القوائم في واجهة WorkOS REST.
+2. **التتبع** (tail): يستطلع WorkOS Events API انطلاقًا من مؤشر دائم، ويطبّق كل حدث.
+3. **التسوية** (Reconcile): يقارن المعرّفات بما تعيده واجهة برمجة التطبيقات، ويصلح أي شيء فات عملية التتبع (tail).
+
+ينشئ المحرك قاعدة بيانات `workos` تحتوي على:
+
+| الجداول                                                                  | المحرك                                                                                                          | المحتويات                                                                     |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `auth_attempts`، `events`                                                | [`ReplacingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) مفهرس بمعرّف الحدث | إلحاق فقط. صف واحد لكل محاولة تسجيل دخول، وكل حدث من WorkOS بنصّه الأصلي.     |
+| `users`، `organizations`، `organization_memberships`، وسائر جداول المرآة | `ReplacingMergeTree` ذو إصدار محدد بحسب الطابع الزمني للمصدر                                                    | الحالة الحالية لكل كائن. يُحتفظ بالسجلات المحذوفة على هيئة علامات حذف.        |
+| عروض `<table>_live`                                                      | عرض                                                                                                             | تقرأ جداول المرآة باستخدام `FINAL` وتُخفي علامات الحذف. استعلم عن هذه العروض. |
+| جداول إدارة الحالة                                                       | [`KeeperMap`](/ar/reference/engines/table-engines/special/keepermap)                                               | مؤشر التتبع (tail)، واستئجار لكاتب واحد، وقفل كتابة لكل دفق.                       |
+
+يكتب المحرك عمودًا واحدًا من نوع `String` هو `_raw`، يحتوي على حمولة JSON. أما سائر الأعمدة فهي تعبيرات `DEFAULT` مشتقة من `_raw`، لذا يمكن الاستعلام عن أي حقل تضيفه WorkOS لاحقًا باستخدام `JSONExtractString(_raw, 'field')` دون الحاجة إلى تغيير المخطط.
+
+## المتطلبات المسبقة {#prerequisites}
+
+* حساب WorkOS ومفتاح API للبيئة المراد عكسها.
+* Node.js 22 أو أحدث، أو Docker. يُنشر المحرك كحزمة npm باسم `@workos/sync-clickhouse` وكصورة حاوية باسم `ghcr.io/workos/sync-clickhouse`.
+* ClickHouse Cloud، أو ClickHouse مستضاف ذاتيًا بالإصدار 23.11 أو أحدث.
+* في حالة ClickHouse المستضاف ذاتيًا، يلزم توفر ClickHouse Keeper أو ZooKeeper يمكن للخادم الوصول إليه، مع ضبط `keeper_map_path_prefix`. راجع [الاتصال بـ ClickHouse المستضاف ذاتيًا](#connect-to-self-hosted-clickhouse). أما ClickHouse Cloud فيتوفر فيه كلاهما مسبقًا.
+* إمكانية الوصول عبر الشبكة من المضيف الذي يشغّل المحرك إلى واجهة HTTP في ClickHouse (المنفذ 8443 على Cloud؛ والمنفذ 8123، أو 8443 مع تفعيل TLS، في البيئة المستضافة ذاتيًا).
+
+## الإعداد {#setup}
+
+### الاتصال بـ ClickHouse Cloud {#connect-to-clickhouse-cloud}
+
+<ConnectionDetails />
+
+بعد الحصول على هذه التفاصيل:
+
+1. أضف العنوان الذي يتصل منه المحرك إلى [قائمة الوصول لعناوين IP](/ar/products/cloud/guides/security/connectivity/setting-ip-filters) الخاصة بالخدمة. يظهر رفض العنوان على هيئة انتهاء مهلة الاتصال، لا على هيئة خطأ في المصادقة.
+
+2. ضع بيانات الاعتماد قبل نقطة نهاية HTTPS لتكوين سلسلة الاتصال، ثم صدّرها مع مفتاح API الخاص بـ WorkOS:
+
+   ```bash
+   export DATABASE_URL='https://default:PASSWORD@HOST.clickhouse.cloud:8443'
+   export WORKOS_API_KEY='sk_...'
+   ```
+
+   رمّز كلمة المرور بترميز النسبة المئوية (percent-encoding) إذا كانت تحتوي على محارف محجوزة في URL. يُتجاهل أي مسار في URL، إذ توجد المرآة في قاعدة البيانات `workos`، أو في قاعدة البيانات التي يحددها `WORKOS_SYNC_SCHEMA`.
+
+3. أنشئ المخطط، وحمّل الحالة الحالية، ثم ابدأ المتابعة المستمرة للأحداث (tail):
+
+   ```bash
+   npx @workos/sync-clickhouse init       # إنشاء قاعدة البيانات والجداول والعروض
+   npx @workos/sync-clickhouse backfill   # تحميل الحالة الحالية من WorkOS API
+   npx @workos/sync-clickhouse listen     # متابعة Events API حتى الإيقاف
+   ```
+
+لا حاجة إلى تمكين أي شيء على الخدمة، إذ ينشئ `init` جداول `KeeperMap` الخاصة به كما ينشئ أي جداول أخرى.
+
+### الاتصال بـ ClickHouse مستضاف ذاتيًا {#connect-to-self-hosted-clickhouse}
+
+1. فعّل `KeeperMap`. يحتفظ المحرك بالمؤشر وعقد الاستئجار الخاصين به في جداول `KeeperMap`، وهي تتطلب وجود Keeper وبادئة مسار في تكوين الخادم. إذا كان العنقود يستخدم بالفعل [ClickHouse Keeper](/ar/guides/oss/deployment-and-scaling/keeper/index) أو ZooKeeper، فأضف البادئة:
+
+   ```xml title="/etc/clickhouse-server/config.d/keeper_map.xml"
+   <clickhouse>
+       <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+   </clickhouse>
+   ```
+
+   أما في حالة العقدة الواحدة التي لا يتوفر فيها Keeper، فيلزم أيضًا تفعيل Keeper المُضمَّن:
+
+   ```xml title="/etc/clickhouse-server/config.d/keeper_map.xml"
+   <clickhouse>
+       <keeper_server>
+           <tcp_port>9181</tcp_port>
+           <server_id>1</server_id>
+           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+           <raft_configuration>
+               <server>
+                   <id>1</id>
+                   <hostname>localhost</hostname>
+                   <port>9234</port>
+               </server>
+           </raft_configuration>
+       </keeper_server>
+       <zookeeper>
+           <node>
+               <host>localhost</host>
+               <port>9181</port>
+           </node>
+       </zookeeper>
+       <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+   </clickhouse>
+   ```
+
+   أعد تشغيل الخادم بعد إضافة الملف.
+
+2. وجّه سلسلة الاتصال إلى واجهة HTTP: المنفذ 8123 دون تفعيل TLS، أو المنفذ 8443 مع تفعيله.
+
+   ```bash
+   export DATABASE_URL='http://USER:PASSWORD@HOST:8123'
+   export WORKOS_API_KEY='sk_...'
+   ```
+
+3. شغّل الأوامر الثلاثة نفسها المستخدمة مع Cloud: `init`، ثم `backfill`، ثم `listen`.
+
+### تشغيله كحاوية {#run-it-as-a-container}
+
+تقبل صورة الحاوية متغيرات البيئة والأوامر ذاتها:
+
+```bash
+docker run --rm -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse init
+docker run --rm -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse backfill
+docker run -d   -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse listen
+```
+
+شغّل `listen` كعملية تعمل باستمرار، أو شغّل `tick` (استطلاع واحد ثم الخروج) عبر مُجدوِل. يعرض `status` المؤشر، والوقت المنقضي منذ آخر استطلاع ناجح، وعدد الصفوف لكل دفق. ويسرد <a href="https://github.com/workos/sync-engine/tree/main/packages/sync-clickhouse#command-line" target="_blank">ملف README الخاص بالحزمة</a> جميع الأوامر وخيارات سطر الأوامر ومتغيرات البيئة.
+
+## المصادقة {#authentication}
+
+| الوضع                                      | مدعوم | كيفية التهيئة                                                                                                                           |
+| ------------------------------------------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| اسم المستخدم وكلمة المرور عبر TLS          | ✅     | سلسلة اتصال `https://` تتضمن بيانات الاعتماد. يجري التحقق من شهادة الخادم بالاستناد إلى مخزن الثقة في النظام.                           |
+| اسم المستخدم وكلمة المرور، سلطة تصديق خاصة | ✅     | اضبط `WORKOS_SYNC_CLICKHOUSE_TLS_CA` على شهادة المرجع المصدق، بصيغة PEM أو PEM مُرمَّز بترميز base64. يتطلب ذلك سلسلة اتصال `https://`. |
+| اسم المستخدم وكلمة المرور دون تفعيل TLS    | ✅     | سلسلة اتصال `http://`. للبيئات المستضافة ذاتيًا فقط؛ استخدمها على شبكة موثوقة.                                                          |
+| mTLS أو شهادة عميل SSL                     | ❌     | غير مدعوم.                                                                                                                              |
+| البروتوكول الأصلي (المنفذان 9000 و9440)    | ❌     | غير مدعوم. يستخدم المحرك واجهة HTTP فقط.                                                                                                |
+
+يحتاج المستخدم الذي يتصل المحرك باسمه إلى صلاحية `CREATE DATABASE` في المرة الأولى (أو إلى قاعدة بيانات موجودة يُسمح له بإنشاء جداول فيها)، إضافةً إلى `CREATE TABLE` و`CREATE VIEW` و`DROP TABLE` و`ALTER` و`INSERT` و`SELECT` على قاعدة البيانات تلك. تشمل صلاحية `ALTER` عملية `DELETE` الخفيف التي ينفذها الأمر `redact`. ويكفي المستخدم `default` لأغراض التقييم. أما في بيئة الإنتاج، فأنشئ مستخدمًا مخصصًا يحمل هذه الأذونات؛ راجع [إدارة الوصول إلى السحابة](/ar/products/cloud/guides/security/cloud-access-management/index).
+
+أما من جهة WorkOS، فيتحقق المحرك من هويته باستخدام مفتاح API واحد لكل بيئة. خصّص مفتاحًا للمزامنة وحدها لتتمكن من تمييز طلباتها عن طلبات تطبيقك.
+
+تبدأ الترويسة `User-Agent` في كل اتصال بالقيمة `workos-sync-engine`، لذا يمكن العثور على العبارات التي ينفذها المحرك من خلال الحقل `http_user_agent` في [`system.query_log`](/ar/reference/system-tables/query_log).
+
+## مثال: عمليات تسجيل الدخول الفاشلة لكل مؤسسة {#example-failed-sign-ins}
+
+مدخلات المحرك هي بيئة WorkOS الخاصة بك وليست ملفًا، لذا يستخدم هذا المثال بياناتها بدلًا من مجموعة بيانات نموذجية. وتصلح لذلك أي بيئة WorkOS تضم بضعة مستخدمين وعمليات تسجيل دخول، بما في ذلك بيئة ما قبل الإنتاج.
+
+1. أنشئ المخطط وحمّل الحالة الراهنة:
+
+   ```bash
+   npx @workos/sync-clickhouse init
+   npx @workos/sync-clickhouse backfill
+   ```
+
+2. ابدأ عملية المتابعة (tail) واتركها قيد التشغيل. يبدأ سجل تسجيلات الدخول من هذه اللحظة، إذ لا توجد نقطة نهاية تستعرض عمليات تسجيل الدخول السابقة، ولذلك لا يستطيع `backfill` استعادتها.
+
+   ```bash
+   npx @workos/sync-clickhouse listen
+   ```
+
+3. سجّل الدخول إلى تطبيقك عدة مرات، على أن تتضمن محاولة فاشلة واحدة على الأقل.
+
+4. تحقّق من وجود صفوف في المرآة، من وحدة تحكم SQL في Cloud أو من `clickhouse client`:
+
+   ```sql
+   SELECT _env, email
+   FROM workos.users_live
+   LIMIT 10;
+   ```
+
+5. اربط سجل تسجيلات الدخول بجداول المرآة:
+
+   ```sql
+   SELECT
+       o.name AS organization,
+       toStartOfHour(a.created_at) AS hour,
+       count() AS failures
+   FROM workos.auth_attempts AS a
+   INNER JOIN workos.users_live AS u ON u.id = a.user_id AND u._env = a._env
+   INNER JOIN workos.organization_memberships_live AS m ON m.user_id = u.id AND m._env = u._env
+   INNER JOIN workos.organizations_live AS o ON o.id = m.organization_id AND o._env = m._env
+   WHERE a.status = 'failed' AND a.created_at > now() - INTERVAL 7 DAY
+   GROUP BY organization, hour
+   ORDER BY failures DESC;
+   ```
+
+يتضمن كل صف العمود `_env`، وقيمته `production` ما لم يحدّد `WORKOS_ENVIRONMENT_NAME` قيمة أخرى، مما يتيح لعدة بيئات WorkOS مشاركة قاعدة بيانات واحدة. لذا أدرِجه في شروط الربط كما هو موضّح.
+
+## القيود المعروفة {#known-limits}
+
+* **المرآة نموذج للقراءة فقط.** فهي متسقة في نهاية المطاف، وعادةً خلال ثوانٍ، وتعمل في اتجاه واحد. أبقِ عمليات الكتابة وقرارات التفويض على WorkOS API.
+* **يبدأ سجل عمليات تسجيل الدخول مع بدء التتبع (tail).** تحتفظ WorkOS بالأحداث لمدة 90 يومًا. ويُستأنف التتبع (tail) الذي توقف لمدة أقل من ذلك من موضع المؤشر الخاص به. أما التتبع (tail) الذي توقف لمدة أطول فيحتاج إلى `backfill` و`reconcile --repair` لاستعادة الحالة الحالية، وتضيع عمليات تسجيل الدخول التي وقعت خلال فترة الانقطاع.
+* **مثيل كاتب واحد لكل بيئة.** ينتظر أي أمر `listen` ثانٍ انتهاء استئجار الأمر الأول. ويخرج `tick` برمز الخروج 3 ما دام هناك مستمع يحتفظ بالاستئجار.
+* **يُبقي `listen` الخدمة السحابية نشطة.** فهو يستطلع كل 5 ثوانٍ افتراضيًا، لذا لا [تدخل الخدمة في حالة خمول](/ar/products/cloud/features/autoscaling/idling) أبدًا. شغّل `tick` وفق جدول زمني لتتمكن الخدمة من الدخول في حالة خمول بين عمليات التشغيل، مع تحمّل كلفة إيقاظها عند كل تشغيل.
+* **عمليات إدراج صغيرة افتراضيًا.** يطبّق كل استطلاع ما يصل إلى 100 حدث في صورة عدد قليل من [عمليات الإدراج غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts) التي ينتظر المحرك اكتمالها. ارفع قيمة `WORKOS_SYNC_MAX_EVENTS_PER_TICK` في البيئات كثيفة النشاط بحيث ينتج كل استطلاع عمليات إدراج أقل عددًا وأكبر حجمًا.
+* **تقرأ عروض `_live` باستخدام `FINAL`.** وهي مناسبة للاستعلامات التحليلية. أما التطبيقات التي تقرأ صفوفًا مفردة حسب المفتاح، فالوجهة Postgres أو MySQL أنسب لها.
+* **تحتفظ جداول المرآة بأحدث إصدار فقط من كل صف.** تبقى الإصدارات الأقدم حتى عملية الدمج التالية. أما السجل الكامل فيُحفظ في `workos.events`.
+* **تُستخرج الأعمدة من JSON.** القيمة التي يتعذر تحويلها إلى نوع عمود محدد النوع تظهر بقيمة `NULL` في ذلك العمود، لكنها تبقى موجودة في `_raw`.
+* **لا دعم لأوامر DDL مع `ON CLUSTER`.** جرى تشغيل `init` على ClickHouse Cloud وعلى الإصدار مفتوح المصدر أحادي العقدة. أما العنقود متعدد العقد المُدار ذاتيًا فليس ضمن مصفوفة الاختبار.
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+### انتهاء مهلة الأمر الأول {#trouble-timeout}
+
+في ClickHouse Cloud، يكون العنوان الذي يعمل منه المحرك غير مُدرج في قائمة الوصول لعناوين IP، أو أن الشبكة تحظر حركة المرور الصادرة على المنفذ 8443. تحقق من المنفذ من المضيف نفسه:
+
+```bash
+curl https://HOST.clickhouse.cloud:8443/ping
+```
+
+تعني `Ok.` أنه يمكن الوصول إلى الخدمة من ذلك المضيف. كما أن الأمر المُنفَّذ على خدمة خاملة يقضي ثوانيه الأولى في انتظار تنشيط الخدمة. ويمنح المحرك كل طلب مهلة دقيقتين، لذا لا يُعدّ ذلك إخفاقًا.
+
+### `KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined` {#trouble-keepermap}
+
+يظهر هذا الخطأ عند تشغيل `init` على خادم مستضاف ذاتيًا لم يُضبط فيه `keeper_map_path_prefix`. أضف التهيئة الموضّحة في [الاتصال بـ ClickHouse مستضاف ذاتيًا](#connect-to-self-hosted-clickhouse)، ثم أعد تشغيل الخادم.
+
+### `unsupported ClickHouse URL scheme` {#trouble-scheme}
+
+يجب أن تبدأ سلسلة الاتصال بـ `http://` أو `https://` وأن تشير إلى واجهة HTTP، إذ لا يُقبل عنوان URL بالصيغة `clickhouse://` ولا منفذ البروتوكول الأصلي.
+
+### فشل إحدى عبارات `init --print-sql` مع الخطأ `Could not find table` {#trouble-print-sql}
+
+يطبع الأمر `init --print-sql` تعليمات DDL بدلاً من تنفيذها. وعند تطبيقها يدوياً على خدمة تضم أكثر من نسخة متماثلة واحدة، بإرسال عبارة واحدة في كل طلب، قد تصل عبارة `CREATE VIEW` إلى إحدى النسخ المتماثلة قبل عبارة `CREATE TABLE` التي تُنشئ الجدول الذي تقرأ منه. في هذه الحالة، أعد تشغيل البرنامج النصي، إذ إن جميع عباراته متساوية القوة (idempotent). أما الأمر `init` الخاص بالمحرك نفسه فلا يتأثر بهذه المشكلة.
+
+## موارد ذات صلة {#related-resources}
+
+* <a href="https://workos.com/docs/events/data-syncing/database/clickhouse-cloud" target="_blank">
+    دليل ClickHouse Cloud في وثائق WorkOS
+  </a>
+* <a href="https://github.com/workos/sync-engine" target="_blank">
+    WorkOS Sync Engine على GitHub
+  </a>
+  : الشيفرة المصدرية، والتذاكر، وأدلة حول العمليات والاتساق
+* <a href="https://github.com/workos/sync-engine/tree/main/packages/sync-clickhouse" target="_blank">
+    مرجع `@workos/sync-clickhouse`
+  </a>
+  : الأوامر، ومتغيرات البيئة، والمخطط، وتضمين المحرك
+  كمكتبة
+* <a href="https://workos.com/docs/events" target="_blank">
+    واجهة برمجة تطبيقات WorkOS Events (Events API)
+  </a>

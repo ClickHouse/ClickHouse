@@ -59,10 +59,11 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "`GROUP BY`와 필터가 없는 `sum`, `avg`, `sumCount`, `count(column)` 집계(aggregations)를 파트별 컬럼 통계(Column Statistics)로 처리하는 새로운 설정입니다. previous_value=false이므로 `compatibility`를 26.11 이전 버전으로 설정하면 최적화가 비활성화된 상태로 유지되고 기존 실행 계획이 복원됩니다."}]}]} />
 
-`Nullable` 또는 `LowCardinality`가 아닌 정수(integer) 및 `Decimal` 컬럼에 대해 `GROUP BY`와 필터 없이 수행되는 `sum`, `avg`, `sumCount` 집계(aggregations)를,
+`LowCardinality`가 아닌 정수(integer) 및 `Decimal` 컬럼에 대해 `GROUP BY`와 필터 없이 수행되는 `sum`, `avg`, `sumCount` 집계(aggregations)를,
 컬럼 통계(Column Statistics)가 구체화된(materialized) 데이터 파트에서는 파트별 컬럼 통계(Column Statistics)(`basic` 통계 유형, `MergeTree` 설정인
 `auto_statistics_types` 참조)로 처리하고, 나머지
-파트만 읽습니다. 이러한 파트에서 `Nullable` 또는 `LowCardinality`가 아닌 컬럼의 `count(column)`은 행(rows) 수로 처리됩니다.
+파트만 읽습니다. 이러한 파트에서 `LowCardinality`가 아닌 컬럼의 `count(column)`은 행(rows) 수로 처리됩니다.
+`Nullable` 컬럼에서는 통계에 NULL이 아닌 값의 합계와 NULL 개수가 저장되며, 집계 함수(aggregates)는 NULL 값을 건너뜁니다.
 결과(result)는 데이터를 직접 읽었을 때와 정확히 동일합니다.
 
 가능한 값:

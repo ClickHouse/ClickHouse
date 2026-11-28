@@ -120,17 +120,27 @@ SETTINGS
 
 عند استخدام مجموعة مسمّاة، **لا تُدمج كتلة `<kafka>` العامة الخاصة بالخادم في `config.xml`**. لذا يجب أن تتضمن كل مجموعة جميع الخصائص الموسّعة التي يحتاجها الجدول (بما في ذلك ملفات TLS و`security.protocol` إن لم يُعيَّن عبر قيمة غير فارغة في `SETTINGS` الخاصة بالجدول).
 
-من التخطيطات الشائعة لـ `SASL_SSL` مع شهادات العميل: تخزين مسارات TLS و`ssl.key.password` في المجموعة المسمّاة، وتعيين `kafka_broker_list` و`kafka_topic_list` و`kafka_group_name` و`kafka_format`، واختياريًا `kafka_sasl_username` / `kafka_sasl_password`، في عبارة `SETTINGS` الخاصة بالجدول. يعيّن كلٌّ من `kafka.security_protocol` و`kafka_security_protocol` قيمة `security.protocol`، والأولوية لإعداد الجدول غير الفارغ. وإذا كانت المجموعة تخزّن هذه الخاصية أصلًا، فإن إعداد الجدول يُعدّ تجاوزًا للمجموعة المسمّاة؛ إذ يتطلب صلاحية `SHOW NAMED COLLECTIONS SECRETS` على المجموعة، ويفشل بالخطأ `Override not allowed` إذا كان المفتاح `NOT OVERRIDABLE`. وينطبق الأمر نفسه على `kafka_sasl_mechanism` و`kafka_sasl_username` و`kafka_sasl_password`.
+لا تقبل المجموعة المسمّاة المُنشأة باستخدام `CREATE NAMED COLLECTION` إلا خصائص `librdkafka` الواردة في [قائمة السماح](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp)، مثل `security.protocol` و`sasl.username` و`fetch.min.bytes`. وإذا استخدم جدولٌ مجموعةً تحتوي على خاصية غير مدرجة فيها، يُرجع ClickHouse الخطأ `BAD_ARGUMENTS`. ولاستخدام خصائص أخرى مدعومة، مثل `sasl.kerberos.keytab` أو `sasl.oauthbearer.token.endpoint.url`، عرّف المجموعة في ملف إعدادات الخادم. وينطبق هذا القيد أيضًا على الخصائص المضافة باستخدام `ALTER NAMED COLLECTION` بعد إنشاء الجدول.
 
-مثال (يجب أن تكون مسارات الشهادات موجودة على كل خادم ClickHouse يشغّل المستهلكين الخاصين بالجدول):
+في المجموعة المسمّاة المُنشأة باستخدام SQL، مرّر محتوى الملف بدلًا من مساره: `ssl.key.pem` و`ssl.certificate.pem` و`ssl.ca.pem` و`https.ca.pem` و`sasl.oauthbearer.assertion.private.key.pem`. وتُقبل أيضًا القيمة `probe` للخاصيتين `ssl.ca.location` و`https.ca.location`، لأنها ليست مسارًا.
+
+من التخطيطات الشائعة لـ `SASL_SSL` مع شهادات العميل: تخزين الشهادات والمفتاح الخاص و`ssl.key.password` في المجموعة المسمّاة، وتعيين `kafka_broker_list` و`kafka_topic_list` و`kafka_group_name` و`kafka_format`، واختياريًا `kafka_sasl_username` / `kafka_sasl_password`، في عبارة `SETTINGS` الخاصة بالجدول. يعيّن كلٌّ من `kafka.security_protocol` و`kafka_security_protocol` قيمة `security.protocol`، والأولوية لإعداد الجدول غير الفارغ. وإذا كانت المجموعة تخزّن هذه الخاصية أصلًا، فإن إعداد الجدول يُعدّ تجاوزًا للمجموعة المسمّاة؛ إذ يتطلب صلاحية `SHOW NAMED COLLECTIONS SECRETS` على المجموعة، ويفشل بالخطأ `Override not allowed` إذا كان المفتاح `NOT OVERRIDABLE`. وينطبق الأمر نفسه على `kafka_sasl_mechanism` و`kafka_sasl_username` و`kafka_sasl_password`.
+
+مثال على مجموعة مسمّاة مُنشأة باستخدام SQL، تحتوي على الشهادات والمفتاح الخاص بتنسيق PEM:
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 
 CREATE TABLE queue (
@@ -146,7 +156,7 @@ SETTINGS
     kafka_sasl_password = 'password';
 ```
 
-الإعدادات الموسّعة نفسها ضمن مجموعة مُسمّاة مُعرَّفة بصيغة XML:
+الإعدادات الموسّعة نفسها ضمن مجموعة مُسمّاة مُعرَّفة بصيغة XML، ويمكنها بدلًا من ذلك الإشارة إلى الملفات (يجب أن تكون الملفات موجودة على كل خادم ClickHouse يشغّل المستهلكين الخاصين بالجدول):
 
 ```xml
 <clickhouse>
@@ -224,20 +234,20 @@ CREATE TABLE queue3 (
 
 ## الوصف {#description}
 
-تُتَابَع الرسائل المُسلَّمة تلقائيًا، لذلك لا تُحتسَب كل رسالة في المجموعة إلا مرة واحدة فقط. إذا أردت الحصول على البيانات مرتين، فأنشئ نسخة من الجدول باسم مجموعة مختلف.
+تُتَابَع الرسائل المُسلَّمة تلقائيًا، لذلك لا تُحتسَب كل رسالة في المجموعة إلا مرة واحدة فقط. إذا أردت الحصول على البيانات مرتين، فأنشئ نسخة من الجدول باسم مجموعة مختلف.
 
-المجموعات مرنة ومتزامنة على مستوى العنقود. على سبيل المثال، إذا كان لديك 10 موضوعات و5 نُسخ من جدول في عنقود، فستحصل كل نسخة على موضوعين. وإذا تغيّر عدد النُّسخ، فستُعاد إعادة توزيع الـ موضوعات على النُّسخ تلقائيًا. اقرأ المزيد عن ذلك على http://kafka.apache.org/intro.
+المجموعات مرنة ومتزامنة على مستوى العنقود. على سبيل المثال، إذا كان لديك 10 موضوعات و5 نُسخ من جدول في عنقود، فستحصل كل نسخة على موضوعين. وإذا تغيّر عدد النُّسخ، فستُعاد إعادة توزيع الـ موضوعات على النُّسخ تلقائيًا. اقرأ المزيد عن ذلك على http://kafka.apache.org/intro.
 
 يُوصى بأن يكون لكل Kafka موضوع مجموعة مستهلكين مخصّصة له، بما يضمن اقترانًا حصريًا بين الـ موضوع والمجموعة، وخصوصًا في البيئات التي قد تُنشأ فيها الـ موضوعات وتُحذف ديناميكيًا (مثلًا في الاختبار أو staging).
 
-لا يُعد `SELECT` مفيدًا كثيرًا لقراءة الرسائل (إلا لأغراض debugging)، لأن كل رسالة لا يمكن قراءتها إلا مرة واحدة فقط. والأكثر عملية هو إنشاء تدفقات real-time باستخدام العرض المادي. وللقيام بذلك:
+لا يُعد `SELECT` مفيدًا كثيرًا لقراءة الرسائل (إلا لأغراض debugging)، لأن كل رسالة لا يمكن قراءتها إلا مرة واحدة فقط. والأكثر عملية هو إنشاء تدفقات real-time باستخدام العروض المُجسَّدة. وللقيام بذلك:
 
 1. استخدم الـ محرك لإنشاء مستهلك Kafka واعتبره تدفق بيانات.
 2. أنشئ جدولًا بالبنية المطلوبة.
-3. أنشئ العرض المادي يحوّل البيانات من الـ محرك ويضعها في جدول أُنشئ مسبقًا.
+3. أنشئ العرض المُجسَّد يحوّل البيانات من الـ محرك ويضعها في جدول أُنشئ مسبقًا.
 
-عندما ينضم `MATERIALIZED VIEW` إلى الـ محرك، يبدأ في جمع البيانات في الخلفية. يتيح لك ذلك الاستمرار في تلقي الرسائل من Kafka وتحويلها إلى الـ تنسيق المطلوب باستخدام `SELECT`.
-يمكن لجدول Kafka واحد أن يحتوي على أي عدد تريده من العرض المادي. وهي لا تقرأ البيانات من جدول Kafka مباشرةً، بل تتلقى سجلات جديدة (على هيئة blocks). وبهذه الطريقة يمكنك الكتابة إلى عدة جداول بمستويات مختلفة من التفصيل (مع التجميع - aggregation أو بدونه).
+عندما ينضم `MATERIALIZED VIEW` إلى الـ محرك، يبدأ في جمع البيانات في الخلفية. يتيح لك ذلك الاستمرار في تلقي الرسائل من Kafka وتحويلها إلى الـ صيغة المطلوبة باستخدام `SELECT`.
+يمكن لجدول Kafka واحد أن يحتوي على أي عدد تريده من العروض المُجسَّدة. وهي لا تقرأ البيانات من جدول Kafka مباشرةً، بل تتلقى سجلات جديدة (على هيئة كتل). وبهذه الطريقة يمكنك الكتابة إلى عدة جداول بمستويات مختلفة من التفصيل (مع التجميع - aggregation أو بدونه).
 
 مثال، باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections) لتخزين معلمات الاتصال:
 
@@ -269,16 +279,34 @@ CREATE TABLE queue3 (
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-لتحسين الأداء، تُجمَّع الرسائل المستلمة في كتل بحجم [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings/max-insert#max_insert_block_size). وإذا لم تتكوّن الكتلة خلال [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings/stream#stream_flush_interval_ms) مللي ثانية، فستُكتب البيانات إلى الجدول بغض النظر عن اكتمال الكتلة.
+لتحسين الأداء، تُجمَّع الرسائل المستلمة في كتل بحجم [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings/max-insert#max_insert_block_size). وإذا لم تتكوّن الكتلة خلال [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings/stream#stream_flush_interval_ms) مللي ثانية، فستُكتب البيانات إلى الجدول بغض النظر عن اكتمال الكتلة.
 
-لإيقاف تلقي بيانات الـ موضوع أو لتغيير منطق التحويل، افصل العرض المادي:
+تتحكم إعدادات الجدول التالية في معدّل كتابة البيانات المُستهلَكة إلى العروض المُجسَّدة:
+
+* `kafka_max_block_size` — تُفرَّغ الكتلة بمجرد أن يبلغ عدد صفوفها هذه القيمة. القيمة الافتراضية: `max_insert_block_size` مقسومًا على `kafka_num_consumers`.
+* `kafka_flush_interval_ms` — تُفرَّغ الكتلة بعد انقضاء هذه المدة حتى لو لم تكن ممتلئة. القيمة الافتراضية: [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings/stream#stream_flush_interval_ms) (7500 مللي ثانية). خفّض هذه القيمة لتقليل التأخير بين إنتاج الرسالة وظهورها في جدول الهدف.
+* `kafka_consumer_reschedule_ms` — عند عدم وجود رسائل جديدة، ينتظر المحرك هذه المدة قبل الاستطلاع مجددًا. القيمة الافتراضية: `500` مللي ثانية.
+
+هذه إعدادات خاصة بجدول Kafka، وتُضبط في عبارة `SETTINGS` الخاصة به. ولا يمكن ضبطها في قسم `<kafka>` من ملف إعدادات الخادم، إذ يُمرَّر كل مفتاح هناك إلى librdkafka بوصفه خاصية (راجع [الإعدادات](#configuration))؛ فمثلًا لا يُعدّ `<flush_interval_ms>` هناك إعدادًا من إعدادات ClickHouse.
+
+```sql
+CREATE TABLE queue (timestamp UInt64, level String, message String)
+ENGINE = Kafka
+SETTINGS kafka_broker_list = 'localhost:9092',
+         kafka_topic_list = 'topic',
+         kafka_group_name = 'group1',
+         kafka_format = 'JSONEachRow',
+         kafka_flush_interval_ms = 1000;
+```
+
+لإيقاف تلقي بيانات الـ موضوع أو لتغيير منطق التحويل، افصل العرض المُجسَّد:
 
 ```sql
 DETACH TABLE consumer;
 ATTACH TABLE consumer;
 ```
 
-إذا كنت تريد تغيير الجدول الهدف باستخدام `ALTER`، فنوصي بتعطيل العرض المادي لتجنب حدوث أي تعارض بين الجدول الهدف والبيانات التي ينتجها العرض.
+إذا كنت تريد تغيير الجدول الهدف باستخدام `ALTER`، فنوصي بتعطيل العرض المُجسَّد لتجنب حدوث أي تعارض بين الجدول الهدف والبيانات التي ينتجها العرض.
 
 ## التهيئة {#configuration}
 

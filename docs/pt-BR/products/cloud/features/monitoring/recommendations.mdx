@@ -1,0 +1,55 @@
+---
+sidebarTitle: 'Recomendações'
+title: 'Recomendações de consultas e de schema'
+description: 'Recomendações determinísticas que o ClickHouse Cloud exibe com base nos seus logs de consultas e nos esquemas das suas tabelas.'
+keywords: ['recomendações', 'recomendação de schema', 'recomendação de consulta', 'sorting key', 'ClickHouse Cloud', 'prévia privada']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
+O ClickHouse Cloud analisa o seu tráfego de consultas e os esquemas das suas tabelas e gera recomendações de melhoria de desempenho. Os testes são determinísticos, não utilizam LLMs e não são executados nos seus serviços.
+
+As recomendações podem ser de dois tipos:
+
+* As recomendações de schema aparecem em **Monitoramento** &gt; **Tabelas** e estão relacionadas a alterações que você pode fazer nos esquemas das suas tabelas.
+* As recomendações de consulta aparecem em **Monitoramento** &gt; **desempenho de consultas**, ao abrir uma consulta, e estão relacionadas a alterações que você pode fazer nas suas consultas.
+  É possível que algumas recomendações de schema e de consulta se sobreponham, oferecendo diferentes formas de resolver o problema, seja pelo seu padrão de consulta, seja pelo esquema da sua tabela.
+
+<Warning>
+  As recomendações estão em prévia. Elas podem mudar e não são cobertas pelo SLA padrão do ClickHouse Cloud.
+</Warning>
+
+## Recomendações de schema {#schema-recommendations}
+
+Essas recomendações aparecem na tabela em [Monitoramento](/pt-BR/products/cloud/features/monitoring/cloud-console).
+
+| Recomendação           | Quando aparece                                                                             | O que fazer                                                                                                                                                                                                                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Alterar a sorting key  | Muitas consultas filtram pelas mesmas colunas, e essas colunas não estão na sorting key.   | Considere alterar a sorting key para que os filtros mais comuns correspondam à chave. Isso reconstrói a tabela. O [Schema Advisor](/pt-BR/products/cloud/features/ai-ml/schema-advisor) pode planejar e implantar essa alteração.                                                                       |
+| Adicionar uma projeção | Muitas consultas filtram por um pequeno conjunto de colunas que ficam fora da sorting key. | Adicione uma [projeção](/pt-BR/data-modeling/projections) sobre essas colunas. Isso acelera essas consultas sem alterar a sorting key. O [Schema Advisor](/pt-BR/products/cloud/features/ai-ml/schema-advisor) aplica essa alteração diretamente com `ALTER TABLE`, sem reconstrução e sem `EXCHANGE TABLES`. |
+| Usar um dicionário     | A maioria das consultas à tabela busca uma única linha.                                    | Para uma tabela de dimensão lida com frequência e raramente atualizada, considere usar um [dicionário](/pt-BR/sql-reference/statements/create/dictionary).                                                                                                                                              |
+| Inserções em lote      | A tabela recebe muitos inserts pequenos, e esses inserts criam muitas partes pequenas.     | Agrupe os inserts em lotes para que cada parte seja maior. Menos partes significam menos trabalho de mesclagem. Consulte [inserções assíncronas](/pt-BR/optimize/asynchronous-inserts).                                                                                                                 |
+
+## Recomendações de consulta {#query-recommendations}
+
+Elas aparecem quando você abre uma consulta normalizada em **Monitoramento** &gt; **desempenho de consultas**. Essa página é a próxima versão do [Query insights](/pt-BR/products/cloud/features/sql-console-features/query-insights): nela, você pode filtrar consultas por tabela e abrir uma consulta para ver suas métricas. Aplicar uma recomendação de consulta significa alterar a própria consulta. O Schema Advisor não as implanta.
+
+| Recomendação                                 | Quando aparece                                                                                                                                                                                                                                                                                                                                                    | O que fazer                                                                                                                                                             |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Use `uniq`                                   | A consulta usa `COUNT(DISTINCT ...)` ou [`uniqExact`](/pt-BR/sql-reference/aggregate-functions/reference/uniqexact), e uma contagem aproximada seria suficiente.                                                                                                                                                                                                        | Use [`uniq`](/pt-BR/sql-reference/aggregate-functions/reference/uniq) para contagens grandes de valores distintos. Ela usa menos memória.                                     |
+| Armazene JSON nativamente                    | A consulta interpreta JSON a partir de uma coluna do tipo String durante a execução.                                                                                                                                                                                                                                                                              | Armazene o valor como uma coluna [JSON](/pt-BR/sql-reference/data-types/newjson) ou como colunas comuns, em vez de interpretar uma string a cada consulta.                    |
+| Liste as colunas de que você precisa         | A consulta usa `SELECT *` ou `alias.*` em uma tabela com muitas colunas.                                                                                                                                                                                                                                                                                          | Especifique as colunas de que você precisa para que o ClickHouse não leia as demais.                                                                                    |
+| Evite `OPTIMIZE ... FINAL` como rotina       | A consulta executa [`OPTIMIZE`](/pt-BR/sql-reference/statements/optimize) com `FINAL`, o que reescreve a tabela.                                                                                                                                                                                                                                                        | Não execute `OPTIMIZE ... FINAL` como etapa de rotina. Essa operação consome muita E/S e CPU e pode bloquear inserts.                                                   |
+| Use uma junção sort-merge                    | Os dois lados de um `JOIN` já estão ordenados pelas chaves de junção.                                                                                                                                                                                                                                                                                             | Defina [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm) como `full_sorting_merge` para que o ClickHouse não ordene as entradas novamente.   |
+| Filtre pelas colunas iniciais da sorting key | Os filtros da consulta não incluem as colunas iniciais da sorting key. O ClickHouse ainda pode descartar grânulos com base nas colunas de chave seguintes, mas esse descarte pode ser menos eficaz. Consulte [filtragem por colunas secundárias da chave](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns). | Verifique o plano com `EXPLAIN indexes = 1`. Adicione um filtro pela coluna inicial da chave somente se o resultado da consulta não mudar.                              |
+| Permita inserções assíncronas                | Um `INSERT` desativa as inserções assíncronas e cria muitas partes pequenas.                                                                                                                                                                                                                                                                                      | Mantenha as [inserções assíncronas](/pt-BR/optimize/asynchronous-inserts) habilitadas ou agrupe os inserts em lotes no cliente, para que gravações pequenas sejam combinadas. |
+
+## Páginas relacionadas {#related-pages}
+
+* [Schema Advisor](/pt-BR/products/cloud/features/ai-ml/schema-advisor)
+* [Monitoramento no Console do Cloud](/pt-BR/products/cloud/features/monitoring/cloud-console)
+* [Query insights](/pt-BR/products/cloud/features/sql-console-features/query-insights)
+* [Design de schema](/pt-BR/data-modeling/schema-design)

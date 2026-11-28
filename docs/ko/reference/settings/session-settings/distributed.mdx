@@ -10,11 +10,12 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHistory.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
 <div id="distributed_aggregation_memory_efficient">
-  ## distributed_aggregation_memory_efficient
+  ## distributed_aggregation_memory_efficient {#distributed_aggregation_memory_efficient}
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -22,7 +23,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 분산 집계의 메모리 절약 모드 활성화 여부입니다.
 
 <div id="distributed_connections_pool_size">
-  ## distributed_connections_pool_size
+  ## distributed_connections_pool_size {#distributed_connections_pool_size}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
@@ -30,7 +31,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 단일 분산 테이블에 대한 모든 쿼리를 분산 처리할 때 원격 서버와 동시에 맺을 수 있는 최대 연결 수입니다. 이 값은 클러스터의 서버 수 이상으로 설정하는 것이 좋습니다.
 
 <div id="distributed_foreground_insert">
-  ## distributed_foreground_insert
+  ## distributed_foreground_insert {#distributed_foreground_insert}
 </div>
 
 **별칭**: `insert_distributed_sync`
@@ -54,7 +55,7 @@ Cloud 기본값: `1`.
 * [분산 테이블 관리](/ko/reference/statements/system#managing-distributed-tables)
 
 <div id="distributed_group_by_no_merge">
-  ## distributed_group_by_no_merge
+  ## distributed_group_by_no_merge {#distributed_group_by_no_merge}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -96,8 +97,18 @@ FORMAT PrettyCompactMonoBlock
 └───────┘
 ```
 
+## distributed_group_by_top_k {#distributed_group_by_top_k}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "새 내부 설정: 병렬 레플리카를 사용하는 쿼리의 initiator가 `ORDER BY` 없는 `GROUP BY ... LIMIT`에 대해 레플리카에서 `GROUP BY` top-K 힙을 적용하도록 합니다."}]}]} />
+
+이 설정은 직접 사용해서는 안 되는 내부 설정으로, &#39;병렬 레플리카(parallel replicas)&#39; 모드의 구현 세부 사항입니다. initiator는 `ORDER BY` 없는 `GROUP BY ... LIMIT n` 쿼리에서 모든 그룹화 키를 기준으로 가장 작은 `n`개의 머지된 그룹을 유지하는 경우, 이 설정 값을 `n`으로 지정하여 쿼리와 함께 전송합니다. 그러면 각 레플리카는 부분 집계 단계에서 자신의 가장 작은 `n`개 그룹만 유지합니다(`enable_group_by_top_k_optimization` 참조). 이 설정은 그 이후로는 전달되지 않습니다.
+
 <div id="distributed_insert_skip_read_only_replicas">
-  ## distributed_insert_skip_read_only_replicas
+  ## distributed_insert_skip_read_only_replicas {#distributed_insert_skip_read_only_replicas}
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -112,7 +123,7 @@ FORMAT PrettyCompactMonoBlock
 * 1 — 시작 노드가 데이터를 세그먼트로 보내기 전에 읽기 전용 레플리카를 건너뜁니다.
 
 <div id="distributed_product_mode">
-  ## distributed_product_mode
+  ## distributed_product_mode {#distributed_product_mode}
 </div>
 
 <SettingsInfoBlock type="DistributedProductMode" default_value="deny" />
@@ -136,7 +147,7 @@ ClickHouse는 쿼리에 분산 테이블의 곱이 포함된 경우, 즉 분산 
 * `allow` — 이러한 유형의 서브쿼리 사용을 허용합니다.
 
 <div id="distributed_push_down_limit">
-  ## distributed_push_down_limit
+  ## distributed_push_down_limit {#distributed_push_down_limit}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="1" />

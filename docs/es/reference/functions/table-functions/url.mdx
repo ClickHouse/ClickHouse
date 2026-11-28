@@ -94,6 +94,24 @@ El ejemplo anterior restringe la consulta a un único flujo. Una consulta que le
 
 Un predicado sobre `_path` o `_file` se aplica a cada dirección a medida que se genera, por lo que las direcciones que rechaza también se generan y cuentan para el límite; solo se omite la lectura de las que coinciden.
 
+### Los patrones generan direcciones, no filtran una enumeración {#patterns-generate-addresses}
+
+HTTP simple no ofrece ninguna forma de enumerar los archivos que tiene un servidor, por lo que un patrón en `url` es un *generador* de direcciones y no un *filtro* sobre los archivos existentes. Cada dirección que lee la consulta debe generarse y solicitarse, y su número está limitado por [glob&#95;expansion&#95;max&#95;elements](/es/reference/settings/session-settings/other#glob_expansion_max_elements). Las direcciones que resultan no existir se omiten durante la lectura, siempre que [http&#95;skip&#95;not&#95;found&#95;url&#95;for&#95;globs](/es/reference/settings/session-settings/http#http_skip_not_found_url_for_globs) esté habilitado.
+
+Las funciones de tabla de almacenamiento de objetos, como [s3](/es/reference/functions/table-functions/s3), funcionan a la inversa: el patrón se compila en una expresión regular y se compara con la enumeración del bucket, por lo que un patrón que describe un espacio de claves enorme no supone ningún coste adicional. Por eso, un mismo patrón se lee por completo con `s3` y se rechaza con `url`:
+
+```sql
+-- Matched against the bucket listing, so only the objects that exist are read.
+SELECT count() FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+
+-- The same pattern would have to generate 100020001 addresses for `url`, and is rejected.
+SELECT count() FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+-- Code: 36. DB::Exception: Table function 'url': first argument generates too many result addresses: 100020001,
+-- while at most 1000 are allowed (see the 'glob_expansion_max_elements' setting). ...
+```
+
+Use `s3` (u otra función de tabla de almacenamiento de objetos) cuando el patrón deba cotejarse con una enumeración, y aumente `glob_expansion_max_elements` solo cuando realmente sea necesario enviar una solicitud a cada dirección generada.
+
 ## Comodines con páginas de índice HTTP {#wildcards-with-http-index-pages}
 
 Para `url` y el motor de tabla `URL`, ClickHouse puede expandir comodines recuperando páginas de índice HTTP (HTML o texto sin formato) y extrayendo las URL del cuerpo de la respuesta. Esto permite patrones como `/**/` cuando el servidor expone listados de directorios.

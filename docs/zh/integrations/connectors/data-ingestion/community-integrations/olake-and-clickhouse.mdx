@@ -1,0 +1,84 @@
+---
+sidebarTitle: 'OLake Go'
+slug: /integrations/olake
+description: '将数据库、S3 和 Kafka 中的数据复制到 ClickHouse 可原生读取的 Apache Iceberg 表中'
+title: 'OLake Go 与 ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://olake.io/'
+keywords: ['olake', 'olake go', 'data ingestion', 'iceberg', 'parquet', 'cdc', 'replication', 'data integration']
+---
+
+import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[OLake Go](https://olake.io/) 是一个高性能的开源 EL (Extract–Load，抽取–加载) 平台，用于打通业务数据库与开放湖仓存储，可将 Apache Iceberg 表或 Parquet 文件写入亚马逊 S3。OLake Go 支持增量同步、变更数据捕获 (CDC) ，以及有状态、可断点续传的同步。
+
+ClickHouse 可通过 [`iceberg`](/zh/reference/functions/table-functions/iceberg) 表函数和 [`Iceberg`](/zh/reference/engines/table-engines/integrations/iceberg) 表引擎原生读取 Iceberg 表，并通过 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 连接 Iceberg 目录。本页介绍如何使用 OLake Go 填充 Iceberg 表，以供 ClickHouse 查询。
+
+## 前置条件 {#prerequisites}
+
+* OLake Go，可通过 Docker Compose、Kubernetes (Helm) 或独立 Docker 容器进行自托管部署
+* OLake Go 支持的源系统：PostgreSQL、MySQL、MongoDB、Oracle、MSSQL、DB2、Kafka 或亚马逊 S3
+* ClickHouse Cloud，或支持读取 Iceberg 的自托管 ClickHouse
+* 一个 OLake Go 可写入、ClickHouse 可连接的 Iceberg 目录，例如 AWS Glue、Hive Metastore、REST、Unity Catalog、Polaris 或 BigLake (参见 [OLake Go 目录兼容性矩阵](https://olake.io/docs/understanding/compatibility-catalogs/) 和 ClickHouse [`DataLakeCatalog` 目录类型](/zh/reference/engines/database-engines/datalake))
+
+## 设置步骤 {#setup}
+
+1. 按照 [OLake Go 快速入门](https://olake.io/docs/getting-started/quickstart/) 部署 OLake Go。
+2. 配置一个数据源 (例如 PostgreSQL 或 MySQL) ，以及一个位于 S3 或兼容 S3 存储上的 Iceberg 目标端。
+3. 选择一个受支持的 Iceberg 目录。该目录必须同时受 OLake Go 和 ClickHouse 的 `DataLakeCatalog` 支持 (目录类型：`glue`、`rest`、`hive`、`unity`、`onelake`、`horizon`) 。
+4. 运行一次同步，将数据写入 Iceberg 表。
+5. 在 ClickHouse 中，使用 `iceberg` 表函数或 `Iceberg` 表引擎查询 Iceberg 数据，或通过 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 连接该目录。
+
+## 示例：将 PostgreSQL 数据同步到 Iceberg，并在 ClickHouse 中查询 {#example}
+
+1. 在 OLake Go 中创建一个 PostgreSQL 源端，以及一个使用 AWS Glue 数据目录、存储在亚马逊 S3 上的 Iceberg 目标端。
+2. 运行全量刷新或 CDC (变更数据捕获) 同步，将表以 Iceberg 格式复制过去。
+3. 在 ClickHouse 中，基于 Iceberg 数据创建一张表：
+
+```sql
+CREATE TABLE my_iceberg_table
+ENGINE = IcebergS3(
+  's3://my-bucket/warehouse/my_database/my_table/',
+  'aws_access_key',
+  'aws_secret_key'
+)
+```
+
+4. 查询复制的数据：
+
+```sql
+SELECT * FROM my_iceberg_table LIMIT 10;
+```
+
+或者，也可以通过 `DataLakeCatalog` 将 AWS Glue 数据目录连接到 ClickHouse，直接查询该目录中的表。
+
+## 已知限制 {#known-limitations}
+
+* OLake Go 负责写入 Iceberg 表，ClickHouse 负责读取这些表。ClickHouse 从 25.7 版本起也支持修改 Iceberg 表，但这是 ClickHouse 自身的功能，并非由 OLake Go 提供。
+* ClickHouse 从 25.8 版本起支持相等删除。早期版本可能无法读取 OLake Go 能够写入的所有删除格式。有关目前对删除格式的支持情况，请参阅 [ClickHouse Iceberg 文档](/zh/reference/functions/table-functions/iceberg)。
+* OLake Go 支持的目录并非都可用作 ClickHouse 中的 `DataLakeCatalog` 目录类型。选择目录前，请同时查阅 [OLake Go 目录兼容性矩阵](https://olake.io/docs/understanding/compatibility-catalogs/)和 [`DataLakeCatalog` 文档](/zh/reference/engines/database-engines/datalake)。
+
+## 故障排查 {#troubleshooting}
+
+### ClickHouse 中未显示表 {#tables-not-visible}
+
+请确认 OLake Go 写入的 Iceberg 目录是 ClickHouse 能够连接的目录，并检查目录的连接参数和凭证是否正确。有关支持的目录类型，请参阅 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake)。
+
+### 已删除的行仍然可见 {#deleted-rows-visible}
+
+确认所用的 ClickHouse 版本支持 OLake Go 写入的删除格式 (相等删除、位置删除或删除向量) 。相等删除需要 ClickHouse 25.8 或更高版本。详情请参阅 [Iceberg 表函数文档](/zh/reference/functions/table-functions/iceberg)。
+
+## 延伸阅读 {#further-reading}
+
+* [OLake Go 文档](https://olake.io/docs/)
+* [OLake Go 查询引擎与 ClickHouse 的兼容性](https://olake.io/docs/understanding/compatibility-engines/)
+* [OLake Go 的 Iceberg 目录兼容性](https://olake.io/docs/understanding/compatibility-catalogs/)
+* [ClickHouse `iceberg` 表函数](/zh/reference/functions/table-functions/iceberg)
+* [ClickHouse `Iceberg` 表引擎](/zh/reference/engines/table-engines/integrations/iceberg)
+* [ClickHouse `DataLakeCatalog`](/zh/reference/engines/database-engines/datalake)
+* [ClickHouse 数据目录](/zh/integrations/data-catalogs)

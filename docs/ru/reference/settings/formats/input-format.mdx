@@ -1067,6 +1067,23 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Путь к файлу, используемому для записи ошибок при чтении текстовых форматов (CSV, TSV).
 
+## input_format_skip_duplicated_fields {#input_format_skip_duplicated_fields}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Новая настройка, позволяющая пропускать повторные вхождения поля в строке входных данных вместо генерации исключения."}]}]} />
+
+Включает или отключает пропуск повторных вхождений поля в пределах одной строки входных данных.
+
+Если настройка включена, для поля, которое встречается в строке более одного раза, сохраняется первое значение, а остальные его вхождения пропускаются, и исключение `Duplicate field found` не генерируется. При автоматическом определении схемы тип такого поля определяется по его первому значению.
+
+Поддерживаемые форматы:
+
+* `JSONEachRow` и форматы, которые читают объекты JSON аналогичным образом (`JSONStringsEachRow`, `JSONObjectEachRow`, строки `JSON`), включая вложенные поля, читаемые с помощью `input_format_import_nested_json`
+* `BSONEachRow`
+* `TSKV`
+* `Form`
+
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -1,0 +1,107 @@
+---
+description: 'اختر عميلًا أو مشغّلًا أو بروتوكولًا أو واجهة مدمجة للاتصال بـ ClickHouse'
+sidebarTitle: 'نظرة عامة'
+keywords: ['العملاء', 'الواجهات', 'واجهة سطر الأوامر', 'وحدة تحكم SQL', 'المشغّلات', 'البروتوكولات']
+slug: /concepts/features/connect-to-clickhouse
+title: 'الاتصال بـ ClickHouse'
+doc_type: 'landing-page'
+mode: wide
+---
+
+اختر الواجهة الأنسب لطريقة استخدامك لـ ClickHouse. لتطوير التطبيقات، ابدأ بعميل رسمي للغة البرمجة التي تستخدمها أو بمشغّل رسمي. وللعمل التفاعلي، استخدم أداة أصلية أو أداة على الويب. أما للتكاملات المباشرة، فاستخدم أحد بروتوكولات الشبكة. وقبل الاتصال، هيّئ [منافذ الشبكة](/ar/concepts/features/security/network-ports) و[صلاحيات الوصول](/ar/concepts/features/security/access-rights) و[TLS](/ar/concepts/features/security/tls/configuring-tls) حسب الحاجة.
+
+## الأدوات الأصلية {#native-tools}
+
+<CardGroup cols={2}>
+  <Card title="clickhousectl" icon="terminal" href="/ar/concepts/features/connect-to-clickhouse/native-tools/clickhousectl">
+    واجهة سطر الأوامر الرسمية لـ ClickHouse (`chctl`): للتطوير المحلي باستخدام ClickHouse وPostgres، ولإدارة ClickHouse Cloud.
+  </Card>
+
+  <Card title="عميل ClickHouse" icon="keyboard" href="/ar/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client">
+    عميل سطر أوامر أصلي يدعم خيارات سطر الأوامر وملفات التهيئة.
+  </Card>
+
+  <Card title="طرفية الويب" icon="globe" href="/ar/concepts/features/connect-to-clickhouse/native-tools/web-terminal">
+    session لـ `clickhouse-client` داخل المتصفح عبر WebSocket.
+  </Card>
+
+  <Card title="بروتوكول سياق النموذج (MCP)" icon="/images/mcp.svg" href="/ar/concepts/features/connect-to-clickhouse/native-tools/mcp">
+    اربط مساعدي الذكاء الاصطناعي بـ ClickHouse عبر واجهة موحّدة.
+  </Card>
+</CardGroup>
+
+## المشغّلات ومكتبات العملاء للغات البرمجة {#drivers-and-language-clients}
+
+<CardGroup cols={2}>
+  <Card title="برنامج تشغيل ADBC" icon="database" href="/ar/concepts/features/connect-to-clickhouse/drivers/adbc">
+    اربط التطبيقات المتوافقة مع ADBC بـ ClickHouse.
+  </Card>
+
+  <Card title="برنامج تشغيل ODBC" icon="database" href="/ar/concepts/features/connect-to-clickhouse/drivers/odbc">
+    اربط التطبيقات المتوافقة مع ODBC بـ ClickHouse.
+  </Card>
+
+  <Card title="مكتبات العملاء للغات البرمجة" icon="code" href="/ar/integrations/language-clients">
+    تصفّح مكتبات عملاء ClickHouse الرسمية المتاحة للغة البرمجة التي تستخدمها.
+  </Card>
+</CardGroup>
+
+## البروتوكولات {#protocols}
+
+<CardGroup cols={2}>
+  <Card title="واجهة HTTP" icon="globe" href="/ar/concepts/features/connect-to-clickhouse/protocols/http">
+    استخدم ClickHouse عبر HTTP من أي منصة أو لغة برمجة.
+  </Card>
+
+  <Card title="واجهة TCP الأصلية" icon="network-wired" href="/ar/concepts/features/connect-to-clickhouse/protocols/native-tcp">
+    استخدم البروتوكول الأصلي مع العملاء المتوافقين مع ClickHouse وللاتصال بين الخوادم (inter-server).
+  </Card>
+
+  <Card title="واجهة gRPC" icon="arrows-left-right" href="/ar/concepts/features/connect-to-clickhouse/protocols/grpc">
+    استخدم واجهة gRPC في ClickHouse.
+  </Card>
+
+  <Card title="واجهة Arrow Flight" icon="arrow-right-arrow-left" href="/ar/concepts/features/connect-to-clickhouse/protocols/arrow-flight">
+    اربط عملاء Flight SQL باستخدام Apache Arrow.
+  </Card>
+
+  <Card title="واجهة MySQL" icon="database" href="/ar/concepts/features/connect-to-clickhouse/protocols/compatibility/mysql">
+    اربط العملاء المتوافقين مع MySQL.
+  </Card>
+
+  <Card title="واجهة PostgreSQL" icon="database" href="/ar/concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql">
+    اربط العملاء المتوافقين مع PostgreSQL.
+  </Card>
+
+  <Card title="واجهة SSH" icon="terminal" href="/ar/concepts/features/connect-to-clickhouse/protocols/ssh">
+    اتصل بخادم ClickHouse باستخدام عميل SSH.
+  </Card>
+</CardGroup>
+
+## Prometheus {#prometheus}
+
+<CardGroup cols={2}>
+  <Card title="واجهة برمجة تطبيقات Prometheus وPromQL" icon="chart-line" href="/ar/concepts/features/connect-to-clickhouse/prometheus">
+    خزّن مقاييس Prometheus في ClickHouse واستعلم عنها باستخدام PromQL.
+  </Card>
+
+  <Card title="نقطة نهاية مقاييس Prometheus" icon="chart-line" href="/ar/concepts/features/connect-to-clickhouse/prometheus/metrics">
+    أتِح مقاييس خادم ClickHouse ليسحبها خادم Prometheus.
+  </Card>
+</CardGroup>
+
+## واجهات الويب المدمجة {#built-in-web-interfaces}
+
+<CardGroup cols={2}>
+  <Card title="واجهة Web SQL (Play)" icon="browser" href="/ar/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql">
+    واجهة SQL المدمجة التي تعمل داخل المتصفح ويوفّرها ClickHouse عبر المسار `/play`.
+  </Card>
+
+  <Card title="وحدة تحكم SQL" icon="browser" href="/ar/concepts/features/connect-to-clickhouse/built-in-web-interfaces/sql-console">
+    واجهة ويب مُضمَّنة لتشغيل الاستعلامات واستكشاف البيانات.
+  </Card>
+
+  <Card title="البحث في الوثائق" icon="book-open" href="/ar/concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search">
+    ابحث في الوثائق المرجعية المُضمَّنة في خادم ClickHouse قيد التشغيل.
+  </Card>
+</CardGroup>

@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## enable_software_prefetch_in_aggregation
+## enable_software_prefetch_in_aggregation {#enable_software_prefetch_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Habilita el uso de la precarga de software en la agregación
+Habilita la precarga por software de las celdas de la tabla hash durante `GROUP BY`. La precarga oculta la latencia de memoria cuando la tabla hash de agregación no cabe en la caché de la CPU, por lo que solo se utiliza una vez que la tabla hash supera el tamaño de la caché L2.
 
-## enable_software_prefetch_in_join
+## enable_software_prefetch_in_join {#enable_software_prefetch_in_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

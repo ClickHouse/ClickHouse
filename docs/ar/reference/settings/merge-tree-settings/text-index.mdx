@@ -24,11 +24,11 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 ## text_index_dictionary_block_size {#text_index_dictionary_block_size}
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="512" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "إعداد جديد"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "إعداد جديد"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "8192"},{"label": "زيادة الحجم الافتراضي لكتلة القاموس في الفهارس النصية"}]}]} />
 
-الحجم الافتراضي لكتلة القاموس لفهارس النص.
+الحجم الافتراضي لكتلة القاموس للفهارس النصية.
 يمكن تجاوزه باستخدام وسيطة الفهرس الصريحة `dictionary_block_size`.
 
 ## text_index_max_memory_usage_before_flush {#text_index_max_memory_usage_before_flush}

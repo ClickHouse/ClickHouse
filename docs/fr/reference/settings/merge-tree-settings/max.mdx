@@ -53,6 +53,8 @@ de ce paramètre.
 
 Pour une colonne de valeurs de taille fixe, la taille de bloc est arrondie au multiple inférieur de la taille d’une valeur en octets, sans pouvoir descendre en dessous d’une valeur.
 
+Un bloc compressé contient au maximum 256 Mio de données non compressées : toute valeur supérieure à 256 Mio est donc traitée comme 256 Mio.
+
 ## max_concurrent_queries {#max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

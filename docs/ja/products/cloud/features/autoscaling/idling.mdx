@@ -11,6 +11,10 @@ doc_type: 'guide'
 
 自動アイドル化は、ユーザーから送信されたクエリがない状態が一定期間続くと、ClickHouse Cloud サービスを一時停止します。ただし、[適応型アイドル化の条件](#adaptive-idling)が適用されます。自動アイドル化の有効化と非アクティブ期間の設定は、サービスの **Settings** ページで行えます。
 
+<Note>
+  プライベートプレビュー期間中、[Gen 2 コンピュート](/ja/products/cloud/features/compute-generations)は自動アイドル化に対応していません。
+</Note>
+
 ## サービスの一時停止中は何が課金されますか？ {#billing-while-paused}
 
 サービスの一時停止中は、コンピュートリソースに対して課金されません。ストレージとバックアップは引き続き課金されます。アイドル化によって保存済みのデータが削除されることはありません。課金の詳細については [pricing](/ja/products/cloud/reference/billing/billing-overview) を参照してください。

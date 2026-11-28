@@ -11,6 +11,10 @@ doc_type: 'guide'
 
 当一段时间内没有用户提交的查询时，自动闲置会暂停 ClickHouse Cloud 服务，但需满足[自适应闲置条件](#adaptive-idling)。你可以在服务的 **Settings** 页面启用自动闲置，并配置不活动时长。
 
+<Note>
+  [Gen 2 计算资源](/zh/products/cloud/features/compute-generations)在私有预览期间不支持自动闲置。
+</Note>
+
 ## 服务暂停期间会产生哪些费用？ {#billing-while-paused}
 
 服务处于暂停状态时，您无需为计算资源付费。存储和备份仍会继续计费；闲置不会删除您已存储的数据。有关计费详情，请参阅 [定价](/zh/products/cloud/reference/billing/billing-overview)。

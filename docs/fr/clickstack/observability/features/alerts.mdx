@@ -205,6 +205,7 @@ Les informations à fournir varient selon le type de service :
 **Slack (API)**
 
 * Jeton du bot Slack. Consultez la [documentation Slack](https://docs.slack.dev/authentication/tokens/#bot/) pour plus de détails.
+* Les Bot Token Scopes de l&#39;application Slack doivent inclure `groups:read`, `channels:read` et `chat:write`. Les portées de lecture permettent à ClickHouse Observability de lister les canaux Slack lorsque vous modifiez une alerte.
 
 **PagerDuty API**
 

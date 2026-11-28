@@ -1,0 +1,107 @@
+---
+description: 'ClickHouse への接続に使用するクライアント、ドライバー、プロトコル、または組み込みインターフェイスを選択します'
+sidebarTitle: '概要'
+keywords: ['クライアント', 'インターフェイス', 'CLI', 'SQL コンソール', 'ドライバー', 'プロトコル']
+slug: /concepts/features/connect-to-clickhouse
+title: 'ClickHouse への接続'
+doc_type: 'landing-page'
+mode: wide
+---
+
+ClickHouse の利用方法に最も適したインターフェイスを選択してください。アプリケーション開発には、まず公式の言語別クライアントまたはドライバーを利用することをお勧めします。対話的な作業には、ネイティブツールまたは Web ベースのツールが適しています。直接連携する場合は、ネットワークプロトコルを使用してください。接続する前に、必要に応じて[ネットワークポート](/ja/concepts/features/security/network-ports)、[アクセス権](/ja/concepts/features/security/access-rights)、[TLS](/ja/concepts/features/security/tls/configuring-tls)を設定してください。
+
+## ネイティブツール {#native-tools}
+
+<CardGroup cols={2}>
+  <Card title="clickhousectl" icon="terminal" href="/ja/concepts/features/connect-to-clickhouse/native-tools/clickhousectl">
+    公式の ClickHouse CLI (`chctl`)。ローカルでの ClickHouse および Postgres の開発と、ClickHouse Cloud管理に対応しています。
+  </Card>
+
+  <Card title="ClickHouse クライアント" icon="keyboard" href="/ja/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client">
+    コマンドラインオプションと設定ファイルに対応したネイティブのコマンドラインクライアントです。
+  </Card>
+
+  <Card title="ウェブターミナル" icon="globe" href="/ja/concepts/features/connect-to-clickhouse/native-tools/web-terminal">
+    WebSocket 経由でブラウザ上から利用できる `clickhouse-client` session です。
+  </Card>
+
+  <Card title="Model Context Protocol (MCP)" icon="/images/mcp.svg" href="/ja/concepts/features/connect-to-clickhouse/native-tools/mcp">
+    標準化されたインターフェイスを通じて、AIアシスタントを ClickHouse に接続できます。
+  </Card>
+</CardGroup>
+
+## ドライバーと言語別クライアント {#drivers-and-language-clients}
+
+<CardGroup cols={2}>
+  <Card title="ADBC ドライバー" icon="database" href="/ja/concepts/features/connect-to-clickhouse/drivers/adbc">
+    ADBC 互換アプリケーションを ClickHouse に接続します。
+  </Card>
+
+  <Card title="ODBC ドライバ" icon="database" href="/ja/concepts/features/connect-to-clickhouse/drivers/odbc">
+    ODBC 互換アプリケーションを ClickHouse に接続します。
+  </Card>
+
+  <Card title="言語別クライアント" icon="code" href="/ja/integrations/language-clients">
+    お使いのプログラミング言語に対応した ClickHouse 公式クライアントを確認できます。
+  </Card>
+</CardGroup>
+
+## プロトコル {#protocols}
+
+<CardGroup cols={2}>
+  <Card title="HTTP インターフェース" icon="globe" href="/ja/concepts/features/connect-to-clickhouse/protocols/http">
+    あらゆるプラットフォームや言語から HTTP 経由で ClickHouse を利用できます。
+  </Card>
+
+  <Card title="ネイティブTCP インターフェイス" icon="network-wired" href="/ja/concepts/features/connect-to-clickhouse/protocols/native-tcp">
+    ClickHouse 対応クライアントやサーバー間通信でネイティブプロトコルを使用します。
+  </Card>
+
+  <Card title="gRPC インターフェース" icon="arrows-left-right" href="/ja/concepts/features/connect-to-clickhouse/protocols/grpc">
+    ClickHouse の gRPC インターフェースを使用します。
+  </Card>
+
+  <Card title="Arrow Flight インターフェイス" icon="arrow-right-arrow-left" href="/ja/concepts/features/connect-to-clickhouse/protocols/arrow-flight">
+    Apache Arrow を使用して Flight SQL クライアントから接続します。
+  </Card>
+
+  <Card title="MySQL インターフェイス" icon="database" href="/ja/concepts/features/connect-to-clickhouse/protocols/compatibility/mysql">
+    MySQL 互換クライアントから接続します。
+  </Card>
+
+  <Card title="PostgreSQL インターフェース" icon="database" href="/ja/concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql">
+    PostgreSQL 互換クライアントから接続します。
+  </Card>
+
+  <Card title="SSH インターフェイス" icon="terminal" href="/ja/concepts/features/connect-to-clickhouse/protocols/ssh">
+    SSH クライアントで ClickHouseサーバーに接続します。
+  </Card>
+</CardGroup>
+
+## Prometheus {#prometheus}
+
+<CardGroup cols={2}>
+  <Card title="Prometheus API と PromQL" icon="chart-line" href="/ja/concepts/features/connect-to-clickhouse/prometheus">
+    Prometheus のメトリクスを ClickHouse に保存し、PromQL でクエリします。
+  </Card>
+
+  <Card title="Prometheus メトリクスエンドポイント" icon="chart-line" href="/ja/concepts/features/connect-to-clickhouse/prometheus/metrics">
+    ClickHouse サーバーメトリクスを公開し、Prometheus サーバーからスクレイプできるようにします。
+  </Card>
+</CardGroup>
+
+## 組み込み Web インターフェイス {#built-in-web-interfaces}
+
+<CardGroup cols={2}>
+  <Card title="Web SQL UI (Play)" icon="browser" href="/ja/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql">
+    ClickHouse が `/play` で提供する、ブラウザ上で動作する組み込みの SQL インターフェイスです。
+  </Card>
+
+  <Card title="SQL コンソール" icon="browser" href="/ja/concepts/features/connect-to-clickhouse/built-in-web-interfaces/sql-console">
+    クエリの実行やデータの探索に使える埋め込み Web インターフェイスです。
+  </Card>
+
+  <Card title="ドキュメント検索" icon="book-open" href="/ja/concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search">
+    稼働中の ClickHouseサーバーに組み込まれたリファレンスドキュメントを検索できます。
+  </Card>
+</CardGroup>

@@ -223,23 +223,11 @@ func main() {
 
 بعد ذلك، ستحتاج إلى إعداد متغيرات البيئة التالية في shell لديك لإرسال بيانات القياس عن بُعد إلى ClickStack عبر مجمّع OpenTelemetry:
 
-<Tabs>
-  <Tab title="Managed ClickStack">
-    ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
-    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
-    ```
-  </Tab>
-
-  <Tab title="ClickStack Open Source">
-    ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
-    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
-    OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
-    ```
-  </Tab>
-</Tabs>
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
 
 يحتوي متغير البيئة `OTEL_EXPORTER_OTLP_HEADERS` على مفتاح API المتاح عبر واجهة مستخدم ClickStack ضمن `Team Settings → API Keys`.

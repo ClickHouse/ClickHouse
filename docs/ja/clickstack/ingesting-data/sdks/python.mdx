@@ -35,22 +35,11 @@ opentelemetry-bootstrap -a install
 
 次に、OpenTelemetry Collector 経由でテレメトリーを ClickStack に送信するため、シェルで以下の環境変数を設定する必要があります。
 
-<Tabs>
-  <Tab title="Managed ClickStack">
-    ```shell
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
-    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> 
-    ```
-  </Tab>
-
-  <Tab title="ClickStack Open Source">
-    ```shell
-    export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
-    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> 
-    ```
-  </Tab>
-</Tabs>
+```shell
+export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
+```
 
 *`OTEL_SERVICE_NAME` 環境変数は、ClickStack UI 内でサービスを識別するために使用されます。値には任意の名前を指定できます。*
 

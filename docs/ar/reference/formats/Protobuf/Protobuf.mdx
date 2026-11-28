@@ -347,7 +347,7 @@ TRUNCATE TABLE test.protobuf_messages;
 ```
 
 أدرِج البيانات في ClickHouse Cloud، مع تحديد المخطط على هيئة استعلام يُنفَّذ.
-أرسِل عملية الإدراج هذه عبر [واجهة HTTP](/ar/concepts/features/interfaces/http#insert-protobuf)، حيث يحلّل الخادم البيانات وينفّذ استعلام المخطط؛ أما `clickhouse client` فيحلّل بيانات الإدخال على جهة العميل، وهناك يفشل استعلام المخطط.
+أرسِل عملية الإدراج هذه عبر [واجهة HTTP](/ar/concepts/features/connect-to-clickhouse/protocols/http#insert-protobuf)، حيث يحلّل الخادم البيانات وينفّذ استعلام المخطط؛ أما `clickhouse client` فيحلّل بيانات الإدخال على جهة العميل، وهناك يفشل استعلام المخطط.
 يُرمِّز الخيار `--url-query` في curl (الإصدار 7.87 وما بعده) كل معلمة بترميز URL، لذا يمكن كتابة الاستعلام واستعلام المخطط كما هما دون تعديل:
 
 ```bash
@@ -359,7 +359,7 @@ curl 'https://<hostname>:8443/' --user 'default:<password>' \
     --data-binary @protobuf_messages.bin
 ```
 
-استعلم عن البيانات المُدرَجة في الجدول:
+اختر البيانات المُدرَجة في الجدول:
 
 ```bash
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"

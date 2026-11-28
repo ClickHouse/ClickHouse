@@ -171,9 +171,9 @@ Deux paramètres déterminent à quel moment le déversement sur le disque comme
 
 * `max_bytes_before_external_set` définit un seuil, en octets, appliqué à la mémoire totale de la requête. Sa valeur par défaut est `0`
   (désactivé).
-* `max_bytes_ratio_before_external_set` définit une fraction de la mémoire disponible dans les limites du serveur ou de l’utilisateur,
-  mesurée au début de l’exécution. Sa valeur par défaut est `0.5`, soit la moitié de la mémoire disponible, et
-  ce paramètre est sans effet lorsqu’aucune de ces limites ne s’applique.
+* `max_bytes_ratio_before_external_set` définit une fraction de la mémoire disponible dans la limite `max_memory_usage` de la requête
+  et dans les limites du serveur ou de l’utilisateur, mesurée au début de l’exécution. Sa valeur par défaut est
+  `0.5`, soit la moitié de la mémoire disponible, et ce paramètre est sans effet lorsqu’aucune limite ne s’applique.
 
 Lorsque les deux seuils s’appliquent, c’est le plus petit qui est retenu. Un set n’est écrit sur le disque que lorsqu’il occupe au moins
 16 Mio, ou la valeur du seuil si celle-ci est inférieure. Par exemple, cette requête écrit le set sur le disque dès que celui-ci
@@ -192,9 +192,7 @@ la mémoire que le set conserve lorsqu’il est sur le disque, comme son filtre 
 écrit sur le disque et la majeure partie de sa mémoire est libérée pour le reste de la requête, par exemple pour une agrégation qui
 continue de croître après la construction du set.
 
-`max_memory_usage` n’a aucune incidence sur le ratio. Pour configurer le déversement sur le disque par rapport à une limite de mémoire de requête,
-définissez un seuil absolu inférieur à cette limite. Ces seuils ne plafonnent pas l’utilisation de la mémoire. Prévoyez une marge pour
-le reste du traitement des requêtes et pour le déversement lui-même.
+Ces seuils ne plafonnent pas l’utilisation de la mémoire. Prévoyez une marge pour le reste du traitement des requêtes et pour le déversement lui-même.
 
 Un set sur le disque conserve en mémoire un filtre de Bloom de ses clés, afin que les recherches de clés absentes du set
 puissent se dispenser de lire le disque. `max_bytes_for_external_set_bloom_filter` limite la mémoire du filtre,
@@ -218,7 +216,7 @@ de dates ou de valeurs `FixedString` courtes, seules ou dans un tuple, il s’ag
 `String`, forment un sous-ensemble arbitraire.
 
 <div id="distributed-subqueries">
-  ## Sous-requêtes distribuées
+  ## Sous-requêtes distribuées {#distributed-subqueries}
 </div>
 
 Il existe deux options pour les opérateurs `IN` avec des sous-requêtes (similaires aux opérateurs `JOIN`) : `IN` / `JOIN` classique et `GLOBAL IN` / `GLOBAL JOIN`. Elles se distinguent par leur mode d&#39;exécution dans le cadre du traitement des requêtes distribuées.

@@ -84,6 +84,15 @@ rustup default nightly-2026-11-02
 rustup component add rust-src
 ```
 
+在 Linux x86&#95;64 和 aarch64 上，ClickHouse 默认静态链接 musl，因此 Rust 也必须以 musl 为编译目标。
+`rustup` 默认只安装 `*-unknown-linux-gnu` 目标，因此需要额外添加 musl 目标，否则 `cmake` 会失败并报错 `Target x86_64-unknown-linux-musl is not installed for toolchain nightly-2026-11-02`：
+
+```bash
+rustup target add --toolchain nightly-2026-11-02 "$(uname -m)-unknown-linux-musl"
+```
+
+使用 `-DUSE_MUSL=OFF` (glibc) 的构建版本会使用 `*-unknown-linux-gnu` 目标，`rustup` 默认会安装该目标。
+
 <Tip>
   ccache 不会缓存 Rust，因此在新的构建目录中会重新编译所有 Rust crate。
   指定 `-DRUST_BUILD_CACHE_DIR=<path>` 后，Cargo 会将已编译的 crate 保存在该目录中，基于同一检出和配置的新构建目录即可复用这些 crate (delta-kernel-rs 除外) 。每个检出和配置大约占用 7 GB 空间，该目录没有大小限制，可随时删除。

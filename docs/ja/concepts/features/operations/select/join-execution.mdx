@@ -1,10 +1,14 @@
 ---
 title: 'ClickHouse における JOIN の実行方法'
 sidebarTitle: '実行'
-description: 'JOIN のビルドフェーズとプローブフェーズ、およびクエリプランナーによる最適化。'
-keywords: ['JOIN の実行', 'ビルド側', 'プローブ側', 'JOIN プランナー', 'JOINの順序変更', 'フィルタのプッシュダウン']
+description: 'JOIN のビルドフェーズとプローブフェーズ、コストベースの JOIN 順序最適化、およびクエリプランナーによる最適化。'
+keywords: ['JOIN の実行', 'ビルド側', 'プローブ側', 'JOIN プランナー', 'JOINの順序変更', 'オプティマイザ', '競合検出器', 'ランタイムフィルター', 'フィルタのプッシュダウン']
 doc_type: 'guide'
 ---
+
+このページでは、ClickHouse が JOIN をどのように計画・実行するかを説明します。実行フェーズ、コストベースの JOIN 順序最適化、クエリプランナーによる最適化、ランタイムフィルタリングを取り上げます。
+
+## ビルドフェーズとプローブフェーズ {#build-and-probe-phases}
 
 ほとんどの JOIN アルゴリズムは、2 つのフェーズで実行されます。
 
@@ -13,29 +17,351 @@ doc_type: 'guide'
 
 プローブフェーズは、ビルドフェーズが完了するまで開始されません。そのため、JOIN に必要なメモリ量は主にビルド側のサイズによって決まります。
 
-デフォルトでは、JOIN の右側がビルド側、左側がプローブ側になります。ただし、このモデルに当てはまらないアルゴリズムもあります。[`direct` アルゴリズム](/ja/concepts/features/operations/select/join-algorithms#direct) では、右側がすでにキー・バリュー構造として存在するため、ビルドフェーズがありません。[`full_sorting_merge` アルゴリズム](/ja/concepts/features/operations/select/join-algorithms#full-sorting-merge) は、両方の入力をソートしてからマージします。[`ie_join` アルゴリズム](/ja/concepts/features/operations/select/join-algorithms#ie-join) は、両方の入力を蓄積してから結合します。
+デフォルトでは、JOIN の右側がビルド側、左側がプローブ側になります。ただし、このモデルに当てはまらないアルゴリズムもあります。[`direct` アルゴリズム](/ja/concepts/features/operations/select/join-algorithms#direct) では、右側がすでにキー・バリュー構造として存在するため、ビルドフェーズがありません。[`full_sorting_merge` アルゴリズム](/ja/concepts/features/operations/select/join-algorithms#full-sorting-merge) は、両方の入力をソートしてからマージします。[`inequality` アルゴリズム](/ja/concepts/features/operations/select/join-algorithms#inequality) は、両方の入力を蓄積してから結合します。
 
 ## クエリプランナーの動作 {#query-planner-behavior}
 
-クエリプランナーは、結合アルゴリズムの実行前に JOIN の入力を変更することがあります。適用される最適化は次のとおりです。
+クエリプランナーは、アルゴリズムを実行する前に、2 つのパスでクエリプランを変換します。最初のパスでは、適用できるルールがなくなるまでローカルなボトムアップのルールを繰り返し適用し、プラン全体から未使用のカラムを削除したうえで、ローカルなルールを再度実行します。2 番目のパスでは、プラン全体を対象とする解析と変換を決められた順序で実行します。
 
-### build-side の自動選択 {#automatic-build-side-selection}
+設定で有効化されていて、かつクエリに適用可能な場合、プランナーは以下の JOIN 関連の最適化を順に適用できます。
+
+**最初のパス:**
+
+1. `ON` 条件が定数 false に畳み込まれる JOIN の short-circuit。
+2. フィルタ式の分割と論理 `JOIN` の `ON` 条件の抽出、およびその後の式とフィルタのマージ。
+3. JOIN の下へのフィルタのプッシュダウン(`OR` で連結された `JOIN` 条件の部分的なプッシュダウンを含む)。
+4. JOIN の直上にあるフィルタが一致しない行を常に除外する場合の、OUTER JOIN から `INNER` JOIN への変換。
+5. 条件を満たす `INNER` JOIN から `IN` サブクエリへの変換。
+6. JOIN の上にある等価フィルタの `JOIN` 条件へのマージ(`CROSS` JOIN またはカンマ結合から `INNER` JOIN への変換を含む)。
+7. JOIN 後のフィルタに基づく、`ANY` JOIN から `SEMI` JOIN または `ANTI` JOIN への変換。
+8. ソートキーが保持される側のカラムのみを参照する場合の、`ORDER BY ... LIMIT` による top-K 操作の `LEFT` JOIN または `RIGHT` JOIN の下へのプッシュダウン。
+
+**2 番目のパス:**
+
+1. プランの上位にあるフィルタ、または外側の JOIN の条件に基づく、OUTER JOIN から `INNER` JOIN への推移的な変換。
+2. 等価結合のキーを介した、もう一方の入力へのフィルタ述語の伝播。
+3. 主キーおよび LIMIT の解析、クエリ条件キャッシュのセットアップ、テキスト索引解析。
+4. JOIN 順序の最適化と build-side の自動選択。
+5. ランタイム JOIN フィルタの挿入、新たに未使用となったカラムの削除、ランタイムフィルターの読み取りステップ側へのプッシュダウン、および読み取り時の索引解析に向けたランタイムフィルターの登録。
+6. `PREWHERE` 最適化(プッシュダウンされたフィルタやランタイムフィルターを `PREWHERE` に移動できます)。
+7. JOIN を含む `LIMIT` クエリに対する遅延マテリアライゼーション、JOIN を介した順序に従った読み取り、分散 JOIN 計画。
+8. 論理結合ステップから物理 JOIN アルゴリズムへの変換、およびその後の物理結合ステップにおける遅延カラムインデックス付け。
+9. 条件を満たす `MergeTree` の JOIN に対する主キー範囲によるシャーディング、ランタイムフィルターによる範囲プルーニングに向けた seal-gated なプローブ読み取りのマーキング、および `parallel_full_sorting_merge` JOIN のシャーディング。
+
+## JOIN 順序の最適化 {#multi-table-join-reordering}
+
+同一のサブクエリ内で複数のテーブルを結合するクエリでは、コストベースの結合順序オプティマイザーがテーブルの結合順序を決定します。
+
+### JOIN 順序が重要な理由 {#why-join-order-matters}
+
+同じテーブルに対して JOIN 順序を変えても最終的な結果は同じですが、中間結果のサイズや build-side のハッシュテーブルのサイズは大きく異なります。選択性の高いテーブルを適用する前に大きなテーブル同士を結合すると、大きな中間結果が生成され、後続の結合ステップでそれをハッシュ化してプローブしなければなりません。選択性の高いテーブルを先に結合すれば、中間の行数を早い段階で削減できます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![lineitem、orders、customer、およびフィルタ済みの nation を対象とする 4 テーブルの TPC-H SF10 クエリにおける 2 つの JOIN 順序の比較: 大きなテーブルを先に結合すると 60.0M 行の中間結果が生成されるのに対し、フィルタ済みの nation テーブルを先に結合すると、同じ 2,407,146 行の最終結果に対して中間行数は 60K 行および 602K 行となる](/images/guides/join-execution/tpch-join-orders.png)
+  </Frame>
+</div>
+
+取り得る JOIN ツリーの数は、テーブル数の増加とともに急激に増えます。`n` 個のテーブルの場合、左深 (left-deep) の JOIN 順序は `n!` 通り、ブッシー (bushy) な JOIN ツリーは `(2n - 2)! / (n - 1)!` 通り存在します。テーブルが 10 個なら、左深の順序は 3,628,800 通り、ブッシーなツリーは 176 億通り以上になります。テーブルが 12 個になると、ブッシーな探索空間は 28 兆通り近くに達します。
+
+コストベースの JOIN オプティマイザは、この問題を次の 3 つの構成要素に分けて扱います。
+
+* **探索空間:** クエリのセマンティクスを保持する、論理的に等価な JOIN ツリーの集合。
+* **コストモデル:** 中間の行数を推定し、各候補の実行計画に数値コストを割り当てる関数。
+* **探索戦略:** 探索空間内の候補となる実行計画を列挙し、低コストのツリーを選択するアルゴリズム。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![SQLクエリから、探索空間・コストモデル・探索戦略で構成されるクエリオプティマイザーを経て、HashJoin の probe 入力と build 入力を持つ物理実行計画に至るクエリ最適化の図](/images/guides/join-execution/query-to-physical-plan.png)
+  </Frame>
+</div>
+
+### コストモデルとカーディナリティ推定 {#cost-model-and-cardinality-estimates}
+
+コストモデルは、各候補の JOIN ノードについて、2 つの入力のコストの合計に JOIN ステップ自体の推定出力カーディナリティを加えた値を累積コストとして計算します。
+
+出力カーディナリティを推定するため、オプティマイザはまず `JOIN` 条件の選択度を推定します。
+
+* カラム統計から等値比較述語の両方のキーについて異なる値の数が得られる場合、選択度は `1 / max(NDV_left, NDV_right)` として推定されます。複数の等値比較述語で 2 つの入力が結び付けられている場合、オプティマイザはそれらのうち最小の選択度を使用します。
+* 等価結合 (equi-JOIN) について信頼できる異なる値の統計が使用できず、かつ両方の入力の行数が判明している場合、オプティマイザは外部キーとプライマリキーの一致を想定し、結合後の行数を `max(left_rows, right_rows)` と推定します。
+* 2 つの入力を結び付ける等値比較述語がない場合、オプティマイザはデカルト積 `left_rows * right_rows` を推定値とします。
+
+続いて、出力カーディナリティは JOIN の種類に応じて調整されます。
+
+* `INNER` JOIN は結合後の行数の推定値を使用し、その下限は 1 です。
+* `LEFT`、`RIGHT`、`FULL` JOIN は、それぞれ左側の入力サイズ、右側の入力サイズ、両方の入力サイズの合計を推定値の下限とします。
+* `SEMI` および `ANTI` JOIN では、保持される側のサイズを下限としません。代わりに、等価結合の選択度と保持されない側の入力サイズから一致率を推定し、保持される側の入力に対して、`SEMI` JOIN ではその一致率を、`ANTI` JOIN ではその補数を掛けてスケーリングします。
+
+バージョン 26.10 以降では、結合対象のテーブルを JOIN キーの順序で読み取ることができ、かつ [`query_plan_join_order_use_interesting_orders`](/ja/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders) が有効な場合、`dpsub` は `hash` のビルドおよびプローブの処理と、`full_sorting_merge` のソートおよびマージの処理をそれぞれモデル化し、コストに基づいてどちらかを選択します。また、ソート済みの出力を後続の JOIN で再利用できる実行計画を優先します。
+
+### 探索アルゴリズム {#search-algorithms}
+
+[`query_plan_optimize_join_order_algorithm`](/ja/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm) 設定には、プランナーが順番に試行する探索アルゴリズムをカンマ区切りのリストで指定します。バージョン 26.10 以降、デフォルト値は `dpsub,greedy` です。
+
+* **`dpsub`:** テーブルの部分集合を対象とするボトムアップの動的計画法アルゴリズムです。個々のテーブルを起点に、テーブルの部分集合をサイズの小さい順に列挙し、各部分集合を有効な JOIN の辺で接続された、互いに素で空でないペアに分割します。そして各候補をコストモデルで評価し、部分集合ごとに最もコストの低い実行計画を保持します。これを、すべてのテーブルを含む実行計画が構築されるまで繰り返します。`dpsub` は ブッシー ツリーと 左深 ツリーの両方を考慮し、競合検出器と組み合わせることで INNER 以外の JOIN にも対応します。JOIN グラフあたり 12 テーブルというハードリミットがあります。
+* **`greedy`:** 個々のテーブルを起点に、以前の決定を見直すことなく、最もコストの低い有効なペアを繰り返し結合していくヒューリスティックアルゴリズムです。多項式時間で動作し、JOIN グラフの最大サイズである 64 テーブルまでスケールします。
+
+[`query_plan_optimize_join_order_limit`](/ja/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) 設定は、単一の JOIN グループにフラット化されるテーブル数の上限を指定します (最大 64) 。この上限を超える数のテーブルを結合するクエリは複数のグループに分割され、グループごとに個別に最適化されます。`0` に設定すると、JOIN 順序の最適化と build-side の選択が完全に無効になります。`1` に設定すると、複数テーブルの並べ替えは無効になりますが、2 テーブル間での build-side の選択は引き続き行われます。デフォルトの上限値 `10` では各グループに含まれるテーブルは最大 10 個となるため、`dpsub` は対象となるすべてのグループ (10 テーブル以下) を最適化します。`query_plan_optimize_join_order_limit` を `12` に引き上げると、`dpsub` は最大 12 テーブルのグループを最適化できるようになります。12 を超える値に引き上げた場合、12 テーブルを超えるグループは `greedy` にフォールバックします。
+
+**フォールバックの動作:**
+
+* フラット化された JOIN グラフが `dpsub` の上限である 12 テーブルを超える場合、またはアルゴリズムが未対応の JOIN の種類を検出した場合、プランナーは `query_plan_optimize_join_order_algorithm` に指定された次のアルゴリズム (デフォルトでは `greedy`) にフォールバックします。
+* `query_plan_optimize_join_order_limit` が 12 より大きい値に引き上げられており、競合検出器のために INNER 以外の JOIN をフラット化すると 12 テーブルを超える場合、プランナーは競合検出器向けのフラット化を無効にします。これにより、残りの INNER JOIN のサブグラフは引き続き `greedy` で最適化されます。
+* `query_plan_optimize_join_order_algorithm` に指定されたどのアルゴリズムも成功しなかった場合、クエリはエラーとなって失敗します。
+
+### 非 INNER JOIN の並べ替えと競合検出器 {#reordering-non-inner-joins}
+
+`INNER` JOIN は可換かつ結合的であるため、連結された `INNER` JOIN をどのように括弧付けしても同じ結果が得られます。一方、OUTER JOIN、`SEMI` JOIN、`ANTI` JOIN は結合法則および交換法則の恒等式をすべて満たすわけではないため、妥当性チェックを行わずに並べ替えると誤った結果を返す可能性があります。
+
+非 INNER JOIN を安全に並べ替えるために、ClickHouse は [`query_plan_optimize_join_order_conflict_detector`](/ja/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_conflict_detector) で選択された競合検出器を使用します。指定可能な値は次のとおりです。`''` は検出器を無効化します。`a` は CD-A を表し、正しいものの一部の有効な実行計画を除外します。`c` は CD-C を表し、正しくかつ完全で、バージョン 26.10 以降のデフォルトです。競合検出器は、SIGMOD 2013 の論文 [On the Correct and Complete Enumeration of the Core Search Space](https://dl.acm.org/doi/10.1145/2463676.2465314) のアルゴリズムを実装しています。
+
+列挙を開始する前に、検出器は元の JOIN ツリー内の隣接する演算子を 4 つの代数的性質に照らして分析します。演算子のペアについて成り立たない恒等式ごとに、検出器は競合ルールを生成します。このルールは、別の JOIN 演算子を適用する前にどのテーブルが結合済みでなければならないかを規定するものです。`dpsub` による列挙中、競合ルールに違反する候補の分割はすべて破棄されます。
+
+**サポートされる JOINの種類と除外対象:**
+
+* `dpsub` と競合検出器が有効な場合、`ALL` strictness の `INNER`、`CROSS`、カンマ、`LEFT`、`RIGHT`、`FULL` JOIN に加え、`LEFT` および `RIGHT` の `SEMI` JOIN と `ANTI` JOIN が複数テーブルの並べ替えの対象となります。これにはOUTER JOIN、`SEMI` JOIN、`ANTI` JOIN の両側も含まれます。
+* 競合検出器がない場合、または `greedy` がグラフを計画する場合、3 つ以上のテーブルにわたって並べ替えられるのは、`INNER`、`CROSS`、カンマ、および非保持側が単一テーブルである `ALL` strictness の `LEFT` または `RIGHT` JOIN のみです。このモードでは、`FULL`、`SEMI`、`ANTI` JOIN は最適化の障壁となり、グラフは 2 テーブルに制限されます。
+* `ANY` JOIN は 2 テーブルでの build-side の選択に限定され、複数テーブルの並べ替えの対象にはなりません。
+* `ASOF` JOIN、`PASTE` JOIN、`GLOBAL` および `LOCAL` JOIN、残余フィルタを持つ JOIN、そして `join_use_nulls = 1` のもとで非 `Nullable` カラムを `Nullable` に変更するOUTER JOINは、複数テーブルの並べ替えの対象になりません。
+
+**NULL 拒否条件の役割:**
+
+OUTER JOINに関する一部の恒等式は、述語が NULL 供給側で `NULL` 値を拒否する場合にのみ成り立ちます。例えば、隣接する 2 つの `LEFT` JOIN を再結合できるのは、中間テーブルのカラムが `NULL` のときに 2 番目の `ON` 述語が true と評価され得ない場合に限られます。`join_use_nulls = 0` の場合、一致しない行には `NULL` ではなく型のデフォルト値が設定されるため、NULL 拒否ルールが適用されるのは、該当するカラムが `Nullable` 型である場合のみです。
+
+**無効な並べ替えと有効な並べ替えの例:**
+
+`join_use_nulls = 1` の設定で、`customers`、`orders`、`payments` に対するクエリを考えます。
+
+```sql
+SELECT customers.id, orders.id, payments.order_id
+FROM customers
+LEFT JOIN orders ON customers.id = orders.customer_id
+INNER JOIN payments ON orders.id = payments.order_id
+SETTINGS join_use_nulls = 1;
+```
+
+以下の簡略化した論理実行計画では、Plan A に記述どおりの順序を、Plan B に並べ替えの候補を示します。
+
+Plan A (元の順序) ：
+
+```text
+Inner join [orders.id = payments.order_id]
+├── Left outer join [customers.id = orders.customer_id]
+│   ├── Scan customers
+│   └── Scan orders
+└── Scan payments
+```
+
+実行計画 B (実行計画 A の無効な並べ替え) :
+
+```text
+Left outer join [customers.id = orders.customer_id]
+├── Scan customers
+└── Inner join [orders.id = payments.order_id]
+    ├── Scan orders
+    └── Scan payments
+```
+
+注文のない顧客の場合、Plan A は `orders` のカラムが `NULL` 値となる行を生成しますが、`NULL` はどの支払いとも一致しないため、その行は `INNER` JOIN の段階で除外されます。一方、Plan B はまず `orders` と `payments` を結合し、その後 `LEFT` JOIN でその顧客を保持します。`LEFT` JOIN の後に `INNER` JOIN が続く場合は結合性が成り立たないため、競合検出器は Plan B を却下します。
+
+JOINの種類を逆の順序で記述した場合は、この並べ替えが有効になります。
+
+```sql
+SELECT customers.id, orders.id, payments.order_id
+FROM customers
+INNER JOIN orders ON customers.id = orders.customer_id
+LEFT JOIN payments ON orders.id = payments.order_id
+SETTINGS join_use_nulls = 1;
+```
+
+実行計画 C (元の順序) :
+
+```text
+Left outer join [orders.id = payments.order_id]
+├── Inner join [customers.id = orders.customer_id]
+│   ├── Scan customers
+│   └── Scan orders
+└── Scan payments
+```
+
+実行計画 D (実行計画 C を有効に並べ替えたもの) ：
+
+```text
+Inner join [customers.id = orders.customer_id]
+├── Scan customers
+└── Left outer join [orders.id = payments.order_id]
+    ├── Scan orders
+    └── Scan payments
+```
+
+`INNER` JOIN の後に `LEFT` JOIN が続く場合は結合性が成り立つため、Plan C と Plan D は同じ行を返し、競合検出器は Plan D を許可します。
+
+**SEMI JOIN の結合順序の変更の例:**
+
+`big` と `mid` の間で一致するキーが多数あり、`tiny` にはごく少数のキーの集合しか含まれていないクエリを考えます。
+
+```sql
+SELECT sum(big.v + mid.v)
+FROM big
+INNER JOIN mid ON big.k = mid.k
+LEFT SEMI JOIN tiny ON big.k = tiny.k;
+```
+
+競合検出器がない場合、`LEFT SEMI` JOIN は `big INNER JOIN mid` の上に固定されたままになるため、ClickHouse は `tiny` によるフィルタリングより前に、`big` と `mid` の `INNER` JOIN 全体を評価します。競合検出器を有効にすると、`dpsub` は `LEFT SEMI` JOIN を `INNER` JOIN の下に移動し、先に `big` をフィルタリングします。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![競合検出器の有無による SEMI JOIN の実行計画の比較: 検出器なしでは、big と mid が先に結合され、tiny との SEMI JOIN の前に 503,768,186 行の中間結果が生成されます。検出器ありでは、big が先に tiny とセミ結合され、中間結果は 1,015,092 行となり、約 496 分の 1 に縮小されます](/images/guides/join-execution/semi-join-reordering.png)
+  </Frame>
+</div>
+
+`big` と `mid` が多重度の高いキーを共有し、`tiny` がキーのごく一部のみを選択するベンチマーク用データセットでは、`LEFT SEMI` JOIN を `INNER` JOIN の下に移動することで、最大の中間結果が約 496 分の 1 に削減されます。
+
+| 設定      | 実行計画                 | 最大の中間結果       |
+| ------- | -------------------- | ------------- |
+| 競合検出器なし | `(big ⋈ mid) ⋉ tiny` | 503,768,186 行 |
+| 競合検出器あり | `mid ⋈ (big ⋉ tiny)` | 1,015,092 行   |
+
+以下の `EXPLAIN actions = 1` の実行計画は、ClickHouse 26.10.11 上で、`big` と `mid` にそれぞれ 3,000,000 行 (異なるキー数は 100,000) 、`tiny` に 100 行を格納したサンプルの `MergeTree` テーブルを対象に取得したものです。JOIN 順序の影響だけを切り分けるため、`enable_join_runtime_filters = 0` を指定しています。
+
+競合検出器なし (`query_plan_optimize_join_order_conflict_detector = ''` を設定) の場合:
+
+```text
+Output: sum(v + v)
+
+Aggregating
+│  Keys:
+│  Aggregates: sum(v + v)
+│  Skip merging: 0
+└──Join (JOIN FillRightFirst)
+   │  big[3000000] ⋈ mid[3000000] ⋉ tiny[100]
+   │  Type: left | Strictness: semi | Algorithm: SpillingHashJoin(HashJoin)
+   │  Cost: estimated 93.41 thousand
+   │  Selectivity: estimated (NDV) 1.019e-05
+   │  Output rows: estimated 91.69 million
+   │  Left: rows estimated 91.69 million
+   │  Right: rows estimated 100.00
+   │  Join conditions: k = k
+   │  Input (left): k, v, v
+   │  Input (right): k
+   ├──Join (JOIN FillRightFirst)
+   │  │  big[3000000] ⋈ mid[3000000]
+   │  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(ConcurrentHashJoin)
+   │  │  Cost: estimated 91.69 million
+   │  │  Selectivity: estimated (NDV) 1.019e-05
+   │  │  Output rows: estimated 91.69 million
+   │  │  Left: rows estimated 3.00 million
+   │  │  Right: rows estimated 3.00 million
+   │  │  Join conditions: k = k
+   │  │  Input (left): k, v
+   │  │  Input (right): k, v
+   │  ├──ReadFromMergeTree (default.big)
+   │  │     Read type: Default
+   │  │     Parts: 3 | Granules: 367
+   │  │     Output: v, k
+   │  └──ReadFromMergeTree (default.mid)
+   │        Read type: Default
+   │        Parts: 3 | Granules: 367
+   │        Output: v, k
+   └──ReadFromMergeTree (default.tiny)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: k
+```
+
+デフォルトの競合検出器 `c` を使用する場合：
+
+```text
+Output: sum(v + v)
+
+Aggregating
+│  Keys:
+│  Aggregates: sum(v + v)
+│  Skip merging: 0
+└──Join (JOIN FillRightFirst)
+   │  mid[3000000] ⋈ (big[3000000] ⋉ tiny[100])
+   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+   │  Cost: estimated 96.45 thousand
+   │  Selectivity: estimated (NDV) 1.019e-05
+   │  Output rows: estimated 93.40 thousand
+   │  Left: rows estimated 3.00 million
+   │  Right: rows estimated 3.06 thousand
+   │  Join conditions: k = k
+   │  Input (left): k, v
+   │  Input (right): k, v
+   ├──ReadFromMergeTree (default.mid)
+   │     Read type: Default
+   │     Parts: 3 | Granules: 367
+   │     Output: v, k
+   └──Join (JOIN FillRightFirst)
+      │  big[3000000] ⋉ tiny[100]
+      │  Type: left | Strictness: semi | Algorithm: SpillingHashJoin(HashJoin)
+      │  Cost: estimated 3.06 thousand
+      │  Selectivity: estimated (NDV) 1.019e-05
+      │  Output rows: estimated 3.06 thousand
+      │  Left: rows estimated 3.00 million
+      │  Right: rows estimated 100.00
+      │  Join conditions: k = k
+      │  Input (left): k, v
+      │  Input (right): k
+      ├──ReadFromMergeTree (default.big)
+      │     Read type: Default
+      │     Parts: 3 | Granules: 367
+      │     Output: v, k
+      └──ReadFromMergeTree (default.tiny)
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: k
+```
+
+### CROSS JOIN の配置 {#cross-join-placement}
+
+`CROSS` JOIN には等価条件がないため、JOIN グラフに述語の辺は追加されません。並べ替えの際にグラフの連結性を保つため、オプティマイザは `CROSS` JOIN の両側の間に選択度 `1` の明示的な辺を追加します。これにより、`dpsub` は中間コストが最も低くなる位置に直積を配置できます。なお、ClickHouse はこの操作を引き続き `CROSS` JOIN として実行し、そのように報告します。
+
+### 推移的述語 {#transitive-predicates}
+
+[`enable_join_transitive_predicates`](/ja/reference/settings/session-settings/enable-join#enable_join_transitive_predicates) が有効な場合、オプティマイザは JOIN 順序を探索する前に、`ON` 条件の同値クラスから推移的な等値比較の述語を推論します。たとえば、`a.k = b.k` と `b.k = c.k` から `a.k = c.k` を導出します。これにより探索戦略では、`a` と `c` の組み合わせを直積として扱うのではなく、両者を直接結合する選択肢も検討できるようになります。この設定はバージョン 26.4 で導入され、バージョン 26.6 でデフォルトで有効になりました。
+
+## build-side の自動選択 {#automatic-build-side-selection}
 
 バージョン 24.12 以降、プランナーは JOIN の 2 つの入力を入れ替えて、小さい方の入力をビルド側にできます。プランナーは両方の入力の推定行数を比較し、左側の入力の方が小さいと推定された場合に、ハッシュベースの JOIN で入力を入れ替えます。この動作は [`query_plan_join_swap_table`](/ja/reference/settings/session-settings/query-plan#query_plan_join_swap_table) 設定で制御できます。
 
 入力が入れ替えられた場合、`LEFT` JOIN は `RIGHT` JOIN として実行されます (逆の場合も同様です) 。入れ替え後の順序は `EXPLAIN` の出力で確認できます。
 
-### 複数テーブルにおけるJOINの順序変更 {#multi-table-join-reordering}
+`dpsub` のコストモデルでは、どちらの入力が左右どちらにあっても JOIN のコストは同じになるため、build-side の向きは、結合順序の変更によってツリー構造が決まった後に割り当てられます。`INNER`、`CROSS`、および `ALL` 外部 JOIN に対するハッシュ結合では、`dpsub` は推定行数が小さい方の入力をビルドテーブルとして右側に配置し、それに合わせて `LEFT` JOIN と `RIGHT` JOIN を反転させます。推定行数が等しい場合や取得できない場合は、より多くのテーブルにまたがる入力を左側に配置します。
 
-同一のサブクエリ内で複数のテーブルを結合するクエリでは、プランナーがテーブルの結合順序を変更できます。[`query_plan_optimize_join_order_limit`](/ja/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) 設定では、プランナーによる順序変更の対象となるテーブル数の最大値を指定します。デフォルト値は `10` です。`1` を指定すると、順序変更は無効になります。
+`ANY`、`SEMI`、および `ANTI` JOIN の場合、`dpsub` 内の探索後に行われる向き決定ステップでは入力を反転せず、`SEMI` および `ANTI` JOIN については記述どおりの方向に戻します。その直後、プランナーが選択されたツリーから論理的な結合ステップを構築する際に、build-side 選択パスによって `ANY`、`SEMI`、および `ANTI` JOIN の入力が入れ替えられ、小さい方の入力が右側に配置される場合があります。このとき、`LEFT` は `RIGHT` に、`RIGHT` は `LEFT` に反転されます。ただし、`ANY` JOIN で [`join_any_take_last_row`](/ja/reference/settings/session-settings/join#join_any_take_last_row) が有効な場合、[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) に `partial_merge` など元の方向と反転後の方向の両方には対応していないマージアルゴリズムが含まれる場合、オプティマイザが `full_sorting_merge` を選択した場合、または `query_plan_join_swap_table` が `false` に設定されている場合は、この入れ替えはスキップされます。
 
-### カラム統計の利用 {#use-of-column-statistics}
+## カーディナリティ推定と統計 {#use-of-column-statistics}
 
-build-side の選択と JOIN の順序変更は、行数の推定値に依存します。カラム統計がない場合、プランナーはプライマリインデックスから推定値を算出しますが、この推定値は不正確になる場合があります。[カラム統計](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)がある場合、プランナーは統計を用いてフィルタの選択度や結合キーのカーディナリティを推定します。
+コストベースのオプティマイザは、行数と選択度の推定値を用いて、次の 4 つの判断を行います。
 
-[`use_statistics`](/ja/reference/settings/session-settings/use-statistics#use_statistics) 設定は、オプティマイザが統計を使用するかどうかを制御します。[`materialize_statistics_on_insert`](/ja/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) 設定は、新たに挿入されたデータについて統計を構築するかどうかを制御します。
+* **JOIN 順序:** [`query_plan_optimize_join_order_limit`](/ja/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) に基づき、デフォルトでは最大 10 テーブルまでのグループについて、コストが最も低い JOIN 順序を選択します。これより大きなクエリは複数のグループに分割され、グループごとに個別に最適化されます。上限を 12 より大きく設定し、かつグループが 12 テーブルを超える場合は、`greedy` にフォールバックします。
+* **JOIN のビルド側:** [`query_plan_join_swap_table`](/ja/reference/settings/session-settings/query-plan#query_plan_join_swap_table) に基づき、推定サイズが小さい方の入力をハッシュ結合のビルド側に配置します。
+* **JOIN アルゴリズム:** 結合対象のテーブルを結合キーの順序で読み取れる場合は、コストに基づいて `hash` と `full_sorting_merge` のいずれかを選択します。また、[`query_plan_join_order_use_interesting_orders`](/ja/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders) に基づき、ソート済みの出力を後続の JOIN で再利用できる実行計画を優先します。
+* **フィルタ順序:** `WHERE` の条件を [`PREWHERE`](/ja/optimize/prewhere) に移動し、圧縮済みカラムのサイズと推定選択度に基づいて並べ替えます。これにより、低コストで選択度の高い条件から先に実行されます。
 
-### フィルタのプッシュダウン {#filter-pushdown}
+カラム統計がない場合、プランナーはプライマリインデックスから行数を推定しますが、この推定値は不正確になる可能性があります。[カラム統計](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)がある場合、プランナーはフィルタの選択度と結合キーのカーディナリティの両方を推定できます。
+
+### 統計情報の自動収集とデフォルトの型 {#automatic-statistics-collection}
+
+`MergeTree` テーブルでは、パーツのマージ時に各データパーツのカラム統計が自動的に収集されます。[`materialize_statistics_on_insert`](/ja/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) が有効な場合は、サイズが [`materialize_statistics_on_insert_max_table_size`](/ja/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size) を超えないテーブルについて INSERT 時にも統計情報が収集されるため、`ANALYZE` を手動で実行する必要はありません。オプティマイザがこれらの統計情報を使用するかどうかは、[`use_statistics`](/ja/reference/settings/session-settings/use-statistics#use_statistics) 設定で制御します。
+
+[`auto_statistics_types`](/ja/reference/settings/merge-tree-settings/other#auto_statistics_types) テーブル設定では、対象となるカラムで自動的に収集する統計情報の型を指定します。バージョン 26.7 以降のデフォルトは `basic` と `uniq_v2` で、バージョン 26.4 で自動収集の対象となった `minmax` と `uniq` に代わるものです。
+
+* **`basic`:** 数値型および時間型カラムの最小値と最大値、デフォルト値および `NULL` 値の出現回数、文字列の合計バイト長、非 `Nullable` の整数型および `Decimal` 型カラムの正確な合計を記録します。
+* **`uniq_v2`:** カラム内の異なる値の数を推定します。
+
+宣言の構文、`ALTER TABLE` コマンド、およびサポートされているデータ型については、[カラム統計](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)を参照してください。
+
+### その他の推定ソース {#other-estimate-sources}
+
+`MergeTree` のカラム統計およびプライマリインデックスによる推定に加えて、結合順序オプティマイザーは次の 2 つのカーディナリティ推定ソースも利用できます。
+
+* **収集されたハッシュテーブル統計:** [`use_hash_table_stats_for_join_reordering`](/ja/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering) で制御され、バージョン 26.1 以降で利用できます。[`collect_hash_table_stats_during_joins`](/ja/reference/settings/session-settings/collect-hash#collect_hash_table_stats_during_joins) が有効な場合、ClickHouse は実行済みの JOIN サブプランについて、実測した build-side の行数をキャッシュします。以降、一致するサブプランを実行する際にキャッシュされた行数が静的な推定値より小さければ、プランナーは並べ替えにその実測値を使用します。
+* **データレイクのメタデータ統計:** [`use_datalake_metadata_statistics`](/ja/reference/settings/session-settings/use#use_datalake_metadata_statistics) で制御され、バージョン 26.11 以降、`use_statistics` が有効な場合に Apache Iceberg テーブルで利用できます。プランナーは、パーティションおよび min-max による枝刈り後に残った Iceberg のマニフェストファイルから、行数、値の上限と下限、NULL の割合を読み取ります。さらに [`use_iceberg_table_statistics_ndv`](/ja/reference/settings/session-settings/use-iceberg#use_iceberg_table_statistics_ndv) も有効な場合は、`metadata.json` 内の Iceberg テーブル統計から異なり値の数 (NDV) も読み取ります。
+
+## フィルタのプッシュダウン {#filter-pushdown}
 
 [`query_plan_filter_push_down`](/ja/reference/settings/session-settings/query-plan#query_plan_filter_push_down) が有効な場合、プランナーは `WHERE` の条件を JOIN の下位に移動し、ビルドフェーズおよびプローブフェーズの前に各入力がフィルタされるようにします。
 
@@ -44,6 +370,43 @@ build-side の選択と JOIN の順序変更は、行数の推定値に依存し
 * 一方の入力の結合キーに対する条件は、もう一方の入力にも適用できます。一致したすべての行において、両方の入力のキーカラムの値は等しいためです。
 * Dictionary のようにデータが既に格納されている右側や、`ASOF` JOIN の右側には、条件はプッシュダウンされません。
 
+JOIN 周辺のフィルタのプッシュダウンは、さらに 2 つの最適化によって拡張されています。
+
+* **等価 JOIN をまたぐ述語の伝播:** [`query_plan_propagate_predicate_across_join`](/ja/reference/settings/session-settings/query-plan#query_plan_propagate_predicate_across_join) で制御します。バージョン 26.9 以降で `MergeTree` の主キーに対して利用でき、バージョン 26.11 で Parquet の読み取りにも対象が拡張されました。プランナーは索引解析の前に、結合キーと定数を比較するフィルタの論理積の構成要素を等価 JOIN の一方の側から他方の側へコピーします。これにより、両方の入力で主キーまたは Parquet の行グループによる枝刈りが可能になります。
+* **選言のプッシュダウン:** [`use_join_disjunctions_push_down`](/ja/reference/settings/session-settings/use#use_join_disjunctions_push_down) で制御します。バージョン 25.10 で導入され、バージョン 26.1 でデフォルトで有効になりました。`OR` で結ばれた `JOIN` 条件において、すべての選言肢が同一の入力に対する決定論的な述語を少なくとも 1 つ含む場合、プランナーはその入力に固有の選言フィルタを抽出し、JOIN の前にその入力へプッシュダウンします。
+
+## ランタイム JOIN フィルタ {#runtime-join-filters}
+
+[`enable_join_runtime_filters`](/ja/reference/settings/session-settings/enable-join#enable_join_runtime_filters) が有効な場合、ClickHouse はビルドフェーズで収集したキーを使用して、行が JOIN に到達する前にプローブ側をフィルタリングします。この機能はバージョン 26.2 でデフォルトで有効になりました。
+
+`INNER`、`RIGHT`、`SEMI`、`ANTI` JOIN など、対象となるハッシュベースの JOIN では、ClickHouse はハッシュテーブルへのデータ投入と並行して、build-side の等値比較キーからランタイムフィルタを構築します。プランナーはこのフィルタをプローブ側のサブツリーにアタッチし、`PREWHERE` も含め、プローブ側のストレージ読み取りにできるだけ近い位置までプッシュダウンします。これにより、一致しないプローブ側の行はハッシュテーブルを探索する前に除外されます。`LEFT ANTI` JOIN の場合、フィルタは build-side に存在するキーを持つ行を除外し、`NULL` キーを持つ行は通過させます。
+
+ランタイムフィルタは、build-side の異なるキーの数と型に応じて内部表現を切り替えます。
+
+* **完全な集合:** フィルタは最初、異なるキー値の完全な集合として構築されます。空の集合は定数マスクとして評価され、非 `Nullable` の単一値の集合は直接的な等値比較に最適化されます。
+* **密なビットセットまたはブルームフィルター:** 異なるキーの数またはバイト数が完全な集合の上限を超えると、ポジティブフィルタは 8 ビットおよび 16 ビットの整数キーの場合は密なビットセットに、その他の連続したキー型の場合はブルームフィルターに切り替わります。`LEFT ANTI` JOIN のフィルタは、近似的なブルームフィルターには切り替わりません。偽陽性によって、本来保持すべき行が除外されてしまうためです。
+* **無効化:** ポジティブな完全な集合がブルームフィルターへのフォールバックなしにオーバーフローした場合、またはブルームフィルターがセット済みビットの最大比率を超えた (あるいは超えると予測された) 場合、ランタイムフィルタは恒久的に無効化されます。プローブ中にフィルタを通過する行の割合がパス比率のしきい値を超えた場合、ClickHouse は設定されたブロック数の間だけフィルタを一時的にスキップし、その後に再評価します。また、推定されるプローブ側の行数が最小プローブ行数のしきい値以下の場合、ClickHouse はランタイムフィルタ自体を作成しません。
+
+**グラニュールの枝刈り:**
+
+[`enable_join_runtime_filters_index_analysis`](/ja/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) と [`use_skip_indexes_on_data_read`](/ja/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) が有効な場合、ClickHouse は構築済みのランタイムフィルタを使用して、`MergeTree` のプローブ読み取り時にグラニュールを除外します。この設定はバージョン 26.10 でデフォルトで有効になりました。ランタイムフィルタがキーの完全な集合を保持している場合、ClickHouse は `IN` 述語を構築し、そうでない場合は最小値から最大値までのキー範囲の述語を構築します。枝刈りが適用されるのは、主キーの一部であるプローブキー、`minmax`・`set`・`bloom_filter` スキップ索引の対象となるプローブキー、またはグローバル行インデックス `_part_starting_offset + _part_offset` と等しいプローブキーです。Apache Iceberg テーブルでは、ランタイムフィルタによってデータファイル、Parquet の行グループ、Parquet のページも除外できます。
+
+ランタイムフィルタのチューニング設定の一覧については、[JOIN 設定のクエリプランナーのセクション](/ja/concepts/features/operations/select/join-settings#query-planner)を参照してください。
+
+## JOIN の実行計画を確認する {#inspecting-the-join-plan}
+
+クエリに対して `EXPLAIN actions = 1` を実行すると、JOIN 順序、種類、strictness、ビルド側、推定行数、および選択されたアルゴリズムを確認できます。バージョン 26.7 以降では、オプションなしの `EXPLAIN` でも、デフォルトでアクションの注記付きの Pretty フォーマットでレンダリングされます。`EXPLAIN actions = 1` と明示的に記述すれば、旧バージョンと現行バージョンのどちらでも動作します。
+
+`EXPLAIN actions = 1` の出力では、各 `Join (JOIN FillRightFirst)` ステップに次の情報が表示されます。
+
+* 各テーブルの実行順序と推定行数をまとめた記号的な式。
+* `Type`、`Strictness`、`Algorithm` の行。build-side の入れ替えや書き換えを経て実際に実行される JOIN の種類、strictness、および物理アルゴリズムを示します。
+* 推定コスト、選択度、出力行、および左右それぞれの入力行数。
+* 2 つの子分岐。1 つ目の子が左側のプローブ入力、2 つ目の子が右側のビルド入力です。
+* ランタイムフィルタが構築・適用される箇所を示す `BuildRuntimeFilter` ステップと `Runtime filters` アノテーション。
+
+オプティマイザの推定値を実際の実行結果と比較するには、[`EXPLAIN ANALYZE`](/ja/reference/statements/explain#explain-analyze) を実行します。`EXPLAIN ANALYZE` はクエリを実際に実行し、処理ステップごとのランタイムメトリクスを出力します。結合ステップについては、[推定メトリクスと実際のメトリクスを比較](/ja/reference/statements/explain#explain-analyze-join-estimation)し、推定コストと実際のコスト、選択度、q-error 付きの出力行数、および左右それぞれの入力行数を表示します。
+
 ## 関連ページ {#related-pages}
 
 * [ClickHouse での JOIN の使用](/ja/concepts/features/operations/select/joining-tables)
@@ -51,3 +414,4 @@ build-side の選択と JOIN の順序変更は、行数の推定値に依存し
 * [JOIN のメモリ管理とスピル](/ja/concepts/features/operations/select/join-memory-management)
 * [JOIN の設定](/ja/concepts/features/operations/select/join-settings)
 * [JOIN の最小化と最適化](/ja/concepts/best-practices/minimize-optimize-joins)
+* [INNER JOIN 以外の結合の並べ替えにも対応した、新しいコストベースの結合オプティマイザ](https://clickhouse.com/blog/the-new-cost-based-join-optimizer-with-reordering-support-for-non-inner-joins)

@@ -169,9 +169,9 @@ JOIN 条件のうち OR で結合された部分を、対応する入力側に�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "JOINランタイムフィルタを使用して、Iceberg データファイル、Parquet の行グループおよびページを除外する新しい設定。"}]}]} />
 
-JOINランタイムフィルタ ([enable&#95;join&#95;runtime&#95;filters](/ja/reference/settings/session-settings/enable-join#enable_join_runtime_filters) を参照) のキーを含み得ない Iceberg データファイルをスキップし、読み取るファイルについても、該当するキーを含み得ない Parquet の行グループとページをスキップします。結合のビルド側の処理が完了すると、フィルタのキー (集合が大きすぎる場合はその最小値/最大値の範囲) が、マニフェストファイル内のカラムの上限と下限、行グループの統計情報、およびページ索引と照合されます。それより前に要求されたデータファイルは、全体が読み取られます。
+オブジェクトストレージ (`s3`、`azureBlobStorage`、`hdfs` およびそれらのテーブルエンジン、`Iceberg`、`DeltaLake`、`Hudi`) からの読み取りにおいて、JOINランタイムフィルタ ([enable&#95;join&#95;runtime&#95;filters](/ja/reference/settings/session-settings/enable-join#enable_join_runtime_filters) を参照) のキーを含み得ない Parquet の行グループとページ、および Icebergテーブルのデータファイル全体をスキップします。結合のビルド側の処理が完了すると、フィルタのキー (集合が大きすぎる場合はその最小値/最大値の範囲) が、Iceberg のマニフェストファイル内のカラムの上限と下限、行グループの統計情報、およびページ索引と照合されます。それより前に要求されたファイルは、全体が読み取られます。行グループとページの除外に使われるのは、ファイル内にカラム自身の名前で格納されているキーのみです。そのため、Hive のパーティション列、仮想カラム、別の名前で格納された Delta Lake のカラム、デフォルト式を持つカラムによる除外は行われません。
 
-[enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/ja/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) と [use&#95;iceberg&#95;partition&#95;pruning](/ja/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning) を有効にする必要があります。行グループのスキップにはさらに [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/ja/reference/settings/formats/input-format#input_format_parquet_filter_push_down) が、ページのスキップにはこれに加えて [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/ja/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down) が必要です。
+[enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/ja/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) を有効にする必要があります。Iceberg データファイルのスキップには、さらに [use&#95;iceberg&#95;partition&#95;pruning](/ja/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning) も必要です。行グループのスキップにはさらに [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/ja/reference/settings/formats/input-format#input_format_parquet_filter_push_down) が、ページのスキップにはこれに加えて [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/ja/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down) が必要です。
 
 ## use_legacy_to_time {#use_legacy_to_time}
 
@@ -254,7 +254,9 @@ MergeTree テーブルのクエリ実行時に、グラニュールのプルー�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-Iceberg の positional deletes に対して roaring bitmap を使用します。
+Iceberg テーブルの position delete ファイルをどのように適用するかを選択します。有効にすると、データファイル内で削除された行の位置が roaring ビットマップ に読み込まれ、そのビットマップを使って行をフィルタします。無効にすると、削除ファイルはデータファイルと並行してストリーミング方式で読み取られるため、削除された位置をすべて事前にメモリへ読み込む必要はありません。
+
+削除ベクターは、この設定に関係なく常にビットマップとして適用されます。
 
 ## use_streaming_marks_compression {#use_streaming_marks_compression}
 

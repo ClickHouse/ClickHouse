@@ -204,9 +204,11 @@ ClickHouse Cloud 提供多个层级。
   </tbody>
 </table>
 
-<div id="basic">
-  ## 基础版
-</div>
+<Note>
+  [Gen 2 计算资源](/zh/products/cloud/features/compute-generations)目前处于私有预览阶段，仅面向部分 AWS 区域中符合条件的 Scale 和 Enterprise 套餐组织开放。其扩缩容和空闲功能与本表所述的标准层级功能有所不同。
+</Note>
+
+## 基础版 {#basic}
 
 * 经济实惠的选择，支持单副本部署。
 * 非常适合数据量较小且不要求严格可靠性保障的部门级使用场景。
@@ -216,9 +218,7 @@ ClickHouse Cloud 提供多个层级。
   你可以升级到 Scale 或 Enterprise 层级，以对服务进行扩缩容。
 </Note>
 
-<div id="scale">
-  ## Scale
-</div>
+## Scale {#scale}
 
 适用于需要更高 SLA (2+ 副本部署) 、可扩展能力和高级安全性的工作负载。
 
@@ -228,9 +228,7 @@ ClickHouse Cloud 提供多个层级。
   * [灵活伸缩](/zh/products/cloud/features/autoscaling/overview) 选项 (纵向扩缩容、横向扩缩容) 。
   * [可配置备份](/zh/products/cloud/guides/backups/configurable-backups)
 
-<div id="enterprise">
-  ## Enterprise
-</div>
+## Enterprise {#enterprise}
 
 面向大规模、关键任务型部署，满足严格的安全与合规要求。
 
@@ -247,9 +245,7 @@ ClickHouse Cloud 提供多个层级。
   Scale 和 Enterprise 层级支持[大型单副本服务](/zh/products/cloud/features/large-single-replica-services)。采用标准 `1:4` 配置的 Scale 服务和 Enterprise 服务支持自助式垂直自动扩缩容，而采用自定义配置的 Enterprise 服务需要在支持协助下进行垂直调整。基础版单副本服务仍为固定大小 (`8 GiB` 或 `12 GiB`)。
 </Note>
 
-<div id="upgrading-to-a-different-tier">
-  ## 升级到其他层级
-</div>
+## 升级到其他层级 {#upgrading-to-a-different-tier}
 
 您随时可以从基础版升级到 Scale，或从 Scale 升级到 Enterprise。若要降级到较低层级，则需要禁用高级功能。
 

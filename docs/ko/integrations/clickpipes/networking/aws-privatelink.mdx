@@ -134,6 +134,11 @@ VPC 리소스와 함께 PrivateLink를 설정하려면 다음을 수행하십시
       더 이상 필요하지 않다면 수동으로 제거해야 합니다.
     </Note>
 
+    <Tip>
+      Resource-Share는 ClickPipes가 수락하는 시점에 Reverse Private Endpoint에 연결되며, 그 이후에는 다른 endpoint에서 사용할 수 없습니다.
+      Resource-Share를 생성한 직후 바로 Reverse Private Endpoint를 생성하고, 그때까지는 Resource-Share 정보를 외부에 공개하지 않는 것이 좋습니다.
+    </Tip>
+
     [AWS console](https://docs.aws.amazon.com/ram/latest/userguide/working-with-sharing-create.html)을 통해 Resource-Configuration을 Resource-Share에 추가하거나, ClickPipes account ID `072088201116`(arn:aws:iam::072088201116:root)을 사용하여 다음 명령을 실행할 수 있습니다:
 
     ```bash

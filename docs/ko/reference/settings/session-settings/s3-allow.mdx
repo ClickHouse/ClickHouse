@@ -19,7 +19,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "새 설정입니다."}]}]} />
 
-S3에서 multipart copy를 허용합니다.
+S3 내에서 객체를 복사할 때(예: S3로 백업하거나 S3 디스크 간에 데이터를 이동할 때) 객체가 `s3_max_single_operation_copy_size`보다 크면 multipart copy(`UploadPartCopy`)를 사용하도록 허용합니다.
+
+비활성화하면 객체는 크기와 관계없이 단일 `CopyObject` 요청으로 복사되며, 이 방식이 불가능하면 데이터를 읽어 다시 업로드합니다. `UploadPartCopy`를 지원하지 않는 S3 호환 저장소에서는 이 설정을 비활성화하십시오.
 
 ## s3_allow_parallel_part_upload {#s3_allow_parallel_part_upload}
 

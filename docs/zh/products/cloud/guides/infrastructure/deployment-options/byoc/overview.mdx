@@ -44,11 +44,13 @@ doc_type: 'reference'
 
 * **SharedMergeTree**：ClickHouse Cloud 和 BYOC 使用相同的二进制文件和配置。因此，BYOC 支持 ClickHouse 核心的全部功能，包括 SharedMergeTree。
 * **Shared Catalog**
-* **用于管理服务状态的 Console 访问权限**：
+* **用于管理服务状态的控制台访问权限**：
   * 支持启动、停止和终止等操作。
   * 查看服务及其状态。
 * **托管 Backup 和 restore**
 * **手动纵向和横向扩缩容。**
+* **自动横向扩缩容：** 仅适用于已启用自动扩缩容的部署。该功能会在已配置的上下限范围内调整副本数量，同时保持每个副本的规格不变。请联系支持团队，确认您的部署是否支持此功能。
+* **垂直自动扩缩容：** 仅在您的组织已启用该功能时可用。请联系支持团队确认是否可用。
 * **自动休眠/唤醒**
 * **仓库**：Compute-Compute Separation
 * **通过 Tailscale 实现零信任网络。**
@@ -67,7 +69,6 @@ doc_type: 'reference'
 
 * SQL 控制台：BYOC 部署目前不提供，但该功能已列入路线图。
 * ClickPipes：BYOC 部署目前不提供，但该功能已列入路线图。
-* 自动扩缩容：已列入路线图，后续发行版中将提供。
 * MySQL 接口
 * AWS KMS，也称 CMEK (客户管理的加密密钥)
 * 高级仪表板：这是一个纯客户端 UI，要求你的浏览器能够直接访问，并可通过其端点直接连接到你的 ClickHouse 服务器。如果你的 VPC 网络策略限制浏览器入站访问 ClickHouse 端点，高级仪表板将无法正常工作。

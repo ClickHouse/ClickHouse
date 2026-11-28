@@ -67,24 +67,12 @@ end
 
 Después, deberás configurar las siguientes variables de entorno en tu shell para enviar telemetría a ClickStack a través del OpenTelemetry Collector:
 
-<Tabs>
-  <Tab title="Managed ClickStack">
-    ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
-    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
-    ```
-  </Tab>
-
-  <Tab title="ClickStack Open Source">
-    ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
-    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
-    OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
-    ```
-  </Tab>
-</Tabs>
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
 
 *La variable de entorno `OTEL_SERVICE_NAME` se utiliza para identificar tu servicio
 en la UI de ClickStack; puede ser cualquier nombre que quieras.*

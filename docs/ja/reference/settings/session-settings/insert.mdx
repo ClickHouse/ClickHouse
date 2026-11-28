@@ -17,7 +17,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-この設定を有効にすると、INSERT でマテリアライズドカラムを使用できます。
+有効にすると、`INSERT` クエリのカラムリストに `MATERIALIZED` カラムを指定でき、挿入された値はカラムの式から計算されずにそのまま保存されます。`Distributed` テーブルの場合は、`MATERIALIZED` カラムの値も分片に送信されます。
+
+無効にすると、`INSERT` クエリで `MATERIALIZED` カラムを指定すると例外がスローされ、これらのカラムの値は常に式から計算されます。
 
 ## insert_deduplicate {#insert_deduplicate}
 

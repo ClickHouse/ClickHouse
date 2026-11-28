@@ -59,11 +59,12 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置：在不含 `GROUP BY` 和筛选条件时，直接基于每个 part 的列统计信息得出 `sum`、`avg`、`sumCount` 和 `count(column)` 聚合的结果。previous_value=false，因此当 `compatibility` 设置为 26.11 之前的版本时，该优化保持禁用，并恢复原有的执行计划。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置：在不含 `GROUP BY` 和筛选条件时，直接基于各数据分片的列统计信息得出 `sum`、`avg`、`sumCount` 和 `count(column)` 聚合的结果。previous_value=false，因此当 `compatibility` 设置为 26.11 之前的版本时，该优化保持禁用，并恢复原有的执行计划。"}]}]} />
 
-对于非 `Nullable` 且非 `LowCardinality` 的整数和 `Decimal` 列，在不含 `GROUP BY` 和筛选条件时，`sum`、`avg` 和 `sumCount` 聚合会对已物化列统计信息 (`basic` 统计类型，参见
-`MergeTree` 设置 `auto_statistics_types`) 的数据分区片段直接基于每个 part 的列统计信息得出结果，仅读取其余
-parts。对于非 `Nullable` 且非 `LowCardinality` 的列，`count(column)` 在这些数据分区片段上直接根据行数得出。
+对于非 `LowCardinality` 的整数和 `Decimal` 列，在不含 `GROUP BY` 和筛选条件时，`sum`、`avg` 和 `sumCount` 聚合会对已物化列统计信息 (`basic` 统计类型，参见
+`MergeTree` 设置 `auto_statistics_types`) 的数据分区片段直接基于各数据分片的列统计信息得出结果，仅读取其余
+parts。对于非 `LowCardinality` 的列，`count(column)` 在这些数据分区片段上直接根据行数得出。对于
+`Nullable` 列，统计信息会保存非 NULL 值的总和以及 NULL 值的数量，聚合函数会跳过这些 NULL 值。
 结果与实际读取数据时完全一致。
 
 可选值：

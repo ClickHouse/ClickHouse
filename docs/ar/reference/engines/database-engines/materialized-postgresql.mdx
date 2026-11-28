@@ -232,7 +232,7 @@ ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_bloc
 
 ## TLS/SSL {#tls-ssl}
 
-تُمرَّر معلمات TLS/SSL إلى `libpq`، ويمكن توفيرها عبر [مجموعة مُسمّاة](/ar/concepts/features/configuration/server-config/named-collections) أو كوسيطات مفتاح-قيمة تُلحق بالمحرك: `sslmode` (`disable` أو `allow` أو `prefer` أو `require` أو `verify-ca` أو `verify-full`؛ عند عدم تعيينه، يُستخدم الإعداد الافتراضي `prefer` في `libpq`)، بالإضافة إلى الشهادات والمفتاح بإحدى صيغتين. تشير `sslrootcert` (شهادة CA) و`sslcert` (شهادة العميل) و`sslkey` (المفتاح الخاص للعميل) إلى مسارات ملفات محلية على الخادم، ولا تُقبل إلا من مجموعة مُسمّاة معرّفة في ملف تهيئة الخادم. أما `sslrootcert_pem` و`sslcert_pem` و`sslkey_pem` فتقبل المحتوى الحرفي للملف المقابل بدلاً من ذلك، ويمكن تحديدها من SQL، وتُخفى في السجلات واستعلامات `SHOW` مثل كلمة المرور.
+تُمرَّر معلمات TLS/SSL إلى `libpq`، ويمكن توفيرها عبر [مجموعة مُسمّاة](/ar/concepts/features/configuration/server-config/named-collections) أو كوسيطات مفتاح-قيمة تُلحق بالمحرك: `sslmode` (`disable` أو `allow` أو `prefer` أو `require` أو `verify-ca` أو `verify-full`؛ عند عدم تعيينه، يُستخدم الإعداد الافتراضي `prefer` في `libpq`)، بالإضافة إلى الشهادات والمفتاح بإحدى صيغتين. تشير `sslrootcert` (شهادة CA) و`sslcert` (شهادة العميل) و`sslkey` (المفتاح الخاص للعميل) إلى مسارات ملفات محلية على الخادم، ولا تُقبل إلا من مجموعة مُسمّاة معرّفة في ملف تهيئة الخادم. أما `sslrootcert_pem` و`sslcert_pem` و`sslkey_pem` فتقبل المحتوى الحرفي للملف المقابل بدلاً من ذلك، ويمكن تحديدها من SQL، وتُخفى في السجلات واستعلامات `SHOW` مثل كلمة المرور. ما لم تتم تهيئة كلٍّ من شهادة العميل (`sslcert` أو `sslcert_pem`) ومفتاح العميل (`sslkey` أو `sslkey_pem`)، يُرسل ClickHouse القيمة `sslcertmode=disable`، فلا يستخدم `libpq` للتحقق من الهوية الشهادةَ أو المفتاحَ الافتراضيين المتاحين من بيئة حساب الخدمة (`~/.postgresql/postgresql.{crt,key}`).
 
 مثال على الاتصال بخادم PostgreSQL يفرض TLS مع التحقق من شهادة الخادم:
 
@@ -244,7 +244,7 @@ ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'post
 -----END CERTIFICATE-----');
 ```
 
-تُعد معلمات TLS/SSL جزءًا من معلمات الاتصال بـ PostgreSQL، وتُحدَّد عند إنشاء قاعدة البيانات؛ ولتغييرها، أعد إنشاء قاعدة البيانات.
+تُعد معلمات TLS/SSL جزءًا من معلمات الاتصال بـ PostgreSQL، وتُحدَّد عند إنشاء قاعدة البيانات؛ ولتغييرها، أعد إنشاء قاعدة البيانات.
 
 ## ملاحظات {#notes}
 

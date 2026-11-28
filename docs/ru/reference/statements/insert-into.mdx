@@ -176,7 +176,7 @@ WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] VALUES ...
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] FORMAT format_name data_set
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] SELECT ...
-INSERT INTO [TABLE] FUNCTION table_func(...) [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [PARTITION BY expr] [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] ...
 ```
 
 Секция `RETURNING` задаёт `SELECT`-запрос, который выполняется над вставленными данными, и запрос возвращает его результат.
@@ -267,7 +267,7 @@ clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
 **Синтаксис**
 
 ```sql
-INSERT INTO [TABLE] FUNCTION table_func ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [PARTITION BY expr] ...
 ```
 
 **Пример**
@@ -285,6 +285,28 @@ SELECT * FROM simple_table;
 ┌──id─┬─text──────────────────┐
 │ 100 │ inserted via remote() │
 └─────┴───────────────────────┘
+```
+
+### Запись с разбиением на партиции {#partitioned-writes}
+
+Секцию `PARTITION BY` поддерживают некоторые табличные функции, которые записывают данные в файлы или объектное хранилище, например [file](/ru/reference/functions/table-functions/file#partitioned-write-to-multiple-tsv-files), [s3](/ru/reference/functions/table-functions/s3#partitioned-write), [gcs](/ru/reference/functions/table-functions/gcs#partitioned-write) и [azureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage#partitioned-write). Табличные функции, которые её не поддерживают (например, `remote`), отклоняют такой запрос. В `expr` используются столбцы табличной функции.
+
+Будут ли вставленные строки разделены и как именно, зависит от стратегии партиционирования табличной функции и от её пути. Если стратегия партиционирования не задана явно, наличие плейсхолдера `{_partition_id}` в пути означает выбор стратегии `wildcard`: каждая партиция записывается в отдельный файл или объект, в пути которого плейсхолдер заменяется значением `expr`, преобразованным в строку. Другие стратегии партиционирования описаны на страницах `s3`, `gcs` и `azureBlobStorage`.
+
+```sql title="Query"
+INSERT INTO TABLE FUNCTION file('insert_partitioned_{_partition_id}.csv', 'CSV', 'id UInt32, text String')
+    PARTITION BY id % 2
+    VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd');
+SELECT _file, id, text FROM file('insert_partitioned_*.csv', 'CSV', 'id UInt32, text String') ORDER BY id;
+```
+
+```text title="Response"
+┌─_file────────────────────┬─id─┬─text─┐
+│ insert_partitioned_1.csv │  1 │ a    │
+│ insert_partitioned_0.csv │  2 │ b    │
+│ insert_partitioned_1.csv │  3 │ c    │
+│ insert_partitioned_0.csv │  4 │ d    │
+└──────────────────────────┴────┴──────┘
 ```
 
 ## Вставка в ClickHouse Cloud {#inserting-into-clickhouse-cloud}

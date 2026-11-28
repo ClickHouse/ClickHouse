@@ -1,15 +1,19 @@
 ---
-sidebarTitle: 'Escalado vertical automático'
+sidebarTitle: 'Escalado automático vertical'
 slug: /cloud/features/autoscaling/vertical
-description: 'Configuración del escalado vertical automático en ClickHouse Cloud'
+description: 'Configuración del escalado automático vertical en ClickHouse Cloud'
 keywords: ['escalado automático', 'escalado automático', 'vertical', 'escalado', 'CPU', 'memoria']
-title: 'Escalado vertical automático'
+title: 'Escalado automático vertical'
 doc_type: 'guide'
 ---
 
 import { ScalePlanFeatureBadge } from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Escalado vertical automático" />
+
+<Note>
+  El [cómputo Gen 2](/es/products/cloud/features/compute-generations) no admite el escalado automático vertical durante la Vista previa privada. Consulte la documentación de Gen 2 para conocer las opciones de escalado que admite.
+</Note>
 
 Los servicios de los niveles Scale y Enterprise con perfiles estándar `1:4` admiten el escalado automático en función del uso de CPU y memoria. El uso del servicio se supervisa continuamente durante una ventana de observación para tomar decisiones de escalado. Si el uso supera o cae por debajo de determinados umbrales, el servicio se escala según corresponda para ajustarse a la demanda.
 

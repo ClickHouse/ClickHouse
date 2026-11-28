@@ -82,6 +82,8 @@ Las credenciales de API son independientes de la clave de API de ingesta disponi
 
 **Exportar a Terraform** está marcado como **Experimental**. Seleccione los tipos de recurso que desea incluir y utilice **Download import file** para añadirlos a un proyecto de Terraform. La interfaz de usuario muestra el comando para generar la configuración de los recursos con el provider de ClickHouse. Las conexiones gestionadas por la plataforma se exportan como locals de solo referencia.
 
+Se exportan las alertas de las búsquedas guardadas y de los paneles del panel de control. Los archivos que contengan una alerta de panel requieren la versión 3.28.0 o posterior del Proveedor de Terraform de ClickHouse. No se exportan las alertas del Explorador de Gráficos, ni tampoco las alertas de panel cuyo panel no tenga un nombre único y no vacío dentro de su panel de control. La configuración generada para una alerta de panel asigna valores literales a `dashboard_id` y `tile_id`: reemplácelos por referencias al recurso `clickhouse_clickstack_dashboard` antes de aplicarla.
+
 ### Configurar IA generativa {#generative-ai}
 
 Use **Configurar IA generativa** para activar o desactivar las funcionalidades de IA generativa del servicio, entre ellas el Asistente de IA para gráficos del Explorador de Gráficos y los [Cuadernos con IA](/es/clickstack/observability/notebooks).

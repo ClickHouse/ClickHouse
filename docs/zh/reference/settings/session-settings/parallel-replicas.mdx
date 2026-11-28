@@ -29,7 +29,9 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "允许并行副本使用 materialized views"}]}]} />
 
-允许并行副本使用 materialized views
+允许从 materialized view 读取数据的查询使用并行副本。此时，查询将在该 materialized view 的 target table 上执行。
+
+无论该设置取值如何，可刷新物化视图都不会使用并行副本。
 
 ## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
 
@@ -171,7 +173,9 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "在使用并行副本的查询中，对本地副本使用本地执行计划"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "在使用并行副本的查询中，对本地副本使用本地执行计划"}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "1"},{"label": "在使用并行副本的查询中，对本地副本使用本地执行计划"}]}]} />
 
-为本地副本构建本地执行计划
+在使用并行副本的查询中，发起服务器会通过本地构建的查询计划来执行自己所负责的那部分读取，而不是通过网络向自身发送查询，从而避免网络往返带来的开销。此设置仅在启用 `parallel_replicas_prefer_local_replica` 时生效。
+
+只有启用此设置，才会自动决定是否使用并行副本 (参见 `automatic_parallel_replicas_mode`) 。
 
 ## parallel_replicas_mark_segment_size {#parallel_replicas_mark_segment_size}
 

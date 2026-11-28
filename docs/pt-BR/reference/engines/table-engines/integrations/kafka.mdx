@@ -120,17 +120,27 @@ Para `ENGINE = Kafka(named_collection)`:
 
 Ao usar uma coleção nomeada, **o bloco global `<kafka>` do servidor em `config.xml` não é mesclado**. Cada coleção deve incluir todas as propriedades estendidas de que a tabela precisa (incluindo os arquivos TLS e `security.protocol`, caso essa propriedade não seja definida por meio de `SETTINGS` não vazias da tabela).
 
-Um layout comum para `SASL_SSL` com certificados do cliente: armazene os caminhos TLS e `ssl.key.password` na coleção nomeada; defina `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` e, opcionalmente, `kafka_sasl_username` / `kafka_sasl_password` na cláusula `SETTINGS` da tabela. Tanto `kafka.security_protocol` quanto `kafka_security_protocol` definem `security.protocol`, e a configuração da tabela, se não estiver vazia, tem precedência. Se a coleção já armazenar essa propriedade, a configuração da tabela passa a ser uma substituição da coleção nomeada: ela exige `SHOW NAMED COLLECTIONS SECRETS` na coleção e falha com `Override not allowed` se a chave for `NOT OVERRIDABLE`. O mesmo vale para `kafka_sasl_mechanism`, `kafka_sasl_username` e `kafka_sasl_password`.
+Uma coleção nomeada criada com `CREATE NAMED COLLECTION` aceita apenas propriedades do `librdkafka` que constam na [allowlist](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp), como `security.protocol`, `sasl.username` e `fetch.min.bytes`. Se uma tabela usar uma coleção com uma propriedade fora dessa lista, o ClickHouse retorna `BAD_ARGUMENTS`. Para usar outras propriedades compatíveis, como `sasl.kerberos.keytab` ou `sasl.oauthbearer.token.endpoint.url`, defina a coleção no arquivo de configuração do servidor. Essa restrição também se aplica a propriedades adicionadas com `ALTER NAMED COLLECTION` após a criação da tabela.
 
-Exemplo (os caminhos dos certificados devem existir em todos os servidores do ClickHouse que executam consumidores da tabela):
+Em uma coleção nomeada criada com SQL, informe o conteúdo do arquivo em vez do seu caminho: `ssl.key.pem`, `ssl.certificate.pem`, `ssl.ca.pem`, `https.ca.pem` e `sasl.oauthbearer.assertion.private.key.pem`. O valor `probe` de `ssl.ca.location` e `https.ca.location` também é aceito, pois não é um caminho.
+
+Um layout comum para `SASL_SSL` com certificados do cliente: armazene os certificados, a chave privada e `ssl.key.password` na coleção nomeada; defina `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` e, opcionalmente, `kafka_sasl_username` / `kafka_sasl_password` na cláusula `SETTINGS` da tabela. Tanto `kafka.security_protocol` quanto `kafka_security_protocol` definem `security.protocol`, e a configuração da tabela, se não estiver vazia, tem precedência. Se a coleção já armazenar essa propriedade, a configuração da tabela passa a ser uma substituição da coleção nomeada: ela exige `SHOW NAMED COLLECTIONS SECRETS` na coleção e falha com `Override not allowed` se a chave for `NOT OVERRIDABLE`. O mesmo vale para `kafka_sasl_mechanism`, `kafka_sasl_username` e `kafka_sasl_password`.
+
+Exemplo com uma coleção nomeada criada com SQL, contendo os certificados e a chave privada no formato PEM:
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 
 CREATE TABLE queue (
@@ -146,7 +156,7 @@ SETTINGS
     kafka_sasl_password = 'password';
 ```
 
-As mesmas configurações estendidas em uma coleção nomeada definida em XML:
+As mesmas configurações estendidas em uma coleção nomeada definida em XML, que pode, em vez disso, fazer referência aos arquivos (os arquivos devem existir em todos os servidores do ClickHouse que executam consumidores da tabela):
 
 ```xml
 <clickhouse>
@@ -270,6 +280,24 @@ Exemplo, usando [coleções nomeadas](/pt-BR/concepts/features/configuration/ser
 ```
 
 Para melhorar o desempenho, as mensagens recebidas são agrupadas em blocos com o tamanho de [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size). Se o bloco não for formado dentro de [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings/stream#stream_flush_interval_ms) milissegundos, os dados serão gravados na tabela independentemente de o bloco estar completo.
+
+As seguintes configurações da tabela controlam com que frequência os dados consumidos são gravados nas visões materializadas:
+
+* `kafka_max_block_size` — o flush de um bloco é feito assim que ele atinge esse número de linhas. Padrão: `max_insert_block_size` dividido por `kafka_num_consumers`.
+* `kafka_flush_interval_ms` — o flush de um bloco é feito após esse tempo, mesmo que ele não esteja cheio. Padrão: [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings/stream#stream_flush_interval_ms) (7500 ms). Diminua esse valor para reduzir o atraso entre a produção de uma mensagem e sua chegada à tabela de destino.
+* `kafka_consumer_reschedule_ms` — quando não há novas mensagens, o motor aguarda esse tempo antes de consultar novamente. Padrão: `500` ms.
+
+Essas são configurações da tabela Kafka, definidas em sua cláusula `SETTINGS`. Elas não podem ser definidas na seção `<kafka>` do arquivo de configuração do servidor: todas as chaves ali são repassadas à librdkafka como propriedades (consulte [Configuração](#configuration)); portanto, `<flush_interval_ms>`, por exemplo, não é uma configuração do ClickHouse nesse local.
+
+```sql
+CREATE TABLE queue (timestamp UInt64, level String, message String)
+ENGINE = Kafka
+SETTINGS kafka_broker_list = 'localhost:9092',
+         kafka_topic_list = 'topic',
+         kafka_group_name = 'group1',
+         kafka_format = 'JSONEachRow',
+         kafka_flush_interval_ms = 1000;
+```
 
 Para parar de receber dados do tópico ou alterar a lógica de conversão, desanexe a visão materializada:
 

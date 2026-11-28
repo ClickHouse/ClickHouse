@@ -78,9 +78,11 @@ collector へのプライベート接続を設定するには、**プライベ�
 
 API認証情報は、**Data → Managed Telemetry** で確認できるインジェスト API keyとは別物です。なお、MCPクライアントはどちらのAPIキーも使用せず、OAuthで認証します。
 
-### Terraform へのエクスポート {#export-to-terraform}
+### Terraform にエクスポート {#export-to-terraform}
 
-**Export to Terraform** は **実験的** 機能です。含めるリソースの種類を選択し、**Download import file** を使用して Terraform プロジェクトに追加します。UI には、ClickHouse プロバイダーでリソース設定を生成するためのコマンドが表示されます。プラットフォームで管理される接続は、参照専用の locals としてエクスポートされます。
+**Terraform にエクスポート** は **実験的** 機能です。含めるリソースの種類を選択し、**Download import file** を使用して Terraform プロジェクトに追加します。UI には、ClickHouse プロバイダーでリソース設定を生成するためのコマンドが表示されます。プラットフォームで管理される接続は、参照専用の locals としてエクスポートされます。
+
+保存済み検索とダッシュボードのタイルに設定されたアラートはエクスポートされます。タイルのアラートを含むファイルを使用するには、ClickHouse Terraform プロバイダーのバージョン 3.28.0 以降が必要です。Chart Explorer のアラートはエクスポートされません。また、ダッシュボード内で重複のない、空でない名前がタイルに付いていない場合、そのタイルのアラートもエクスポートされません。タイルのアラート用に生成される設定では、`dashboard_id` と `tile_id` にリテラル値が設定されます。適用する前に、これらを `clickhouse_clickstack_dashboard` リソースへの参照に置き換えてください。
 
 ### Generative AI の設定 {#generative-ai}
 

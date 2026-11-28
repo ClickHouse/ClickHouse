@@ -111,26 +111,37 @@ hyperdx:
     MONGODB_PASSWORD: "your-mongodb-password"
 ```
 
-### 외부 시크릿 사용 {#using-external-secret}
+### 외부 시크릿 사용하기 {#using-external-secret}
 
-프로덕션 배포에서 자격 증명을 Helm values와 분리해 관리하려면 외부 Kubernetes 시크릿을 사용하세요:
+HyperDX API Key를 Helm 설정값에 포함하지 않으려면 직접 생성한 Kubernetes 시크릿에 저장하십시오.
 
 ```bash
-# 시크릿 생성
 kubectl create secret generic my-clickstack-secrets \
-  --from-literal=HYPERDX_API_KEY=my-secret-api-key \
-  --from-literal=CLICKHOUSE_PASSWORD=my-ch-password \
-  --from-literal=CLICKHOUSE_APP_PASSWORD=my-ch-app-password \
-  --from-literal=MONGODB_PASSWORD=my-mongo-password
+  --from-literal=HYPERDX_API_KEY=my-secret-api-key
 ```
 
-그런 다음 values에서 이를 참조하세요:
+그런 다음 차트의 시크릿에서 해당 값을 제거하고 사용자 시크릿에서 읽어 오도록 설정하십시오:
 
 ```yaml
 hyperdx:
-  useExistingConfigSecret: true
-  existingConfigSecret: "my-clickstack-secrets"
+  secrets:
+    HYPERDX_API_KEY: null
+  deployment:
+    env:
+      - name: HYPERDX_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: my-clickstack-secrets
+            key: HYPERDX_API_KEY
 ```
+
+다른 HyperDX 환경 변수도 같은 방식으로 시크릿에서 읽어올 수 있습니다.
+
+번들 구성 요소가 활성화된 상태에서는 ClickHouse 및 MongoDB 비밀번호를 `hyperdx.secrets`에 그대로 두어야 합니다. 차트는 이 비밀번호로 번들 ClickHouse 및 MongoDB 사용자를 설정하며, OTel collector는 차트의 시크릿에서 이 비밀번호를 읽습니다.
+
+<Note>
+  `hyperdx.deployment.useExistingConfigSecret`은 시크릿에서 기본 연결 및 소스(`connections.json` 및 `sources.json`)만 로드하며, API Key나 비밀번호는 읽지 않습니다. 자세한 내용은 [외부 ClickHouse](/ko/clickstack/deployment/helm-deployment-options#external-clickhouse-secret)를 참조하십시오.
+</Note>
 
 ## 인그레스 설정 {#ingress-setup}
 

@@ -61,14 +61,14 @@ helm upgrade --install my-clickstack clickstack/clickstack -f values.yaml
 
 ログソースで使用するデータベース接続は、チーム設定で設定します。
 
-| 設定                         | 説明                                                                                                                                          |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Connection Name`          | ログソース設定でこの接続を識別するための名前。                                                                                                                       |
-| `Host`                     | ポートを含む ClickHouse の HTTP(S) エンドポイント。collector のエクスポート先エンドポイントとは別のものです。                                                                      |
-| `Username`                 | ClickHouse のユーザー名。デフォルトは `default` です。                                                                                                      |
-| `Password`                 | ClickHouse のパスワード。デフォルトは空です。                                                                                                                |
-| `Query Log Setting Prefix` | 現在のユーザーのメールアドレスをクエリログに記録するカスタム ClickHouse 設定のプレフィックス (任意) 。ClickHouse の `custom_settings_prefixes` 設定にも同じプレフィックスを含めてください。含めない場合、クエリは拒否されます。 |
-| `Prometheus compatible`    | 利用可能な場合、Host をプロキシ経由の PromQL クエリ用の Prometheus 互換 API エンドポイントとして扱います。この接続は、ClickHouse をバックエンドとするログ、トレース、OTel メトリクスのログソースには使用できません。             |
+| 設定                         | 説明                                                                                                                                                                                                                                                                                              |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Connection Name`          | ログソース設定でこの接続を識別するための名前。                                                                                                                                                                                                                                                                         |
+| `Host`                     | ポートを含む ClickHouse の HTTP(S) エンドポイント。collector のエクスポート先エンドポイントとは別のものです。                                                                                                                                                                                                                          |
+| `Username`                 | ClickHouse のユーザー名。デフォルトは `default` です。                                                                                                                                                                                                                                                          |
+| `Password`                 | ClickHouse のパスワード。デフォルトは空です。                                                                                                                                                                                                                                                                    |
+| `Query Log Setting Prefix` | 現在のユーザーのメールアドレスをクエリログに記録するカスタム ClickHouse 設定のプレフィックス (任意) 。ClickHouse の `custom_settings_prefixes` 設定にも同じプレフィックスを含めてください。含めない場合、クエリは拒否されます。ユーザー識別子を含めずに、どのダッシュボード、アラート、その他の ClickStack 機能がクエリを発行したかを確認するには、[クエリ負荷の要因を特定する](/ja/clickstack/managing/performance-tuning#query-attribution)を参照してください。 |
+| `Prometheus compatible`    | 利用可能な場合、Host をプロキシ経由の PromQL クエリ用の Prometheus 互換 API エンドポイントとして扱います。この接続は、ClickHouse をバックエンドとするログ、トレース、OTel メトリクスのログソースには使用できません。                                                                                                                                                               |
 
 ### データログソース設定 {#datasource-settings}
 
@@ -182,21 +182,21 @@ ClickStack に付属する[デフォルトの OpenTelemetry (OTel) スキーマ]
   #### メトリクス {#metrics}
 </div>
 
-| Setting                       | Description                                                                                               | Required | Inferred in Default Schema | Inferred Value                       |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------- | -------- | -------------------------- | ------------------------------------ |
-| `Name`                        | ログソース名。                                                                                                     | はい       | いいえ                        | –                                    |
-| `Section`                     | 任意。ログソースセレクターでログソースをグループ化するためのラベル。セクションが同じログソースはまとめて表示され、検索ではログソース名に加えてセクション名にも一致します。                         | いいえ      | いいえ                        | –                                    |
-| `Server Connection`           | サーバー接続名。                                                                                                  | はい       | いいえ                        | `Default`                            |
-| `Database`                    | ClickHouse データベース名。                                                                                       | はい       | はい                         | `default`                            |
-| `Query Settings`              | 設定名と値で指定するクエリレベルの[セッション設定](/ja/reference/settings/session-settings)を最大 10 個。このログソースに対して発行されるすべてのクエリに追加されます。 | いいえ      | いいえ                        | –                                    |
-| `Enabled`                     | ログソースフォームの上部にあるトグル。無効にしたログソースは保持されますが、ログソースセレクターには表示されず、自動的に選択されることもありません。既存のログソースを編集する場合にのみ表示されます。               | いいえ      | いいえ                        | 有効                                   |
-| `Gauge Table`                 | Gauge 型メトリクスを格納するテーブル。                                                                                    | いいえ      | はい                         | `otel_metrics_gauge`                 |
-| `Histogram Table`             | ヒストグラム型メトリクスを格納するテーブル。                                                                                    | いいえ      | はい                         | `otel_metrics_histogram`             |
-| `Sum Table`                   | sum 型 (カウンター) メトリクスを格納するテーブル。                                                                             | いいえ      | はい                         | `otel_metrics_sum`                   |
-| `Exponential Histogram Table` | 指数ヒストグラム型メトリクスを格納するテーブル。                                                                                  | いいえ      | はい                         | `otel_metrics_exponential_histogram` |
-| `Correlated Log Source`       | 任意。相関付けられたログソース (例: ClickStack UI のログ) 。                                                                  | いいえ      | いいえ                        | –                                    |
-| `Summary Table`               | summary 型メトリクスを格納するテーブル。summary および指数ヒストグラムのサポートはまだ完全ではありません。                                             | いいえ      | はい                         | `otel_metrics_summary`               |
-| `Minimum auto granularity`    | 自動選択されるチャート粒度の最小バケットサイズ。明示的に指定したチャート粒度はオーバーライドされません。                                                      | いいえ      | いいえ                        | 最小値なし                                |
+| Setting                       | Description                                                                                                                            | Required | Inferred in Default Schema | Inferred Value                       |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------- | ------------------------------------ |
+| `Name`                        | ソース名。                                                                                                                                | はい       | いいえ                        | –                                    |
+| `Section`                     | 任意。ソースセレクターでログソースをグループ化するためのラベル。セクションが同じログソースはまとめて表示され、検索ではソース名に加えてセクション名にも一致します。                                                  | いいえ      | いいえ                        | –                                    |
+| `Server Connection`           | サーバー接続名。                                                                                                                               | はい       | いいえ                        | `Default`                            |
+| `Database`                    | ClickHouse データベース名。                                                                                                                    | はい       | はい                         | `default`                            |
+| `Query Settings`              | 設定名と値で指定するクエリレベルの[セッション設定](/ja/reference/settings/session-settings)を最大 10 個。このログソースに対して発行されるすべてのクエリに追加されます。                            | いいえ      | いいえ                        | –                                    |
+| `Enabled`                     | ログソースフォームの上部にあるトグル。無効にしたログソースは保持されますが、ソースセレクターには表示されず、自動的に選択されることもありません。既存のログソースを編集する場合にのみ表示されます。                                    | いいえ      | いいえ                        | 有効                                   |
+| `Gauge Table`                 | Gauge 型メトリクスを格納するテーブル。                                                                                                                 | いいえ      | はい                         | `otel_metrics_gauge`                 |
+| `Histogram Table`             | ヒストグラム型メトリクスを格納するテーブル。                                                                                                                 | いいえ      | はい                         | `otel_metrics_histogram`             |
+| `Sum Table`                   | sum 型 (カウンター) メトリクスを格納するテーブル。                                                                                                          | いいえ      | はい                         | `otel_metrics_sum`                   |
+| `Exponential Histogram Table` | 指数ヒストグラム型メトリクスを格納するテーブル。                                                                                                               | いいえ      | はい                         | `otel_metrics_exponential_histogram` |
+| `Correlated Log Source`       | 任意。相関付けられたログソース (例: ClickStack UI のログ) 。                                                                                               | いいえ      | いいえ                        | –                                    |
+| `Summary Table`               | summary 型メトリクスを格納するテーブル。summary および指数ヒストグラムのサポートはまだ完全ではありません。                                                                          | いいえ      | はい                         | `otel_metrics_summary`               |
+| `Minimum auto granularity`    | 自動選択されるチャート粒度の最小バケットサイズ。明示的に指定したチャート粒度はオーバーライドされません。ダッシュボードのタイルなど、UI 上のチャートに適用されます。アラート、外部 API 経由でクエリするチャート、および MCP クエリツールにはまだ適用されません。 | いいえ      | いいえ                        | 最小値なし                                |
 
 メトリクスログソースには、タイムスタンプとリソース属性のマッピング (通常は `TimeUnix` と `ResourceAttributes`) も保存されます。統合された `series Table` フィールドは、metrics-series-table 機能が有効になっているチームにのみ表示されます。
 

@@ -63,13 +63,15 @@ El valor `0` significa que no hay límite.
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
-El tamaño máximo de los bloques de datos no comprimidos antes de comprimirlos para escribirlos en una tabla. El valor predeterminado es 1,048,576 (1 MiB). Especificar un tamaño de bloque más pequeño suele reducir ligeramente la relación de compresión; la velocidad de compresión y descompresión aumenta un poco debido a la localidad de caché, y se reduce el consumo de memoria.
+El tamaño máximo de los bloques de datos sin comprimir antes de comprimirlos para escribirlos en una tabla. El valor predeterminado es 1,048,576 (1 MiB). Especificar un tamaño de bloque más pequeño suele reducir ligeramente la relación de compresión; la velocidad de compresión y descompresión aumenta un poco debido a la localidad de caché, y se reduce el consumo de memoria.
 
 <Note>
   Esta es una configuración de nivel experto y no debería cambiarla si apenas está empezando con ClickHouse.
 </Note>
 
 No confunda los bloques para compresión (un fragmento de memoria compuesto por bytes) con los bloques para el procesamiento de consultas (un conjunto de filas de una tabla).
+
+Un bloque comprimido contiene como máximo 256 MiB de datos sin comprimir, por lo que los valores superiores a 256 MiB se comportan como 256 MiB. El bloque se reduce aún más cuando el resultado de comprimirlo con el códec podría superar los 512 MiB, algo que solo ocurre con una cadena de códecs que expanden los datos. Los datos escritos en bloques más grandes por versiones anteriores no se pueden leer.
 
 ## max_consume_snapshots {#max_consume_snapshots}
 
@@ -117,6 +119,25 @@ Valores posibles:
 
 * Entero positivo.
 * 0 o 1 — Desactivado. Las consultas `SELECT` se ejecutan en un solo hilo.
+
+## max_generic_compression_threads {#max_generic_compression_threads}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nueva configuración para controlar el número de threads utilizados para la compresión gzip en paralelo de los flujos de salida."}]}]} />
+
+Número máximo de threads utilizados para comprimir la salida con compresión de flujo genérica (actualmente `gzip`) al escribir en formatos de salida, archivos o almacenamiento, y al comprimir las respuestas HTTP de las consultas, tanto con `Content-Encoding: gzip` como con el códec del cuerpo de la respuesta seleccionado mediante el parámetro de configuración `compression`.
+
+La salida se mantiene en el formato estándar `gzip` y puede leerla cualquier descompresor; solo se paraleliza la escritura. Los bloques independientes se comprimen en paralelo en el grupo de hilos de E/S compartido. El parámetro de configuración tiene un nombre genérico para que otros métodos de compresión de flujo puedan adoptarlo en el futuro.
+
+Valores posibles:
+
+* 0 o 1 — compresión single-threaded (predeterminado).
+* Entero positivo mayor que 1 — compresión con hasta ese número de threads.
+
+Cuanto más altos sean los valores, mayor será el uso de memoria.
+
+En las respuestas HTTP de las consultas, el búfer de compresión se configura antes de ejecutar la consulta, al igual que los demás ajustes que determinan la respuesta HTTP (`enable_http_compression`, `http_zlib_compression_level`, `compression`). En ese caso, el parámetro de configuración debe indicarse mediante el parámetro de URL HTTP o en un perfil de usuario; una cláusula `SETTINGS` dentro de la consulta no afecta a la compresión de la propia respuesta HTTP (aunque sí se aplica a los archivos y al almacenamiento en los que escribe la consulta, p. ej., `INSERT INTO FUNCTION file(...)` o `SELECT ... INTO OUTFILE`).
 
 ## max_http_get_redirects {#max_http_get_redirects}
 

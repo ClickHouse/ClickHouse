@@ -1,0 +1,55 @@
+---
+sidebarTitle: 'Recommandations'
+title: 'Recommandations relatives aux requêtes et aux schémas'
+description: 'Recommandations déterministes que ClickHouse Cloud affiche à partir de vos journaux de requêtes et des schémas de vos tables.'
+keywords: ['recommandations', 'recommandation de schéma', 'recommandation de requête', 'clé de tri', 'ClickHouse Cloud', 'aperçu privé']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
+ClickHouse Cloud analyse votre trafic de requêtes et les schémas de vos tables afin de générer des recommandations d&#39;amélioration des performances. Les tests sont déterministes, n&#39;utilisent aucun LLM et ne s&#39;exécutent pas sur vos services.
+
+Il existe deux types de recommandations :
+
+* Les recommandations de schéma apparaissent dans **Supervision** &gt; **Tables** et portent sur les modifications que vous pouvez apporter aux schémas de vos tables.
+* Les recommandations de requête apparaissent dans **Supervision** &gt; **Performances des requêtes**, lorsque vous ouvrez une requête, et portent sur les modifications que vous pouvez apporter à vos requêtes.
+  Certaines recommandations de schéma et de requête peuvent se recouper et vous offrir ainsi différentes façons de résoudre un problème, soit via votre modèle de requête, soit via votre schéma de table.
+
+<Warning>
+  Les recommandations sont en préversion. Elles peuvent évoluer et ne sont pas couvertes par le SLA standard de ClickHouse Cloud.
+</Warning>
+
+## Recommandations de schéma {#schema-recommendations}
+
+Elles s&#39;affichent sur la table dans la section [Supervision](/fr/products/cloud/features/monitoring/cloud-console).
+
+| Recommandation           | Quand elle apparaît                                                                                   | Que faire                                                                                                                                                                                                                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Modifier la clé de tri   | De nombreuses requêtes filtrent sur les mêmes colonnes, qui ne font pas partie de la clé de tri.      | Envisagez de modifier la clé de tri afin que les filtres habituels correspondent à la clé. Cette opération reconstruit la table. [Schema Advisor](/fr/products/cloud/features/ai-ml/schema-advisor) peut planifier et déployer cette modification.                                         |
+| Ajouter une projection   | De nombreuses requêtes filtrent sur un petit ensemble de colonnes situées en dehors de la clé de tri. | Ajoutez une [projection](/fr/data-modeling/projections) sur ces colonnes. Elle accélère ces requêtes sans modifier la clé de tri. [Schema Advisor](/fr/products/cloud/features/ai-ml/schema-advisor) l&#39;applique directement avec `ALTER TABLE`, sans reconstruction ni `EXCHANGE TABLES`. |
+| Utiliser un dictionnaire | La plupart des requêtes sur la table sont des recherches portant sur une seule ligne.                 | Pour une table de dimensions fréquemment lue et rarement mise à jour, envisagez d&#39;utiliser un [dictionnaire](/fr/sql-reference/statements/create/dictionary).                                                                                                                          |
+| Insertions par lots      | La table reçoit de nombreuses petites insertions, qui créent de nombreuses petites parties.           | Regroupez les insertions par lots afin que chaque part soit plus volumineuse. Moins de parts signifie moins de travail de fusion. Voir [insertions asynchrones](/fr/optimize/asynchronous-inserts).                                                                                        |
+
+## Recommandations de requêtes {#query-recommendations}
+
+Elles s&#39;affichent lorsque vous ouvrez une requête normalisée dans **Supervision** &gt; **Performances des requêtes**. Cette page est la nouvelle version de [Query insights](/fr/products/cloud/features/sql-console-features/query-insights) : vous pouvez y filtrer les requêtes par table et ouvrir une requête pour consulter ses métriques. Appliquer une recommandation de requête implique de modifier la requête elle-même. Schema Advisor ne les déploie pas.
+
+| Recommandation                                           | Quand elle apparaît                                                                                                                                                                                                                                                                                                                                                                                      | Que faire                                                                                                                                                                    |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Utiliser `uniq`                                          | La requête utilise `COUNT(DISTINCT ...)` ou [`uniqExact`](/fr/sql-reference/aggregate-functions/reference/uniqexact), alors qu&#39;un comptage approximatif suffirait.                                                                                                                                                                                                                                      | Utilisez [`uniq`](/fr/sql-reference/aggregate-functions/reference/uniq) pour les comptages de valeurs distinctes sur de gros volumes. Cette fonction consomme moins de mémoire. |
+| Stocker le JSON nativement                               | La requête analyse du JSON contenu dans une colonne de type String pendant son exécution.                                                                                                                                                                                                                                                                                                                | Stockez la valeur dans une colonne [JSON](/fr/sql-reference/data-types/newjson), ou dans des colonnes ordinaires, au lieu d&#39;analyser une chaîne à chaque requête.           |
+| Lister les colonnes nécessaires                          | La requête utilise `SELECT *` ou `alias.*` sur une table comportant de nombreuses colonnes.                                                                                                                                                                                                                                                                                                              | Nommez les colonnes dont vous avez besoin afin que ClickHouse ne lise pas les autres.                                                                                        |
+| Éviter l&#39;exécution régulière de `OPTIMIZE ... FINAL` | La requête exécute [`OPTIMIZE`](/fr/sql-reference/statements/optimize) avec `FINAL`, ce qui réécrit la table.                                                                                                                                                                                                                                                                                               | N&#39;exécutez pas `OPTIMIZE ... FINAL` de manière systématique. Cette opération est coûteuse en I/O et en CPU, et peut bloquer les insertions.                              |
+| Utiliser une jointure par tri-fusion                     | Les deux côtés d&#39;un `JOIN` sont déjà triés selon les clés de jointure.                                                                                                                                                                                                                                                                                                                               | Définissez [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm) sur `full_sorting_merge` afin que ClickHouse ne trie pas à nouveau les entrées.      |
+| Filtrer sur les premières colonnes de la clé de tri      | Les filtres de la requête ne portent pas sur les premières colonnes de la clé de tri. ClickHouse peut tout de même éliminer des granules à partir des colonnes suivantes de la clé, mais cette élimination peut être moins efficace. Consultez [filtrage sur les colonnes secondaires de la clé](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns). | Vérifiez le plan avec `EXPLAIN indexes = 1`. N&#39;ajoutez un filtre sur les premières colonnes de la clé que si le résultat de la requête reste identique.                  |
+| Autoriser les insertions asynchrones                     | Un `INSERT` désactive les insertions asynchrones et crée de nombreuses petites parties.                                                                                                                                                                                                                                                                                                                  | Laissez les [insertions asynchrones](/fr/optimize/asynchronous-inserts) activées, ou regroupez les insertions côté client, afin que les petites écritures soient combinées.     |
+
+## Pages connexes {#related-pages}
+
+* [Schema Advisor](/fr/products/cloud/features/ai-ml/schema-advisor)
+* [Supervision dans la Console Cloud](/fr/products/cloud/features/monitoring/cloud-console)
+* [Query insights](/fr/products/cloud/features/sql-console-features/query-insights)
+* [Conception de schémas](/fr/data-modeling/schema-design)

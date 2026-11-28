@@ -10,6 +10,28 @@ rss: true
 
 除本 ClickHouse Cloud 更新日志外，另请参阅 [Cloud 兼容性](/zh/products/cloud/guides/cloud-compatibility) 页面。
 
+<Update label="2026-11-23">
+  本周发布的更新加强了对生产数据库的保护，改进了安全事件的沟通机制，并新增了一种 Claude 用量账单方式。
+
+  ## 新功能 {#2026-11-23-new-features}
+
+  ### Managed Postgres 的删除保护 {#deletion-protection-for-managed-postgres}
+
+  现在可以在 [ClickHouse Managed Postgres](/zh/cloud/managed-postgres) 服务的 **Settings** 页面中或通过 OpenAPI 为其启用删除保护。启用保护后，在关闭保护之前，来自控制台或 API 的删除请求都会被拒绝并返回 `409`，从而防止误删生产数据库。只读副本暂不支持删除保护。
+
+  ## 集成 {#2026-11-23-integrations}
+
+  ### 与 Anthropic Claude Platform 的关联账单 {#linked-billing-with-anthropics-claude-platform}
+
+  ClickHouse Cloud 组织现在可以在 **Organization settings → Claude organization** 下关联其 Claude Platform 组织。关联后，Anthropic 会将受支持的 ClickHouse Cloud 产品 (包括 [ClickHouse 智能体](/zh/agents/index)) 中的 Claude 用量直接计入该组织，并从现有的 Anthropic 承诺额度中扣除。您无需共享 API 密钥即可在 Claude 中批准关联，还可以设置每月支出上限 (可在 Claude Console 中修改) ，并可从任一方解除关联。已关联的组织可以使用 ClickHouse 目录中的 Claude 模型，包括 Opus 5.5 和 Haiku 5.5。此功能需主动开启，面向所有符合条件的组织开放；详情请参阅[与 Claude Platform 的关联账单](/zh/products/cloud/features/ai-ml/linked-billing-claude-platform)。
+
+  ## 安全 {#2026-11-23-security}
+
+  ### 为组织指定安全联系人 {#designate-security-contacts-for-your-organization}
+
+  组织管理员现在最多可以指定三名安全联系人。一旦发生安全事件，ClickHouse 便能准确知道应联系贵组织中的哪些人员。此功能现已正式可用。
+</Update>
+
 <Update label="2026-11-16">
   本周更新为云服务和支持会话新增了安全保障，并预览了更安全的凭证管理方式。此外，ClickHouse Observability 和 ClickHouse Managed Postgres 现已推出。
 
@@ -25,19 +47,19 @@ rss: true
 
   您可以为服务申请查询脱敏，以限制 ClickHouse 技术支持可查看的查询文本。启用脱敏后，技术支持在 `system.query_log` 中看到的是 `[REDACTED]`，`system.text_log` 中的敏感值也会被脱敏。访问未脱敏的日志需要您针对具体排查明确批准，并使用独立的可审计账户。查询脱敏默认关闭，适用于 ClickHouse `26.6.1-2397` 或更高版本、`26.8.1-548` 或更高版本、`26.10.2-15` 或更高版本以及 `26.11`；如需为服务启用，请联系技术支持。
 
-  ### 安全命名集合进入 Public Beta {#secure-named-collections-entering-public-beta}
+  ### 安全命名集合进入公开测试版 {#secure-named-collections-entering-public-beta}
 
-  安全命名集合将于 2026 年 11 月随 ClickHouse `26.10` 在快速发布通道上进入 Public Beta，面向所有 Cloud 提供商开放。借助该功能，您可以通过 `CREATE NAMED COLLECTION` 一次性加密存储 S3 密钥等凭证，之后按名称引用该集合即可，无需在查询中直接写入凭证。请参阅[命名集合](/zh/concepts/features/configuration/server-config/named-collections)。
+  安全命名集合将于 2026 年 11 月随 ClickHouse `26.10` 在快速发布通道上进入公开测试版，面向所有 Cloud 提供商开放。借助该功能，您可以通过 `CREATE NAMED COLLECTION` 一次性加密存储 S3 密钥等凭证，之后按名称引用该集合即可，无需在查询中直接写入凭证。请参阅[命名集合](/zh/concepts/features/configuration/server-config/named-collections)。
 </Update>
 
 <Update label="Nov 11, 2026">
   本周的 Cloud 更新带来多项重要的平台新功能，并在数据、可观测性、安全和 AI 工程等方面让运维更加顺畅：
 
   * **构建：** [ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) 现已正式可用，支持向 ClickHouse 进行原生变更数据捕获，并提供 `pg_clickhouse` 扩展。[收购 Xata](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion) 将加快即时分支、克隆以及可缩容至零的环境等功能的落地。
-  * **观测：** [ClickHouse Observability](https://clickhouse.com/blog/announcing-clickhouse-observability) 已进入 Public Beta。可将 OpenTelemetry 数据发送到托管端点，并在 ClickStack 中或借助智能体排查日志、指标和链路追踪。Observability Apps 处于私有预览阶段，可基于实时遥测数据构建由提示词驱动、可共享的应用。
+  * **观测：** [ClickHouse Observability](https://clickhouse.com/blog/announcing-clickhouse-observability) 已进入公开测试版。可将 OpenTelemetry 数据发送到托管端点，并在 ClickStack 中或借助智能体排查日志、指标和链路追踪。Observability Apps 处于私有预览阶段，可基于实时遥测数据构建由提示词驱动、可共享的应用。
   * **安全：** ClickHouse Security 处于私有预览阶段，基于 [RunReveal 技术](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion)构建，集安全数据集成、托管检测和 AI 驱动的调查于一体。管理员还可以为每个角色配置对控制台内监控仪表板的访问权限。
   * **连接：** [ClickPipes](/zh/integrations/clickpipes/mongodb) 的 MongoDB CDC 连接器现已正式可用，新增并行快照、结构化摄取以及新的监控指标。`remoteSecure` 现以私有预览形式提供支持，同一组织、区域和 cell 中的服务可通过 ClickHouse Cloud 的私有网络相互查询。借助已批准域名和全新的 Previews 页面，入门和试用符合条件的功能均可自助完成。
-  * **借助 AI 构建：** Langfuse AI Gateway 已进入 Public Beta，可用于追踪模型用量和成本。Langfuse 还新增了带版本管理的智能体技能；项目 API 密钥现在可限定为完全访问、查看者、摄取或评分摄取权限；Experiments 会将候选运行中的每项评分与基线进行比较，并突出显示改进与回退。详情请阅读[平台公告](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion)。
+  * **借助 AI 构建：** Langfuse AI Gateway 已进入公开测试版，可用于追踪模型用量和成本。Langfuse 还新增了带版本管理的智能体技能；项目 API 密钥现在可限定为完全访问、查看者、摄取或评分摄取权限；Experiments 会将候选运行中的每项评分与基线进行比较，并突出显示改进与回退。详情请阅读[平台通知](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion)。
 </Update>
 
 <Update label="2026年10月19日">
@@ -175,7 +197,7 @@ rss: true
 </Update>
 
 <Update label="Sep 22, 2026">
-  本周更新将 ClickHouse Cloud 的 compliance 覆盖范围扩展至新的亚太区域，新增处于 Public Beta 阶段的副本感知路由，并为指标、compute 和 dbt 带来了新能力。受 HIPAA 和 PCI 监管的 cell 现已在 AWS 首尔和悉尼上线；符合条件的客户可试用兼容 Prometheus 的指标工作负载与按需计算；此外，ClickHouse 现已通过 dbt Core v2 与 dbt Platform 提供。
+  本周更新将 ClickHouse Cloud 的 compliance 覆盖范围扩展至新的亚太区域，新增处于公开测试版阶段的副本感知路由，并为指标、compute 和 dbt 带来了新能力。受 HIPAA 和 PCI 监管的 cell 现已在 AWS 首尔和悉尼上线；符合条件的客户可试用兼容 Prometheus 的指标工作负载与按需计算；此外，ClickHouse 现已通过 dbt Core v2 与 dbt Platform 提供。
 
   <a id="security" />
 
@@ -193,15 +215,15 @@ rss: true
 
   <a id="replica-aware-routing-now-in-public-beta" />
 
-  ### 副本感知路由进入 Public Beta {#replica-aware-routing-now-in-public-beta}
+  ### 副本感知路由进入公开测试版 {#replica-aware-routing-now-in-public-beta}
 
-  [副本感知路由](/zh/products/cloud/features/infrastructure/replica-aware-routing) 现已面向 Enterprise 客户进入 Public Beta，支持原生 ClickHouse Cloud 与 BYOC 部署。在你的 account 上启用该功能后，即可直接在服务设置中开启。详见[通知](https://clickhouse.com/blog/replica-aware-routing-public-beta)。
+  [副本感知路由](/zh/products/cloud/features/infrastructure/replica-aware-routing) 现已面向 Enterprise 客户进入公开测试版，支持原生 ClickHouse Cloud 与 BYOC 部署。在你的账户上启用该功能后，即可直接在服务设置中开启。详见[通知](https://clickhouse.com/blog/replica-aware-routing-public-beta)。
 
   <a id="promql-support-in-private-preview" />
 
   ### PromQL 支持进入私有预览 {#promql-support-in-private-preview}
 
-  现在，你可以将 Prometheus 指标存储在 `TimeSeries` 表引擎中，并直接针对 ClickHouse 服务使用 PromQL 查询——无需转译器或代理，现有的采集器、Grafana 仪表盘和 Prometheus 工具链无需改动即可继续使用。可通过 Prometheus 远程写入 v1 写入数据，并通过 Prometheus HTTP API 读取；也可以在 SQL 会话中使用 `prometheusQuery` 和 `prometheusQueryRange` 表函数运行 PromQL。该功能通过[私有预览等待名单](https://clickhouse.com/cloud/promql-support-waitlist)向 AWS、GCP 和 Azure 上的部分 ClickHouse Cloud 与 BYOC 客户开放。请参阅 [Prometheus interface 文档](/zh/concepts/features/interfaces/prometheus)和[通知](https://clickhouse.com/blog/introducing-promql)。
+  现在，你可以将 Prometheus 指标存储在 `TimeSeries` 表引擎中，并直接针对 ClickHouse 服务使用 PromQL 查询——无需转译器或代理，现有的采集器、Grafana 仪表盘和 Prometheus 工具链无需改动即可继续使用。可通过 Prometheus 远程写入 v1 写入数据，并通过 Prometheus HTTP API 读取；也可以在 SQL 会话中使用 `prometheusQuery` 和 `prometheusQueryRange` 表函数运行 PromQL。该功能通过[私有预览等待名单](https://clickhouse.com/cloud/promql-support-waitlist)向 AWS、GCP 和 Azure 上的部分 ClickHouse Cloud 与 BYOC 客户开放。请参阅 [Prometheus 接口 文档](/zh/concepts/features/connect-to-clickhouse/prometheus)和[通知](https://clickhouse.com/blog/introducing-promql)。
 
   <a id="on-demand-compute-now-in-private-preview" />
 
@@ -217,7 +239,7 @@ rss: true
 
   ### 适用于 dbt v2 的 ClickHouse 适配器，以及 dbt Platform 中的 ClickHouse {#clickhouse-adapter-for-dbt-v2-and-clickhouse-in-dbt-platform}
 
-  现在，你可以借助处于 Public Beta 的 dbt v2 adapter，在基于 Rust 的全新 Core v2 引擎上针对 ClickHouse 运行 dbt。ClickHouse 也首次作为一种连接方式出现在 dbt Platform (Studio、作业和环境) 中，目前处于私有 beta 阶段，按 account 启用。现有的 v1 adapter (`dbt-clickhouse`) 仍会并行获得完整维护。请参阅 [dbt Core](https://github.com/dbt-labs/dbt)、[dbt-clickhouse adapter 拉取请求](https://github.com/ClickHouse/dbt-clickhouse/pull/739)以及 [dbt Platform 文档拉取请求](https://github.com/dbt-labs/docs.getdbt.com/pull/9975)。
+  现在，你可以借助处于公开测试版的 dbt v2 adapter，在基于 Rust 的全新 Core v2 引擎上针对 ClickHouse 运行 dbt。ClickHouse 也首次作为一种连接方式出现在 dbt Platform (Studio、作业和环境) 中，目前处于私有 beta 阶段，按账户启用。现有的 v1 adapter (`dbt-clickhouse`) 仍会并行获得完整维护。请参阅 [dbt Core](https://github.com/dbt-labs/dbt)、[dbt-clickhouse adapter 拉取请求](https://github.com/ClickHouse/dbt-clickhouse/pull/739)以及 [dbt Platform 文档拉取请求](https://github.com/dbt-labs/docs.getdbt.com/pull/9975)。
 </Update>
 
 <Update label="2026 年 9 月 8 日">

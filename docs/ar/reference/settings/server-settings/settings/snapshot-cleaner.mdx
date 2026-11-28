@@ -12,17 +12,19 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُضبط هذه الإعدادات خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="snapshot_cleaner_period">
-  ## snapshot_cleaner_period
-</div>
+## snapshot_cleaner_max_replicas {#snapshot_cleaner_max_replicas}
 
-<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />
+<SettingsInfoBlock type="UInt64" default_value="3" changeable_without_restart="No" />
 
-الفترة اللازمة لإزالة أجزاء اللقطة الخاصة بـ SharedMergeTree بالكامل. متاح فقط في ClickHouse Cloud
+الحد الأقصى لعدد النسخ المتماثلة التي تشغّل مُنظِّف اللقطات لكل جدول ضمن سجل اللقطات. تُعلِن كل نسخة متماثلة تشغّل مُنظِّفًا عن ذلك باستخدام علامة النسخة المتماثلة `snapshot_cleaner_enabled`؛ وتُرتِّب النسخ المتماثلة نظيراتها المُعلِنة بناءً على تجزئة الالتقاء للجدول واسم النسخة المتماثلة. ولا تعالج النسخة المتماثلة جدولًا إلا إذا كانت ضمن المراتب الأولى، وبذلك تتوزع مهام تنظيف الجداول المختلفة على الأسطول مع الحد من تكرار العمل. أما النسخ المتماثلة التي يكون مُنظِّفها معطّلًا (`snapshot_cleaner_period = 0`)، فلا تُعلِن عن نفسها مطلقًا ولا تُختار أبدًا. تعني القيمة `0` عدم وجود حد: تعالج كل نسخة متماثلة كل جدول. متاح فقط في ClickHouse Cloud
 
-<div id="snapshot_cleaner_pool_size">
-  ## snapshot_cleaner_pool_size
-</div>
+## snapshot_cleaner_period {#snapshot_cleaner_period}
+
+<SettingsInfoBlock type="UInt64" default_value="3600" changeable_without_restart="No" />
+
+الفترة بالثواني اللازمة لإزالة أجزاء اللقطة الخاصة بـ SharedMergeTree بالكامل. متاح فقط في ClickHouse Cloud
+
+## snapshot_cleaner_pool_size {#snapshot_cleaner_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="128" changeable_without_restart="No" />
 

@@ -54,12 +54,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Используйте пакетную очередь сортировки, чтобы снизить накладные расходы на обработку каждой строки в очереди при слиянии отсортированных потоков.
 
-Применяется только к слияниям, не изменяющим строки, то есть к обычному `MergeTree`
-(режим слияния `Ordinary`). Не влияет на движки с семантикой, применяемой во время слияния,
-такие как `ReplacingMergeTree`, `CollapsingMergeTree`,
-`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`,
-`GraphiteMergeTree` и `VersionedCollapsingMergeTree`, которые независимо от этой настройки продолжают использовать
-очередь по умолчанию.
+Применяется только к слияниям в режиме слияния `Ordinary`: к слияниям частей обычного `MergeTree`, включая
+слияния, при которых строки удаляются или переписываются (легковесные удаления, удаления по TTL, патч-части легковесных
+обновлений и `OPTIMIZE ... DEDUPLICATE`), а также к слияниям частей обычных проекций. Алгоритмы слияния
+движков с семантикой, применяемой во время слияния, таких как `ReplacingMergeTree`, `CollapsingMergeTree`,
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree` и
+`VersionedCollapsingMergeTree`, а также алгоритмы слияния частей агрегирующих проекций сами выбирают очередь сортировки, поэтому
+эта настройка на них не влияет.
 
 ## merge_workload {#merge_workload}
 

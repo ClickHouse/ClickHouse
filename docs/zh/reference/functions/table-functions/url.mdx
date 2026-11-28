@@ -94,6 +94,24 @@ SELECT count() FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TS
 
 每个地址生成时都会应用 `_path` 或 `_file` 谓词，因此，被谓词拒绝的地址也会生成，并计入数量限制；只是不会读取这些地址。
 
+### 模式用于生成地址，而非过滤列出的文件 {#patterns-generate-addresses}
+
+普通 HTTP 无法枚举服务器上有哪些文件，因此 `url` 中的模式是地址的*生成器*，而不是作用于已有文件的*过滤器*。查询读取的每个地址都必须先生成、再逐一请求，地址数量受 [glob&#95;expansion&#95;max&#95;elements](/zh/reference/settings/session-settings/other#glob_expansion_max_elements) 限制。只要启用了 [http&#95;skip&#95;not&#95;found&#95;url&#95;for&#95;globs](/zh/reference/settings/session-settings/http#http_skip_not_found_url_for_globs)，读取时就会跳过实际不存在的地址。
+
+[s3](/zh/reference/functions/table-functions/s3) 等对象存储表函数的机制恰好相反：模式会被编译为正则表达式，并与桶的列出结果进行匹配，因此即使模式所描述的键空间极其庞大，也不会带来额外开销。因此，同一个模式在 `s3` 中可以被完整读取，在 `url` 中却会被拒绝：
+
+```sql
+-- Matched against the bucket listing, so only the objects that exist are read.
+SELECT count() FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+
+-- The same pattern would have to generate 100020001 addresses for `url`, and is rejected.
+SELECT count() FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+-- Code: 36. DB::Exception: Table function 'url': first argument generates too many result addresses: 100020001,
+-- while at most 1000 are allowed (see the 'glob_expansion_max_elements' setting). ...
+```
+
+如果模式是用来与列出的结果进行匹配的，请使用 `s3` (或其他对象存储表函数) ；只有在确实需要请求每个生成的地址时，才应调高 `glob_expansion_max_elements`。
+
 ## 结合 HTTP 索引页使用通配符 {#wildcards-with-http-index-pages}
 
 对于 `url` 和 `URL` 表引擎，ClickHouse 可以通过拉取 HTTP 索引页 (HTML 或纯文本) ，并从响应正文中提取 URL 来展开通配符。当服务器提供目录列表时，这使得 `/**/` 之类的模式成为可能。

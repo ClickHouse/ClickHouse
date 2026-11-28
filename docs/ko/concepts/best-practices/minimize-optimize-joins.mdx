@@ -47,7 +47,7 @@ ClickHouse에서 데이터를 비정규화하는 전체 가이드는 [비정규�
 ## 최적의 조인 알고리즘 선택하기 {#choosing-the-optimal-join-algorithm}
 
 ClickHouse는 속도와 메모리 사이에서 서로 다른 절충점을 갖는 여러 조인 알고리즘을 지원합니다.
-[`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)의 기본값은 `direct,hash,ie_join`이며, ClickHouse는 조인 유형, 엄격성(strictness), 조건, 테이블 엔진에 맞춰 적용 가능한 첫 번째 알고리즘을 선택합니다. 이 값은 양쪽 입력을 모두 줄인 뒤, 대표성 있는 데이터로 측정한 결과 다른 메모리 전략이나 실행 전략이 필요하다고 확인된 경우에만 변경을 고려하십시오. 알고리즘 실행 세부 사항과 지원되는 조인 유형은 [조인 알고리즘](/ko/concepts/features/operations/select/join-algorithms)을 참조하십시오.
+[`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)의 기본값은 `direct,hash,inequality`이며, ClickHouse는 조인 유형, 엄격성(strictness), 조건, 테이블 엔진에 맞춰 적용 가능한 첫 번째 알고리즘을 선택합니다. 이 값은 양쪽 입력을 모두 줄인 뒤, 대표성 있는 데이터로 측정한 결과 다른 메모리 전략이나 실행 전략이 필요하다고 확인된 경우에만 변경을 고려하십시오. 알고리즘 실행 세부 사항과 지원되는 조인 유형은 [조인 알고리즘](/ko/concepts/features/operations/select/join-algorithms)을 참조하십시오.
 
 성능이 핵심 최적화 지표이고 조인을 최대한 빠르게 실행하려면, 다음 결정 트리를 참고하여 적합한 조인 알고리즘을 선택할 수 있습니다.
 

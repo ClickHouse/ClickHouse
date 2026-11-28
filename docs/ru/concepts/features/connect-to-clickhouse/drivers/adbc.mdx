@@ -1,0 +1,46 @@
+---
+description: 'Документация по драйверу ClickHouse ADBC'
+sidebarTitle: 'Драйвер ADBC'
+slug: /concepts/features/connect-to-clickhouse/drivers/adbc
+title: 'Драйвер ADBC'
+doc_type: 'reference'
+---
+
+Драйвер ClickHouse ADBC предоставляет соответствующий стандартам интерфейс [Arrow Database Connectivity (ADBC)](https://arrow.apache.org/adbc/)
+для подключения ADBC-совместимых приложений к ClickHouse.
+
+Драйвер взаимодействует с сервером ClickHouse по [HTTP-протоколу](/ru/concepts/features/connect-to-clickhouse/protocols/http) — основному
+протоколу, который поддерживается во всех развертываниях ClickHouse. Благодаря этому драйвер работает одинаково в самых разных
+средах: в локальных установках, в управляемых облачных сервисах и там, где доступ возможен только по HTTP.
+
+Исходный код драйвера доступен в
+[репозитории adbc&#95;clickhouse на GitHub](https://github.com/clickhouse/adbc_clickhouse).
+
+<Note>
+  Драйвер находится в стадии активной разработки. Некоторые возможности ADBC пока могут быть реализованы не полностью. Текущая версия
+  обеспечивает базовое подключение и основную функциональность ADBC; дополнительные возможности появятся в будущих
+  релизах.
+
+  Ваши отзывы очень важны для нас: они помогают определять приоритеты новых возможностей и улучшений. Если вы столкнулись
+  с ограничениями, нехваткой функциональности или неожиданным поведением, сообщите о своих наблюдениях или предложите новые возможности в
+  трекере задач по адресу
+  [github.com/ClickHouse/adbc&#95;clickhouse/issues](https://github.com/ClickHouse/adbc_clickhouse/issues)
+</Note>
+
+## Установка {#installation}
+
+Последнюю версию драйвера можно установить с помощью [dbc](https://docs.columnar.tech/dbc/):
+
+```bash
+dbc install clickhouse
+```
+
+Кроме того, его можно скачать вручную со страницы [github.com/adbc-drivers/clickhouse/releases](https://github.com/adbc-drivers/clickhouse/releases).
+
+## Параметры базы данных {#database-options}
+
+Приведённые ниже параметры базы данных используются для установления соединения с помощью драйвера ClickHouse ADBC.
+
+* `uri`: задаёт полный адрес HTTP(S) конечной точки сервера ClickHouse, включая протокол, хост и порт.
+* `username`: имя пользователя для аутентификации на сервере ClickHouse.
+* `password`: пароль, соответствующий указанному имени пользователя.

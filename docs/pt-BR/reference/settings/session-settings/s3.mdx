@@ -75,6 +75,18 @@ Valores possíveis:
 
 Número máximo de arquivos que podem ser retornados em lote pela requisição ListObject
 
+## s3_list_object_parallelism {#s3_list_object_parallelism}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nova configuração para listar caminhos com globs em armazenamento de objetos compatível com S3 (as funções de tabela `s3` e `s3Cluster`, o motor de tabela `S3` e seus aliases `gcs`, `cosn` e `oss`) com várias requisições `ListObjects` concorrentes, percorrendo em paralelo a árvore de prefixos comuns."}]}]} />
+
+Número de requisições `ListObjects` concorrentes usadas para listar arquivos quando o caminho contém globs, em leituras de armazenamento de objetos compatível com S3: a função de tabela `s3`, o motor de tabela `S3`, a função de tabela `s3Cluster` e seus aliases `gcs`, `cosn` e `oss`.
+
+Quando maior que `1`, os arquivos correspondentes são listados percorrendo a árvore de &quot;diretórios&quot; (os prefixos comuns formados pelo delimitador `/`) com essa quantidade de threads em paralelo, em vez de paginar todo o prefixo em um único stream serial. Isso pode acelerar drasticamente consultas em buckets com milhões de objetos, especialmente em layouts particionados hierarquicamente (por exemplo, `year=*/month=*/`), nos quais subárvores inteiras sem correspondência são descartadas durante a varredura.
+
+O valor `1` (padrão) mantém o comportamento anterior de listagem serial. Globs recursivos (`**`) sempre usam listagem serial.
+
 ## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
@@ -89,6 +101,16 @@ O tamanho mínimo da parte a ser enviada durante um upload multipart para o S3.
 
 Número máximo de valores de `_path` que podem ser extraídos dos filtros da consulta para serem usados na iteração de arquivos
 em vez da listagem via glob. 0 significa desativado.
+
+## s3_request_payer {#s3_request_payer}
+
+<SettingsInfoBlock type="S3RequestPayer" default_value="none" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "none"},{"label": "Nova configuração para acessar buckets do S3 do tipo requester-pays."}]}]} />
+
+Defina como `requester` para acessar um bucket `S3` do tipo requester-pays: assim, cada requisição passa a incluir o cabeçalho `x-amz-request-payer: requester`, e o solicitante paga pela requisição e pela transferência de dados. Valores possíveis: `none` (padrão; o cabeçalho não é enviado), `requester`.
+
+A configuração entra em vigor quando o cliente `S3` é criado e, portanto, se aplica a usos com escopo de consulta, como a função de tabela `s3` e `BACKUP ... TO S3`. Um `SET` posterior por consulta não reconfigura um cliente de longa duração já criado, como um disco `S3` ou uma tabela `S3` com suas próprias credenciais. Nesses casos, use a chave `request_payer` de uma seção de endpoint da configuração do servidor `<s3>` ou da definição do disco, que também tem precedência sobre esta configuração.
 
 ## s3_request_timeout_ms {#s3_request_timeout_ms}
 

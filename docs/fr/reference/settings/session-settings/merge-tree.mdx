@@ -132,13 +132,15 @@ Valeurs possibles :
 
 ## merge_tree_min_bytes_per_task_for_remote_reading {#merge_tree_min_bytes_per_task_for_remote_reading}
 
-**Alias** : `filesystem_prefetch_min_bytes_for_single_read_task`
+**Alias** : `filesystem_prefetch_min_bytes_for_single_read_task`
 
 <SettingsInfoBlock type="UInt64" default_value="2097152" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "2097152"},{"label": "La valeur est harmonisée avec `filesystem_prefetch_min_bytes_for_single_read_task`"}]}]} />
 
-Nombre minimal d’octets à lire par tâche.
+Quantité minimale de données compressées, en octets, qu’une tâche de lecture lit à partir d’une partie de données d’une table `MergeTree` stockée sur un disque distant (par exemple, S3). Des tâches plus volumineuses réduisent le nombre de requêtes vers le stockage, tandis que des tâches plus petites permettent de répartir le travail plus équitablement entre les fils d’exécution.
+
+La taille de tâche n’est pas augmentée au-delà du seuil à partir duquel chaque fil d’exécution de lecture reçoit au moins deux tâches. Ce paramètre sert également à estimer le nombre de fils d’exécution de lecture pour décider s’il faut utiliser automatiquement les répliques parallèles.
 
 ## merge_tree_min_read_task_size {#merge_tree_min_read_task_size}
 
@@ -187,6 +189,16 @@ Valeurs possibles :
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant de contrôler la prélecture des sous-flux de données partagées JSON lus en recherchant une marque dans les parties au format wide."}]}]} />
 
 Active la prélecture des sous-flux de données partagées JSON dans les parties au format wide lus en recherchant une marque, y compris le sous-flux de données des chemins typés `SHARED`. Cette prélecture lit depuis le début du granule, qui n&#39;est généralement pas la position à partir de laquelle le sous-flux est lu ; elle peut donc être inutile. Désactivez ce paramètre pour ignorer ces prélectures.
+
+## merge_tree_read_end_tasks_per_stream {#merge_tree_read_end_tasks_per_stream}
+
+<SettingsInfoBlock type="UInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "32"},{"label": "Nouveau paramètre : les tâches en fin de lecture `MergeTree` sont plus petites, afin que tous les fils d’exécution terminent à peu près en même temps."}]}]} />
+
+Réduit les tâches en fin de lecture `MergeTree` à 1/N de la part des données attribuée à un fil d’exécution (sans descendre en dessous de
+`merge_tree_min_read_task_size`), afin que tous les fils d’exécution terminent à peu près en même temps. Des valeurs plus élevées répartissent mieux la charge entre les
+fils d’exécution, mais ajoutent un surcoût par tâche. La valeur 0 désactive ce comportement.
 
 ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability}
 

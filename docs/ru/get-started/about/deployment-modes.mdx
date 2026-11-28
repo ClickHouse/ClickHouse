@@ -63,7 +63,7 @@ SQL Console в ClickHouse Cloud включает мощную функцию [п
 
 [ClickHouse CLI](/ru/concepts/features/interfaces/cli) (`clickhousectl`, псевдоним `chctl`) — это инструмент командной строки для локальной разработки с ClickHouse и Postgres, а также для управления ClickHouse Cloud. Он устанавливает версии ClickHouse, запускает локальные серверы и управляет ими, а также выполняет запросы.
 
-Для локальной разработки `clickhousectl` устанавливает любую версию ClickHouse и запускает именованные серверы. Для подключения используйте `clickhousectl local client` — эта команда запускает `clickhouse-client` соответствующей версии. Каждый сервер хранит данные в каталоге проекта `.clickhouse/`, поэтому можно параллельно запускать несколько изолированных окружений. Если запущен Docker, команда `clickhousectl local postgres` точно так же запускает локальные серверы Postgres.
+Для локальной разработки `clickhousectl` устанавливает любую версию ClickHouse и запускает именованные серверы в каталоге проекта, отмеченном командой `clickhousectl local init`. Для подключения используйте `clickhousectl local client` — эта команда запускает `clickhouse-client` соответствующей версии. Каждый сервер хранит данные в каталоге проекта `.clickhouse/`, поэтому можно параллельно запускать несколько изолированных окружений. Если запущен Docker, команда `clickhousectl local postgres` точно так же запускает локальные серверы Postgres.
 
 Кроме того, `clickhousectl` управляет облачными ресурсами ClickHouse Cloud: сервисами, масштабированием, резервными копиями, Managed Postgres, ClickPipes, Управляемым ClickStack, ключами API и организациями. Вход через браузер (`clickhousectl cloud auth login`) даёт доступ только для чтения; для создания или изменения ресурсов нужен ключ API.
 
@@ -73,7 +73,8 @@ curl -fsSL https://clickhouse.com/cli | sh
 
 # Install the latest ClickHouse, set it as your default, and symlink it to ~/.local/bin/clickhouse
 clickhousectl local use latest
-clickhousectl local server start
+clickhousectl local init
+clickhousectl local clickhouse start
 clickhousectl local client
 ```
 

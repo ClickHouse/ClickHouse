@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 该引擎可与 S3、GCP 和 Azure 存储中现有的 [Delta Lake](https://github.com/delta-io/delta) 表集成，并支持读写 (S3 和 GCS 的写入自 v25.10 起，Azure 的写入自 v26.9 起) 。
 
-## 创建 DeltaLake 表
+## 创建 DeltaLake 表 {#create-table}
 
 默认情况下，Delta Lake 表必须已存在于 S3、GCP 或 Azure 存储中，以下命令会在不提供 DDL 列定义的情况下附加到该表。设置 `allow_delta_lake_create_table = 1` 后，对不含 `_delta_log` 的位置执行带显式列定义的 `CREATE TABLE` 会改为通过 `delta-kernel-rs` 写入初始提交以创建新的 Delta Lake 表 (尚不支持创建分区表) ；而在 Unity `DataLakeCatalog` 数据库中，该表还会注册到目录中。
 
@@ -98,22 +98,54 @@ doc_type: 'reference'
     **语法**
 
     ```sql
+    -- Account key
     CREATE TABLE table_name
-    ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ENGINE = DeltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+    -- Workload identity (mutually exclusive with account_name / account_key)
+    CREATE TABLE table_name
+    ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])
     ```
 
     **参数**
 
     * `connection_string` — Azure 连接字符串
-    * `storage_account_url` — Azure 存储账户 URL (例如，https://account.blob.core.windows.net)
+    * `storage_account_url` — Azure 存储账户 URL (例如 https://account.blob.core.windows.net)
     * `container_name` — Azure 容器名称
     * `blobpath` — 容器内 Delta Lake 表的路径
     * `account_name` — Azure 存储账户名称
     * `account_key` — Azure 存储账户密钥
+    * `extra_credentials` — 可选，可替代 `account_name` / `account_key`。使用 `client_id` 和 `tenant_id` 进行 Azure workload identity 身份验证。不能与账户凭证同时使用。注意，这并非 S3 中 `extra_credentials` 的 `role_arn` 形式。
+
+    引擎参数可以通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)指定。命名集合同样支持 `client_id` 和 `tenant_id` 键。
+
+    **Workload identity**
+
+    delta-kernel 的 Azure 路径还需要设置以下环境变量：
+
+    * `AZURE_FEDERATED_TOKEN_FILE` — 必填 (投射的令牌文件，例如在 AKS 上)
+    * `AZURE_TENANT_ID`、`AZURE_CLIENT_ID` — 必填，除非已通过 `extra_credentials` 或命名集合传入
+    * `AZURE_AUTHORITY_HOST` — 可选
+
+    Workload identity 使用的是服务器自身的身份，因此默认会被拒绝：每个创建或查询该表的会话都必须启用 `allow_server_credentials_in_user_queries`，可以通过 `SET` 启用，也可以在该会话的设置配置文件中启用。
+
+    ```sql
+    SET allow_server_credentials_in_user_queries = 1;
+
+    CREATE NAMED COLLECTION azure_wi AS
+        storage_account_url = 'https://<account>.blob.core.windows.net',
+        container = 'mycontainer',
+        blob_path = 'path/to/table',
+        client_id = '<client-id>',
+        tenant_id = '<tenant-id>';
+
+    CREATE TABLE azureDeltaLake
+    ENGINE = DeltaLakeAzure(azure_wi)
+    ```
   </Tab>
 </Tabs>
 
-## 使用 DeltaLake 表写入数据
+## 使用 DeltaLake 表写入数据 {#insert-data}
 
 使用 DeltaLake 表引擎创建表后，可以通过以下方式向表中插入数据：
 
@@ -129,14 +161,13 @@ Delta Lake 写入目前处于 Beta 阶段，默认禁用，必须使用 `SET all
 <Note>
   仅支持通过 delta kernel 向该表引擎写入数据。
   支持向 S3 和 GCS 写入，自版本 26.9 起也支持向 Azure 写入。
-  delta kernel 不支持 Azure workload identity 身份验证 (`extra_credentials(client_id = ..., tenant_id = ...)`) 。
 </Note>
 
-### 数据缓存
+### 数据缓存 {#data-cache}
 
 `DeltaLake` 表引擎和表函数支持数据缓存，与 `S3`、`AzureBlobStorage` 和 `HDFS` 存储相同。更多详情，请参见[&quot;S3 表引擎&quot;](/zh/reference/engines/table-engines/integrations/s3#data-cache)。
 
-## 另请参阅
+## 另请参阅 {#see-also}
 
 * [deltaLake 表函数](/zh/reference/functions/table-functions/deltalake)
 

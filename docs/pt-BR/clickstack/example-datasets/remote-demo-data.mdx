@@ -3,7 +3,7 @@ slug: /use-cases/observability/clickstack/getting-started/remote-demo-data
 title: 'Dataset de demonstração remoto'
 description: 'Primeiros passos com o ClickStack e um dataset de demonstração remoto'
 doc_type: 'guide'
-keywords: ['clickstack', 'dados de exemplo', 'dataset de demonstração', 'logs', 'observabilidade']
+keywords: ['clickstack', 'dados de exemplo', 'conjunto de dados de exemplo', 'logs', 'observabilidade']
 ---
 
 import DemoArchitecture from '/snippets/pt-BR/_demo.mdx';
@@ -13,9 +13,9 @@ import DemoArchitecture from '/snippets/pt-BR/_demo.mdx';
 Este guia usa um conjunto de dados de exemplo hospedado no ClickHouse playground público em [sql.clickhouse.com](https://sql.clickhouse.com), ao qual você pode se conectar a partir da sua implantação local do ClickStack.
 
 <Warning>
-  **Sem suporte no Managed ClickStack**
+  **Sem suporte no ClickHouse Observability**
 
-  Bancos de dados remotos não têm suporte ao usar Managed ClickStack. Portanto, este conjunto de dados também não é compatível.
+  Bancos de dados remotos não têm suporte ao usar ClickHouse Observability. Portanto, este conjunto de dados também não é compatível.
 </Warning>
 
 Ele contém aproximadamente 40 horas de dados capturados da versão para ClickHouse da demonstração oficial do OpenTelemetry (OTel). Os dados são reproduzidos todas as noites, com os timestamps ajustados para a janela de tempo atual, permitindo que os usuários explorem o comportamento do sistema usando os logs, traces e métricas integrados da Interface do ClickStack.

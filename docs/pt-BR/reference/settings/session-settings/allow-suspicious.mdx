@@ -35,7 +35,7 @@ Na instrução CREATE TABLE, permite a criação de colunas do tipo FixedString(
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um alias para a configuração `allow_suspicious_indices`."}]}, {"id": "row-2","items": [{"label": "23.4"},{"label": "0"},{"label": "Se true, um índice pode ser definido com expressões idênticas"}]}]} />
 
-Rejeitar índices primários/secundários e chaves de ordenação com expressões idênticas
+Rejeitar índices primários/secundários e sorting keys com expressões idênticas, bem como expressões de sorting key, de chave primária ou de chave de amostragem, de índice secundário ou de sorting key de projeção que tenham o nome de uma coluna armazenada
 
 ## allow_suspicious_low_cardinality_types {#allow_suspicious_low_cardinality_types}
 

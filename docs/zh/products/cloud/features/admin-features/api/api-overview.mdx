@@ -30,8 +30,17 @@ ClickHouse Cloud API 基于开源的 [OpenAPI 规范](https://www.openapis.org/)
 
 ## 速率限制 {#rate-limits}
 
-每个组织最多可创建 100 个 API 密钥。每个 API 密钥在
-10 秒时间窗口内最多可发出 10 个请求。如果你希望提高组织的
+每个组织最多可创建 100 个 API 密钥。每个 API key 在 10 秒时间窗口内有以下
+限制：
+
+* 40 个读取请求 (`GET`)
+* 20 个写入请求 (所有其他方法，例如 `POST`、`PATCH` 和 `DELETE`)
+
+当请求超出限制时，API 会返回状态码 `429 Too Many Requests`，
+并附带 `Retry-After` 请求头。请求头值表示再次发送请求前
+需要等待的秒数。
+
+如果你希望提高组织的
 API 密钥数量上限，或提高每 10 秒时间窗口内的请求上限，
 请联系 support@clickhouse.com
 

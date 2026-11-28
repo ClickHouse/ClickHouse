@@ -1,0 +1,47 @@
+---
+description: 'Documentación de los modos de codificación por colores por columna en la interfaz web SQL integrada (`/play`)'
+sidebarTitle: 'Codificación por colores de la interfaz de usuario web'
+slug: /concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding
+title: 'Codificación por colores de la interfaz de usuario web'
+doc_type: 'reference'
+sidebar: false
+---
+
+La interfaz web SQL integrada (`play.html`, que se sirve en la ruta [`/play`](/es/concepts/features/connect-to-clickhouse/protocols/http) de cualquier puerto HTTP de ClickHouse) puede colorear las celdas del resultado para que los patrones de una columna se detecten fácilmente de un vistazo. Cada columna tiene su propio modo de codificación por colores, que se puede activar o cambiar de forma independiente.
+
+## Cambiar el modo {#switching-the-mode}
+
+En el lado derecho de cada encabezado de columna aparece un icono 🌈. Haga clic en él para recorrer cíclicamente los modos disponibles de la columna. En dispositivos con puntero que permite pasar el cursor por encima (como un ratón), el icono solo se muestra al situar el cursor sobre el encabezado, para que no estorbe el resto del tiempo; en dispositivos táctiles y otros dispositivos de puntero impreciso, que no admiten esta función, el icono se muestra siempre para poder pulsarlo directamente.
+
+El conjunto de modos que ofrece una columna depende de su tipo:
+
+* Las columnas numéricas y las columnas `Date`/`DateTime`/`Date32`/`DateTime64` recorren cíclicamente `bar` → `heatmap` → `categorical` → `none`.
+* Todas las demás columnas alternan entre `none` y `categorical`.
+
+El modo predeterminado es `bar` para las columnas numéricas y `none` para todas las demás, incluidas las columnas de fecha y hora.
+
+## Modos {#modes}
+
+* **`bar`** — dibuja en la celda una barra horizontal proporcional al valor. En las columnas numéricas, la barra crece desde un valor de referencia cero; en cambio, en las columnas `Date`/`DateTime` abarca el rango `min`..`max` de la columna, ya que un valor de referencia cero no tiene sentido para las marcas de tiempo.
+* **`heatmap`** — rellena todo el fondo de la celda con un color que codifica el valor escalado entre el mínimo y el máximo de la columna.
+* **`categorical`** — rellena el fondo de la celda con un color obtenido a partir del hash del valor de la celda, de modo que los valores iguales reciben el mismo color y los distintos, colores diferentes. Funciona con cualquier tipo de columna.
+* **`none`** — sin codificación por colores.
+
+Las columnas `Date`, `DateTime`, `Date32` y `DateTime64` se colorean según su valor temporal, que se analiza en UTC para que la escala no dependa de la zona horaria del navegador del usuario.
+
+Los colores de fondo de `heatmap` y `categorical` utilizan el espacio de color `oklch`: solo varía el tono, mientras que la luminosidad y el croma se mantienen fijos para cada tema, de modo que el texto de la celda siga siendo legible tanto en el tema claro como en el oscuro. El fondo ocupa toda la celda incluso cuando una fila se extiende a más de una línea.
+
+## Énfasis categórico al seleccionar {#categorical-emphasis}
+
+En el modo `categorical`, al seleccionar una celda se resaltan las demás celdas que comparten el mismo valor, que se muestran con una fuente más gruesa y un color de texto de máximo contraste (blanco puro en el tema oscuro y negro puro en el tema claro). La propia celda seleccionada no se resalta. Así resulta fácil ver en qué otros puntos de la columna aparece un valor concreto.
+
+## Persistencia {#persistence}
+
+Los modos elegidos se guardan por columna en la URL de la página y en el historial del navegador, de modo que se conservan al recargar la página, compartir el enlace o navegar hacia atrás y hacia delante. Solo se almacenan las opciones distintas de las predeterminadas, para que la URL y el estado del historial sean compactos.
+
+Al igual que las [columnas fijadas](/es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/pinned-columns), los modos pertenecen al resultado que colorean: a la pestaña de consulta y, si la pestaña es un [notebook](/es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook), a cada celda individual. Las tablas de una misma ejecución de `Run all` (varias consultas) los comparten, mientras que las demás celdas y pestañas conservan los suyos.
+
+## Limitaciones {#limitations}
+
+* La disposición vertical (transpuesta) de una sola fila no muestra codificación por colores.
+* Las diferencias de `DateTime64(9)` inferiores a un microsegundo no se distinguen en la escala de colores, ya que distinguirlas no resultaría visualmente significativo en un degradado.

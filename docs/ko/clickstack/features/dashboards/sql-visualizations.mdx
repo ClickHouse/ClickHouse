@@ -24,9 +24,11 @@ SQL 기반 시각화를 만들려면 대시보드 타일 편집기를 열고 **S
 여기서 다음을 수행합니다:
 
 1. 쿼리를 실행할 **ClickHouse 연결**을 선택합니다.
-2. 필요에 따라 **Source**를 선택합니다. 이렇게 하면 `$__filters` 매크로를 통해 대시보드 수준 필터를 차트에 적용할 수 있습니다.
-3. 편집기에서 SQL 쿼리를 작성하고, 쿼리 매개변수와 매크로를 사용해 대시보드 시간 범위, 필터 및 변수와 연동합니다.
+2. 필요에 따라 **소스**를 선택합니다. 이렇게 하면 `$__filters` 매크로를 통해 대시보드 수준 필터를 차트에 적용할 수 있으며, 쿼리에서 `$__sourceTable`을 사용할 수 있습니다.
+3. 편집기에서 SQL 쿼리(SQL query)를 작성하고, 쿼리 매개변수와 매크로를 사용해 대시보드 시간 범위, 필터 및 변수와 연동합니다.
 4. **실행** 버튼을 클릭해 결과를 미리 본 다음 **저장**합니다.
+
+연결과 소스를 [연결 변수 또는 데이터 소스 변수](/ko/clickstack/features/dashboards/overview#source-connection-variables)로 지정할 수도 있습니다. 이 경우 타일이 쿼리할 연결 또는 소스를 뷰어가 직접 선택합니다.
 
 <div id="query-parameters">
   ## 쿼리 매개변수 {#query-parameters}
@@ -118,19 +120,20 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
   ### 대시보드 필터 매크로 {#dashboard-filter-macro}
 </div>
 
-| Macro        | Description                                      |
-| ------------ | ------------------------------------------------ |
-| `$__filters` | 대시보드 수준에서 설정된 필터 조건으로 대체됩니다 (Source가 선택되어 있어야 함) |
+| 매크로            | Description                                                                                                                                                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$__filters`     | 대시보드 수준에서 설정된 필터 조건으로 대체됩니다 (소스가 선택되어 있어야 함)                                                                                                                                                                       |
+| `$__sourceTable` | 선택한 소스의 테이블로 대체되며, `default.otel_logs`처럼 전체 정규화된 이름으로 표시됩니다. 메트릭 소스에는 `$__sourceTable(<metric type>)`을 사용하며, 메트릭 유형은 `gauge`, `histogram`, `sum`, `summary`, `exponential histogram` 중 하나입니다. 소스가 선택되어 있어야 합니다 |
 
-차트에서 **Source**가 선택되어 있고 대시보드 필터가 활성화되어 있으면 `$__filters`는 해당 SQL `WHERE` 조건으로 확장됩니다. Source가 선택되지 않았거나 적용된 필터가 없으면 `(1=1)`로 확장되므로 `WHERE` 절에 포함해도 항상 안전합니다.
+차트에서 **소스**가 선택되어 있고 대시보드 필터가 활성화되어 있으면 `$__filters`는 해당 SQL `WHERE` 조건으로 확장됩니다. 소스가 선택되지 않았거나 적용된 필터가 없으면 `(1=1)`로 확장되므로 `WHERE` 절에 포함해도 항상 안전합니다.
 
-**Broadcast filter condition**이 활성화된 필터만 `$__filters`에 적용됩니다. 변수로 노출된 필터는 아래에 설명된 대로 명시적으로 참조합니다.
+`$__filters`에는 **Broadcast filter condition**이 활성화된 SQL 표현식(SQL expression) 값 필터에서 선택한 값과, 타일의 소스에 해당하는 [애드혹 필터](/ko/clickstack/features/dashboards/overview#adhoc-filters)의 조건이 적용됩니다. 변수로 노출된 필터는 아래에 설명된 대로 명시적으로 참조합니다.
 
 <div id="dashboard-variables">
   ### 대시보드 변수 매크로 {#dashboard-variables}
 </div>
 
-대시보드 필터를 [변수로 사용할 수 있는 경우](/ko/clickstack/features/dashboards/overview#dashboard-variables), 선택된 값을 쿼리 어디에서나 참조할 수 있습니다. 이러한 매크로는 하나 이상의 변수를 선언한 대시보드에 속한 타일에서만 사용할 수 있습니다.
+대시보드 필터를 [변수로 사용할 수 있는 경우](/ko/clickstack/features/dashboards/overview#dashboard-variables), 즉 **Available as variable**이 활성화된 SQL 표현식(SQL expression) 값 필터이거나 정적 값, SQL 쿼리(SQL query) 값, PromQL 레이블 값 필터인 경우에는 선택된 값을 쿼리 어디에서나 참조할 수 있습니다. 이러한 매크로는 하나 이상의 변수를 선언한 대시보드에 속한 타일에서만 사용할 수 있습니다.
 
 | 매크로                                           | 설명                                                                                              |
 | --------------------------------------------- | ----------------------------------------------------------------------------------------------- |

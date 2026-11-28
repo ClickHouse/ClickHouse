@@ -14,13 +14,13 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 ## encryption_header_cache_policy {#encryption_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />ReaderExecutor 读取路径所用加密头缓存的淘汰策略。可选值：`LRU`、`SLRU`、`SIEVE`。缓存容量请参见 [`encryption_header_cache_size`](/zh/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size)，SLRU 策略中受保护队列的大小请参见 [`encryption_header_cache_size_ratio`](/zh/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio)。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />加密头缓存的淘汰策略。可选值：`LRU`、`SLRU`、`SIEVE`。缓存容量请参见 [`encryption_header_cache_size`](/zh/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size)，SLRU 策略中受保护队列的大小请参见 [`encryption_header_cache_size_ratio`](/zh/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio)。
 
 ## encryption_header_cache_size {#encryption_header_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="52428800" changeable_without_restart="Yes" />
 
-从加密文件中读取的加密头缓存的最大大小。仅用于 Experimental 的 ReaderExecutor 读取路径。
+从使用随机二进制大对象路径的磁盘 (例如 `s3` 磁盘) 上的加密文件中读取的加密头缓存的最大大小。该缓存可避免从对象存储中重复读取文件的加密头。
 
 <Note>
   此设置可在运行时修改，并会立即生效。

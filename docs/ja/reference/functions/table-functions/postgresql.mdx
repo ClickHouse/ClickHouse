@@ -28,9 +28,9 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 | `schema`      | デフォルト以外のテーブルスキーマ。省略可能です。                                                             |
 | `on_conflict` | 競合解決の戦略。例: `ON CONFLICT DO NOTHING`。省略可能です。                                          |
 
-引数は [named collections](/ja/concepts/features/configuration/server-config/named-collections) を使用して渡すこともできます。この場合、`host` と `port` は別々に指定する必要があります。この方法は本番環境に推奨されます。
+引数は [名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使用して渡すこともできます。この場合、`host` と `port` は別々に指定する必要があります。この方法は本番環境に推奨されます。
 
-TLS/SSL パラメータは `libpq` に転送され、named collection のキーまたは末尾のキー・バリュー引数として指定できます。指定できるのは `sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、`verify-full`。未設定の場合は `libpq` のデフォルトである `prefer` が適用されます) と、2 つの形式のいずれかで指定する証明書および秘密鍵です。`sslrootcert` (CA 証明書、または特別な値 `system`) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) はサーバーローカルファイルへのパスであり、サーバー設定ファイルで定義された named collection でのみ指定できます。代わりに、`sslrootcert_pem`、`sslcert_pem`、`sslkey_pem` には対応するファイルの内容を直接指定できます。たとえば、`postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')` のように指定します。これらはパスワードと同様に、ログおよび `SHOW` クエリではマスクされます。
+TLS/SSL パラメータは `libpq` に転送され、名前付きコレクション のキーまたは末尾のキー・バリュー引数として指定できます。指定できるのは `sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、`verify-full`。未設定の場合は `libpq` のデフォルトである `prefer` が適用されます) と、2 つの形式のいずれかで指定する証明書および秘密鍵です。`sslrootcert` (CA 証明書、または特別な値 `system`) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) はサーバーローカルファイルへのパスであり、サーバー設定ファイルで定義された 名前付きコレクション でのみ指定できます。代わりに、`sslrootcert_pem`、`sslcert_pem`、`sslkey_pem` には対応するファイルの内容を直接指定できます。たとえば、`postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')` のように指定します。これらはパスワードと同様に、ログおよび `SHOW` クエリではマスクされます。クライアント証明書 (`sslcert` または `sslcert_pem`) とクライアント秘密鍵 (`sslkey` または `sslkey_pem`) の両方が設定されていない場合、ClickHouse は `sslcertmode=disable` を送信します。これにより、`libpq` が service account の環境にあるデフォルトの証明書や秘密鍵 (`~/.postgresql/postgresql.{crt,key}`) で認証を行うことはありません。エンドポイントとユーザーを SQL で指定する接続が、service account のデフォルトの認証情報を流用してはならないためです。
 
 ## 戻り値 {#returned-value}
 

@@ -1,0 +1,270 @@
+---
+sidebarTitle: "WorkOS"
+keywords:
+  [
+    "workos",
+    "sync engine",
+    "authkit",
+    "sso",
+    "directory sync",
+    "identity",
+    "sign-in events",
+    "data ingestion",
+    "integrate",
+  ]
+slug: /integrations/workos
+description: "오픈 소스 WorkOS Sync Engine으로 WorkOS 사용자, 조직, 로그인 이벤트를 ClickHouse에 미러링합니다"
+title: "WorkOS를 ClickHouse에 연결하기"
+doc_type: "guide"
+integration:
+  - support_level: "partner"
+  - category: "data_ingestion"
+  - website: "https://workos.com/"
+---
+
+import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+import ConnectionDetails from "/snippets/ko/_gather_your_details_http.mdx";
+
+<PartnerBadge />
+
+[WorkOS](https://workos.com/)는 B2B 애플리케이션을 위한 인증 및 아이덴티티 API를 제공합니다. 사용자 관리
+및 로그인, 싱글 사인온, 디렉터리 동기화(SCIM), 역할 및 권한 기능이 포함됩니다.
+WorkOS 기반으로 구축된 애플리케이션은 사용자, 조직, 멤버십 및 로그인 활동을 WorkOS에 저장하고, WorkOS API를 통해 이를 조회합니다.
+
+[WorkOS Sync Engine](https://github.com/workos/sync-engine)은 WorkOS가 유지 관리하는 오픈 소스 도구로, 이 데이터를 직접 운영하는 데이터베이스로 복사하고 최신 상태로 유지합니다. Sync Engine의 ClickHouse 대상(ClickHouse destination)인 [`@workos/sync-clickhouse`](https://www.npmjs.com/package/@workos/sync-clickhouse)는 다음 두 가지 문제를 해결합니다.
+
+* **WorkOS 보존 기간 이후에도 유지되는 로그인 이력.** WorkOS는 이벤트를 90일 동안만 보관하며, `authentication.*` 이벤트(성공 여부와 관계없이 모든 로그인)에는 목록 조회 엔드포인트가 없습니다. Sync Engine은 Events API를 지속적으로 추적하여 추가 전용(append-only) ClickHouse 테이블(table)에 기록하므로, 원하는 기간만큼 이력을 직접 보관할 수 있습니다.
+* **기존 분석 데이터와의 조인.** 사용자, 조직, 멤버십, 디렉터리, SSO 연결 및 역할이 이벤트 테이블과 함께 미러링되므로, &quot;조직별 시간당 로그인 실패 횟수&quot;와 같은 질문을 페이지네이션된 API를 여러 번 호출하지 않고 쿼리 하나로 해결할 수 있습니다.
+
+이 페이지에서는 Sync Engine을 ClickHouse Cloud 및 자체 호스팅 ClickHouse에 연결하는 방법, 인증, 엔드투엔드 예시, 그리고 미리 고려해야 할 제한 사항을 다룹니다.
+
+## 작동 방식 {#how-it-works}
+
+이 엔진은 Node.js 명령 또는 Docker 컨테이너 형태로 사용자의 인프라에서 실행되며, 공식 [JavaScript 클라이언트](/ko/integrations/language-clients/js/index)를 사용해 HTTP 인터페이스로 ClickHouse에 연결합니다. 엔진이 수행하는 작업은 다음 세 가지입니다.
+
+1. **백필(Backfill)**: WorkOS REST 목록 엔드포인트에서 현재 상태를 로드합니다.
+2. **Tail**: 영속적인 커서(Cursor)를 기준으로 WorkOS Events API를 폴링하고 각 이벤트를 적용합니다.
+3. **조정(Reconcile)**: ID를 API와 대조하여 tail 과정에서 누락된 항목을 복구합니다.
+
+엔진은 다음 테이블을 포함하는 `workos` 데이터베이스를 생성합니다.
+
+| 테이블(tables)                                                      | 엔진                                                                                                           | 내용                                                           |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `auth_attempts`, `events`                                        | 이벤트 ID를 키로 식별되는 [`ReplacingMergeTree`](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) | 추가 전용입니다. 로그인 시도마다 1개의 행을 저장하며, 모든 WorkOS 이벤트를 원본 그대로 저장합니다. |
+| `users`, `organizations`, `organization_memberships` 및 기타 미러 테이블 | 소스 타임스탬프로 버전이 명시된 `ReplacingMergeTree`                                                                       | 각 객체의 현재 상태입니다. 삭제된 항목은 삭제 마커(tombstones)로 보존됩니다.            |
+| `<table>_live` 뷰                                                 | View                                                                                                         | `FINAL`로 미러 테이블을 읽고 삭제 마커를 숨깁니다. 쿼리는 이 뷰를 대상으로 실행하십시오.       |
+| 관리용 테이블                                                          | [`KeeperMap`](/ko/reference/engines/table-engines/special/keepermap)                                            | tail 커서, 단일 writer 임대, 스트림별 쓰기 잠금을 저장합니다.                    |
+
+엔진은 JSON payload를 담는 `String` 컬럼 `_raw` 하나에만 데이터를 기록합니다. 나머지 컬럼은 모두 `_raw`를 기반으로 하는 `DEFAULT` 표현식이므로, WorkOS가 나중에 추가하는 필드도 스키마(schema) 변경 없이 `JSONExtractString(_raw, 'field')`로 쿼리할 수 있습니다.
+
+## 사전 요구 사항 {#prerequisites}
+
+* WorkOS 계정 및 미러링할 환경의 API Key.
+* Node.js 22 이상 또는 Docker. 엔진은 npm 패키지 `@workos/sync-clickhouse`와 컨테이너 이미지 `ghcr.io/workos/sync-clickhouse`로 발행됩니다.
+* ClickHouse Cloud 또는 자체 호스팅 ClickHouse 23.11 이상.
+* 자체 호스팅 ClickHouse를 사용하는 경우, 서버에서 접근할 수 있고 `keeper_map_path_prefix`가 설정된 ClickHouse Keeper 또는 ZooKeeper가 필요합니다. [자체 호스팅 ClickHouse에 연결](#connect-to-self-hosted-clickhouse)을 참조하십시오. ClickHouse Cloud에는 두 가지가 모두 이미 갖추어져 있습니다.
+* 엔진을 실행하는 호스트에서 ClickHouse HTTP 인터페이스로의 네트워크 접근(Cloud는 포트 8443, 자체 호스팅은 포트 8123 또는 TLS 사용 시 8443).
+
+## 설정 {#setup}
+
+### ClickHouse Cloud에 연결 {#connect-to-clickhouse-cloud}
+
+<ConnectionDetails />
+
+위 정보를 준비했다면 다음 단계를 진행하십시오.
+
+1. 엔진이 접속하는 출발지 주소를 서비스의 [IP 액세스 목록](/ko/products/cloud/guides/security/connectivity/setting-ip-filters)에 추가하십시오. 주소가 거부되면 인증 오류가 아니라 연결 타임아웃으로 나타납니다.
+
+2. HTTPS 엔드포인트 앞에 자격 증명을 붙여 연결 문자열(Connection String)을 구성한 다음, WorkOS API Key와 함께 환경 변수로 내보내십시오.
+
+   ```bash
+   export DATABASE_URL='https://default:PASSWORD@HOST.clickhouse.cloud:8443'
+   export WORKOS_API_KEY='sk_...'
+   ```
+
+   비밀번호에 URL 예약 문자가 포함되어 있으면 퍼센트 인코딩하십시오. URL에 포함된 경로는 무시됩니다. 미러는 `workos` 데이터베이스 또는 `WORKOS_SYNC_SCHEMA`로 지정한 데이터베이스에 저장됩니다.
+
+3. 스키마(schema)를 생성하고 현재 상태를 로드한 다음 tail을 시작하십시오.
+
+   ```bash
+   npx @workos/sync-clickhouse init       # 데이터베이스, 테이블, 뷰 생성
+   npx @workos/sync-clickhouse backfill   # WorkOS API에서 현재 상태 로드
+   npx @workos/sync-clickhouse listen     # 중지할 때까지 Events API를 지속적으로 수신(tail)
+   ```
+
+서비스에서 따로 활성화해야 할 항목은 없습니다. `init`은 `KeeperMap` 테이블도 다른 테이블과 동일하게 생성합니다.
+
+### 자체 호스팅 ClickHouse에 연결 {#connect-to-self-hosted-clickhouse}
+
+1. `KeeperMap`을 활성화하십시오. 이 엔진은 커서(Cursor)와 임대 정보를 `KeeperMap` 테이블에 저장하므로, 서버 구성에 Keeper와 경로 접두사가 필요합니다. 이미 [ClickHouse Keeper](/ko/guides/oss/deployment-and-scaling/keeper/index) 또는 ZooKeeper를 사용하는 클러스터라면 접두사만 추가하면 됩니다.
+
+   ```xml title="/etc/clickhouse-server/config.d/keeper_map.xml"
+   <clickhouse>
+       <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+   </clickhouse>
+   ```
+
+   Keeper가 없는 단일 노드에서는 내장 Keeper도 함께 활성화해야 합니다.
+
+   ```xml title="/etc/clickhouse-server/config.d/keeper_map.xml"
+   <clickhouse>
+       <keeper_server>
+           <tcp_port>9181</tcp_port>
+           <server_id>1</server_id>
+           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+           <raft_configuration>
+               <server>
+                   <id>1</id>
+                   <hostname>localhost</hostname>
+                   <port>9234</port>
+               </server>
+           </raft_configuration>
+       </keeper_server>
+       <zookeeper>
+           <node>
+               <host>localhost</host>
+               <port>9181</port>
+           </node>
+       </zookeeper>
+       <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+   </clickhouse>
+   ```
+
+   파일을 추가한 후 서버를 재시작하십시오.
+
+2. 연결 문자열(Connection String)이 HTTP 인터페이스를 가리키도록 설정하십시오. 포트는 TLS 미사용 시 8123, TLS 사용 시 8443입니다.
+
+   ```bash
+   export DATABASE_URL='http://USER:PASSWORD@HOST:8123'
+   export WORKOS_API_KEY='sk_...'
+   ```
+
+3. Cloud와 마찬가지로 `init`, `backfill`, `listen` 세 명령어를 순서대로 실행하십시오.
+
+### 컨테이너로 실행하기 {#run-it-as-a-container}
+
+컨테이너 이미지에서도 동일한 환경 변수와 명령어를 사용합니다.
+
+```bash
+docker run --rm -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse init
+docker run --rm -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse backfill
+docker run -d   -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse listen
+```
+
+`listen`을 장기 실행 프로세스로 실행하거나, 스케줄러에서 `tick`(한 번 폴링한 후 종료)을 실행하십시오. `status`는 커서, 마지막 폴링 성공 이후 경과 시간, 스트림별 행 수(row count)를 표시합니다. 모든 명령, 플래그 및 환경 변수는 <a href="https://github.com/workos/sync-engine/tree/main/packages/sync-clickhouse#command-line" target="_blank">패키지 README</a>에서 확인할 수 있습니다.
+
+## 인증 {#authentication}
+
+| 모드                               | 지원 여부 | 구성 방법                                                                                                  |
+| -------------------------------- | ----- | ------------------------------------------------------------------------------------------------------ |
+| TLS를 통한 사용자 이름 및 비밀번호            | ✅     | 자격 증명이 포함된 `https://` 연결 문자열(Connection String)을 사용합니다. 서버 인증서는 시스템 트러스트 스토어를 기준으로 검증됩니다.              |
+| 사용자 이름 및 비밀번호, 사설 CA             | ✅     | `WORKOS_SYNC_CLICKHOUSE_TLS_CA`에 CA 인증서를 PEM 또는 Base64로 인코딩된 PEM 형식으로 지정합니다. `https://` 연결 문자열이 필요합니다. |
+| TLS 미사용 사용자 이름 및 비밀번호            | ✅     | `http://` 연결 문자열을 사용합니다. 자체 호스팅 환경에서만 지원되며, 신뢰할 수 있는 네트워크에서만 사용하십시오.                                   |
+| mTLS 또는 SSL 클라이언트 인증서            | ❌     | 지원되지 않음                                                                                                |
+| native protocol (포트 9000 및 9440) | ❌     | 지원되지 않음. 엔진은 HTTP 인터페이스만 사용합니다.                                                                        |
+
+엔진이 연결할 때 사용하는 사용자에게는 최초 실행 시 `CREATE DATABASE` 권한(또는 테이블을 생성할 수 있는 기존 데이터베이스)이 필요하며, 해당 데이터베이스에 대한 `CREATE TABLE`, `CREATE VIEW`, `DROP TABLE`, `ALTER`, `INSERT`, `SELECT` 권한도 필요합니다. `redact` 명령이 실행하는 경량 `DELETE`(lightweight `DELETE`)는 `ALTER` 권한으로 처리됩니다. 평가 용도라면 `default` 사용자로 충분합니다. 운영 환경에서는 이러한 권한을 부여한 전용 사용자를 생성하십시오. 자세한 내용은 [Cloud 접근 관리](/ko/products/cloud/guides/security/cloud-access-management/index)를 참조하십시오.
+
+WorkOS 측에서 엔진은 환경마다 API Key 하나를 사용하여 인증합니다. 동기화 전용 키를 따로 지정하면 동기화 요청을 애플리케이션의 요청과 구분할 수 있습니다.
+
+모든 연결의 `User-Agent` 헤더는 `workos-sync-engine`으로 시작하므로, [`system.query_log`](/ko/reference/system-tables/query_log)에서 `http_user_agent`로 엔진이 실행한 SQL 문을 찾을 수 있습니다.
+
+## 예시: 조직별 로그인 실패 {#example-failed-sign-ins}
+
+이 엔진은 파일이 아니라 사용자의 WorkOS 환경을 입력으로 사용하므로, 이 예시에서는 샘플 데이터셋 대신 해당 환경의 데이터를 사용합니다. 사용자와 로그인 기록이 몇 개만 있으면 스테이징 환경을 포함해 어떤 WorkOS 환경이든 사용할 수 있습니다.
+
+1. 스키마(schema)를 생성하고 현재 상태를 로드합니다.
+
+   ```bash
+   npx @workos/sync-clickhouse init
+   npx @workos/sync-clickhouse backfill
+   ```
+
+2. tail을 시작하고 계속 실행 상태로 두십시오. 로그인 이력은 이 시점부터 기록됩니다. 과거 로그인 목록을 조회하는 엔드포인트가 없으므로 `backfill`로는 이전 로그인 이력을 복구할 수 없습니다.
+
+   ```bash
+   npx @workos/sync-clickhouse listen
+   ```
+
+3. 애플리케이션에 여러 번 로그인하되, 최소 한 번은 로그인에 실패하십시오.
+
+4. Cloud SQL 콘솔 또는 `clickhouse client`에서 미러에 행이 있는지 확인합니다.
+
+   ```sql
+   SELECT _env, email
+   FROM workos.users_live
+   LIMIT 10;
+   ```
+
+5. 로그인 로그를 미러 테이블과 조인합니다.
+
+   ```sql
+   SELECT
+       o.name AS organization,
+       toStartOfHour(a.created_at) AS hour,
+       count() AS failures
+   FROM workos.auth_attempts AS a
+   INNER JOIN workos.users_live AS u ON u.id = a.user_id AND u._env = a._env
+   INNER JOIN workos.organization_memberships_live AS m ON m.user_id = u.id AND m._env = u._env
+   INNER JOIN workos.organizations_live AS o ON o.id = m.organization_id AND o._env = m._env
+   WHERE a.status = 'failed' AND a.created_at > now() - INTERVAL 7 DAY
+   GROUP BY organization, hour
+   ORDER BY failures DESC;
+   ```
+
+모든 행에는 `_env` 컬럼이 있으며, `WORKOS_ENVIRONMENT_NAME`으로 따로 지정하지 않으면 값은 `production`입니다. 이 컬럼 덕분에 여러 WorkOS 환경이 하나의 데이터베이스를 공유할 수 있습니다. 위 예시와 같이 이 컬럼을 조인 조건에 포함하십시오.
+
+## 알려진 제한 사항 {#known-limits}
+
+* **미러는 읽기 모델입니다.** 최종적 일관성(eventual consistency)을 따르며 보통 수 초 이내에 반영되고, 단방향으로만 동작합니다. 쓰기 작업과 권한 부여 결정은 WorkOS API에서 처리하십시오.
+* **로그인 이력은 tail이 시작된 시점부터 기록됩니다.** WorkOS는 이벤트를 90일 동안 보관합니다. 중지된 기간이 그보다 짧은 tail은 커서 위치부터 재개됩니다. 그보다 오래 중지된 tail은 현재 상태를 복원하려면 `backfill`과 `reconcile --repair`가 필요하며, 공백 기간의 로그인 기록은 유실됩니다.
+* **환경당 writer는 하나뿐입니다.** 두 번째 `listen`은 첫 번째 `listen`의 임대가 해제될 때까지 대기합니다. 리스너가 임대를 보유하고 있는 동안 `tick`은 종료 코드 3으로 종료됩니다.
+* **`listen`은 클라우드 서비스를 계속 활성 상태로 유지합니다.** 기본적으로 5초마다 폴링하므로 서비스가 [유휴 상태로 전환](/ko/products/cloud/features/autoscaling/idling)되지 않습니다. 실행과 실행 사이에 서비스가 유휴 상태로 전환되도록 하려면 `tick`을 일정에 따라 실행하십시오. 단, 실행할 때마다 서비스를 다시 깨우는 비용이 발생합니다.
+* **기본 설정에서는 삽입 단위가 작습니다.** 각 폴링은 최대 100개의 이벤트를, 엔진이 완료를 기다리는 몇 개의 [비동기 삽입(asynchronous inserts)](/ko/concepts/features/operations/insert/asyncinserts)으로 나누어 적용합니다. 트래픽이 많은 환경에서는 `WORKOS_SYNC_MAX_EVENTS_PER_TICK` 값을 높여 각 폴링에서 더 큰 삽입을 더 적은 횟수로 수행하도록 하십시오.
+* **`_live` 뷰는 `FINAL`을 사용하여 읽습니다.** 이 뷰는 분석 쿼리에 적합합니다. 키로 단일 행을 조회하는 애플리케이션에는 Postgres 또는 MySQL 대상이 더 적합합니다.
+* **미러 테이블은 각 행의 최신 버전만 유지합니다.** 이전 버전은 다음 머지 전까지만 남아 있습니다. 이력은 `workos.events`에 보관됩니다.
+* **컬럼은 JSON에서 추출됩니다.** 타입이 지정된 컬럼으로 변환할 수 없는 값은 해당 컬럼에서 `NULL`이 되지만, `_raw`에는 그대로 남아 있습니다.
+* **`ON CLUSTER` DDL은 지원하지 않습니다.** `init`은 ClickHouse Cloud와 단일 노드 오픈 소스 환경에서 실행 검증되었습니다. 자가 관리형 다중 노드 클러스터는 테스트 매트릭스에 포함되어 있지 않습니다.
+
+## 문제 해결 {#troubleshooting}
+
+### 첫 번째 명령이 시간 초과되는 경우 {#trouble-timeout}
+
+ClickHouse Cloud를 사용하는 경우, 엔진이 실행되는 주소가 IP 액세스 목록에 없거나 네트워크에서 8443 포트의 아웃바운드 트래픽을 차단하고 있을 수 있습니다. 같은 호스트에서 포트 연결을 확인하십시오:
+
+```bash
+curl https://HOST.clickhouse.cloud:8443/ping
+```
+
+`Ok.`는 해당 호스트에서 서비스에 연결할 수 있다는 의미입니다. 유휴 상태인 서비스에 명령을 실행하면 처음 몇 초 동안은 서비스가 깨어나기를 기다리게 됩니다. 엔진은 요청당 최대 2분을 허용하므로 이는 실패가 아닙니다.
+
+### `KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined` {#trouble-keepermap}
+
+`keeper_map_path_prefix`가 설정되지 않은 자체 호스팅 서버에서 `init`을 실행하면 이 오류가 발생합니다. [자체 호스팅 ClickHouse에 연결](#connect-to-self-hosted-clickhouse)에 설명된 구성을 추가한 후 서버를 재시작하십시오.
+
+### `unsupported ClickHouse URL scheme` {#trouble-scheme}
+
+연결 문자열(Connection String)은 `http://` 또는 `https://`로 시작해야 하며 HTTP 인터페이스를 가리켜야 합니다. `clickhouse://` URL이나 native protocol 포트는 사용할 수 없습니다.
+
+### `init --print-sql`로 출력한 SQL 문이 `Could not find table` 오류로 실패하는 경우 {#trouble-print-sql}
+
+`init --print-sql`은 DDL을 실행하지 않고 출력만 합니다. 레플리카가 2개 이상인 서비스에 이 DDL을 요청당 SQL 문 하나씩 수동으로 적용하면, `CREATE VIEW`가 조회 대상 테이블을 만드는 `CREATE TABLE`보다 먼저 레플리카에 도달할 수 있습니다. 이 경우 스크립트를 다시 실행하십시오. 스크립트의 모든 SQL 문은 멱등성을 가지므로 다시 실행해도 안전합니다. 엔진 자체의 `init`은 이 문제의 영향을 받지 않습니다.
+
+## 관련 리소스 {#related-resources}
+
+* <a href="https://workos.com/docs/events/data-syncing/database/clickhouse-cloud" target="_blank">
+    WorkOS 문서의 ClickHouse Cloud 가이드
+  </a>
+* <a href="https://github.com/workos/sync-engine" target="_blank">
+    GitHub의 WorkOS Sync Engine
+  </a>
+  : 소스 코드, 이슈, 운영 및 일관성(Consistency) 관련 가이드
+* <a href="https://github.com/workos/sync-engine/tree/main/packages/sync-clickhouse" target="_blank">
+    `@workos/sync-clickhouse` 참고 문서
+  </a>
+  : 명령어, 환경 변수, 스키마(schema), 엔진을
+  라이브러리로 내장하는 방법
+* <a href="https://workos.com/docs/events" target="_blank">
+    WorkOS Events API
+  </a>

@@ -13,6 +13,16 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
+## use_text_index_for_substring_search {#use_text_index_for_substring_search}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+将 `position(s, 'value') > 0` 以及 `positionUTF8`、`countSubstrings` 及其不区分大小写版本的等价比较按 `s LIKE '%value%'` 求值 (不区分大小写的函数则使用 `ILIKE`) ，从而利用文本索引加速这些查询。
+
+该设置默认禁用，因为求值此类模式所用的 dictionary scan 可能比直接搜索列更慢，例如大多数行都包含各自独有的标记 (如唯一 id) 时。
+
 ## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -55,7 +65,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "在全局范围内启用了文本索引倒排列表缓存。此前每个查询使用一个较小的私有缓存，导致在大表上单个查询内会重复计算倒排列表和短语搜索结果。"}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "新增设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "在全局范围内启用了文本索引倒排列表缓存。此前每个查询使用一个较小的私有缓存，导致在大表上单个查询内会重复计算倒排列表和短语搜索结果。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "该变更已回移到 26.9，并记录在该版本中。"}]}, {"id": "row-3","items": [{"label": "25.11"},{"label": "0"},{"label": "新增设置"}]}]} />
 
 是否在内存中缓存反序列化后的文本索引倒排列表。
 在处理大量文本索引查询时，使用文本索引倒排列表缓存可以显著降低延迟并提高吞吐量。

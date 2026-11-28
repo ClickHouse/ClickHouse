@@ -19,7 +19,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "إعداد جديد."}]}]} />
 
-السماح بالنسخ متعدد الأجزاء في S3.
+يتيح نسخ الكائنات داخل S3 (على سبيل المثال، عند إنشاء نسخة احتياطية في S3 أو نقل البيانات بين أقراص S3) باستخدام النسخ متعدد الأجزاء (`UploadPartCopy`) عندما يتجاوز حجم الكائن قيمة `s3_max_single_operation_copy_size`.
+
+عند تعطيله، تُنسخ الكائنات بطلب `CopyObject` واحد بصرف النظر عن حجمها، وإذا تعذّر ذلك، تُقرأ البيانات ثم يُعاد تحميلها. عطّل هذا الإعداد مع مكونات التخزين المتوافقة مع S3 (S3-compatible) التي لا تدعم `UploadPartCopy`.
 
 ## s3_allow_parallel_part_upload {#s3_allow_parallel_part_upload}
 

@@ -204,9 +204,11 @@ ClickHouse Cloud では、複数のティアを利用できます。
   </tbody>
 </table>
 
-<div id="basic">
-  ## Basic
-</div>
+<Note>
+  [Gen 2 コンピュート](/ja/products/cloud/features/compute-generations) は、一部の AWS リージョンにおいて、対象となる Scale および Enterprise ティアの組織に限りプライベートプレビューとして提供されています。Gen 2 コンピュートのスケーリングおよびアイドル化の機能は、この表に記載されている標準ティアの機能とは異なります。
+</Note>
+
+## Basic {#basic}
 
 * 単一レプリカのデプロイをサポートする、コスト効率の高いオプションです。
 * 厳格な信頼性保証を必要としない、小規模なデータ量の部門向けユースケースに最適です。
@@ -216,9 +218,7 @@ ClickHouse Cloud では、複数のティアを利用できます。
   サービスをスケーリングするには、Scale ティア または Enterprise ティア にアップグレードできます。
 </Note>
 
-<div id="scale">
-  ## Scale
-</div>
+## Scale {#scale}
 
 より高い SLA (レプリカが 2 つ以上あるデプロイメント) 、スケーラビリティ、高度なセキュリティが求められるワークロード向けに設計されています。
 
@@ -228,9 +228,7 @@ ClickHouse Cloud では、複数のティアを利用できます。
   * [柔軟なスケーリング](/ja/products/cloud/features/autoscaling/overview) オプション (スケールアップ/ダウン、スケールアウト/イン) 。
   * [設定可能なバックアップ](/ja/products/cloud/guides/backups/configurable-backups)
 
-<div id="enterprise">
-  ## Enterprise
-</div>
+## Enterprise {#enterprise}
 
 厳格なセキュリティ要件とコンプライアンス要件を伴う、大規模かつミッションクリティカルなデプロイメント向けです。
 
@@ -247,9 +245,7 @@ ClickHouse Cloud では、複数のティアを利用できます。
   Scale および Enterprise ティアは、[大規模なシングルレプリカサービス](/ja/products/cloud/features/large-single-replica-services)をサポートしています。標準の `1:4` プロファイルを使用する Scale サービスおよび Enterprise サービスでは、セルフサービスの垂直オートスケーリングを利用できます。一方、カスタムプロファイルを使用する Enterprise サービスでは、サポート支援による垂直リサイズが必要です。Basic ティアのシングルレプリカサービスは、引き続き固定サイズ (`8 GiB` または `12 GiB`) です。
 </Note>
 
-<div id="upgrading-to-a-different-tier">
-  ## 別のティアへのアップグレード
-</div>
+## 別のティアへのアップグレード {#upgrading-to-a-different-tier}
 
 Basic から Scale、または Scale から Enterprise へはいつでもアップグレードできます。ティアをダウングレードする場合は、プレミアム機能を無効にする必要があります。
 

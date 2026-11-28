@@ -1,0 +1,87 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-09-24
+title: 'Demo days - 2026-09-24'
+sidebarTitle: '2026-09-24'
+description: 'Journées de démonstration ClickStack du 2026-09-24'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-09-24"
+---
+
+## Améliorations du rendu des axes des graphiques et de la granularité automatique {#chart-axis-rendering-and-auto-granularity-improvements}
+
+*Démonstration par [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Une série d’améliorations du confort d’utilisation des graphiques, proposées par [@arj22](https://github.com/arj22). Merci pour ces correctifs !
+
+Auparavant, les étiquettes de durée pouvaient être tronquées lorsqu’elles dépassaient l’espace disponible sur l’axe. Les graphiques utilisent désormais le même spécificateur de format compact pour les durées que les cartes de chaleur : `7.38min` devient ainsi `7.4m` et tient dans l’espace disponible. La commande `hdx chart` de la CLI applique la même mise en forme.
+
+Les étiquettes d’axe gagnent également en précision. Auparavant, des valeurs telles que `1050` et `1450` pouvaient toutes deux s’afficher sous la forme `1k`, ce qui rendait les valeurs proches difficiles à distinguer. Le spécificateur de format utilise désormais la plus grande précision possible, jusqu’à deux décimales, et supprime les zéros non significatifs. Ces valeurs s’affichent maintenant sous la forme `1.05k` et `1.45k`, sans élargir les étiquettes.
+
+Les graduations de l’axe Y restent désormais régulièrement espacées sur les graphiques de faible hauteur. Auparavant, Recharts pouvait supprimer certaines graduations pour éviter que les étiquettes se chevauchent, ce qui produisait une séquence irrégulière telle que `0, 300, 1k`. Les graphiques proposent maintenant des graduations candidates régulièrement espacées, tout en conservant le même nombre de graduations.
+
+Un nouveau paramètre **Granularité automatique minimale** est également disponible pour les sources de métriques, dans **Paramètres de l’équipe → Sources**. Auparavant, la granularité automatique choisissait une taille de bucket uniquement en fonction de l’intervalle de temps sélectionné. Pour une métrique collectée une fois par minute, un intervalle de temps court pouvait produire des buckets de 30 secondes, alternant valeurs et lacunes, si bien qu’une métrique constante prenait l’apparence d’une onde.
+
+Définir ce minimum sur l’intervalle de collecte permet d’éviter ces lacunes. Ce paramètre fonctionne comme l’intervalle minimum par source de données de Grafana et ne s’applique que lorsque la granularité est définie sur **Auto**. Les tuiles dont la granularité est définie explicitement conservent leur comportement actuel.
+
+Ce minimum s’applique pour l’instant aux tableaux de bord et aux tuiles. Les alertes, l’API externe, la CLI et les outils de requête MCP ne prennent pas encore en compte ce paramètre.
+
+**PR associées :** [#3148](https://github.com/hyperdxio/hyperdx/pull/3148) Route duration axis ticks through the compact formatter, [#3158](https://github.com/hyperdxio/hyperdx/pull/3158) Keep duration axis ticks compact in terminal charts, [#3162](https://github.com/hyperdxio/hyperdx/pull/3162) Stop discarding chart axis-tick decimals for large numbers, [#3172](https://github.com/hyperdxio/hyperdx/pull/3172) Keep Y-axis ticks evenly spaced when Recharts thins them for overlap, [#3149](https://github.com/hyperdxio/hyperdx/pull/3149) Add a per-source floor for auto granularity
+
+## Liste des tableaux de bord avec onglets, tri et filtres par balises {#dashboards-list-with-tabs-sort-and-tag-filters}
+
+*Démonstration par [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=108" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+La liste des tableaux de bord a été repensée. Auparavant, les tableaux de bord préréglés et les favoris s&#39;affichaient sous forme de rangées de cartes au-dessus du tableau, ce qui repoussait la liste vers le bas de la page. Les favoris disposent désormais de leur propre onglet, aux côtés de **All** et **Mes tableaux de bord**, tandis que **Import** et **Nouveau tableau de bord** figurent dans l&#39;en-tête de la page.
+
+Chaque tableau de bord n&#39;apparaît désormais qu&#39;une seule fois, quel que soit le nombre de balises qui lui sont associées. Auparavant, un tableau de bord apparaissait sous chacune de ses balises, et ceux sans balise étaient regroupés en bas de la liste. Les balises fonctionnent désormais comme un filtre à sélection multiple, accessible via un bouton Balises à largeur fixe doté d&#39;un badge indiquant le nombre de balises sélectionnées. Si vous sélectionnez deux balises, seuls les tableaux de bord possédant les deux s&#39;affichent.
+
+Par défaut, la liste est triée par date de dernière modification ; le tri par nom et par date de création la plus récente est également disponible. Le tri par dernière consultation n&#39;est pas proposé, car ce timestamp n&#39;est pas enregistré pour le moment.
+
+Les filtres, l&#39;onglet sélectionné et l&#39;ordre de tri sont enregistrés dans l&#39;URL : vous pouvez ainsi recharger ou partager une vue filtrée. L&#39;onglet **Mes tableaux de bord** est masqué lorsqu&#39;aucune adresse e-mail n&#39;est associée à l&#39;utilisateur courant, y compris en mode local.
+
+**PRs associées :** [#3199](https://github.com/hyperdxio/hyperdx/pull/3199) Refonte de la liste des tableaux de bord avec onglets, tri et filtres par balises
+
+## Disposition du tableau des résultats de recherche et paramètres de colonne {#search-results-table-layout-and-column-settings}
+
+*Démonstration par [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=232" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**Il s&#39;agit d&#39;un travail exploratoire, sans engagement de livraison.**
+
+Nous travaillons sur une nouvelle disposition du tableau des résultats de recherche afin de répondre à des problèmes signalés par plusieurs clients. Actuellement, les actions du tableau partagent une ligne avec le dernier champ de la requête et se retrouvent à l&#39;étroit lorsque le `SELECT` contient de nombreuses colonnes. Ce prototype local place les actions sur une ligne dédiée.
+
+L&#39;ajout de colonnes est la question la plus fréquente. Aujourd&#39;hui, les utilisateurs doivent modifier le `SELECT`, mais beaucoup l&#39;ignorent. Le prototype ajoute un contrôle **Colonnes** qui permet de choisir et d&#39;appliquer des colonnes sans modifier la requête.
+
+Un panneau de paramètres regroupe les options d&#39;affichage. Actuellement, la sélection de lignes réserve de l&#39;espace pour les cases à cocher à gauche de chaque ligne, même lorsque celles-ci n&#39;apparaissent qu&#39;au survol. Sélectionner des lignes ajoute en outre de nouvelles actions au tableau. Le prototype vous permet de choisir si les cases à cocher sont toujours visibles, apparaissent au survol ou sont entièrement masquées. Le retour à la ligne dispose d&#39;un contrôle plus clair, et il reste de la place pour de futures options, comme une disposition plus compacte permettant d&#39;afficher davantage de lignes à l&#39;écran.
+
+Ce travail est toujours en cours et aucune PR n&#39;a encore été ouverte. Vos retours sur son fonctionnement sont les bienvenus.
+
+**PRs associées :** aucune pour l&#39;instant ; il s&#39;agit d&#39;une exploration et non d&#39;une fonctionnalité livrée. La sélection de lignes qu&#39;elle remanie a été livrée dans [#3140](https://github.com/hyperdxio/hyperdx/pull/3140) (sélection multiple de lignes de recherche pour le téléchargement et la copie) et [#3164](https://github.com/hyperdxio/hyperdx/pull/3164) (affichage des cases à cocher au survol).
+
+## Champs de requête multilignes et surcouche qui s’agrandit au focus {#multi-line-query-fields-and-an-expand-on-focus-overlay}
+
+*Démonstration par [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/5KA6AxQiUy8?start=367" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**Il s’agit d’un travail exploratoire, sans engagement de mise en production.**
+
+L’affichage des requêtes multilignes dans la barre de recherche fait l’objet de plaintes récurrentes depuis longtemps. Auparavant, une requête se réduisait à une seule ligne lorsque le champ perdait le focus, ce qui obligeait à cliquer de nouveau dedans pour lire la requête complète.
+
+Ce problème a été corrigé récemment. Les champs SQL, Lucene et PromQL restent désormais entièrement visibles lorsqu’ils n’ont pas le focus, et la mise en page s’agrandit à mesure qu’ils s’étendent. Le sélecteur de période et le bouton **Exécuter** restent alignés sur la première ligne. L’étiquette `WHERE` redondante et l’indicateur de touche `/` ont également été supprimés, même si `/` et `s` donnent toujours le focus au champ de saisie.
+
+Cette hauteur supplémentaire pose toutefois quelques problèmes. Les champs `SELECT` et `ORDER BY` s’agrandissent eux aussi et, sur un écran client typique, même un `ORDER BY` court peut s’étendre sur deux lignes. Dans l’Explorateur de graphiques, plusieurs séries peuvent entraîner l’expansion simultanée de nombreux champs, si bien que l’éditeur occupe beaucoup d’espace vertical.
+
+Le brouillon explore la possibilité de limiter les champs à une seule ligne lorsqu’ils sont inactifs. Lorsqu’un champ reçoit le focus, la requête complète s’ouvre dans une surcouche qui recouvre le contenu situé en dessous, sans déplacer la barre d’outils ni les résultats. La surcouche se ferme lorsque le champ perd le focus, sauf si vous l’épinglez avec **Keep expanded**. Vous pouvez ainsi lire une longue requête tout en consultant les résultats. Le sélecteur de langage s’agrandit avec la surcouche, et un collage dans un champ réduit laisse la première ligne et les contrôles visibles.
+
+La tendance actuelle est de ne pas fusionner ce brouillon. Des champs qui s’agrandissent pendant la saisie ou au déplacement de la souris peuvent prêter à confusion. N’ouvrir une surcouche qu’au clic dans un champ atténue ce problème, mais la zone de texte qui s’agrandit avec son contenu est déjà livrée et fonctionne. Une autre option consiste à sortir les contrôles des colonnes et de `ORDER BY` de la barre de recherche. Seul le champ `WHERE` s’agrandirait alors, et le comportement actuel suffirait.
+
+La gestion des saisies volumineuses ailleurs, notamment dans l’Explorateur de graphiques, reste une question ouverte. Vos retours sur ce comportement sont les bienvenus.
+
+**PRs associées :** [#3150](https://github.com/hyperdxio/hyperdx/pull/3150) Garder les champs de requête multilignes visibles sans focus, [#3151](https://github.com/hyperdxio/hyperdx/pull/3151) Aligner en haut les barres d’outils à côté des champs de requête qui s’agrandissent, [#3168](https://github.com/hyperdxio/hyperdx/pull/3168) Supprimer l’étiquette WHERE et l’indicateur de touche / de la barre de recherche, [#3175](https://github.com/hyperdxio/hyperdx/pull/3175) Afficher les champs de requête multilignes en surcouche au focus (ouverte). La #3175 est le brouillon présenté dans la démonstration ; les trois PRs fusionnées correspondent au comportement « toujours visible » déjà livré qu’elle remplacerait.

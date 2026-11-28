@@ -1,0 +1,203 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-11-20
+title: 'デモデイズ - 2026-11-20'
+sidebarTitle: '2026-11-20'
+description: 'ClickStack デモデー（2026-11-20）'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+canonical: "https://clickhouse.com/docs/clickstack/demo-days/2026/2026-11-20"
+---
+
+## 検索結果テーブルのカラムとソートのコントロール {#columns-and-sort-controls-on-the-search-results-table}
+
+*デモ担当者: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**これは検証段階の取り組みであり、リリースを約束するものではありません。**
+
+これまで、`SELECT` と `ORDER BY` はクエリフォーム上のテキスト入力欄でした。そのため、カラムやソート順を変更するには SQL を書く必要がありました。インタビューでカラムの追加をお願いしたところ、どこで操作すればよいのか見つけられない方がいました。これらの入力欄と下のテーブルとの関係がわかりにくかったためです。また、これらの入力欄はイベントパターンの上にも表示されますが、そこでは何の効果もありません。
+
+今回の提案では、これらを結果テーブル上の **Columns** と **Sort** のコントロールに移します。**Columns** では、カラムをドラッグして並べ替えたり削除したりできるほか、候補のフィールドを選択するか、`upper(Body) as message` のような expression を入力して **Add** をクリックすることでカラムを追加できます。**Sort** には、各 `ORDER BY` フィールドとそのソート方向が表示されます。どちらにも **SQL** タブがあり、句を直接編集できます。フィールドビューでの変更は SQL に反映されるため、どちらの方法でも操作できます。テーブルのアクション(行の折り返し、生成された SQL、CSV)も同じツールバーにまとめられます。これらは以前は最後のカラムのヘッダーにあったため、そのカラムの幅が広いと画面外に隠れてしまうことがありました。
+
+未適用の変更がある状態でいずれかのポップオーバーを閉じると、変更を破棄する前に確認ダイアログが表示されます。ソートに使用されているカラムを削除すると、ソートからも削除されます。`Timestamp DESC NULLS LAST` のようにパーサーが解釈できない句の場合は、記述された SQL をそのまま保持し、**SQL** タブを開きます。これらのコントロールは、イベントデルタやイベントパターンには表示されません。
+
+この変更により、テーブルの上にツールバーが 1 行追加されます。エディターはマージ済みですが、検索ページにはまだ組み込まれていません。組み込みのための PR はオープン中です。大きな変更であるため、ClickHouse オブザーバビリティのベータ版には含めませんでした。また、最後に使用したタブを記憶し、**SQL** タブを好む方にはそのタブで開くようにすることも検討しています。この動作についてぜひフィードバックをお寄せください。
+
+**関連 PR:** [#3431](https://github.com/ClickHouse/ClickStack/pull/3431) カラムエディターとソートエディターを追加、[#3432](https://github.com/ClickHouse/ClickStack/pull/3432) 検索ページに Columns と Sort をマウント(オープン中)
+
+## ダッシュボード向けの接続変数とデータソース変数 {#connection-and-data-source-variables-for-dashboards}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=276" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+このクリップは音声品質があまり良くありません。ご了承ください。
+
+ダッシュボードの **Edit filters and variables** に、2 種類の新しい変数タイプが追加されました。接続変数では、チームの ClickHouse 接続から選択できます。データソース変数では、チームのログソースから選択できます。ログソースの種類は(たとえばログのみに)制限でき、さらに任意で特定の接続に限定することもできます。限定先には固定の接続または接続変数を指定できるため、接続を変更すると選択可能なログソースも連動して切り替わります。
+
+タイルでは、特定のログソースや接続の代わりにこれらの変数を使用できます。たとえば、クエリビルダーのタイルではデータソースとして `$logSource` を、生のSQLのタイルでは `$connection` を使用できます。チャート設定には、ログソースまたは接続IDのフィールドに `$varName` が保存されます。ダッシュボードのレンダリング時にこれが実際の ID に解決されるため、それ以外の処理は従来どおり動作します。
+
+他のフィルタもこれらの変数に依存させることができます。デモでは、SQL式による値フィルターが、選択されたログソースからサービス名を取得しています。デモ用の接続からローカルの接続に切り替えると、タイルとフィルタ内のサービス名の両方が更新されます。選択内容が欠損している場合や無効な場合、タイルは失敗するクエリを実行せず、プレースホルダーまたはエラーを表示します。現時点では、SQL 内で `$source` を直接使用することはできません。タイル上でログソースを選択したうえで、`$__sourceTable` を使用してそのテーブルを参照してください。
+
+選択内容は通常、ログソースIDおよび接続IDとして URL に格納されますが、名前を使用することもできます。これにより、ログソース名は同じでも ID が異なる環境間でリンクを共有できます。名前のルックアップには、検索ページの `source=` パラメータと同じ仕組みが使われます。
+
+どちらの変数タイプも、外部 API および MCP から利用できます。SQLクエリのフィルタからも、ログソース変数と接続変数を参照できます。
+
+**関連 PR:** [#3651](https://github.com/ClickHouse/ClickStack/pull/3651) ダッシュボードにデータソースおよび接続の変数タイプを追加、[#3652](https://github.com/ClickHouse/ClickStack/pull/3652) 外部 API および MCP でデータソース変数と接続変数をサポート、[#3712](https://github.com/ClickHouse/ClickStack/pull/3712) ログソース変数と接続変数でログソース名と接続名を受け付けるように変更、[#3714](https://github.com/ClickHouse/ClickStack/pull/3714) SQL フィルタからログソース変数を参照可能に
+
+## 一時ダッシュボードの保存 {#saving-a-temporary-dashboard}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=423" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまで、一時ダッシュボードのバナーには、このダッシュボードは保存できないと表示されていました。作成した内容を残したい場合は、保存済みダッシュボードとして作り直す必要があり、最近 Vladimir もこの問題に直面しました。現在も、バナーにはダッシュボードが一時的なものである旨が表示されますが、すべてのタイルを含めてそのまま保存できるボタンが追加されました。
+
+**関連プルリクエスト:** [#3729](https://github.com/ClickHouse/ClickStack/pull/3729) 一時ダッシュボードを内容を保持したまま保存
+
+## ダッシュボードのフィルタの種類に関するドキュメント {#documentation-for-dashboard-filter-types}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=453" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ダッシュボードのドキュメントに、ここ数か月で追加されたすべてのフィルタの種類が記載されました。SQL式の値、静的な値、SQLクエリの値、PromQL ラベルの値、アドホックなキーと値、データソース、接続の各種類です。[フィルタの種類](https://clickhouse.com/docs/clickstack/observability/features/dashboards/overview#filter-types)の表では、各種類の値の取得元と、タイルにフィルタを適用するのか、変数として機能するのか、あるいはその両方なのかを説明しています。表の下には、種類ごとに個別のセクションを設けています。また、フィルタを設定した状態のダッシュボードに直接リンクするためのURLパラメータについても説明しています。
+
+**関連PR:** なし (コードではなくドキュメントの変更です。公開済みのページへのリンクは上記を参照してください) 。
+
+## バージョン対応のアプリビルダー {#version-aware-app-builder}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=477" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ClickStack のアプリには以前からバージョン履歴の機能がありました。エージェントにビルドを依頼するたびに新しいバージョンが作成され、以前のバージョンを復元することもできます。しかし、エージェントはそれらのバージョンを参照できず、ユーザーがバージョンを復元したことも把握できませんでした。そのため、すでにアプリに存在しないコードについて言及し続けることがあり、会話の内容と実際のソースが食い違っていました。また、以前の動作の方がよいという理由でリバートした場合も、エージェントはそのバージョンを振り返って確認できませんでした。
+
+現在では、エージェントはすべてのバージョンを参照でき、ユーザーがバージョンを復元したことも認識できます。さらに、任意の 2 つのバージョンを比較できる diff ツールも利用できます。デモでは、エージェントがこのツールを呼び出して diff を受け取る様子を Langfuse のトレースで確認できます。そのため、変更をリバートした理由を説明すれば、エージェントはバージョンを確認し、自身が何を変更したのかを正確に把握できます。
+
+## より少ないトークンでアプリのビルドを高速化 {#faster-app-builds-with-fewer-tokens}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=569" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+このクリップも音声があまり良くありません。申し訳ありません。
+
+アプリビルダーに 3 つの変更を加え、ビルドの高速化とトークン使用量の削減を実現しました。
+
+エージェントが SQL をアプリに追加する前にテストするためのツールで、これまでの 1 回の呼び出しにつき 1 クエリではなく、複数のクエリを並列に実行できるようになりました。MCPサーバーを利用するエージェントも、同じツールで SQL をチェックできます。
+
+また、コンテキストをコンパクションするタイミングも変更しました。以前のビルダーは、ノートブックと同様に直近の 8 ステップのみを保持していました。これによりコンテキストは小さく抑えられていましたが、9 ステップ目以降は毎回プロンプトが書き換えられてプロンプトキャッシュが効かなくなり、コストとレイテンシが増加していました。現在は、コンテキストが 600,000 トークン (Opus モデル向けに設定している 1M トークンのウィンドウの 60%) に達するまで待ちます。コンパクション後は、再びそのサイズに達するまで次のコンパクションは行いません。現時点では、いずれの環境でもこの上限に達したビルドはなく、コンパクションが必要になったことはありません。
+
+最後に、アプリ情報パネルにはアプリが実行するクエリが表示されます。以前は、クエリがすでにコード内に存在しているにもかかわらず、エージェントがこの一覧を手作業で記述していました。一覧に誤りがあれば警告を返し、エージェントにやり直させていました。ビルド履歴全体で見ると、この一覧の記述と修正がトークン使用量とビルド時間の少なからぬ割合を占めていました。現在は、ソースからクエリを抽出しています。これを確実に行えるよう、プロンプトでエージェントにクエリのフォーマット方法を指示しており、フォーマットの修正が必要な場合は引き続き警告を返します。各クエリには、行番号とコード内の使用箇所へのリンクも付きます。
+
+## ダッシュボードリンクでフィルタと時間範囲を引き継ぐ {#passing-filters-and-time-range-through-dashboard-links}
+
+*デモ担当者: [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=769" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ダッシュボードでは、これまでも他のダッシュボードへのリンクがサポートされていました。テーブルタイルの行をクリックするとその行の値を別のダッシュボードに渡すことができ、Markdown タイルやテーブルタイルには通常のリンクを含めることもできます。しかし、通常のリンクではフィルタが引き継がれませんでした。そのため、概要ダッシュボードで特定のサービスのエラーに絞り込んでからリンクをたどってサービス詳細ダッシュボードに移動すると、再びすべてのサービスが表示されてしまっていました。
+
+今回、2 つのグローバル変数を使用して、現在の時間範囲とフィルタの選択内容をリンクに含められるようになりました。`$__url_time_range` は `from=…&to=…` に、`$__all_variables` は `filters=` パラメータに展開されます。これにより、リンク先のダッシュボードを、同じサービス、ステータス、時間範囲が選択された状態で開けます。デモでは、概要ダッシュボードを API サービスのエラーに絞り込んでからリンクをたどってサービス詳細ダッシュボードを開くと、最初からそのサービスの失敗したスパンのみが表示されています。この PR はまだオープン中です。
+
+**関連するプルリクエスト:** [#3726](https://github.com/ClickHouse/ClickStack/pull/3726) More global vars for dashboard links (open)
+
+## すべてのデプロイメントでアドホックダッシュボードフィルターを利用可能に {#ad-hoc-dashboard-filters-for-every-deployment}
+
+*デモ担当者: [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=875" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+アドホックフィルターを使用すると、ダッシュボードの作成者が各フィルタを事前に設定しておかなくても、調査しながらフィルタバーでキー、オペレーター、値を選択できます。この機能は 10 月に `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS` フラグ付きで導入しました。基本的な内容は [10 月の What&#39;s New](https://clickhouse.com/blog/whats-new-in-clickstack-october-2026#user-content-ad_hoc_dashboard_filters) で解説しています。今回このフラグを廃止したため、すべてのデプロイメントで有効になりました。
+
+その後、いくつかの機能を追加しました。依存フィールドを使用して、アドホックフィルターのスコープを絞り込めるようになりました。たとえば、`ServiceName = api` に制限したフィルタでは、そのサービスのキーと値のみが候補として表示されます。また、1 つのフィルタを複数のログソースに適用することもできます。トレースログソースで `SpanName` を選択すると、そのログソースを使用するチャートとテーブルが絞り込まれます。外部 v2 ダッシュボード API と MCP ダッシュボードツールでも、アドホックフィルターを含むダッシュボードの作成、読み取り、更新が可能になりました。以前は MCP ではアドホックフィルターが表示されず、`filters` を含む `clickstack_save_dashboard` で更新すると、既存のアドホックフィルターが警告なしに削除されていました。
+
+アドホックフィルターの名前は単なる識別子であるため、タイル内で `$name` として参照することはできません。ただし、`filters=` URL パラメータ内でフィルタの条件を識別するために使用されるため、名前は重複しないようにする必要があります。
+
+**関連 PR:** [#3585](https://github.com/ClickHouse/ClickStack/pull/3585) 依存アドホックフィルターの追加、[#3658](https://github.com/ClickHouse/ClickStack/pull/3658) アドホックフィルターの仕上げ、[#3659](https://github.com/ClickHouse/ClickStack/pull/3659) 外部 API でのアドホックダッシュボードフィルターのサポート、[#3660](https://github.com/ClickHouse/ClickStack/pull/3660) MCP ダッシュボードツールでのアドホックダッシュボードフィルターのサポート、[#3727](https://github.com/ClickHouse/ClickStack/pull/3727) アドホックフィルター機能のトグルを削除
+
+## フィルタの読み込みの高速化 {#faster-filter-loading}
+
+*デモ担当者: [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=939" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+検索サイドバーは、ログソースの属性 Map にテキスト索引がある場合はその索引から (all values モード)、ない場合はテーブルをスキャンして (exact モード)、フィルタのキーと値を取得します。今回、どちらのモードも高速化されました。
+
+これまでテキスト索引のルックアップでは、時間範囲内のすべてのパーツから辞書を読み取っていました。ClickHouse オブザーバビリティでは、パーツごとに索引を開くたびにオブジェクトストレージへのラウンドトリップが発生します。現在はデフォルトで 20 個のパーツを読み取り、行数が中央値に最も近いパーツを選択します。この動作は 2 つの新しいログソース設定で制御できます。**Map key index parts** (`mapKeyIndexMaxParts`) では読み取るパーツ数を、**Map key index part size** (`mapKeyIndexPartSelection`) では `median`、`smallest`、`largest` のいずれかを指定します。最小のパーツは通常、新しくまだマージされていないため、読み取りコストが低く、新しいキーの発見に役立ちます。最大のパーツはより多くのキーをカバーしますが、その分辞書も大きくなります。
+
+ただし、選択対象外のパーツにしか存在しないキーと値は取りこぼす可能性があります。キーに対して **さらに読み込む** を実行すると、すべてのパーツが読み取られます。これらの設定はログソースのフォームにありますが、詳細設定セクションの他の項目と比べてもさらに高度な設定です。どのような形で公開するのが最適かは、まだ検討中です。
+
+テキスト索引は、アルファベット順で先頭にある値ではなく、`topKWeighted` でランク付けした出現頻度の高い値を返すようになりました。ルックアップは 10 キーずつの並列バッチで実行されます。そのため、リクエスト ID のように行ごとに値が異なるキーがあっても、遅延するのはそのキーを含むバッチだけで、ソート順で後続のすべてのキーが待たされることはなくなりました。
+
+クエリの性能は索引の辞書ブロックサイズにも左右されます。ブロックが 8,192 トークンの場合、キーごとに個別の読み取りが行われ、20,000 索引行に達した時点で停止します。collector のマイグレーションでは、ClickHouse 26.6 以降のデフォルトテーブルに `text_index_dictionary_block_size = 8192` を設定するようになりました。また、ClickHouse 自体のデフォルト値も 26.11 で 512 から 8,192 に変更されます。デモでは索引から 2,000 個のキーと値を読み込んでいますが、これは従来リクエストできた上限を超える数です。チーム設定では、カラムあたり最大 10,000 キーまで指定できるようになりました。
+
+exact モードには深刻なパフォーマンス上のバグがありました。ルックアップでは 1 つのクエリで複数の Map キーの値を要求していましたが、`Map` はキーと値のペアの配列として格納されるため、ClickHouse は要求されたキーの数だけ各行の配列をスキャンしていました。現在は、行ごとに 1 回の走査で要求されたすべてのキーを見つけます。単一のサービスに絞り込めば exact モードでも十分高速になったため、こちらをデフォルトにするほうが適切かもしれません。デフォルトでは最大 300 万行を読み取り、この値はチーム設定で調整できます。ただし ClickHouse オブザーバビリティではこの上限をユーザーに一切公開していないため、本来はログソース側で設定すべきでしょう。
+
+同じ Map キーに対する同時実行リクエストは、最初のリクエストの実行中にそれぞれが別のクエリを開始するのではなく、1 つの ClickHouse クエリを共有するようになりました。
+
+**関連 PR:** [#3611](https://github.com/ClickHouse/ClickStack/pull/3611) 同時実行の呼び出し元間で Map キーの読み取りを共有、[#3617](https://github.com/ClickHouse/ClickStack/pull/3617) 出現頻度の高いテキスト索引の値を 10 キーずつのバッチで表示、[#3635](https://github.com/ClickHouse/ClickStack/pull/3635) テキスト索引のキーと値のルックアップで読み取るパーツを設定可能に、[#3657](https://github.com/ClickHouse/ClickStack/pull/3657) チーム設定でカラムあたり最大 10,000 個のフィルタキーを許可、[#3695](https://github.com/ClickHouse/ClickStack/pull/3695) exact フィルタを高速化、[ClickHouse/ClickHouse#132804](https://github.com/ClickHouse/ClickHouse/pull/132804) テキスト索引のデフォルトの辞書ブロックサイズを変更
+
+## Artifact Hub 上の ClickStack Helm チャート {#clickstack-helm-charts-on-artifact-hub}
+
+*デモ担当者: [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1121" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+セキュリティチームと協力し、公式 Helm チャート用に [Artifact Hub 上の `clickhouse` 組織](https://artifacthub.io/packages/search?org=clickhouse)を作成しました。`clickstack` チャートと `clickstack-operators` チャートは、認証済みパブリッシャーのバッジ付きでこの組織に掲載されています。また、両チャートのメタデータは、旧 hyperdxio リポジトリではなく ClickStack-helm-charts リポジトリを参照するようになりました。これによりチャートが見つけやすくなったうえ、Artifact Hub がすべてのリリースを無料で脆弱性スキャンしてくれます。
+
+このスキャンはすでに成果を上げています。チャート 3.6.0 のレポートをもとに、デモまでにいくつかの修正を行いました。collector のベースイメージと gomplate を更新したことで、app イメージと collector イメージ全体で重大 (critical) な CVE を 9 件解消しました。また、カスタム collector のビルドを contrib v0.155.0 から v0.165.0 に更新し、app イメージにおける重大度「高」の Node 依存関係の検出件数を 50 件から 2 件に減らしました。
+
+チャートは OCI アーティファクトとして GHCR にも公開しており、これらのパッケージはパブリックになりました。事前に GitHub Pages リポジトリを追加しなくても、`helm install my-clickstack oci://ghcr.io/clickhouse/charts/clickstack` を実行するだけでインストールできます。従来どおり `helm repo add` を使う方法も引き続き利用できます。さらに、「WIP」となっていたランディングページを刷新し、両チャートのインストール手順と、ドキュメントおよびアップグレードガイドへのリンクを掲載しました。
+
+今後は、チャートへの署名を行い、組織配下のパッケージを公式としてマークするよう Artifact Hub に申請する予定です。
+
+**関連 PR:** [ClickHouse/ClickStack-helm-charts#297](https://github.com/ClickHouse/ClickStack-helm-charts/pull/297) リリース済みチャートを OCI アーティファクトとして GHCR に公開、[ClickHouse/ClickStack-helm-charts#319](https://github.com/ClickHouse/ClickStack-helm-charts/pull/319) 空の Pages ランディングページを置き換え、Artifact Hub をセットアップ、[ClickHouse/ClickStack-helm-charts#322](https://github.com/ClickHouse/ClickStack-helm-charts/pull/322) GHCR からチャートをインストールする方法をドキュメント化、[#3709](https://github.com/ClickHouse/ClickStack/pull/3709) app イメージと collector イメージから重大な CVE を解消、[#3710](https://github.com/ClickHouse/ClickStack/pull/3710) ベース collector を v0.165.0 に更新、[#3711](https://github.com/ClickHouse/ClickStack/pull/3711) app イメージで脆弱性が指摘された Node 依存関係を更新
+
+## イベントパターンによる絞り込みと除外 {#filtering-for-or-excluding-an-event-pattern}
+
+*デモ担当者: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1216" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+この機能は、イベントパターン を気に入っていたものの、パターンのサンプルを開くことしかできなかったお客様からの要望をもとに生まれました。各行には、ホバー時に表示される 2 つのアクションが追加されました。**Exclude this pattern** は イベントパターン 画面のまま、そのパターンを除外して再実行します。複数のパターンを除外して、ノイズを次々に取り除いていくことができます。**Filter for this pattern** は、一致するイベントのみを表示した結果テーブルを開きます。
+
+どちらのアクションも、パターンテンプレートから構築した SQL 条件を使って検索フィルタを追加します。この条件は、MCP の `clickstack_event_patterns` ツールがドリルダウンに使用する条件を短縮したもので、URL に収まるサイズになっています。ClickHouse はこの条件を、サンプリングされた 10,000 行に限らず時間範囲全体に適用するため、結果テーブル、ヒストグラム、出現回数がすべて更新されます。これらのフィルタは、他のフィルタと並んで **Pattern** ピルとして表示され、URL と保存済み検索にも保持されます。
+
+一度に絞り込みに使用できるパターンは 1 つだけです。フィルタは `AND` で結合されるため、2 つのパターンで絞り込むと何も一致しなくなります。別のパターンを選択すると、それまでの絞り込みフィルタが置き換えられます。MCP の上限に合わせ、4,000 文字を超えるテンプレートではボタンが表示されません。
+
+いくつか制限事項があります。`<*> <*>` のような汎用的なテンプレートは、行に表示されている件数より多くのイベントに一致する場合があります。テンプレートにタイムスタンプがリテラルテキストとして残っていると、パターンはその日付と時刻に限定されます。除外フィルタを使用するとクエリ実行時間がおよそ 2 倍になります。また、ダッシュボードのパターンタイルでは、まだボタンを利用できません。
+
+**関連 PR:** [#3662](https://github.com/ClickHouse/ClickStack/pull/3662) Share the イベントパターン drill-down predicate, [#3663](https://github.com/ClickHouse/ClickStack/pull/3663) Use the shared pattern predicate for drill-downs, [#3664](https://github.com/ClickHouse/ClickStack/pull/3664) Add a compact form of the pattern predicate, [#3665](https://github.com/ClickHouse/ClickStack/pull/3665) Filter for or exclude a pattern from イベントパターン
+
+## トレース検索での RED メトリクス {#red-metrics-on-trace-search}
+
+*デモ担当者: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1308" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまで検索画面では、どのログソースでも結果の上に件数のヒストグラムが 1 つ表示されるだけでした。現在は、所要時間カラムを持つトレースソースで 3 つのタイルが表示されます。**Throughput** はステータス別のスパン数を、**Errors** は 100% を上限とするエラー率の線とエラー件数を切り替えて、**Duration** はログソースの所要時間の精度で設定された単位で Avg、P95、P99 の線を表示します。
+
+タイルは 1 つだけ表示することも、3 つすべてを表示することもできます。いずれかのタイルにカーソルを合わせると、3 つすべてのタイルの同じ時刻にカーソルが表示されます。Throughput または Errors でステータスの系列をクリックすると、従来のヒストグラムのクリックと同様に結果がフィルタされます。Throughput は既存の結果件数クエリを使用するため、追加のスキャンは発生しません。
+
+**RED** / **Heatmap** スイッチを切り替えると、3 つのタイルが所要時間の時間的な分布を示すヒートマップに置き換わります。これはダッシュボードで使用されているものと同じヒートマップです。選択内容は URL に保持されるため、共有したリンクを開くと同じビューが表示されます。ヒートマップビューではライブテールは無効になります。`ServiceName` などのカスタムのグループ化を設定すると、グループ化されたヒストグラムに戻ります。ログソースや幅の狭い画面では、従来どおりのヒストグラムが表示されます。
+
+**関連 PR:** [#3183](https://github.com/ClickHouse/ClickStack/pull/3183) トレース検索結果ビューに RED メトリクスを表示、[#3184](https://github.com/ClickHouse/ClickStack/pull/3184) トレース検索に所要時間のヒートマップビューを追加
+
+## Cmd+K メニューからの設定アクセスと隠し CRT モード {#settings-from-the-cmd-k-menu-and-a-hidden-crt-mode}
+
+*デモ担当者: [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iAkz3igxYgY?start=1381" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまでは、設定を探すにはチーム設定またはユーザーメニューを経由する必要がありました。今後は `Cmd+K`(その他の環境では `Ctrl+K`)から設定を検索できます。設定グループには、チーム設定、ソース、接続、チームメンバー、APIキー、組織のAPIキー、MCPサーバー、Webhook、クエリ設定が含まれます。各エントリを選択すると、該当するタブが開き、対象のセクションまで自動でスクロールします。チームページが存在しないローカルモードでは、このグループは表示されません。
+
+環境設定グループからは環境設定モーダルを開けます。タイムゾーン、12h/24h、フォント、行クリックなどのキーワードで検索すると見つかります。また、**Use light mode**、**Use dark mode**、**Use system color mode** を使えば、メニューから直接テーマを切り替えることもできます。
+
+ここまで読んでくださった方のために、[@jordan-simonovski](https://github.com/jordan-simonovski) によるちょっとしたイースターエッグもご用意しています。**User preferences** を開き、コナミコマンド `Up, Up, Down, Down, Left, Right, Left, Right, B, A` を入力してみてください。短い起動アニメーションが再生され、**CRT mode** スイッチが表示されます。オンにすると、走査線、丸みを帯びた画面の角、にじむように光る文字によって、アプリが昔のブラウン管(CRT)画面のような見た目になります。
+
+この効果はオーバーレイとして重ねて表示されるため、アプリはそのまま通常どおり使用できます。モードがオンの間はスイッチが環境設定に残るので、コードを再入力しなくてもオフにできます。デフォルトではオフになっており、`prefers-reduced-motion` が有効な場合は、ちらつきとロック解除のアニメーションは再生されません。ちなみに、デモではコードを正しく入力するまでに何度かやり直しています。
+
+**関連 PR:** [#3707](https://github.com/ClickHouse/ClickStack/pull/3707) Cmd+K メニューから設定と環境設定を検索可能に、[#3704](https://github.com/ClickHouse/ClickStack/pull/3704) 環境設定で秘密のコードを入力するとロック解除される隠し CRT モード

@@ -347,7 +347,7 @@ TRUNCATE TABLE test.protobuf_messages;
 ```
 
 スキーマを実行するクエリとして指定し、ClickHouse Cloud にデータを挿入します。
-この挿入は [HTTP インターフェイス](/ja/concepts/features/interfaces/http#insert-protobuf) 経由で送信してください。HTTP インターフェイスではサーバー側でデータがパースされ、スキーマクエリが実行されます。一方、`clickhouse client` は入力データをクライアント側でパースするため、スキーマクエリが失敗します。
+この挿入は [HTTP インターフェイス](/ja/concepts/features/connect-to-clickhouse/protocols/http#insert-protobuf) 経由で送信してください。HTTP インターフェイスではサーバー側でデータがパースされ、スキーマクエリが実行されます。一方、`clickhouse client` は入力データをクライアント側でパースするため、スキーマクエリが失敗します。
 curl の `--url-query` オプション (curl 7.87 以降) は各パラメータを URL エンコードするため、クエリとスキーマクエリをそのまま記述できます。
 
 ```bash
@@ -359,7 +359,7 @@ curl 'https://<hostname>:8443/' --user 'default:<password>' \
     --data-binary @protobuf_messages.bin
 ```
 
-テーブルに挿入されたデータを SELECT します：
+テーブルに挿入されたデータを選択します：
 
 ```bash
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"

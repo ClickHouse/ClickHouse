@@ -138,7 +138,9 @@ ClickHouse が 1 回のクエリで `merge_tree_max_rows_to_use_cache` 行を超
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "2097152"},{"label": "値は `filesystem_prefetch_min_bytes_for_single_read_task` に統一されました"}]}]} />
 
-タスクごとに読み取る最小バイト数。
+リモートディスク (例: S3) に保存された `MergeTree` テーブルのデータパートから、1つの読み取りタスクが読み取る圧縮済みデータの最小量 (バイト単位) です。タスクを大きくするとストレージへのリクエスト数が減り、小さくするとスレッド間で作業をより均等に分散できます。
+
+タスクサイズは、すべての読み取りスレッドが少なくとも2つのタスクを受け取れるサイズを上限とし、それを超えて大きくなることはありません。この設定は、並列レプリカを自動的に使用するかどうかを判断する際の読み取りスレッド数の見積もりにも使用されます。
 
 ## merge_tree_min_read_task_size {#merge_tree_min_read_task_size}
 
@@ -187,6 +189,16 @@ ClickHouse が 1 回のクエリで `merge_tree_max_rows_to_use_cache` 行を超
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Wide パーツで索引マークへのシークにより読み取られる JSON 共有データサブストリームのプリフェッチを制御する新しい設定。"}]}]} />
 
 索引マークへのシークにより読み取られる Wide パーツ内の JSON 共有データサブストリーム (`SHARED` の型指定されたパスのデータサブストリームを含む) のプリフェッチを有効にします。このようなプリフェッチはグラニュールの先頭から読み取りますが、通常そこはサブストリームの読み取り位置ではないため、無駄になる場合があります。これらのプリフェッチをスキップするには、無効にします。
+
+## merge_tree_read_end_tasks_per_stream {#merge_tree_read_end_tasks_per_stream}
+
+<SettingsInfoBlock type="UInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "32"},{"label": "新しい設定: `MergeTree` の読み取りの終盤のタスクを小さくし、すべてのスレッドがほぼ同時に完了するようにします。"}]}]} />
+
+`MergeTree` の読み取りの終盤のタスクのサイズを、1 スレッドが担当するデータ量の 1/N (ただし
+`merge_tree_min_read_task_size` を下回らない) にし、すべてのスレッドがほぼ同時に完了するようにします。値を大きくするほど
+スレッド間の負荷が均等になりますが、タスクごとのオーバーヘッドが増加します。0 を指定すると無効になります。
 
 ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability}
 

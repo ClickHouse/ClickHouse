@@ -147,7 +147,7 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 
 <Note>
   1. 只读服务目前支持用户管理操作 (CREATE、DROP 等) 。
-  2. [可刷新materialized view](/zh/concepts/features/materialized-views/refreshable-materialized-view) **仅**在仓库中的读写 (RW) 服务上运行。
+  2. 采用协调式刷新 (默认方式) 的[可刷新materialized view](/zh/concepts/features/materialized-views/refreshable-materialized-view) **仅**在仓库中的读写 (RW) 服务上运行。使用 `APPEND` 和 `SETTINGS all_replicas = 1` 创建的视图不采用协调式刷新。所有服务 (包括只读服务) 都会尝试执行每次刷新。在只读服务上，除非视图向外部存储写入数据，否则每次刷新尝试都会失败，并返回 `QUERY_IS_PROHIBITED` (错误代码 392) 。
   3. 服务的类型 (只读或读写) 在创建时即固定，之后无法在 Cloud Console 中更改。若要在只读与读写访问之间切换，请在仓库中创建一个具有所需类型的新服务。
 </Note>
 

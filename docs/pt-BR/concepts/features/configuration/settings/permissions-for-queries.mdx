@@ -37,27 +37,28 @@ Quando definido como 1, permite consultas como:
 
 Quando definido como 2, permite as anteriores mais `SET`, `CREATE TEMPORARY TABLE` e `RESTORE`. Um `RESTORE` pode
 criar uma tabela e carregar dados nela, portanto `readonly = 2` não impede, por si só, que uma sessão
-escreva; já `readonly = 1` o recusa.
+escreva; já `readonly = 1` o recusa. Uma tabela temporária com uma cláusula `ENGINE` diferente de `Memory`, como
+`File` ou `URL`, exige o privilégio `CREATE ARBITRARY TEMPORARY TABLE` e é recusada com qualquer valor
+acima de 0.
 
 `BACKUP` não é restringido por `readonly` em nenhum valor: uma sessão que tenha os privilégios para fazer backup de uma
 tabela pode gravar um backup mesmo com `readonly = 1`. Não conte com `readonly` para impedir backups.
 
 A maioria das table functions exige o privilégio `CREATE TEMPORARY TABLE`, portanto um `SELECT` que leia de uma delas é
 recusado com `readonly = 1`, mas não com `readonly = 2`. Algumas, como `numbers`, são permitidas em modo
-somente leitura.
+somente leitura. `INSERT INTO FUNCTION` é recusado com qualquer valor acima de 0, pois grava na origem da
+função, e não em uma tabela temporária.
 
 Para qualquer valor acima de 0, nada do que segue é permitido em uma tabela persistente: consultas de escrita de dados
 (`INSERT`, `OPTIMIZE`, `DELETE`, `UPDATE`, `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`) ou consultas
-DDL (`CREATE`, `ALTER TABLE`, `ALTER VIEW`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`,
-`TRUNCATE TABLE`). Instruções `SYSTEM` que exigem um privilégio do grupo `SYSTEM`, bem como `CREATE`, `ALTER`
+DDL (`CREATE`, `ALTER TABLE`, `ALTER VIEW`, `ALTER DATABASE`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`,
+`DROP`, `TRUNCATE TABLE`). Instruções `SYSTEM` que exigem um privilégio do grupo `SYSTEM`, bem como `CREATE`, `ALTER`
 e `DROP` de usuários, funções, row policies, masking policies, cotas e settings profiles, também não são
-permitidos. O gerenciamento de named collections é uma exceção: `readonly` não restringe
-`CREATE NAMED COLLECTION`, `ALTER NAMED COLLECTION` nem `DROP NAMED COLLECTION`.
+permitidos. `KILL TRANSACTION` e o gerenciamento de coleções nomeadas (`CREATE NAMED COLLECTION`,
+`ALTER NAMED COLLECTION`, `DROP NAMED COLLECTION`) também são recusados.
 
-Conceder um privilégio com `GRANT` também é recusado, mas nem toda instrução de gerenciamento de acesso é: um `REVOKE`
-local e `GRANT CURRENT GRANTS` não são condicionados por `readonly`, de modo que uma sessão somente leitura ainda pode revogar
-um privilégio que possua com grant option e propagar seus próprios grants para outro usuário.
-Revogar um privilégio `ON CLUSTER` é recusado.
+Alterações de concessões também são recusadas, tanto localmente quanto com `ON CLUSTER`: a concessão de um privilégio ou de uma função com `GRANT`,
+a concessão de privilégios com `GRANT CURRENT GRANTS` e a revogação de um privilégio ou de uma função com `REVOKE`.
 
 Tabelas temporárias estão isentas de ambas as configurações: uma sessão que pode criar uma também pode executar `ALTER` nela,
 inserir dados nela e removê-la.
@@ -87,10 +88,12 @@ tabelas, views, dicionários, funções definidas pelo usuário, workloads, reso
 Valores possíveis:
 
 * 0 — A execução de uma consulta em um objeto persistente que exija qualquer um dos seguintes privilégios é
-  bloqueada: `CREATE DATABASE`, `DROP DATABASE`, `CREATE TABLE`, `CREATE VIEW`, `ALTER TABLE`,
-  `ALTER VIEW`, `DROP TABLE`, `DROP VIEW`, `TRUNCATE`, `CREATE DICTIONARY`, `DROP DICTIONARY`,
-  `CREATE FUNCTION`, `DROP FUNCTION`, `CREATE WORKLOAD`, `DROP WORKLOAD`, `CREATE RESOURCE`,
-  `DROP RESOURCE`, `CREATE HANDLER`, `ALTER HANDLER`, `DROP HANDLER`. `RENAME`, `EXCHANGE`,
+  bloqueada: `CREATE DATABASE`, `ALTER DATABASE`, `DROP DATABASE`, `CREATE TABLE`, `CREATE VIEW`,
+  `ALTER TABLE`, `ALTER VIEW`, `DROP TABLE`, `DROP VIEW`, `TRUNCATE`, `UNDROP TABLE`,
+  `CREATE DICTIONARY`, `DROP DICTIONARY`, `CREATE FUNCTION`, `DROP FUNCTION`, `CREATE WORKLOAD`,
+  `DROP WORKLOAD`, `CREATE RESOURCE`, `DROP RESOURCE`, `CREATE NAMED COLLECTION`,
+  `ALTER NAMED COLLECTION`, `DROP NAMED COLLECTION`, `CREATE HANDLER`, `ALTER HANDLER`,
+  `DROP HANDLER`. `RENAME`, `EXCHANGE`,
   `ATTACH` e `DETACH` também precisam desses privilégios e, por isso, também são bloqueados — exceto
   `ALTER TABLE ... ATTACH PARTITION` e `ATTACH PART`, que precisam apenas de `INSERT` e não são bloqueados por
   esta configuração, embora `readonly` os bloqueie em uma tabela persistente.
@@ -105,12 +108,10 @@ Valor padrão: 1
 
   `allow_ddl` não restringe consultas de gerenciamento de acesso: `GRANT`, `REVOKE` e `CREATE`, `ALTER` e
   `DROP` de usuários, funções, row policies, masking policies, cotas e settings profiles não são afetados por
-  ele. `CREATE TEMPORARY TABLE` e o gerenciamento de named collections também não são afetados, assim como
-  `ALTER DATABASE ... MODIFY SETTING`, `ALTER DATABASE ... MODIFY COMMENT` e `UNDROP TABLE`, que
-  `readonly` também não restringe. Dentro de um `CREATE` ou `ALTER` de um usuário, de uma função ou de um settings
+  ele. `CREATE TEMPORARY TABLE` também não é afetado. Dentro de um `CREATE` ou `ALTER` de um usuário, de uma função ou de um settings
   profile, uma cláusula `SETTINGS allow_ddl = 1` é recusada enquanto a sessão atual tiver `allow_ddl = 0`,
   enquanto uma cláusula `SETTINGS allow_ddl = 0` é aceita. Uma configuração embutida é verificada em relação às
-  constraints de settings da própria sessão, razão pela qual `SET allow_ddl = 1` também é recusado.
+  restrições de settings da própria sessão, razão pela qual `SET allow_ddl = 1` também é recusado.
 </Note>
 
 <Info>
@@ -120,7 +121,8 @@ Valor padrão: 1
   de `readonly` e `allow_ddl`. Exige, porém, `SELECT` em `system.processes`, exceto no caso de
   `KILL QUERY WHERE query_id = '<id>'`, que cancela a sua própria consulta com esse id sem ler essa
   tabela. Encerrar uma consulta que pertence a outro usuário, bem como qualquer `KILL QUERY ... ON CLUSTER`, exige o
-  privilégio `KILL QUERY`, que `readonly = 1` e `readonly = 2` recusam.
+  privilégio `KILL QUERY`, que `readonly = 1` e `readonly = 2` recusam. `KILL TRANSACTION` sempre
+  exige o privilégio `KILL TRANSACTION`, que `readonly = 1` e `readonly = 2` recusam.
 </Info>
 
 ## Outras configurações relevantes {#other-relevant-settings}

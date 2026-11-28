@@ -554,8 +554,8 @@ flowchart TB
 La stratégie `insert_overwrite` remplace des partitions entières : elle nécessite donc une configuration `partition_by`, comme la configuration mensuelle définie sur `orders`. Elle procède selon les étapes suivantes :
 
 1. Créer une staging table (`orders__dbt_new_data_<run_id>`) ayant la même structure que `orders`.
-2. Insérer dans la staging table uniquement les rows sélectionnées par le model.
-3. Lister les partitions présentes dans la staging table à partir de `system.parts`.
+2. Insérer dans la staging table uniquement les lignes sélectionnées par le modèle.
+3. Lister les partitions présentes dans la staging table (`SELECT _partition_id FROM <staging> GROUP BY _partition_id`).
 4. Remplacer exactement ces partitions dans `orders` par `ALTER TABLE ... REPLACE PARTITION ... FROM` depuis la staging table.
 5. Supprimer la staging table.
 
@@ -571,17 +571,16 @@ flowchart TB
     items[("order_items")]
     orders[("orders<br/>PARTITION BY toYYYYMM(ordered_at)")]
     staging[("orders__dbt_new_data_#lt;run_id#gt;")]
-    parts[("system.parts")]
     q1["1. CREATE TABLE orders__dbt_new_data_#lt;run_id#gt; AS orders"]
     q2["2. INSERT INTO orders__dbt_new_data_#lt;run_id#gt;<br/>SELECT ... model SQL ...<br/>WHERE ordered_at >= (SELECT max(ordered_at) FROM orders)"]
-    q3["3. SELECT DISTINCT partition_id FROM system.parts<br/>WHERE table = 'orders__dbt_new_data_#lt;run_id#gt;' AND active"]
+    q3["3. SELECT _partition_id<br/>FROM orders__dbt_new_data_#lt;run_id#gt;<br/>GROUP BY _partition_id"]
     q4["4. ALTER TABLE orders<br/>REPLACE PARTITION ID '202509' FROM orders__dbt_new_data_#lt;run_id#gt;,<br/>REPLACE PARTITION ID ... (one per partition found in step 3)"]
     q5["5. DROP TABLE orders__dbt_new_data_#lt;run_id#gt;"]
     q1 -->|creates empty, same structure as orders| staging
     stg -->|reads| q2
     items -->|reads| q2
     q2 -->|inserts the changed rows| staging
-    parts -->|reads the partitions of the staging table| q3
+    staging -->|reads its partitions| q3
     q3 -->|partition ids| q4
     staging -->|reads| q4
     q4 -->|replaces those partitions| orders
@@ -592,11 +591,11 @@ flowchart TB
     classDef query fill:#f3f4f6,stroke:#6b7280;
     class staging temp;
     class orders target;
-    class stg,items,parts source;
+    class stg,items source;
     class q1,q2,q3,q4,q5 query;
 ```
 
-La [page des materializations](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-incremental) décrit les autres options de la materialization incremental, notamment la strategy `microbatch` et `on_schema_change`.
+La [page des materializations](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-incremental) décrit les autres options de la materialization incrémentale, notamment la stratégie `microbatch` et `on_schema_change`.
 
 ## Créer un snapshot {#snapshot}
 

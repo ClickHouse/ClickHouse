@@ -157,6 +157,17 @@ shared&#95;merge&#95;tree&#95;leader&#95;update&#95;period に加算します。
 ClickHouse Cloud
 のみです。
 
+## shared_merge_tree_max_noop_updates_from_leader {#shared_merge_tree_max_noop_updates_from_leader}
+
+<SettingsInfoBlock type="UInt64" default_value="16" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "16"},{"label": "新しい設定: no-op のメタデータ更新がこの回数連続すると、フォロワーはパーツ更新リーダーではなく Keeper からメタデータを読み取ります"}]}]} />
+
+仮想パーツとミューテーションのどちらも変更しないメタデータ更新の連続回数です。
+この回数に達すると、フォロワーは再び何らかの変更が発生するまで、
+パーツ更新リーダーではなく Keeper からメタデータを読み取ります。0 を指定すると、この切り替えは無効になります。
+ClickHouse Cloud でのみ利用可能です。
+
 ## shared_merge_tree_max_outdated_parts_to_process_at_once {#shared_merge_tree_max_outdated_parts_to_process_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
@@ -341,6 +352,14 @@ partitions for mutations>` の比率がこの設定値を上回ると、merge/mu
 一度にスケジュールする、フェッチするパーツのメタデータジョブ数。利用できるのは
 ClickHouse Cloud
 のみです。
+
+## shared_merge_tree_parts_update_leader_tables_budget_factor {#shared_merge_tree_parts_update_leader_tables_budget_factor}
+
+<SettingsInfoBlock type="Float" default_value="2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "2"},{"label": "新しい設定"}]}]} />
+
+レプリカは、保持しているパーツ更新リーダーロックの数が `factor * attached SharedMergeTree tables * shared_merge_tree_max_parts_update_leaders_per_az / active replicas in its AZ` に達すると、それ以上新たなパーツ更新リーダーロックを取得しなくなります。0 を指定すると、この上限は無効になります。ClickHouse Cloudでのみ利用可能です。
 
 ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms {#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms}
 

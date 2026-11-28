@@ -18,11 +18,11 @@ import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnly
 
 <CloudOnlyBadge />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "auto"},{"label": "다른 읽기 작업에 Distributed Cache가 사용되는 경우, 객체 스토리지 테이블 엔진과 테이블 함수도 Distributed Cache를 통해 읽습니다."}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
-ClickHouse Cloud에서만 적용됩니다. 테이블 엔진/테이블 함수(s3, azure 등)에서 Distributed Cache를 통한 읽기를 허용합니다. 캐시는 객체의 ETag를 키로 사용하므로, 같은 위치에 덮어쓴 객체에 대해 오래된 데이터가 반환되지 않습니다. ETag가 없거나 ETag가 강력한 콘텐츠 식별자가 아닌 객체는 객체 스토리지에서 직접 읽습니다.
+ClickHouse Cloud에서만 적용됩니다. 테이블 엔진 / 테이블 함수(s3, azure, Iceberg, Delta Lake 등)를 통해 Distributed Cache에서 읽을 수 있도록 허용합니다. `auto`(기본값)는 서버 설정 `enable_read_through_distributed_cache`와 설정 `force_read_through_distributed_cache`에 따라 다른 읽기 작업에 Distributed Cache가 사용되는 경우 이 Distributed Cache를 통해 읽는다는 의미입니다. 캐시 키로는 객체의 ETag를 사용하여 같은 위치에서 덮어쓴 객체가 오래된 상태로 제공되지 않도록 하거나, 테이블 레코드(Iceberg, Delta Lake)에서 가져온 데이터 파일의 변경 불가능한 아이덴티티를 사용하여 `HEAD` 요청이 필요하지 않도록 합니다. 강력한 ETag나 이러한 아이덴티티가 없는 객체는 객체 스토리지에서 직접 읽으며, 캐시 서버가 반복할 수 없는 읽기도 마찬가지로 직접 읽습니다. 여기에는 `url` 테이블, `NOSIGN` 또는 `headers`를 사용하는 `s3` 읽기, 정규화된 전체 경로를 가진 데이터 파일(Delta Lake shallow clone), 그리고 설정 값이 `1`이 아닌 경우의 `azure` 읽기가 포함됩니다.
 
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 

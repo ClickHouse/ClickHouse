@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
@@ -39,6 +40,16 @@ cluster&#95;for&#95;parallel&#95;replicas のレプリカを使用します。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 SharedMergeTree 以外でも、分散索引解析を有効にします (Cloud 専用エンジン) 。
+
+## distributed_index_analysis_on_stateless_workers {#distributed_index_analysis_on_stateless_workers}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+分散実行計画 (`make_distributed_plan`) として実行され、worker を保持している、またはリースできる初期クエリにおいて、`distributed_index_analysis` とは独立してステートレスワーカー上で分散索引解析を実行します。worker は、共有テーブルのオブジェクトストレージ上にあるテーブルを解析します。現時点では、この設定を有効にするとレプリカ上での索引解析 (`distributed_index_analysis`) が無効になります。そのため、worker が引き受けない読み取りや他のクエリの読み取りは、ローカルで解析されます。worker には streaming exchange が必要です。`Persisted` のエクスチェンジを使用する場合 (`distributed_plan_force_exchange_kind` で指定した場合、またはストリーミングリスナーが設定されていない場合)、読み取りはローカルで解析されます。MergeTreeの設定 `distributed_index_analysis_min_parts_to_activate` および `distributed_index_analysis_min_indexes_bytes_to_activate` が適用されます。
 
 ## distributed_index_analysis_only_on_coordinator {#distributed_index_analysis_only_on_coordinator}
 

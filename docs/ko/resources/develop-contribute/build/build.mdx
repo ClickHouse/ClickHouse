@@ -84,6 +84,15 @@ rustup default nightly-2026-11-02
 rustup component add rust-src
 ```
 
+Linux x86&#95;64 및 aarch64에서 ClickHouse는 기본적으로 musl에 정적으로 링크되므로 Rust도 musl을 대상으로 빌드해야 합니다.
+`rustup`은 `*-unknown-linux-gnu` 타깃만 설치하므로 musl 타깃도 추가해야 합니다. 그렇지 않으면 `cmake`가 `Target x86_64-unknown-linux-musl is not installed for toolchain nightly-2026-11-02` 오류를 내며 실패합니다:
+
+```bash
+rustup target add --toolchain nightly-2026-11-02 "$(uname -m)-unknown-linux-musl"
+```
+
+`-DUSE_MUSL=OFF`(glibc)로 빌드하면 `rustup`이 기본으로 설치하는 `*-unknown-linux-gnu` 대상을 사용합니다.
+
 <Tip>
   ccache는 Rust를 캐시하지 않으므로, 새 빌드 디렉터리에서는 모든 Rust 크레이트를 다시 컴파일합니다.
   `-DRUST_BUILD_CACHE_DIR=<path>`를 지정하면 Cargo가 컴파일된 크레이트를 해당 디렉터리에 보관하며, 동일한 체크아웃과 구성을 사용하는 새 빌드 디렉터리에서 이를 재사용합니다(delta-kernel-rs 제외). 이 디렉터리는 체크아웃 및 구성당 약 7 GB를 차지하며, 크기 제한이 없고 언제든지 삭제할 수 있습니다.

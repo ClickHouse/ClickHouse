@@ -1,0 +1,73 @@
+---
+description: "Documentation du mode notebook de l'interface Web SQL intégrée (`/play`), qui transforme un onglet en une séquence de cellules de requête et de texte"
+sidebarTitle: 'Mode notebook de l’interface utilisateur web'
+slug: /concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook
+title: 'Mode notebook de l’interface utilisateur web'
+doc_type: 'reference'
+sidebar: false
+---
+
+L&#39;interface Web SQL intégrée (`play.html`, servie sur le chemin [`/play`](/fr/concepts/features/connect-to-clickhouse/protocols/http) de n&#39;importe quel port HTTP de ClickHouse) peut transformer un onglet en notebook : une séquence ordonnée de cellules, chacune contenant soit une requête et son propre ensemble de résultats, soit un bloc de texte Markdown. Ce type de document est le même que dans Jupyter, Observable, Hex ou Deepnote, et il répond au même objectif : réunir sur une seule page une chaîne de requêtes ainsi que le raisonnement qui les relie.
+
+Le mode notebook s&#39;active onglet par onglet. Un onglet peut être un notebook tandis qu&#39;un autre reste un simple éditeur de requête unique, et chaque onglet conserve son propre notebook d&#39;un rechargement à l&#39;autre.
+
+## Ajout de cellules {#adding-cells}
+
+Un onglet contient au départ une seule cellule de requête et ressemble en tout point à l&#39;éditeur simple : pas d&#39;en-têtes, pas d&#39;habillage de cellule, aucun notebook visible. Dès qu&#39;une requête a renvoyé un ensemble de résultats, un grand bouton `[+]` apparaît en dessous, volontairement discret pour ne pas détourner l&#39;attention de l&#39;ensemble de résultats. Un clic sur ce bouton affiche les deux types de cellules qu&#39;il est possible d&#39;ajouter :
+
+* **Query** — une nouvelle cellule de requête. Elle prend immédiatement le focus de l&#39;éditeur, ce qui vous permet de commencer à saisir votre requête.
+* **Text** — une nouvelle cellule Markdown, qui s&#39;ouvre en mode modification.
+
+C&#39;est l&#39;ajout d&#39;une deuxième cellule qui active le mode notebook pour cet onglet.
+
+## En-têtes de cellule {#cell-headers}
+
+Dès qu&#39;il y a au moins deux cellules, chacune reçoit un en-tête indiquant sa position et son type, par exemple `1. Query` ou `2. Text`. Les cellules de requête affichent également un point d&#39;état pendant une séquence en cours, et un point rouge en cas d&#39;échec ; une cellule terminée ne porte aucune marque, puisque son ensemble de résultats figure juste en dessous.
+
+Les actions de l&#39;en-tête apparaissent lorsque la cellule est survolée ou a le focus :
+
+| Action    | Signification                                                                                                  |
+| --------- | -------------------------------------------------------------------------------------------------------------- |
+| `▶`       | Exécuter cette cellule (cellules de requête uniquement)                                                        |
+| `✎`       | Modifier cette cellule : prendre la main sur l&#39;éditeur, ou réafficher la source d&#39;une cellule de texte |
+| `＋`       | Insérer une nouvelle cellule avant celle-ci ; le même choix Query/Text s&#39;affiche directement sur place     |
+| `↑` / `↓` | Déplacer la cellule vers le haut ou vers le bas                                                                |
+| `✕`       | Supprimer la cellule                                                                                           |
+
+Un onglet conserve toujours au moins une cellule de requête, car c&#39;est là que se trouve l&#39;éditeur partagé ; `✕` est donc désactivé sur la dernière cellule de requête restante.
+
+## Cellules de requête {#query-cells}
+
+La page ne comporte jamais qu&#39;un seul éditeur de requêtes : l&#39;éditeur complet, avec coloration syntaxique, autocomplétion et champs de saisie des paramètres de requête. En mode notebook, il est ancré dans la cellule de requête active et n&#39;est affiché que tant qu&#39;il a le focus : dès qu&#39;il perd le focus, cette cellule se replie également, si bien qu&#39;un notebook que vous lisez n&#39;affiche aucune zone de texte ouverte. Cliquer sur une requête repliée lui rend l&#39;éditeur (en l&#39;y déplaçant s&#39;il appartenait à une autre cellule). Un déplacement du focus à l&#39;intérieur de l&#39;éditeur — vers un champ de paramètre de requête ou vers un candidat de complétion — ne le replie pas.
+
+Une cellule de requête repliée affiche sa requête sur une ligne unique : avec coloration syntaxique, les séquences de caractères d’espacement (y compris l&#39;indentation et les sauts de ligne) réduites à un seul espace, et la fin estompée à droite lorsqu&#39;elle ne tient pas. Elle n&#39;a pas d&#39;arrière-plan propre, si bien qu&#39;une cellule repliée se lit comme du texte sur la page plutôt que comme une zone de saisie supplémentaire.
+
+Le bouton `Run`, la ligne de progression et les actions de copie/téléchargement quittent l&#39;en-tête de la page pour s&#39;ancrer sous la requête en cours d&#39;édition, entre celle-ci et son ensemble de résultats — là où se situe la séquence qu&#39;ils décrivent, et là où la manière d&#39;exécuter cette cellule va de soi. Ils font partie de l&#39;éditeur : ils apparaissent et disparaissent donc avec lui, selon que la cellule reçoit ou perd le focus.
+
+En mode notebook, les ensembles de résultats sont affichés de manière plus compacte : une police plus petite, un remplissage des cellules ajusté en conséquence, et une table limitée au quart de la hauteur de la zone d’affichage. Faites glisser le bord inférieur d&#39;un ensemble de résultats pour lui donner plus ou moins de place, exactement comme pour redimensionner l&#39;éditeur de requêtes ; l&#39;éditeur Markdown d&#39;une cellule de texte dispose de la même poignée. La table constitue elle-même le conteneur de défilement — vertical et horizontal — : ses fines barres de défilement se trouvent donc sur ses propres bords, un ensemble de résultats long ou large ne repousse pas le reste du notebook vers le bas de la page et ne l&#39;élargit pas, et les en-têtes de colonne restent épinglés en haut de la table pendant le défilement. Comme l&#39;en-tête se trouve alors tout en haut de la table, le type d&#39;une colonne s&#39;affiche juste en dessous, par-dessus les premières lignes, et non au-dessus comme dans une table qui défile avec la page.
+
+L&#39;exécution fonctionne comme auparavant : `Ctrl/Cmd+Enter` (ou le bouton `Run`) exécute la requête présente dans l&#39;éditeur, c&#39;est-à-dire celle de la cellule active. Une seule requête s&#39;exécute à la fois par onglet ; lancer une séquence dans une autre cellule du même onglet, ou appuyer sur `Stop`, met fin à la précédente.
+
+Les vues `Logs` et `Metrics` ainsi que les indicateurs de ressources de la ligne de progression appartiennent à la cellule dont ils décrivent l’ensemble de résultats : chaque cellule conserve sa propre sélection et ses propres indicateurs, et les interrupteurs partagés affichent ce que la cellule active a produit. Changer de cellule réaffiche les logs, les métriques et les indicateurs propres à cette cellule. Pendant l&#39;exécution d&#39;une requête, la ligne reste attachée à la cellule dans laquelle elle s&#39;exécute : déplacer l&#39;éditeur vers une autre cellule pour écrire la requête suivante n&#39;efface pas la progression en direct et ne redirige pas ces interrupteurs vers l’ensemble de résultats de l&#39;autre cellule.
+
+Le codage couleur des colonnes, les colonnes épinglées et la [structure de l’ensemble de résultats](/fr/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/result-shaping) — le tri, les filtres et la page — appartiennent également à une cellule : ils sont définis sur un ensemble de résultats et suivent donc cet ensemble de résultats. Trier ou filtrer l’ensemble de résultats d&#39;une cellule relance cette cellule, en y déplaçant d&#39;abord l&#39;éditeur s&#39;il se trouvait dans une autre. Une cellule dont le `Run all` a produit plusieurs tables applique un même choix à toutes, et chaque cellule conserve le sien ; le lien partagé et l&#39;historique du navigateur reprennent le choix de la cellule active, tandis que ceux des autres restent attachés à leur propre cellule.
+
+## Cellules de texte {#text-cells}
+
+Une cellule de texte contient du Markdown. Pendant la modification, la zone de texte affiche la source avec ses marqueurs mis en évidence : titres, emphase, fragments de code, liens, puces de liste et citations sont colorés, sans être convertis en rendu. Vous modifiez donc toujours la source. La zone de texte s’agrandit en fonction de son contenu.
+
+Quitter la zone de texte (en cliquant ailleurs, avec `Escape` ou avec `Ctrl/Cmd+Enter`) met fin à la modification et la remplace par le Markdown généré. Cliquez sur le texte généré pour revenir en mode modification.
+
+Dans les deux états, les cellules de texte utilisent la même police à chasse fixe que les requêtes. Le notebook se lit ainsi comme un document unique, et la police ne change pas lorsqu’une cellule bascule entre sa source et le résultat généré.
+
+Les titres, l’emphase, le code intégré et le code délimité, les liens et les images, les URL converties automatiquement en liens, les listes ordonnées et non ordonnées, les citations, les séparateurs horizontaux et les tableaux à barres verticales sont pris en charge. Le HTML brut d’une cellule de texte est échappé au lieu d’être généré, et les URL des liens et des images sont limitées aux cibles `http`, `https`, `mailto` et relatives. Un lien relatif ordinaire tel que `[guide](guide.md)` ou `![pic](images/pic.png)` fonctionne, tandis qu’un schéma d’authentification comme `javascript:` ou `data:`, ou une URL relative au protocole `//host/...` (qui désigne une autre origine, et non une cible relative), reste affiché en texte brut.
+
+## Persistance {#persistence}
+
+L’intégralité du notebook d’un onglet — chaque cellule, son contenu et les petits snapshots d’ensembles de résultats — est stockée dans IndexedDB avec le reste de l’espace de travail, puis restaurée au rechargement, avec le même comportement « au mieux » et les mêmes limites de taille d’ensembles de résultats que celles décrites dans [interface Web SQL](/fr/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql).
+
+L’URL et l’historique du navigateur suivent la cellule ACTIVE : le fragment `#` contient la requête de cette cellule, et les boutons Précédent et Suivant permettent de naviguer entre les cellules (et les onglets) que vous avez consultées. Partager l’URL d’un notebook revient à partager la requête de la cellule active, et non le notebook entier.
+
+Dupliquer un onglet duplique l’intégralité du notebook, sans les ensembles de résultats.
+
+L’enregistrement des onglets au format Markdown (bouton d’enregistrement dans la barre d’onglets) écrit chaque cellule d’un notebook dans l’ordre : chaque cellule de requête sous forme de bloc de code délimité, suivi de ses paramètres et de ses tables d’ensembles de résultats, et chaque cellule de texte sous forme de bloc de code délimité avec la chaîne d’information `markdown`. Le chargement d’un tel document restaure chaque onglet avec toutes ses cellules ; les ensembles de résultats ne sont toutefois pas restaurés, si bien que les cellules de requête chargées n’ont pas encore été exécutées.

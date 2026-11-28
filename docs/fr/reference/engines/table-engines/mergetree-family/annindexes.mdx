@@ -421,7 +421,7 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 Dans pratiquement tous les cas d’usage, les vecteurs de la colonne sous-jacente sont denses et se compressent mal.
 Par conséquent, la [compression](/fr/reference/statements/create/table/codec) ralentit les insertions et les lectures de la colonne vectorielle.
 Nous recommandons donc de désactiver la compression.
-Pour ce faire, spécifiez `CODEC(NONE)` pour la colonne vectorielle comme ceci :
+Pour ce faire, spécifiez `CODEC(NONE)` pour la colonne vectorielle comme ceci :
 
 ```sql
 CREATE TABLE tab
@@ -441,17 +441,17 @@ Cela se produit généralement lorsque des données sont [insérées](/fr/concep
 Malheureusement, HNSW est connu pour ses temps de création d&#39;index élevés, ce qui peut considérablement ralentir les insertions et les fusions.
 Dans l&#39;idéal, les index de similarité vectorielle ne doivent être utilisés que si les données sont immuables ou rarement modifiées.
 
-Pour accélérer la création des index, les techniques suivantes peuvent être utilisées :
+Pour accélérer la création des index, les techniques suivantes peuvent être utilisées :
 
 Premièrement, la création des index peut être parallélisée.
 Le nombre maximal de threads de création d&#39;index peut être configuré à l&#39;aide du paramètre serveur [max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/fr/reference/settings/server-settings/settings/max#max_build_vector_similarity_index_thread_pool_size).
 Pour des performances optimales, la valeur du paramètre doit être réglée sur le nombre de cœurs CPU.
 
-Deuxièmement, pour accélérer les instructions INSERT, les utilisateurs peuvent désactiver la création des index de saut sur les parts nouvellement insérées à l&#39;aide du paramètre de session [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/fr/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert).
+Deuxièmement, pour accélérer les instructions INSERT, les utilisateurs peuvent désactiver la création des index de saut de données sur les parts nouvellement insérées à l&#39;aide du paramètre de session [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/fr/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert).
 Les requêtes SELECT sur ces parts reviendront alors à une recherche exacte.
 Comme les parts insérées ont tendance à être petites par rapport à la taille totale de la table, l&#39;impact sur les performances devrait être négligeable.
 
-Troisièmement, pour accélérer les fusions, les utilisateurs peuvent désactiver la création des index de saut sur les parts fusionnées à l&#39;aide du paramètre de session [materialize&#95;skip&#95;indexes&#95;on&#95;merge](/fr/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge).
+Troisièmement, pour accélérer les fusions, les utilisateurs peuvent désactiver la création des index de saut de données sur les parts fusionnées à l&#39;aide du paramètre de session [materialize&#95;skip&#95;indexes&#95;on&#95;merge](/fr/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge).
 Cela, associé à l&#39;instruction [ALTER TABLE [...] MATERIALIZE INDEX [...]](/fr/reference/statements/alter/skipping-index#materialize-index), fournit un contrôle explicite sur le cycle de vie des index de similarité vectorielle.
 Par exemple, la création des index peut être différée jusqu&#39;à ce que toutes les données aient été ingérées, ou jusqu&#39;à une période de faible charge du système, comme le week-end.
 
@@ -461,7 +461,11 @@ Les requêtes SELECT doivent charger les index de similarité vectorielle en mé
 Pour éviter qu&#39;un même index de similarité vectorielle soit chargé de façon répétée en mémoire principale, ClickHouse fournit un cache en mémoire dédié à ces index.
 Plus ce cache est grand, moins il y aura de chargements inutiles.
 La taille maximale du cache peut être configurée à l&#39;aide du paramètre serveur [vector&#95;similarity&#95;index&#95;cache&#95;size](/fr/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size).
-Par défaut, le cache peut atteindre 5 Go.
+Dans ClickHouse OSS, le cache peut atteindre 5 Go par défaut.
+
+Dans ClickHouse Cloud, la taille maximale du cache dépend de la taille du pod.
+La taille exacte peut être vérifiée dans [system.server&#95;settings](/fr/reference/system-tables/server_settings).
+Comme les paramètres du serveur ne peuvent pas être modifiés depuis SQL ou la console, contactez l’assistance pour configurer une taille plus importante.
 
 Les messages de journal suivants (`system.text_log`) indiquent que l&#39;index de similarité vectorielle est en cours de chargement.
 Si de tels messages apparaissent de façon répétée pour différentes requêtes de recherche vectorielle, cela indique que la taille du cache est trop faible.
@@ -475,14 +479,14 @@ Si de tels messages apparaissent de façon répétée pour différentes requête
 ```
 
 <Note>
-  Le cache de l’index de similarité vectorielle stocke des granules d’index vectoriel.
-  Si la taille de chaque granule d’index vectoriel dépasse celle du cache, elle ne sera pas mise en cache.
-  Veillez donc à calculer la taille de l’index vectoriel (à partir de la formule indiquée dans &quot;Estimation de la consommation du stockage et de la mémoire&quot; ou [system.data&#95;skipping&#95;indices](/fr/reference/system-tables/data_skipping_indices)) et à dimensionner le cache en conséquence.
+  Le cache d’index de similarité vectorielle stocke les granules d’index vectoriel.
+  Si certains granules d’index vectoriel sont plus volumineux que la taille du cache, ils ne seront pas mis en cache.
+  Veillez donc à calculer la taille de l’index vectoriel (à l’aide de la formule de la section « Estimation de la consommation de stockage et de mémoire » ou de [system.data&#95;skipping&#95;indices](/fr/reference/system-tables/data_skipping_indices)) et à dimensionner le cache en conséquence.
 </Note>
 
-*Nous rappelons que la vérification du cache de l’index vectoriel et, si nécessaire, son augmentation doivent constituer la première étape lors de l’analyse de requêtes de recherche vectorielle lentes.*
+*Rappelons-le : lorsque des requêtes de recherche vectorielle sont lentes, la première chose à faire est de vérifier le cache d’index vectoriel et, si nécessaire, d’en augmenter la taille.*
 
-La taille actuelle du cache de l’index de similarité vectorielle est indiquée dans [system.metrics](/fr/reference/system-tables/metrics) :
+La taille actuelle du cache d’index de similarité vectorielle est indiquée dans [system.metrics](/fr/reference/system-tables/metrics) :
 
 ```sql
 SELECT metric, value
@@ -490,7 +494,7 @@ FROM system.metrics
 WHERE metric = 'VectorSimilarityIndexCacheBytes'
 ```
 
-Les succès et échecs du cache pour une requête avec un certain identifiant de requête peuvent être obtenus à partir de [system.query&#95;log](/fr/reference/system-tables/query_log):
+Les succès et échecs du cache pour une requête avec un certain identifiant de requête peuvent être obtenus à partir de [system.query&#95;log](/fr/reference/system-tables/query_log) :
 
 ```sql
 SYSTEM FLUSH LOGS query_log;
@@ -501,12 +505,19 @@ WHERE type = 'QueryFinish' AND query_id = '<...>'
 ORDER BY event_time_microseconds;
 ```
 
+L’instruction [`SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE`](/fr/reference/statements/system#drop-vector-similarity-index-cache) supprime tous les index de similarité vectorielle du cache.
+Pour ne supprimer du cache que les index d’une seule table, ajoutez la clause `FOR TABLE` :
+
+```sql
+SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE FOR TABLE tab;
+```
+
 Pour les cas d’usage en production, nous recommandons de dimensionner le cache de façon à ce que tous les index vectoriels restent en mémoire en permanence.
 
 **Réglage de la quantification**
 
 La [quantification](https://huggingface.co/blog/embedding-quantization) est une technique qui permet de réduire l’empreinte mémoire des vecteurs ainsi que les coûts de calcul liés à la construction et au parcours des index vectoriels.
-Les index vectoriels de ClickHouse prennent en charge les options de quantification suivantes :
+Les index vectoriels de ClickHouse prennent en charge les options de quantification suivantes :
 
 | Quantification    | Nom                          | Stockage par dimension |
 | ----------------- | ---------------------------- | ---------------------- |
@@ -517,7 +528,7 @@ Les index vectoriels de ClickHouse prennent en charge les options de quantificat
 | b1                | Binaire                      | 1 bit                  |
 
 La quantification réduit la précision des recherches vectorielles par rapport à une recherche sur les valeurs d’origine en virgule flottante en pleine précision (`f32`).
-Cependant, sur la plupart des jeux de données, la quantification en brain float demi-précision (`bf16`) entraîne une perte de précision négligeable ; c’est pourquoi les index de similarité vectorielle utilisent cette technique par défaut.
+Cependant, sur la plupart des jeux de données, la quantification en brain float demi-précision (`bf16`) entraîne une perte de précision négligeable ; c’est pourquoi les index de similarité vectorielle utilisent cette technique par défaut.
 La quantification en quart de précision (`i8`) et la quantification binaire (`b1`) entraînent une perte de précision notable dans les recherches vectorielles.
 Nous ne recommandons ces deux quantifications que si la taille de l’index de similarité vectorielle dépasse nettement la taille de DRAM disponible.
 Dans ce cas, nous suggérons également d’activer le rescoring ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/fr/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier), [vector&#95;search&#95;with&#95;rescoring](/fr/reference/settings/session-settings/vector-search#vector_search_with_rescoring)) afin d’améliorer la précision.
@@ -544,12 +555,12 @@ result = chclient.query(
 Les vecteurs d’embedding (`search_v` dans l’extrait ci-dessus) peuvent avoir un très grand nombre de dimensions.
 Par exemple, OpenAI fournit des modèles qui génèrent des vecteurs d’embedding à 1536, voire 3072 dimensions.
 Dans le code ci-dessus, le driver Python de ClickHouse remplace le vecteur d’embedding par une chaîne lisible, puis envoie la requête SELECT entièrement sous forme de chaîne.
-En supposant que le vecteur d’embedding se compose de 1536 valeurs en virgule flottante simple précision, la chaîne envoyée atteint une longueur de 20 kB.
+En supposant que le vecteur d’embedding se compose de 1536 valeurs en virgule flottante simple précision, la chaîne envoyée atteint une longueur de 20 kB.
 Cela entraîne une forte utilisation du CPU pour la tokenisation, l’analyse syntaxique et l’exécution de milliers de conversions de chaînes en nombres à virgule flottante.
 En outre, un espace important est requis dans le fichier journal du serveur ClickHouse, ce qui entraîne également un gonflement de `system.query_log`.
 
 Notez que la plupart des modèles de LLM renvoient un vecteur d’embedding sous la forme d’une liste ou d’un tableau NumPy de flottants natifs.
-Nous recommandons donc aux applications Python de lier le paramètre du vecteur de référence sous forme binaire en utilisant le style suivant :
+Nous recommandons donc aux applications Python de lier le paramètre du vecteur de référence sous forme binaire en utilisant le style suivant :
 
 ```python
 search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
@@ -689,7 +700,7 @@ Ce codec convient bien à ClickHouse, car la partie coûteuse — le parcours �
 
 #### Appliquer le codec {#quantized-codecs-declaring}
 
-Spécifiez le codec `Quantized(...)` pour la colonne `Array(Float32)` (ou `Array(Float64)` / `Array(BFloat16)`).
+Spécifiez le codec `Quantized(...)` pour la colonne `Array(Float32)` (ou `Array(Float64)` / `Array(BFloat16)` / `Array(Int8)` / `Array(UInt8)`).
 
 ```sql
 SET enable_quantized_codec = 1;
@@ -710,17 +721,21 @@ Le codec ne peut pas être ajouté ni modifié ultérieurement avec `ALTER TABLE
 Chaque méthode de quantification présente différents compromis entre taille et précision.
 L&#39;argument `dimensions` correspond à la longueur du vecteur.
 
-* `Quantized('rabitq', dimensions)` — un bit de signe par coordonnée, plus un facteur de correction du cosinus non biaisé (`dimensions/8 + 4` octets). Une option par défaut solide, compacte et peu coûteuse en `popcount`. `cosineDistance` uniquement.
-* `Quantized('turboquant', dimensions)` — deux bits par coordonnée (un code MSE sur 1 bit et un code résiduel sur 1 bit) pour des candidats plus fidèles (`dimensions/4 + 4` octets). `cosineDistance` uniquement.
-* `Quantized('int8', dimensions)` — un code `Int8` par coordonnée, plus la norme du vecteur (`dimensions + 4` octets) ; c&#39;est le code plat le plus volumineux, mais aussi le plus fidèle. Prend en charge `L2Distance` et `cosineDistance`.
-* `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka : ne conserve que les `leading_dimensions` premières dimensions, en `Int8` (avec un facteur d&#39;échelle par vecteur) ou en `BFloat16`. Des codes minuscules pour les embeddings entraînés avec Matryoshka Representation Learning. Prend en charge `L2Distance` et `cosineDistance`.
-* `Quantized('product', dimensions, nbits, m)` — quantification de produit : un dictionnaire par partie entraîné avec k-means ; chaque vecteur devient `m` codes de `nbits` bits (`dimensions` doit donc être un multiple de `m`). L&#39;option la plus compacte et celle qui offre le meilleur rappel par octet, au prix d&#39;une étape d&#39;entraînement lors de l&#39;insertion. Prend en charge `L2Distance` et `cosineDistance`.
+* `Quantized('rabitq', dimensions)` — un bit de signe par coordonnée, plus un facteur de correction du cosinus non biaisé (`dimensions/8 + 4` octets). Une option par défaut solide, compacte et peu coûteuse en `popcount`. Estime uniquement la distance cosinus ; voir ci-dessous pour `L2Distance`.
+* `Quantized('turboquant', dimensions)` — deux bits par coordonnée (un code MSE sur 1 bit et un code résiduel sur 1 bit) pour des candidats plus fidèles (`dimensions/4 + 4` octets). Estime uniquement la distance cosinus ; voir ci-dessous pour `L2Distance`.
+* `Quantized('int8', dimensions)` — un code `Int8` par coordonnée, plus la norme du vecteur (`dimensions + 4` octets) ; c&#39;est le code plat le plus volumineux, mais aussi le plus fidèle. Prend en charge `L2Distance` et `cosineDistance`.
+* `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka : ne conserve que les `leading_dimensions` premières dimensions, en `Int8` (avec un facteur d&#39;échelle par vecteur) ou en `BFloat16`. Des codes minuscules pour les plongements vectoriels entraînés avec Matryoshka Representation Learning. Prend en charge `L2Distance` et `cosineDistance`.
+* `Quantized('product', dimensions, nbits, m)` — quantification de produit : un dictionnaire par partie de données entraîné avec k-means ; chaque vecteur devient `m` codes de `nbits` bits (`dimensions` doit donc être un multiple de `m`). L&#39;option la plus compacte et celle qui offre le meilleur rappel par octet, au prix d&#39;une étape d&#39;entraînement lors de l&#39;insertion. Prend en charge `L2Distance` et `cosineDistance`.
 
 `rabitq` et `turboquant` nécessitent que `dimensions` soit un multiple de 8.
 
+Pour les colonnes `Array(Int8)` et `Array(UInt8)`, les méthodes `int8` et `prefix` avec le format `int8` ne sont pas prises en charge, car leurs codes ne sont pas plus petits que les vecteurs d&#39;origine.
+Les plongements vectoriels `UInt8` sont généralement des valeurs signées décalées de 128. Les méthodes `rabitq` et `turboquant` partent du principe que les vecteurs sont répartis autour de l&#39;origine ; pour les colonnes `Array(UInt8)`, elles soustraient donc 128 à chaque élément des vecteurs stockés et du vecteur de référence avant l&#39;encodage.
+Par conséquent, la liste restreinte est classée selon la distance cosinus des vecteurs décalés, tandis que l&#39;ensemble de résultats final est réévalué à l&#39;aide de la `cosineDistance` exacte des vecteurs d&#39;origine.
+
 #### Utiliser le codec {#quantized-codecs-searching}
 
-Le codec est automatiquement utilisé par le format de requête top-`k` habituel (voir la [recherche exacte](#exact-nearest-neighbor-search)) :
+Le codec est automatiquement utilisé par le format de requête top-`k` habituel (voir la [recherche exacte](#exact-nearest-neighbor-search)) :
 
 ```sql
 WITH [...] AS reference_vec
@@ -731,14 +746,17 @@ LIMIT 10
 SETTINGS vector_search_use_quantized_codes = 1;
 ```
 
-Le réglage `vector_search_use_quantized_codes = 1` permet à l’optimiseur de réécrire la requête sous la forme d’un parcours en deux phases.
-Ce réglage est désactivé par défaut.
+Le paramètre `vector_search_use_quantized_codes = 1` permet à l’optimiseur de réécrire la requête sous la forme d’un parcours en deux phases.
+Ce paramètre est désactivé par défaut.
 Sans lui, la même requête s’exécute sous la forme d’un parcours exact classique sur les vecteurs d’origine.
-Toutes les méthodes prennent en charge la fonction de distance `cosineDistance` ; les méthodes `int8`, `prefix` et `product` prennent également en charge `L2Distance`.
+Toutes les méthodes prennent en charge les fonctions de distance `cosineDistance` et `L2Distance`.
+Les méthodes `int8`, `prefix` et `product` estiment les deux distances.
+Les méthodes `rabitq` et `turboquant` ne stockent pas les normes des vecteurs et n’estiment que la distance cosinus : pour `L2Distance`, la liste restreinte est classée selon la distance cosinus, puis on recalcule les scores de l’ensemble de résultats à l’aide de la distance `L2Distance` exacte.
+Les distances renvoyées sont exactes, mais le rappel dépend de la variabilité des normes des vecteurs. Pour des vecteurs normalisés, les deux classements sont identiques.
 
-Le réglage `vector_search_index_fetch_multiplier` indique le nombre de candidats présélectionnés par rapport à la clause `LIMIT` de la requête.
+Le paramètre `vector_search_index_fetch_multiplier` indique le nombre de candidats présélectionnés par rapport à la clause `LIMIT` de la requête.
 Des multiplicateurs plus élevés améliorent le rappel, au prix d’un rescoring plus important.
-La valeur par défaut est `1` (sans suréchantillonnage) ; il est généralement nécessaire de l’augmenter (par exemple à `10`) pour obtenir un bon rappel.
+La valeur par défaut est `1` (sans suréchantillonnage) ; il est généralement nécessaire de l’augmenter (par exemple à `10`) pour obtenir un bon rappel.
 
 ### Quantized Bit (QBit) {#approximate-nearest-neighbor-search-qbit}
 

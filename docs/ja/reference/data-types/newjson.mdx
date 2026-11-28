@@ -858,14 +858,16 @@ JSONカラムの内容を調べるために使用する関数の詳細につい�
 現在、MergeTree のデータパーツにおける共有データ構造のシリアライゼーションには、`map`、`map_with_buckets`、
 `advanced`、`advanced_chunked` の 4 種類があります。
 
-シリアライゼーションバージョンは、MergeTree
+シリアル化バージョンは、MergeTree
 設定 [object&#95;shared&#95;data&#95;serialization&#95;version](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
-および [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
-で制御されます
-(ゼロレベルパーツはテーブルへのデータ挿入時に作成されるパーツで、merge によって作成されるパーツはより高いレベルになります) 。
+および [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts) で制御されます。
+2 つ目の設定は小さなデータパーツに使用されます。対象となるのは、挿入時に作成されるパーツ (
+[use&#95;object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts&#95;on&#95;insert](/ja/reference/settings/merge-tree-settings/use#use_object_shared_data_serialization_version_for_small_parts_on_insert)
+が無効化されていない場合)、および最小サイズ
+[min&#95;bytes&#95;for&#95;object&#95;shared&#95;data&#95;main&#95;serialization&#95;version](/ja/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version) を下回るパーツです。
 
 注: 共有データ構造のシリアライゼーションの変更がサポートされるのは、
-[object serialization version](/ja/reference/settings/merge-tree-settings/other#object_serialization_version) が `v3` の場合のみです
+[object シリアル化バージョン](/ja/reference/settings/merge-tree-settings/other#object_serialization_version) が `v3` の場合のみです
 
 #### Map {#shared-data-map}
 

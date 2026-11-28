@@ -403,6 +403,14 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
   차단된 쿼리는 모든 제약 조건이 충족될 때까지 무기한 대기하며, 그전까지는 `SHOW PROCESSLIST`에 표시되지 않습니다.
 </Note>
 
+## 서버 전역 제한 {#server_wide_limits}
+
+서버 설정(server settings) `workloads_respect_server_cpu_limit`와 `workloads_respect_server_memory_limit`은 서버 전역 제한인 `concurrent_threads_soft_limit_num`과 `max_server_memory_usage`를 워크로드 스케줄러를 통해 적용합니다. 이 설정들은 같은 역할에 대해 정의된 리소스가 없으면 리소스 `__server_cpu__`(`MASTER THREAD, WORKER THREAD`)와 `__server_memory__`(`MEMORY RESERVATION`)를 생성합니다. 또한 루트 워크로드(이름이 비어 있는 워크로드)의 `max_concurrent_threads`와 `max_memory`를 설정하므로 모든 워크로드(workloads)가 하나의 예산을 공유합니다.
+
+<Note>
+  이 설정들과 함께 `implicit_default_workload`를 활성화하거나 `default` 워크로드를 정의하십시오. 이 예산의 제한은 워크로드로 분류된 쿼리에만 적용됩니다. `default` 워크로드가 없으면 기본 `workload` 설정 값을 사용하는 쿼리와 기본 워크로드의 병합 및 뮤테이션(merges and mutations)은 CPU 제한을 전혀 받지 않습니다. CPU를 워크로드 스케줄러가 스케줄링하게 되면 내장 동시성 제어가 더 이상 적용되지 않기 때문입니다. 백그라운드 병합 및 뮤테이션(background merges and mutations)은 워크로드에서 메모리를 예약하지 않으므로, 이들이 사용하는 메모리는 메모리 예산에 포함되지 않습니다.
+</Note>
+
 ## 워크로드 및 리소스 저장 {#workload_entity_storage}
 
 `CREATE WORKLOAD` 및 `CREATE RESOURCE` 쿼리로 정의된 모든 워크로드와 리소스는 `workload_path`의 디스크 또는 `workload_zookeeper_path`의 ZooKeeper에 영구적으로 저장됩니다. 노드 간 일관성을 확보하려면 ZooKeeper 저장소를 사용하는 것이 좋습니다. 또는 디스크 저장소와 함께 `ON CLUSTER` 절을 사용할 수도 있습니다.
@@ -427,7 +435,7 @@ SQL 기반 정의 외에도 워크로드와 리소스는 서버 설정 파일에
 </clickhouse>
 ```
 
-이 구성은 `CREATE WORKLOAD` 및 `CREATE RESOURCE` SQL 문과 동일한 구문을 사용합니다. 모든 쿼리는 유효해야 합니다.
+이 구성은 `CREATE WORKLOAD` 및 `CREATE RESOURCE` SQL 문과 동일한 구문을 사용합니다. 모든 쿼리는 유효해야 합니다. 구성에 정의된 워크로드의 상위 워크로드와 `FOR` 리소스 역시 구성에 정의된 것이어야 합니다. SQL-defined 워크로드는 설정 기반 워크로드의 하위 워크로드가 될 수 있습니다. SQL-defined 워크로드가 참조하고 있는 워크로드나 리소스는 구성에서 제거하지 마십시오. 제거하면 서버가 해당 SQL-defined 워크로드를 로드할 수 없습니다.
 
 ### 사용 권장 사항 {#config_based_workloads_usage_recommendations}
 
@@ -537,6 +545,8 @@ RESTORE TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' FR
 
 ## 관련 항목 {#see-also}
 
+* [CREATE WORKLOAD](/ko/reference/statements/create/workload)
+* [CREATE RESOURCE](/ko/reference/statements/create/resource)
 * [system.scheduler](/ko/reference/system-tables/scheduler)
 * [system.workloads](/ko/reference/system-tables/workloads)
 * [system.resources](/ko/reference/system-tables/resources)

@@ -195,18 +195,19 @@ ENGINE = MergeTree()
 
 <ExperimentalBadge />
 
-`Quantized(method, dimensions[, ...])` — برنامج ترميز متخصص لدعم البحث التقريبي عن المتجهات في أعمدة من النوع `Array(Float32)` أو `Array(Float64)` أو `Array(BFloat16)`.
+`Quantized(method, dimensions[, ...])` — مرمِّز متخصص لدعم البحث التقريبي عن المتجهات في أعمدة من النوع `Array(Float32)` أو `Array(Float64)` أو `Array(BFloat16)` أو `Array(Int8)` أو `Array(UInt8)`.
 يخزّن المتجهات الأصلية كاملة الدقة، إلى جانب *شيفرة مكمّاة* مضغوطة لكل متجه.
 في جداول عائلة `MergeTree`، تفحص استعلامات البحث عن المتجهات التي تستخدم الإعداد [`vector_search_use_quantized_codes`](/ar/reference/settings/session-settings/vector-search#vector_search_use_quantized_codes) الشيفرات المكمّاة لإنشاء قائمة مختصرة، ثم تعيد احتساب النتائج باستخدام المتجهات كاملة الدقة.
 يقرأ هذا البحث المؤلف من مرحلتين بايتات أقل من فحص عادي كامل الدقة، لكن على حساب انخفاض الاستدعاء.
 تمثل `dimensions` طول المتجه؛ وقيم `method` المدعومة هي `rabitq` و`turboquant` و`int8` و`prefix` و`product`، ويقدم كل منها مفاضلة مختلفة بين الحجم والدقة ودالة المسافة.
+بالنسبة إلى أعمدة `Array(Int8)` و`Array(UInt8)`، لا تُدعم الطريقة `int8`، ولا الطريقة `prefix` مع الصيغة `int8`.
 
-لا يمكن تعيين برنامج الترميز إلا في `CREATE TABLE`، ولا يمكن إضافته أو إزالته أو تغييره عبر `ALTER TABLE`، بما في ذلك باستخدام `ADD COLUMN ... CODEC(Quantized(...))`.
-ولا يمكن ربطه بأي برنامج ترميز آخر، حتى برنامج ترميز التشفير مثل `AES_128_GCM_SIV`.
-لمزيد من التفاصيل، راجع [البحث عن المتجهات باستخدام برامج الترميز المكمّاة](/ar/reference/engines/table-engines/mergetree-family/annindexes#vector-search-with-quantized-codecs).
+لا يمكن تعيين المرمِّز إلا في `CREATE TABLE`، ولا يمكن إضافته أو إزالته أو تغييره عبر `ALTER TABLE`، بما في ذلك باستخدام `ADD COLUMN ... CODEC(Quantized(...))`.
+ولا يمكن ربطه بأي مرمِّز آخر، حتى مرمِّز التشفير مثل `AES_128_GCM_SIV`.
+لمزيد من التفاصيل، راجع [البحث عن المتجهات باستخدام المرمِّزات المكمّاة](/ar/reference/engines/table-engines/mergetree-family/annindexes#vector-search-with-quantized-codecs).
 
 <Note>
-  برنامج الترميز هذا تجريبي، ولاستخدامه يلزم تنفيذ `SET enable_quantized_codec = 1`.
+  المرمِّز هذا تجريبي، ولاستخدامه يلزم تنفيذ `SET enable_quantized_codec = 1`.
 </Note>
 
 ```sql

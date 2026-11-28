@@ -1385,12 +1385,14 @@ Para `basic` en columnas `String` / `FixedString`, la estadística registra la l
 (utilizada para estimar la longitud media de las cadenas), además del recuento de valores predeterminados/`NULL`; no se utilizan filtros de rango ni
 la poda de partes a partir de ella.
 
-## Configuración por columna {#column-level-settings}
+## Parámetros de configuración por columna {#column-level-settings}
 
-Algunas opciones de configuración de MergeTree se pueden sobrescribir por columna:
+Algunos parámetros de configuración de MergeTree se pueden sobrescribir por columna:
 
-* `max_compress_block_size` — Tamaño máximo de los bloques de datos sin comprimir antes de comprimirlos para escribirlos en una tabla.
+* `max_compress_block_size` — Tamaño máximo de los bloques de datos sin comprimir antes de comprimirlos para escribirlos en una tabla. Un bloque comprimido contiene como máximo 256 MiB de datos sin comprimir, por lo que los valores superiores a 256 MiB se tratan como 256 MiB. Los datos escritos en bloques más grandes por versiones antiguas no se pueden leer.
 * `min_compress_block_size` — Tamaño mínimo de los bloques de datos sin comprimir necesario para la compresión al escribir la siguiente marca.
+
+En una columna con un códec `Quantized`, ambos parámetros de configuración se aplican únicamente a sus vectores (los elementos de los arrays); los tamaños de sus arrays y sus códigos cuantizados usan los valores definidos a nivel de tabla. Los tamaños de array compartidos por varias columnas de una estructura `Nested` se escriben una sola vez, con los parámetros de configuración de la columna que los escribe primero.
 
 Ejemplo:
 
@@ -1404,7 +1406,7 @@ ENGINE = MergeTree
 ORDER BY id
 ```
 
-La configuración a nivel de columna puede modificarse o eliminarse con [ALTER MODIFY COLUMN](/es/reference/statements/alter/column), por ejemplo:
+Los parámetros de configuración a nivel de columna pueden modificarse o eliminarse con [ALTER MODIFY COLUMN](/es/reference/statements/alter/column), por ejemplo:
 
 * Eliminar `SETTINGS` de la declaración de la columna:
 
@@ -1412,13 +1414,13 @@ La configuración a nivel de columna puede modificarse o eliminarse con [ALTER M
 ALTER TABLE tab MODIFY COLUMN document REMOVE SETTINGS;
 ```
 
-* Modifique una configuración:
+* Modifique un parámetro de configuración:
 
 ```sql
 ALTER TABLE tab MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 8192;
 ```
 
-* Restablece una o varias configuraciones; también elimina la declaración de configuración en la expresión de la columna de la consulta CREATE de la tabla.
+* Restablece uno o varios parámetros de configuración; también elimina la declaración del parámetro de configuración en la expresión de la columna de la consulta CREATE de la tabla.
 
 ```sql
 ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;

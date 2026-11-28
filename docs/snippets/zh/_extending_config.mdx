@@ -2,13 +2,11 @@
 title: 扩展配置
 ---
 
-<div id="extending-collector-config">
-  ### 扩展 collector 配置
-</div>
+### 扩展 采集器 配置 {#extending-collector-config}
 
-ClickStack 版 OTel collector 支持通过挂载自定义配置文件并设置环境变量来扩展基础配置。
+ClickStack 版 OTel 采集器 支持通过挂载自定义配置文件并设置环境变量来扩展基础配置。
 
-如需添加自定义 receiver、处理器或管道：
+如需添加自定义 接收器、处理器或流水线：
 
 1. 创建一个包含附加配置的自定义配置文件
 2. 将该文件挂载到 `/etc/otelcol-contrib/custom.config.yaml`
@@ -18,7 +16,7 @@ ClickStack 版 OTel collector 支持通过挂载自定义配置文件并设置�
 
 ```yaml
 receivers:
-  # 从本地文件收集日志
+  # Collect logs from local files
   filelog:
     include:
       - /var/log/**/*.log
@@ -26,7 +24,7 @@ receivers:
       - /var/log/messages
     start_at: beginning
 
-  # 收集主机系统指标
+  # Collect host system metrics
   hostmetrics:
     collection_interval: 30s
     scrapers:
@@ -47,7 +45,7 @@ receivers:
 
 service:
   pipelines:
-    # 日志管道
+    # Logs pipeline
     logs/host:
       receivers: [filelog]
       processors:
@@ -57,7 +55,7 @@ service:
       exporters:
         - clickhouse
     
-    # 指标管道
+    # Metrics pipeline
     metrics/hostmetrics:
       receivers: [hostmetrics]
       processors:
@@ -67,12 +65,11 @@ service:
         - clickhouse
 ```
 
-**使用独立收集器进行部署：**
+**使用独立采集器进行部署：**
 
 ```bash
 docker run -d \
   -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
-  # -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} \
   -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
   -e CLICKHOUSE_USER=default \
   -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
@@ -81,14 +78,79 @@ docker run -d \
   clickhouse/clickstack-otel-collector:latest
 ```
 
+如需通过 OpAMP 管理该采集器，还需传入 `-e OPAMP_SERVER_URL=${OPAMP_SERVER_URL}`。
+
 <Note>
-  你只需在自定义配置中定义新的接收器、处理器和管道。基础处理器 (`memory_limiter`、`batch`) 和导出器 (`clickhouse`) 已定义好——直接按名称引用即可。自定义配置会与基础配置合并，且不能覆盖现有组件。
+  你只需在自定义配置中定义新的接收器、连接器、处理器和流水线。基础处理器 (`memory_limiter`、`batch`) 和导出器 (`clickhouse`) 已定义好——直接按名称引用即可。自定义配置会与基础配置合并，且不能覆盖现有组件。
+
+  自定义配置可以替换默认流水线的 `processors` 列表。从 2.44.0 版本开始，请在默认链路追踪和日志流水线的处理器列表中保留 `transform/session_id`，否则来自旧版浏览器 SDK 的事件将不会带有 `session.id`。
+
+  在 OpAMP 模式下 (all-in-one 镜像，或任何设置了 `OPAMP_SERVER_URL` 的采集器) ，添加到默认流水线中的接收器、导出器和连接器会被直接丢弃，且不会报告任何错误。请将它们添加到具有独立名称的流水线中，如下文示例所示。
 </Note>
 
-如需更复杂的配置，请参阅[默认 ClickStack 收集器配置](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml)和 [ClickHouse 导出器文档](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options)。
+如需更复杂的配置，请参阅[默认 ClickStack 采集器配置](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml)和 [ClickHouse 导出器文档](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options)。
 
-<div id="configuration-structure">
-  #### 配置结构
-</div>
+#### 接收 StatsD 指标 {#statsd-receiver}
+
+自 2.40.0 版本起，ClickStack 采集器内置了 [StatsD 接收器](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/statsdreceiver)，因此发出 StatsD 或 DogStatsD 指标的应用程序可以将这些指标发送到采集器。DogStatsD 的 `key:value` 标签 (例如 `|#env:prod,team:payments`) 会转换为指标属性。
+
+该接收器默认处于禁用状态。请通过自定义配置添加该接收器，并将其放入一个单独命名的管道中：
+
+```yaml
+receivers:
+  statsd:
+    endpoint: 0.0.0.0:8125
+
+service:
+  pipelines:
+    metrics/statsd:
+      receivers: [statsd]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+在采集器容器上暴露 UDP 端口 `8125`，例如使用 `-p 8125:8125/udp`。StatsD 指标不带 `service.name`，因此按服务过滤时无法找到这些指标。该接收器在采集器进程内聚合指标，因此请将每个指标只发送到同一个采集器实例，否则其值会分散到多个副本中。
+
+#### 从 span 派生指标 {#span-metrics}
+
+自 2.39.0 版本起，ClickStack 采集器内置了 [span metrics 连接器](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/spanmetricsconnector)。它会根据采集器接收到的 span 生成调用计数和耗时直方图，因此无需额外进行指标插桩，即可获得每个服务的请求、错误和耗时指标。
+
+该连接器默认关闭，需要通过自定义配置启用：由一个 链路追踪 管道将 span 导出到该连接器，再由一个 metrics 管道从该连接器接收生成的指标。请为这两个管道分别指定各自的名称：
+
+```yaml
+connectors:
+  span_metrics:
+    namespace: traces.span.metrics
+    aggregation_temporality: AGGREGATION_TEMPORALITY_DELTA
+    histogram:
+      exponential:
+        max_size: 160
+    aggregation_cardinality_limit: 10000
+    series_expiration: 5m
+
+service:
+  pipelines:
+    traces/spanmetrics:
+      receivers: [otlp/hyperdx]
+      processors:
+        - memory_limiter
+      exporters: [span_metrics]
+    metrics/spanmetrics:
+      receivers: [span_metrics]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+采集器将调用计数写入 `traces.span.metrics.calls`，将耗时写入 `traces.span.metrics.duration`。请保留 `aggregation_temporality`、`aggregation_cardinality_limit` 和 `series_expiration`：它们可以限制连接器的内存占用 (`memory_limiter` 无法对此提供保护) ，并确保过时的数据系列被淘汰后计数依然准确。
+
+如需纳入来自 Datadog 代理的链路追踪，请将 `datadog` 添加到 `traces/spanmetrics` 的 `receivers` 中。必须定义 `datadog` 接收器，否则采集器会拒绝该配置：使用 OpAMP 时，请为负责生成采集器配置的 ClickStack 用户界面设置环境变量 `ENABLE_DATADOG_RECEIVER=true`；不使用 OpAMP 时，请在自定义配置中定义 `datadog` 接收器。
+
+#### 配置结构 {#configuration-structure}
 
 关于如何配置 OTel collectors (包括 [`receivers`](https://opentelemetry.io/docs/collector/transforming-telemetry/)、[`operators`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) 和 [`processors`](https://opentelemetry.io/docs/collector/configuration/#processors)) ，更多详情请参考 [OpenTelemetry collector 官方文档](https://opentelemetry.io/docs/collector/configuration)。

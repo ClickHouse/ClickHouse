@@ -147,7 +147,7 @@ Vous pouvez le faire pour le deuxième service ainsi que pour tous les services 
 
 <Note>
   1. Les services lecture seule prennent actuellement en charge les opérations de gestion des utilisateurs (CREATE, DROP, etc.).
-  2. Les [Refreshable materialized views](/fr/concepts/features/materialized-views/refreshable-materialized-view) s&#39;exécutent **uniquement** sur les services read-write (RW) d&#39;un warehouse.
+  2. Les [Refreshable materialized views](/fr/concepts/features/materialized-views/refreshable-materialized-view) dont les rafraîchissements sont coordonnés (comportement par défaut) s&#39;exécutent **uniquement** sur les services read-write (RW) d&#39;un warehouse. Les vues créées avec `APPEND` et `SETTINGS all_replicas = 1` ne sont pas coordonnées : chaque service, y compris en lecture seule, tente chaque rafraîchissement, et sur un service en lecture seule, chaque tentative échoue avec l&#39;erreur `QUERY_IS_PROHIBITED` (code 392), sauf si la vue écrit dans un stockage externe.
   3. Le type d&#39;un service (lecture seule ou read-write) est défini lors de sa création et ne peut pas être modifié ensuite depuis la Cloud Console. Pour passer d&#39;un accès lecture seule à read-write ou inversement, créez un nouveau service dans le warehouse avec le type souhaité.
 </Note>
 

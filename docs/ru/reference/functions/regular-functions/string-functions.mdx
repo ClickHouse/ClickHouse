@@ -851,6 +851,41 @@ GROUP BY concatWithSeparatorAssumeInjective('-', first_name, last_name);
 └─────────────┴─────────────┘
 ```
 
+## concatWithSeparatorIgnoreNulls {#concatWithSeparatorIgnoreNulls}
+
+Добавлено в: v26.12.0
+
+Объединяет значения по порядку через константный разделитель, пропуская значения `NULL` верхнего уровня.
+Пустые строки сохраняются. Если значения не переданы или все они равны `NULL`, то при разделителе, отличном от `NULL`, возвращается `''`.
+Значения типов, отличных от `String` и `FixedString`, преобразуются в строки с помощью стандартной текстовой сериализации.
+
+**Синтаксис**
+
+```sql
+concatWithSeparatorIgnoreNulls(separator[, value1, value2, ...])
+```
+
+**Аргументы**
+
+* `separator` — константа типа `String` или `FixedString`, в том числе в вариантах Nullable и LowCardinality, либо литерал `NULL`. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Nullable(String)`](/ru/reference/data-types/nullable) или [`Nullable(FixedString)`](/ru/reference/data-types/nullable) или [`LowCardinality`](/ru/reference/data-types/lowcardinality) или [`NULL`](/ru/reference/syntax#null)
+* `value1, value2, ...` — значения для конкатенации. [`Any`](/ru/reference/data-types/index)
+
+**Возвращаемое значение**
+
+Возвращает конкатенированную строку. Результат имеет тип `Nullable(String)`, если тип разделителя допускает NULL (включая литерал `NULL`), и `String` в противном случае. Если разделитель равен `NULL`, возвращается `NULL`. [`String`](/ru/reference/data-types/string) или [`Nullable(String)`](/ru/reference/data-types/nullable)
+
+**Примеры**
+
+**Пропуск значений NULL**
+
+```sql title=Query
+SELECT concatWithSeparatorIgnoreNulls(',', 'x', NULL, 'y') AS result
+```
+
+```response title=Response
+x,y
+```
+
 ## conv {#conv}
 
 Добавленный в: v25.10.0
@@ -2064,25 +2099,31 @@ münchen
 
 ## naturalSortKey {#naturalSortKey}
 
-Добавленный в: v26.3.0
+Добавлено в: v26.3.0
 
-Функция используется для естественной сортировки.
+Возвращает ключ для естественной сортировки: строки, упорядоченные по своим ключам, располагаются в естественном порядке, при котором последовательность цифр сравнивается как число, поэтому `a2` идёт перед `a10`.
+
+Необязательный аргумент `mode` определяет, как сравниваются символы, не являющиеся цифрами:
+
+* `0` (по умолчанию): символы сравниваются по одному с символами или числом в той же позиции другой строки. Поэтому `host-1` идёт перед `host2`, так как `-` сравнивается с числом `2`.
+* `1`: последовательность нецифровых символов сравнивается целиком с последовательностью в той же позиции другой строки, а число сравнивается только в том случае, если предшествующие ему последовательности равны. Поэтому `host2` идёт перед `host-1`, так как `host` сравнивается с `host-`. Такой порядок использует функция PromQL `sort_by_label`.
 
 **Синтаксис**
 
 ```sql
-naturalSortKey(s)
+naturalSortKey(s[, mode])
 ```
 
 **Псевдонимы**: `NATURAL_SORT_KEY`
 
 **Аргументы**
 
-* `s` — строка, преобразуемая в ключ естественной сортировки. [`String`](/ru/reference/data-types/string)
+* `s` — строка, которую нужно преобразовать в ключ естественной сортировки. [`String`](/ru/reference/data-types/string)
+* `mode` — необязательный аргумент. Способ сравнения нецифровых символов: `0` (по умолчанию) или `1`. [`const UInt*`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 
-Возвращает строку ключа естественной сортировки, полученную из `s`. [`String`](/ru/reference/data-types/string)
+Возвращает строку — ключ естественной сортировки для `s`. [`String`](/ru/reference/data-types/string)
 
 **Примеры**
 
@@ -2100,6 +2141,20 @@ SELECT s FROM t ORDER BY naturalSortKey(s);
 │ a1  │
 │ a02 │
 └─────┘
+```
+
+**Два режима**
+
+```sql title=Query
+SELECT
+    arraySort(s -> naturalSortKey(s), ['host-1', 'host10', 'host2']) AS default_mode,
+    arraySort(s -> naturalSortKey(s, 1), ['host-1', 'host10', 'host2']) AS mode_1;
+```
+
+```response title=Response
+┌─default_mode────────────────┬─mode_1──────────────────────┐
+│ ['host-1','host2','host10'] │ ['host2','host10','host-1'] │
+└─────────────────────────────┴─────────────────────────────┘
 ```
 
 ## normalizeUTF8NFC {#normalizeUTF8NFC}

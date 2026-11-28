@@ -12,17 +12,19 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="snapshot_cleaner_period">
-  ## snapshot_cleaner_period
-</div>
+## snapshot_cleaner_max_replicas {#snapshot_cleaner_max_replicas}
 
-<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />
+<SettingsInfoBlock type="UInt64" default_value="3" changeable_without_restart="No" />
 
-Período para eliminar por completo las partes de instantánea de SharedMergeTree. Solo disponible en ClickHouse Cloud
+Número máximo de réplicas que ejecutan el limpiador de instantáneas para cada tabla del registro de instantáneas. Cada réplica que ejecuta un limpiador lo anuncia mediante el indicador de réplica `snapshot_cleaner_enabled`; las réplicas ordenan a las réplicas anunciantes según un hash rendezvous de la tabla y el nombre de la réplica, y una réplica procesa una tabla solo cuando figura entre las primeras entradas. De este modo, la limpieza de las distintas tablas se reparte por toda la flota y el trabajo duplicado se mantiene acotado. Las réplicas con el limpiador deshabilitado (`snapshot_cleaner_period = 0`) nunca se anuncian ni son elegidas. `0` significa sin límite: todas las réplicas procesan todas las tablas. Solo disponible en ClickHouse Cloud
 
-<div id="snapshot_cleaner_pool_size">
-  ## snapshot_cleaner_pool_size
-</div>
+## snapshot_cleaner_period {#snapshot_cleaner_period}
+
+<SettingsInfoBlock type="UInt64" default_value="3600" changeable_without_restart="No" />
+
+Período, en segundos, para eliminar por completo las partes de instantánea de SharedMergeTree. Solo disponible en ClickHouse Cloud
+
+## snapshot_cleaner_pool_size {#snapshot_cleaner_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="128" changeable_without_restart="No" />
 

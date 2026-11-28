@@ -7,13 +7,14 @@ doc_type: 'reference'
 
 Permet de mettre en forme les requêtes en entrée.
 
-Options :
+Options :
 
 * `--help` or`-h` — Affiche un message d’aide.
 * `--query` — Met en forme des requêtes de toute longueur et complexité.
 * `--hilite` or `--highlight` — Ajoute une coloration syntaxique avec des séquences d’échappement ANSI pour le terminal.
 * `--oneline` — Met en forme sur une seule ligne.
 * `--max_line_length` — Met en forme sur une seule ligne les requêtes dont la longueur est inférieure à la valeur spécifiée.
+* `--wrap_width` — Enveloppe les requêtes multilignes à la largeur d’affichage spécifiée. L’enveloppement est désactivé par défaut (`0`). Les requêtes mises en forme sur une seule ligne par `--oneline` ou `--max_line_length` ne sont pas enveloppées.
 * `--comments` — Conserve les commentaires dans la sortie.
 * `--quiet` or `-q` — Vérifie uniquement la syntaxe, sans sortie en cas de succès.
 * `--multiquery` or `-n` — Autorise plusieurs requêtes dans le même fichier.
@@ -22,11 +23,11 @@ Options :
 * `--backslash` — Ajoute un backslash à la fin de chaque ligne de la requête mise en forme. Cela peut être utile lorsque vous copiez une requête depuis le Web ou ailleurs sur plusieurs lignes et souhaitez l’exécuter en ligne de commande.
 * `--semicolons_inline` — En mode multiquery, écrit les points-virgules sur la dernière ligne de la requête au lieu de les placer sur une nouvelle ligne.
 
-<div id="examples">
-  ## Exemples
-</div>
+Si un appel de fonction, un tableau ou un tuple, une chaîne `AND`/`OR`, une définition de fenêtre ou la liste de colonnes d’un `INSERT` ne tient pas dans la largeur, ses éléments commencent sur de nouvelles lignes avec un niveau d’indentation supplémentaire. Les arguments de fonction et les éléments de tableau qui sont de simples valeurs (noms de colonnes et littéraux) sont compactés, à raison de plusieurs par ligne. Les requêtes dont les lignes mises en forme tiennent déjà dans la largeur ne sont pas modifiées. La largeur est une limite souple : les chaînes de caractères, les identifiants et les autres fragments indivisibles peuvent la dépasser. La largeur des caractères Unicode est prise en compte. Les commentaires conservés par `--comments` et les données qui suivent `INSERT ... VALUES` ne sont pas enveloppés.
 
-1. Mise en forme d’une requête :
+## Exemples {#examples}
+
+1. Mise en forme d’une requête :
 
 ```bash title="Query"
 $ clickhouse-format --query "select number from numbers(10) where number%2 order by number desc;"
@@ -39,7 +40,7 @@ WHERE number % 2
 ORDER BY number DESC
 ```
 
-2. Mise en évidence et format sur une seule ligne :
+2. Mise en évidence et format sur une seule ligne :
 
 ```bash title="Query"
 $ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
@@ -49,7 +50,7 @@ $ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
 SELECT sum(number) FROM numbers(5)
 ```
 
-3. Requêtes multiples :
+3. Requêtes multiples :
 
 ```bash title="Query"
 $ clickhouse-format -n <<< "SELECT min(number) FROM numbers(5); SELECT max(number) FROM numbers(5);"
@@ -66,7 +67,7 @@ FROM numbers(5)
 
 ```
 
-4. Obfuscation :
+4. Obfuscation :
 
 ```bash title="Query"
 $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
@@ -76,7 +77,7 @@ $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWE
 SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
 ```
 
-Même requête avec une autre chaîne de seed :
+Même requête avec une autre chaîne de seed :
 
 ```bash title="Query"
 $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
@@ -86,7 +87,7 @@ $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWE
 SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 116 THEN nonconformist ELSE FORESTRY END;
 ```
 
-5. Ajout d’un backslash :
+5. Ajout d’un backslash :
 
 ```bash title="Query"
 $ clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
@@ -102,4 +103,19 @@ FROM  \
     UNION DISTINCT \
     SELECT 3 \
 )
+```
+
+6. Envelopper les expressions longues :
+
+```bash title="Query"
+$ clickhouse-format --wrap_width 40 --query "SELECT concat(first_name, ' ', middle_name, ' ', last_name) FROM people"
+```
+
+```sql title="Response"
+SELECT
+    concat(
+        first_name, ' ', middle_name,
+        ' ', last_name
+    )
+FROM people
 ```

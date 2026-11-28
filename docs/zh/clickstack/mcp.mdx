@@ -156,10 +156,14 @@ MCP 服务器 使用 **Streamable HTTP** 传输和 **Bearer token** 身份验证
 * **仪表盘** — 创建、更新、删除和查看仪表盘及其卡片。
 * **告警** — 创建、更新和查看告警及其评估历史。如果已启用[异常检测](/zh/clickstack/features/anomaly-detection)，助手还可以在保存异常告警设置之前，基于近期历史数据对其进行回测。
 * **已保存的搜索** — 创建、更新和查看可复用的已保存搜索定义。
-* **Webhooks** — 列出可用于告警通知的 webhook 目标端。
+* **Webhooks** — 列出可用于告警通知的 Webhook 目标端。
 * **团队** — 列出当前用户所属的团队，并识别当前活动团队。
+* **服务健康状况** — 对比各服务的吞吐量、错误率和延迟，以发现问题并掌握其随时间的变化。
+* **调查** — 探查 trace 结构和耗时较长的操作，将事件归纳为[模式](/zh/clickstack/features/event-patterns)，比较[事件组之间的属性差异](/zh/clickstack/features/event-deltas)，并识别新出现或逐渐消退的模式。
 
 具体可用的工具集可能会随时间不断扩展。MCP 客户端 会在连接时自动发现可用工具。
+
+工具会提供行为提示，MCP 客户端可据此判断是否需要请求你的批准。
 
 <div id="multi-team">
   ## 多团队使用 (OSS/BYOC) {#multi-team}

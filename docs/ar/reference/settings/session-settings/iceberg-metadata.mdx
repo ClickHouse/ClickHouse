@@ -41,6 +41,18 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * manifest&#95;file&#95;metadata - كل ما سبق + البيانات الوصفية من ملفات manifest بصيغة Avro التي تم اجتيازها.
 * manifest&#95;file&#95;entry - كل ما سبق + إدخالات ملفات manifest بصيغة Avro التي تم اجتيازها.
 
+## iceberg_metadata_previous_versions_max {#iceberg_metadata_previous_versions_max}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "100"},{"label": "إعداد جديد. أصبحت عمليات الكتابة في جداول Iceberg تضع حدًّا لحجم `metadata-log`، الذي كان يتزايد سابقًا مع كل عملية تثبيت."}]}]} />
+
+الحد الأقصى لعدد الإدخالات التي تحتفظ بها عملية الكتابة في `metadata-log` الخاص بجدول Iceberg، بما في ذلك إدخال ملف البيانات الوصفية الذي تكتبه. وعندما تضيف عملية كتابة إدخالًا يتجاوز هذا الحد، تُزال أقدم الإدخالات، دون حذف ملفات البيانات الوصفية نفسها.
+
+تكون الأسبقية لخاصية جدول Iceberg ‏`write.metadata.previous-versions-max` على هذا الإعداد. وكما في تطبيق Java، تمثل هذه الخاصية عدد ملفات البيانات الوصفية السابقة ولا تقل قيمتها عن واحد، ولذلك يحتفظ `metadata-log` بعدد إدخالات يزيد بواحد على قيمتها.
+
+لا يؤثر هذا الإعداد في الجداول الموجودة ضمن catalog يتولى كتابة ملفات البيانات الوصفية بنفسه، مثل كتالوج REST، إذ يدير الـ catalog حينئذٍ `metadata-log` وفقًا لتهيئته الخاصة ولخاصية الجدول.
+
 ## iceberg_metadata_staleness_ms {#iceberg_metadata_staleness_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

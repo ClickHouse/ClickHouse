@@ -37,6 +37,7 @@ integration:
 * ClickHouse Cloud 向けに最適化されており、非常に高いパフォーマンスを実現
 * 高スループットのワークロードに対応する水平・垂直スケーラビリティ
 * 設定可能なレプリカと自動再試行による、組み込みの耐障害性
+* 設定により [exactly-once セマンティクス](/ja/integrations/clickpipes/kafka/best-practices#delivery-semantics)にも対応可能
 * ClickHouse Cloud UI、[Open API](/ja/integrations/clickpipes/programmatic-access/openapi)、または [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) によるデプロイと管理
 * クラウドネイティブな認可 (IAM) とプライベート接続 (PrivateLink) に対応したエンタープライズグレードのセキュリティ
 * Confluent Cloud、Amazon MSK、Redpanda Cloud、Azure Event Hubs を含む幅広い[データソース](/ja/integrations/clickpipes/kafka/reference)をサポート
@@ -84,11 +85,11 @@ Kafka テーブルエンジンを使い始めるには、[リファレンスド�
 
 ### オプションの選択 {#choosing-an-option}
 
-| 製品                      | 長所                                                                                                                                                                              | 短所                                                                                                                                   |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Kafka 向け ClickPipes** | • 高スループット・低レイテンシー向けのスケーラブルなアーキテクチャ<br />• 組み込みの監視機能とスキーマ管理<br />• プライベートネットワーク接続 (PrivateLink 経由) <br />• SSL/TLS 認証と IAM 認可をサポート<br />• プログラムによる設定 (Terraform、API エンドポイント) に対応 | • Kafka へのデータのプッシュはサポートしていない<br />• At-least-once セマンティクス                                                                            |
-| **Kafka Connect Sink**  | • exactly-once セマンティクス<br />• データ変換、バッチ処理、エラー処理をきめ細かく制御できる<br />• プライベートネットワーク内にデプロイできる<br />• Debezium 経由で、ClickPipes がまだ対応していないデータベースからリアルタイムにレプリケーションできる                     | • Kafka へのデータのプッシュはサポートしていない<br />• セットアップと保守の運用負荷が高い<br />• Kafka と Kafka Connect の専門知識が必要                                          |
-| **Kafka テーブルエンジン**      | • [Kafka へのデータのプッシュ](/ja/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka)をサポート<br />• 運用面ではセットアップが容易                                           | • At-least-once セマンティクス<br />• コンシューマーの水平スケーリングに制約があり、ClickHouse サーバーとは独立してスケールできない<br />• エラー処理やデバッグの選択肢が限られる<br />• Kafka の専門知識が必要 |
+| 製品                      | 長所                                                                                                                                                                                                                                                                              | 短所                                                                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Kafka 向け ClickPipes** | • 高スループット・低レイテンシー向けのスケーラブルなアーキテクチャ<br />• [exactly-once セマンティクス](/ja/integrations/clickpipes/kafka/best-practices#delivery-semantics)<br />• 組み込みの監視機能とスキーマ管理<br />• プライベートネットワーク接続 (PrivateLink 経由) <br />• SSL/TLS 認証と IAM 認可をサポート<br />• プログラムによる設定 (Terraform、API エンドポイント) に対応 | • Kafka へのデータのプッシュはサポートしていない                                                                                                         |
+| **Kafka Connect Sink**  | • exactly-once セマンティクス<br />• データ変換、バッチ処理、エラー処理をきめ細かく制御できる<br />• プライベートネットワーク内にデプロイできる<br />• Debezium 経由で、ClickPipes がまだ対応していないデータベースからリアルタイムにレプリケーションできる                                                                                                                     | • Kafka へのデータのプッシュはサポートしていない<br />• セットアップと保守の運用負荷が高い<br />• Kafka と Kafka Connect の専門知識が必要                                          |
+| **Kafka テーブルエンジン**      | • [Kafka へのデータのプッシュ](/ja/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka)をサポート<br />• 運用面ではセットアップが容易                                                                                                                                           | • At-least-once セマンティクス<br />• コンシューマーの水平スケーリングに制約があり、ClickHouse サーバーとは独立してスケールできない<br />• エラー処理やデバッグの選択肢が限られる<br />• Kafka の専門知識が必要 |
 
 ### その他のオプション {#other-options}
 

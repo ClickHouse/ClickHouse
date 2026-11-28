@@ -346,7 +346,7 @@ TRUNCATE TABLE test.protobuf_messages;
 ```
 
 将数据插入 ClickHouse Cloud，并以待运行查询的形式指定 schema。
-请通过 [HTTP 接口](/zh/concepts/features/interfaces/http#insert-protobuf) 发送此插入请求，由服务器解析数据并运行 schema 查询：`clickhouse client` 会在客户端解析输入数据，而 schema 查询在客户端会执行失败。
+请通过 [HTTP 接口](/zh/concepts/features/connect-to-clickhouse/protocols/http#insert-protobuf) 发送此插入请求，由服务器解析数据并运行 schema 查询：`clickhouse client` 会在客户端解析输入数据，而 schema 查询在客户端会执行失败。
 curl 的 `--url-query` 选项 (curl 7.87 及更高版本) 会对每个参数进行 URL 编码，因此查询语句和 schema 查询都可以直接按原样编写：
 
 ```bash

@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 يوفّر واجهة شبيهة بالجداول لجداول [Delta Lake](https://github.com/delta-io/delta) في Amazon S3 أو Azure Blob Storage أو نظام ملفات محلي مربوط، مع دعم كلٍّ من القراءة والكتابة (الكتابة إلى S3 وGCS بدءًا من v25.10، وإلى Azure بدءًا من v26.9)
 
-## البنية
+## البنية {#syntax}
 
 `deltaLake` هو اسم مستعار لـ `deltaLakeS3`، وهو مدعوم للتوافق.
 
@@ -21,24 +21,27 @@ deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure]
 deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 
 deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [,format] [,compression_method])
 
 deltaLakeLocal(path, [,format])
 ```
 
-## الوسائط
+## الوسائط {#arguments}
 
 وسائط دالة الجدول هذه هي نفسها المستخدمة في دوال الجداول `s3` و`azureBlobStorage` و`HDFS` و`file`.
 تشير الوسيطة `format` إلى تنسيق ملفات البيانات في جدول Delta Lake.
 
 يمكن استخدام المعلَمة الاختيارية `extra_credentials` لتمرير `role_arn` من أجل الوصول المستند إلى الدور في ClickHouse Cloud. راجع [Secure S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطلاع على خطوات التهيئة.
 
-## القيمة المُعادة
+بالنسبة إلى Azure (`deltaLakeAzure`)، تقبل `extra_credentials` القيمتين `client_id` و`tenant_id` لاستخدام Workload Identity، ولا يمكن الجمع بينها وبين `account_name` / `account_key`. ويجب أيضًا ضبط `AZURE_FEDERATED_TOKEN_FILE` في بيئة العملية (وكذلك `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` إذا لم تُمرَّرا صراحةً؛ أما `AZURE_AUTHORITY_HOST` فاختيارية). تستخدم Workload Identity هوية الخادم نفسه، ولذلك تُرفض افتراضيًا: فعّل `allow_server_credentials_in_user_queries` في جلسة الاستعلام أو في ملف تعريف الإعدادات الخاص بها.
+
+## القيمة المُعادة {#returned-value}
 
 تُرجع جدولًا ذا البنية المحددة لقراءة البيانات من جدول Delta Lake المحدد أو الكتابة إليها.
 
-## أمثلة
+## أمثلة {#examples}
 
-### قراءة البيانات
+### قراءة البيانات {#reading-data}
 
 افترض وجود جدول في تخزين S3 على `https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`.
 لقراءة البيانات من الجدول في ClickHouse، شغّل:
@@ -59,7 +62,7 @@ LIMIT 2
 └───────────────────────────────────────────────────────────────────────┴───────────┘
 ```
 
-### إدراج البيانات
+### إدراج البيانات {#inserting-data}
 
 لنفترض وجود جدول في تخزين S3 عند `s3://ch-docs-s3-bucket/people_10k/`.
 تُعد عمليات الكتابة في Delta Lake ميزة Beta، وهي معطّلة افتراضيًا. فعِّلها باستخدام ما يلي (يتوفر `allow_delta_lake_writes` بدءًا من الإصدار 26.7؛ وفي الإصدارات الأقدم استخدم `allow_experimental_delta_lake_writes`):
@@ -98,7 +101,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
    └───────┴───────────┴──────────┴────────┴─────┘
 ```
 
-## الأعمدة الافتراضية
+## الأعمدة الافتراضية {#virtual-columns}
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`.
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`.
@@ -106,7 +109,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 * `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، فستكون القيمة `NULL`.
 * `_etag` — قيمة etag للملف. النوع: `LowCardinality(String)`. إذا كانت قيمة etag غير معروفة، فستكون القيمة `NULL`.
 
-## ذات صلة
+## ذات صلة {#related}
 
 * [محرك DeltaLake](/ar/reference/engines/table-engines/integrations/deltalake)
 * [دالة الجدول cluster لـ DeltaLake](/ar/reference/functions/table-functions/deltalakeCluster)

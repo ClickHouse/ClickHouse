@@ -1,0 +1,58 @@
+---
+title: 'GCP における BYOC の権限'
+slug: /cloud/reference/byoc/reference/privilege-gcp
+sidebarTitle: 'GCP'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'privilege', 'gcp', 'iam', 'service account']
+description: 'ClickHouse BYOC がお客様の Google Cloud プロジェクトで使用するカスタムロール、service account、IAM 権限と、それぞれのアクセス許可、スコープ、目的'
+doc_type: 'reference'
+---
+
+このページでは、ClickHouse BYOC がお客様の Google Cloud プロジェクトで使用するカスタムロール、service account、IAM 権限のそれぞれについて、アクセス許可、スコープ、目的を説明します。BYOC のアクセス許可モデルの概要については、[BYOC の権限](/ja/products/bring-your-own-cloud/reference/privilege)を参照してください。
+
+## ブートストラップ service account {#bootstrap-service-account}
+
+次の表は、ブートストラップ service account `clickhouse-management@<project>.iam.gserviceaccount.com` の各カスタムロールについて説明したものです。この service account の権限を借用できるのは ClickHouse のプロビジョニング用 service account のみで、この service account に対する `roles/iam.serviceAccountTokenCreator` を通じて借用します。GCP のカスタムロールはリソース名で範囲を限定できないため、各ロールはプロジェクト全体に適用されます。このため、BYOC 専用の Google Cloud プロジェクトを用意することを推奨します。
+
+| カスタムロール                        | アクセス許可                                                                                                                             | スコープ                                              | 目的                                                                                                                     |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `clickhouseCommonRole`         | リージョン、ゾーン、プロジェクト、有効なサービスの閲覧。service account の取得。service account のリソースへのアタッチ (`iam.serviceAccounts.actAs`)。                         | プロジェクト                                            | ヘルスチェック。BYOC の service account を GKE ノードプールにアタッチ。                                                                      |
+| `clickhouseVPCRole`            | ネットワーク、サブネット、ルート、Cloud Router の閲覧と使用。Private Service Connect サービスアタッチメントと静的 IPアドレスの作成、変更、削除。                                       | プロジェクト                                            | Private Service Connect エンドポイントおよびロードバランサーの IPアドレス                                                                     |
+| `clickhouseVPCWriteRole`       | ネットワーク、サブネット、ルート、Cloud Router の作成、変更、削除。ネットワークピアリングおよびサブネットの IAM ポリシーの変更。                                                          | プロジェクト                                            | BYOC VPC。[独自の VPC を使用する](/ja/products/bring-your-own-cloud/onboarding/customization-gcp#customer-managed-vpc-gcp)場合は不要です。 |
+| `clickhouseClusterRole`        | GKE クラスターとノードプールの作成、変更、削除、およびそのマネージドインスタンスグループの変更。クラスター認証情報の取得。クラスター内のすべての Kubernetes リソース (シークレット、RBAC、カスタムリソース定義を含む) の読み取りと書き込み。 | プロジェクト                                            | GKE クラスターの管理と BYOC ソフトウェアのインストール                                                                                       |
+| `clickhouseStorageRole`        | バケットの作成、変更、削除。バケットの IAM ポリシーの読み取りと設定。オブジェクトの読み取り・書き込みは不可。                                                                          | プロジェクト                                            | ClickHouse のテーブルデータ、バックアップ、監視データを保存するバケットの管理                                                                           |
+| `clickhouseStorageObjectsRole` | オブジェクトの一覧表示、読み取り、削除                                                                                                                | 名前が `_gcp_clickhouse_cloud-monitoring` で終わるバケットのみ | ClickHouse が監視用バケットを削除する前にその中身を空にする                                                                                    |
+| `clickhouseIamRole`            | プロジェクトの IAM ポリシーの読み取りと設定。service account の作成、変更、無効化、削除、およびその IAM ポリシーの設定。カスタムロールの作成、変更、削除。サービスアカウントキーの作成は不可。                       | プロジェクト                                            | 次のセクションの service account を作成し、それぞれにロールを付与する                                                                            |
+| `clickhouseTdeRole`            | KMS キーリングとキーの作成と読み取り。キーの変更。キーの IAM ポリシーの読み取りと設定。キーバージョンの破棄は不可。                                                                     | プロジェクト                                            | [TDE](/ja/products/cloud/guides/security/cmek#transparent-data-encryption-tde) に使用。オプション (デフォルトでは無効)                      |
+
+[共有VPC](/ja/products/bring-your-own-cloud/onboarding/customization-gcp#shared-vpc-host-project) を使用する場合、モジュールはホストプロジェクトでも次のロールを付与します。
+
+| カスタムロール                                                                | アクセス許可                                                                                                                           | スコープ                                                                                       | 目的                                                 |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `clickhouseSharedVPCHostRole`                                          | ネットワークとサブネットの閲覧。サブネットの使用。                                                                                                        | ホストプロジェクト                                                                                  | ホストネットワークの閲覧。Private Service Connect NAT サブネットの使用。 |
+| `clickhouseGKESharedVPCFirewallRole`                                   | ファイアウォールルールの作成、変更、削除。`clickhouse-management` ではなく、BYOC プロジェクトの GKE サービスエージェントに付与されます。                                            | ホストプロジェクト                                                                                  | ホストネットワーク内の GKE クラスターとそのロードバランサー用のファイアウォールルール      |
+| `roles/container.hostServiceAgentUser` および `roles/compute.networkUser` | 共有VPC 用の標準 GKE ロール。GKE サービスエージェントと Google APIs サービスエージェントに付与されます。`clickhouse-management` にも `roles/compute.networkUser` が付与されます。 | `roles/container.hostServiceAgentUser`: ホストプロジェクト。`roles/compute.networkUser`: ノードサブネットのみ。 | 共有VPC に対する GKE の標準要件                               |
+
+ロールの正確な定義については、[Terraform モジュール](https://github.com/ClickHouse/terraform-byoc-onboarding/blob/main/modules/gcp/roles.tf)を参照してください。
+
+## コントローラーによって作成される追加の service account {#additional-service-accounts-created-by-the-controller}
+
+Terraform で作成される `clickhouse-management` service account に加えて、コントローラーは BYOC インフラストラクチャごとに複数の service account とロールを追加で作成します。
+各 service account の名前は `<infra>-<suffix>` の形式です。`<infra>` は BYOC インフラストラクチャの名前です (例: `infra-ab-123`)。これらの service account は、インフラストラクチャ上のすべての ClickHouse サービスで共有されます。ClickHouse は service account キーを作成しません。アクセスにはすべて有効期間の短いトークンが使用されます。
+
+| service account                             | アクセス許可                                                                                                                                                                                                                       | 用途                                                                               |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `<infra>-dp-mgmt`                     | プロジェクトに対するカスタムロール: Private Service Connect のサービスアタッチメントの管理。バケットの作成、変更、削除、およびその IAM ポリシーの設定。オブジェクトの一覧表示と削除。service account の作成、変更、削除、およびその IAM ポリシーの設定。GKE クラスターの閲覧と接続。プロジェクトの IAM ポリシーは変更できません。ClickHouse の管理サービスがこのアカウントの権限を借用します。 | ClickHouse サービスの日常的な管理: バケット、ClickHouseサーバーPod のアクセス、および Private Service Connect |
+| `<infra>-gke-node`                    | プロジェクトに対する `roles/container.defaultNodeServiceAccount`。ClickHouse のコンテナレジストリへの閲覧アクセス。                                                                                                                                        | すべての GKE ノードプールのノードアイデンティティ: ログ、メトリクス、およびイメージの pull                              |
+| `<infra>-clickhouse`                  | 各 ClickHouse サービスのデータバケットおよびバックアップバケットに対する `roles/storage.admin`。バックアップからサービスを復元する際の、復元元バックアップバケットへの閲覧アクセス。ClickHouse への使用量データの書き込み。各 ClickHouse サービスのポッドが Workload Identity を通じて使用します。                                      | ClickHouseサーバーPod のアイデンティティ。テーブルデータとバックアップの読み取りおよび書き込みを行います。                     |
+| `<infra>-monitoring`                  | BYOC の監視用バケットのみに対する `roles/storage.objectAdmin`。Prometheus と Thanos が Workload Identity を通じて使用します。                                                                                                                           | 監視用のメトリクスを保存します                                                                  |
+| `<infra>-scraper`                     | お客様のプロジェクト内のアクセス許可はありません。ClickHouse への使用量データの書き込み。                                                                                                                                                                           | 課金用の使用量データを ClickHouse に送信します                                                    |
+| `<infra>-kmf`                         | お客様のプロジェクト内のアクセス許可はありません。ClickHouse へのメトリクスの書き込み。このクラスターからのみ使用できます。                                                                                                                                                          | オートスケーリングのために Kubernetes のメトリクスを ClickHouse に送信します                               |
+| `<infra>-tde-delegate` (TDE が有効な場合のみ) | キーリング `<infra>-tde` 内の TDE キー `tde-default-kek` のみに対する `roles/cloudkms.cryptoKeyEncrypterDecrypter` および `roles/cloudkms.viewer`                                                                                              | TDE のデータキーを暗号化および復号します。このアカウントのキーへのアクセスは取り消すことができます。                             |
+
+また、コントローラーは BYOC インフラストラクチャごとに、お客様のプロジェクト内で次の権限を付与します。
+
+| 権限                                                                                                                                       | 付与先                                              | 用途                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------- |
+| `container.clusters.connect` のみを含むカスタムロール                                                                                                | ClickHouse の管理用 service account                         | ClickHouse の管理サービスが GKE API エンドポイントに接続できるようにします          |
+| プロジェクトに対する `roles/container.clusterViewer`                                                                                               | ClickHouse のデプロイ用 service account                       | クラスター内の BYOC ソフトウェアをデプロイおよびアップグレードします                    |
+| キーリング `<infra>-snc` 内のキー `snc-kek` に対する `roles/cloudkms.cryptoKeyEncrypter` および `roles/cloudkms.cryptoKeyDecrypter` (名前付きコレクションが有効な場合のみ) | 暗号化: `<infra>-dp-mgmt`。復号: `<infra>-clickhouse`。 | 名前付きコレクションのシークレットを暗号化します。復号できるのは ClickHouseサーバーPod のみです。 |

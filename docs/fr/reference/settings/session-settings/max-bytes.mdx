@@ -89,7 +89,7 @@ Valeurs possibles :
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
-Dans le cas d’un ORDER BY avec LIMIT, lorsque l’utilisation de la mémoire dépasse le seuil spécifié, effectuez des étapes supplémentaires de fusion de blocs avant la fusion finale afin de ne conserver que les LIMIT premières lignes.
+Dans le cas d’un `ORDER BY` avec `LIMIT`, lorsque la mémoire utilisée par les blocs accumulés depuis la précédente étape de ce type dépasse le seuil spécifié, effectuez des étapes supplémentaires de fusion de blocs avant la fusion finale afin de ne conserver que les `LIMIT` premières lignes. Avant le déversement sur disque déclenché par `max_bytes_before_external_sort`, tous les blocs accumulés sont pris en compte.
 
 ## max_bytes_for_external_set_bloom_filter {#max_bytes_for_external_set_bloom_filter}
 
@@ -195,37 +195,35 @@ créé à partir d’une sous-requête peut utiliser.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "Nouveau paramètre permettant d'activer le déversement sur disque de `DISTINCT` lorsque l'utilisation de la mémoire dépasse le ratio donné de la mémoire disponible. Si 0, seul `max_bytes_before_external_distinct` s'applique."}]}]} />
 
-Fraction de la mémoire disponible du serveur ou de l&#39;utilisateur servant à calculer le seuil de `DISTINCT` externe
-au début de l&#39;exécution. Par exemple, `0.5` utilise la moitié de la mémoire disponible.
+Fraction de la mémoire disponible dans le cadre de la limite `max_memory_usage` de la requête et des limites de mémoire du Serveur ou de l&#39;utilisateur,
+servant à calculer le seuil de `DISTINCT` externe au début de l&#39;exécution. Par exemple, `0.5` utilise la moitié
+de la mémoire disponible. Le cache de pages en espace utilisateur au-delà de `page_cache_min_size` est comptabilisé comme mémoire disponible.
 
 Les valeurs doivent être supérieures ou égales à `0` et inférieures à `1`. La valeur `0` désactive ce seuil. En l&#39;absence de limite
-de mémoire applicable au serveur ou à l&#39;utilisateur, le ratio n&#39;a aucun effet.
-
-`max_memory_usage` n&#39;intervient pas dans ce calcul. Pour configurer le déversement par rapport à cette limite,
-utilisez `max_bytes_before_external_distinct`, en laissant de la marge pour une utilisation supplémentaire de la mémoire.
+de mémoire applicable à la requête, au Serveur ou à l&#39;utilisateur, le ratio n&#39;a aucun effet.
 
 ## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "Le déversement automatique sur disque est activé par défaut."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "Nouveau paramètre."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "Activer par défaut le déversement automatique sur disque."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "Nouveau paramètre."}]}]} />
 
 La proportion de mémoire disponible pouvant être utilisée par `GROUP BY`. Une fois ce seuil atteint,
 la mémoire externe est utilisée pour l’agrégation.
 
-Par exemple, si cette valeur est définie sur `0.6`, `GROUP BY` pourra utiliser 60 % de la mémoire disponible
-(pour server/user/merges) au début de l’exécution ; ensuite, il
-commencera à utiliser l’agrégation externe.
+Par exemple, si cette valeur est définie sur `0.6`, `GROUP BY` pourra utiliser 60 % de la mémoire disponible
+(dans la limite du `max_memory_usage` de la requête et des limites Serveur/user/fusions) au début de l’exécution ; ensuite, il
+commencera à utiliser l’agrégation externe. Le cache de pages en espace utilisateur au-delà de `page_cache_min_size` est comptabilisé comme mémoire disponible.
 
 ## max_bytes_ratio_before_external_join {#max_bytes_ratio_before_external_join}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "Nouveau paramètre : ratio de mémoire disponible utilisé comme seuil de déversement sur disque pour les jointures par hachage. Activé par défaut à `0.5`, à l'image de `max_bytes_ratio_before_external_group_by` et `max_bytes_ratio_before_external_sort`. Combiné avec la valeur absolue `max_bytes_before_external_join` (la plus petite des deux s'applique)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "Nouveau paramètre : ratio de mémoire disponible utilisé comme seuil de déversement sur disque pour les Jointures par hachage. Activé par défaut à `0.5`, à l'image de `max_bytes_ratio_before_external_group_by` et `max_bytes_ratio_before_external_sort`. Combiné avec la valeur absolue `max_bytes_before_external_join` (la plus petite des deux s'applique)."}]}]} />
 
-Ratio de mémoire disponible autorisé pour `JOIN`. Une fois ce seuil atteint, une jointure par hachage déverse les données du côté droit sur disque. Cela ne se produit que lorsque `GraceHashJoin` peut exécuter la jointure (un seul disjonct d&#39;égalité, type et strictness pris en charge). Les conditions `ON` comportant plusieurs disjoncts (`OR`) restent sur `hash` et peuvent atteindre la limite de mémoire sans aucun déversement. Après le déversement, la jointure se poursuit sous forme de jointure par hachage Grace, ou de jointure par fusion partielle lorsque le plan de requête a besoin de l&#39;ordre des lignes du flux de gauche (voir `max_bytes_before_external_join`).
+Ratio de mémoire disponible autorisé pour `JOIN`. Une fois ce seuil atteint, une Jointure par hachage déverse les données du côté droit sur disque. Cela ne se produit que lorsque `GraceHashJoin` peut exécuter la jointure (un seul disjonct d&#39;égalité, type et strictness pris en charge). Les conditions `ON` comportant plusieurs disjoncts (`OR`) restent sur `hash` et peuvent atteindre la limite de mémoire sans aucun déversement. Après le déversement, la jointure se poursuit sous forme de Jointure par hachage Grace, ou de jointure par fusion partielle lorsque le plan de requête a besoin de l&#39;ordre des lignes du flux de gauche (voir `max_bytes_before_external_join`).
 
-Par exemple, si cette valeur est définie sur `0.6`, `JOIN` autorise l&#39;utilisation de `60%` de la mémoire disponible (pour le serveur/l&#39;utilisateur/les fusions) pour la table de hachage du côté droit au début de l&#39;exécution ; au-delà, le déversement sur disque commence.
+Par exemple, si cette valeur est définie sur `0.6`, `JOIN` autorise l&#39;utilisation de `60%` de la mémoire disponible (dans le respect de la limite `max_memory_usage` de la requête et des limites du Serveur/de l&#39;utilisateur/des fusions) pour la table de hachage du côté droit au début de l&#39;exécution ; au-delà, le déversement sur disque commence. Le cache de pages en espace utilisateur au-delà de `page_cache_min_size` est comptabilisé comme mémoire disponible.
 
 Si `max_bytes_before_external_join` et `max_bytes_ratio_before_external_join` sont tous deux définis, c&#39;est le plus petit seuil obtenu qui est utilisé. Si le ratio vaut `0`, seule la valeur absolue s&#39;applique.
 
@@ -237,24 +235,23 @@ A un effet pour tous les `join_algorithm` hash-based, y compris `grace_hash`, à
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "La modification de la valeur par défaut à 0.5 a été rétroportée vers 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0.5"},{"label": "Nouveau paramètre permettant de déverser sur le disque le set d’un `IN` avec sous-requête lorsque l’utilisation de la mémoire dépasse le ratio spécifié de la mémoire disponible. Si 0, seul `max_bytes_before_external_set` s’applique."}]}]} />
 
-Fraction de la mémoire disponible du serveur ou de l’utilisateur servant à calculer, au début de l’exécution, le seuil à partir duquel le set d’un `IN`
-avec sous-requête est déversé sur le disque. Par exemple, `0.5` correspond à la moitié de la mémoire disponible.
+Fraction de la mémoire disponible compte tenu du paramètre `max_memory_usage` de la requête et des limites de mémoire du Serveur ou de l’utilisateur,
+servant à calculer, au début de l’exécution, le seuil à partir duquel le set d’un `IN` avec sous-requête est déversé sur le disque.
+Par exemple, `0.5` correspond à la moitié de la mémoire disponible. Le cache de pages en espace utilisateur au-delà de
+`page_cache_min_size` est compté comme mémoire disponible.
 
 Les valeurs doivent être supérieures ou égales à `0` et strictement inférieures à `1`. `0` désactive ce seuil. En l’absence de
-limite de mémoire applicable au niveau du serveur ou de l’utilisateur, le ratio est sans effet.
-
-`max_memory_usage` n’intervient pas dans ce calcul. Pour configurer le déversement sur le disque en fonction de cette limite,
-utilisez `max_bytes_before_external_set`, en prévoyant une marge pour l’utilisation de mémoire supplémentaire.
+limite de mémoire applicable au niveau de la requête, du Serveur ou de l’utilisateur, le ratio est sans effet.
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "Activer par défaut le déversement sur disque automatique."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "Nouveau paramètre."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "Activer par défaut le déversement automatique sur disque."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "Nouveau paramètre."}]}]} />
 
 Rapport de la mémoire disponible pouvant être utilisé pour `ORDER BY`. Une fois cette limite atteinte, le tri externe est utilisé.
 
-Par exemple, s&#39;il est défini sur `0.6`, `ORDER BY` pourra utiliser `60%` de la mémoire disponible (pour server/user/merges) au début de l&#39;exécution, puis il commencera à utiliser le tri externe.
+Par exemple, s&#39;il est défini sur `0.6`, `ORDER BY` pourra utiliser `60%` de la mémoire disponible (dans la limite du `max_memory_usage` de la requête et des limites Serveur/user/fusions) au début de l&#39;exécution, puis il commencera à utiliser le tri externe. Le cache de pages en espace utilisateur au-delà de `page_cache_min_size` est comptabilisé comme mémoire disponible.
 
 Notez que `max_bytes_before_external_sort` reste pris en compte : le déversement sur disque n&#39;a lieu que si le bloc de tri est plus grand que `max_bytes_before_external_sort`.
 

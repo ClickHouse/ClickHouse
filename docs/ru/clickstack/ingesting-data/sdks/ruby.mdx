@@ -67,24 +67,12 @@ end
 
 После этого вам нужно задать в командной оболочке следующие переменные окружения, чтобы отправлять телеметрию в ClickStack через OpenTelemetry Collector:
 
-<Tabs>
-  <Tab title="Управляемый ClickStack">
-    ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
-    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
-    ```
-  </Tab>
-
-  <Tab title="ClickStack с открытым исходным кодом">
-    ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
-    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
-    OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
-    ```
-  </Tab>
-</Tabs>
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
 
 *Переменная окружения `OTEL_SERVICE_NAME` используется для идентификации вашего сервиса
 в интерфейсе ClickStack; ей можно присвоить любое имя.*

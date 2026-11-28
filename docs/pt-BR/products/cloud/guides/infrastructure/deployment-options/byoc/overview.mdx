@@ -40,19 +40,21 @@ Os requisitos a seguir são fundamentais para a criação e a operação do BYOC
 
 ## Funcionalidades {#features}
 
-### Recursos compatíveis {#supported-features}
+### Características compatíveis {#supported-features}
 
-* **SharedMergeTree**: ClickHouse Cloud e BYOC usam o mesmo binário e a mesma configuração. Portanto, o BYOC oferece suporte a todos os recursos do núcleo do ClickHouse, como SharedMergeTree.
+* **SharedMergeTree**: ClickHouse Cloud e BYOC usam o mesmo binário e a mesma configuração. Portanto, o BYOC oferece suporte a todas as características do núcleo do ClickHouse, como SharedMergeTree.
 * **Shared Catalog**
 * **Acesso ao Console para gerenciar o estado do serviço**:
   * Oferece suporte a operações como iniciar, parar e encerrar.
   * Permite visualizar os serviços e seus status.
 * **Backup e restore gerenciados**
 * **Escalonamento vertical e horizontal manual.**
+* **Escalonamento horizontal automático:** Disponível apenas para implantações com escalonamento automático habilitado. Ajusta o número de réplicas dentro dos limites configurados, mantendo fixo o tamanho de cada réplica. Entre em contato com o suporte para confirmar a disponibilidade para a sua implantação.
+* **Escalonamento automático vertical:** Disponível apenas quando habilitado para a sua organização. Entre em contato com o suporte para confirmar a disponibilidade.
 * **Idling/Wake up automáticos**
 * **Warehouses**: Compute-Compute Separation
 * **Rede Zero Trust via Tailscale.**
-* **Monitoring**:
+* **Monitoramento**:
   * Coleta do Prometheus para monitoramento centralizado com Prometheus, Grafana e Datadog. Consulte [BYOC Observability](/pt-BR/products/bring-your-own-cloud/reference/observability-aws) para ver as instruções de configuração.
 * **VPC Peering**
 * **S3 seguro**
@@ -61,13 +63,12 @@ Os requisitos a seguir são fundamentais para a criação e a operação do BYOC
 * **[Azure Private Link](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview)**
 * **Integrations**: Veja a lista completa [nesta página](/pt-BR/integrations/home).
 
-### Funcionalidades planejadas (atualmente sem suporte) {#planned-features-currently-unsupported}
+### Características planejadas (atualmente sem suporte) {#planned-features-currently-unsupported}
 
-As funcionalidades a seguir têm limitações ou ainda não contam com suporte completo em implantações Bring Your Own Cloud (BYOC).
+As características a seguir têm limitações ou ainda não contam com suporte completo em implantações Bring Your Own Cloud (BYOC).
 
 * SQL Console: Não está disponível para implantações BYOC, mas está no roadmap.
 * ClickPipes: Não está disponível para implantações BYOC, mas está no roadmap.
-* Escalonamento automático: Está no roadmap e será adicionado em lançamentos futuros.
 * interface MySQL
 * AWS KMS, também conhecido como CMEK (chaves de criptografia gerenciadas pelo cliente)
 * Advanced Dashboard: A UI somente do cliente exige que seu navegador tenha acesso direto e consiga se conectar diretamente ao servidor ClickHouse usando o endpoint correspondente. Se as políticas de rede da sua VPC restringirem o acesso de entrada do navegador ao endpoint do ClickHouse, o Advanced Dashboard não funcionará.

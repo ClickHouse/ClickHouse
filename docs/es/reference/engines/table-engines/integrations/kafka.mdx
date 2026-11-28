@@ -111,7 +111,7 @@ Parámetros opcionales:
 
 ## TLS y SASL con colecciones con nombre {#kafka-tls-sasl-named-collections}
 
-El motor de tablas Kafka expone solo un subconjunto de los ajustes de [librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) como parámetros `kafka_*` a nivel de tabla (por ejemplo, `kafka_security_protocol`, `kafka_sasl_mechanism`, `kafka_sasl_username` y `kafka_sasl_password`). **Las rutas de los certificados TLS, las claves privadas y las contraseñas de las claves no forman parte de la configuración de la tabla**; configúrelas como propiedades extendidas de `librdkafka`.
+El motor de tablas Kafka expone solo un subconjunto de los ajustes de [librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) como parámetros `kafka_*` a nivel de tabla (por ejemplo, `kafka_security_protocol`, `kafka_sasl_mechanism`, `kafka_sasl_username` y `kafka_sasl_password`). **Las rutas de los certificados TLS, las claves privadas y las contraseñas de las claves no forman parte de los ajustes de la tabla**; configúrelas como propiedades extendidas de `librdkafka`.
 
 Para `ENGINE = Kafka(named_collection)`:
 
@@ -120,17 +120,27 @@ Para `ENGINE = Kafka(named_collection)`:
 
 Cuando se utiliza una colección con nombre, **el bloque global `<kafka>` del servidor en `config.xml` no se fusiona**. Cada colección debe incluir todas las propiedades extendidas que necesite la tabla (incluidos los archivos TLS y `security.protocol` si no se define mediante un `SETTINGS` de tabla no vacío).
 
-Una disposición habitual para `SASL_SSL` con certificados de cliente consiste en almacenar las rutas TLS y `ssl.key.password` en la colección con nombre, y definir `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` y, opcionalmente, `kafka_sasl_username` / `kafka_sasl_password` en la cláusula `SETTINGS` de la tabla. Tanto `kafka.security_protocol` como `kafka_security_protocol` definen `security.protocol`, y prevalece el ajuste de tabla no vacío. Si la colección ya almacena esa propiedad, el ajuste de tabla constituye una sobrescritura de la colección con nombre: requiere el privilegio `SHOW NAMED COLLECTIONS SECRETS` sobre la colección y falla con `Override not allowed` si la clave es `NOT OVERRIDABLE`. Lo mismo se aplica a `kafka_sasl_mechanism`, `kafka_sasl_username` y `kafka_sasl_password`.
+Una colección con nombre creada con `CREATE NAMED COLLECTION` solo acepta propiedades de `librdkafka` incluidas en la [lista de permitidos](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp), como `security.protocol`, `sasl.username` y `fetch.min.bytes`. Si una tabla utiliza una colección con una propiedad que no figura en la lista, ClickHouse devuelve `BAD_ARGUMENTS`. Para utilizar otras propiedades compatibles, como `sasl.kerberos.keytab` o `sasl.oauthbearer.token.endpoint.url`, defina la colección en el archivo de configuración del servidor. Esta restricción también se aplica a las propiedades añadidas con `ALTER NAMED COLLECTION` después de crear la tabla.
 
-Ejemplo (las rutas de los certificados deben existir en cada servidor de ClickHouse que ejecute consumidores para la tabla):
+En una colección con nombre creada con SQL, proporcione el contenido del archivo en lugar de su ruta para las propiedades `ssl.key.pem`, `ssl.certificate.pem`, `ssl.ca.pem`, `https.ca.pem` y `sasl.oauthbearer.assertion.private.key.pem`. También se acepta el valor `probe` para `ssl.ca.location` y `https.ca.location`, porque no es una ruta.
+
+Una disposición habitual para `SASL_SSL` con certificados de cliente consiste en almacenar los certificados, la clave privada y `ssl.key.password` en la colección con nombre, y definir `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` y, opcionalmente, `kafka_sasl_username` / `kafka_sasl_password` en la cláusula `SETTINGS` de la tabla. Tanto `kafka.security_protocol` como `kafka_security_protocol` definen `security.protocol`, y prevalece el ajuste de tabla no vacío. Si la colección ya almacena esa propiedad, el ajuste de tabla constituye una sobrescritura de la colección con nombre: requiere el privilegio `SHOW NAMED COLLECTIONS SECRETS` sobre la colección y falla con `Override not allowed` si la clave es `NOT OVERRIDABLE`. Lo mismo se aplica a `kafka_sasl_mechanism`, `kafka_sasl_username` y `kafka_sasl_password`.
+
+Ejemplo con una colección con nombre creada con SQL que contiene los certificados y la clave privada en formato PEM:
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 
 CREATE TABLE queue (
@@ -146,7 +156,7 @@ SETTINGS
     kafka_sasl_password = 'password';
 ```
 
-Los mismos ajustes ampliados en una colección con nombre definida en XML:
+Los mismos ajustes ampliados en una colección con nombre definida en XML, que también puede hacer referencia a los archivos (estos deben existir en cada servidor de ClickHouse que ejecute consumidores para la tabla):
 
 ```xml
 <clickhouse>
@@ -270,6 +280,24 @@ Ejemplo, usando [colecciones con nombre](/es/concepts/features/configuration/ser
 ```
 
 Para mejorar el rendimiento, los mensajes recibidos se agrupan en bloques de tamaño [max&#95;insert&#95;block&#95;size](/es/reference/settings/session-settings/max-insert#max_insert_block_size). Si el bloque no se forma dentro de [stream&#95;flush&#95;interval&#95;ms](/es/reference/settings/session-settings/stream#stream_flush_interval_ms) milisegundos, los datos se escribirán en la tabla independientemente de si el bloque está completo o no.
+
+La siguiente configuración de la tabla controla la frecuencia con la que los datos consumidos se escriben en las vistas materializadas:
+
+* `kafka_max_block_size` — un bloque se vuelca en cuanto contiene este número de filas. Valor predeterminado: `max_insert_block_size` dividido entre `kafka_num_consumers`.
+* `kafka_flush_interval_ms` — un bloque se vuelca una vez transcurrido este tiempo, aunque no esté completo. Valor predeterminado: [stream&#95;flush&#95;interval&#95;ms](/es/reference/settings/session-settings/stream#stream_flush_interval_ms) (7500 ms). Reduzca este valor para disminuir el retraso entre la producción de un mensaje y su aparición en la tabla de destino.
+* `kafka_consumer_reschedule_ms` — cuando no hay mensajes nuevos, el motor espera este tiempo antes de volver a realizar un sondeo. Valor predeterminado: `500` ms.
+
+Esta configuración de la tabla Kafka se establece en su cláusula `SETTINGS`. No puede establecerse en la sección `<kafka>` del archivo de configuración del servidor: cada clave de esa sección se pasa a librdkafka como una propiedad (consulte [Configuración](#configuration)), por lo que, por ejemplo, `<flush_interval_ms>` no funciona como parámetro de configuración de ClickHouse en esa sección.
+
+```sql
+CREATE TABLE queue (timestamp UInt64, level String, message String)
+ENGINE = Kafka
+SETTINGS kafka_broker_list = 'localhost:9092',
+         kafka_topic_list = 'topic',
+         kafka_group_name = 'group1',
+         kafka_format = 'JSONEachRow',
+         kafka_flush_interval_ms = 1000;
+```
 
 Para dejar de recibir datos del topic o cambiar la lógica de conversión, desvincule la vista materializada:
 

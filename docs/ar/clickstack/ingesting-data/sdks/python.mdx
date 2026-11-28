@@ -29,26 +29,15 @@ pip install hyperdx-opentelemetry
 opentelemetry-bootstrap -a install
 ```
 
-### تكوين متغيرات البيئة {#configure-environment-variables}
+### تهيئة متغيرات البيئة {#configure-environment-variables}
 
-بعد ذلك، ستحتاج إلى تكوين متغيرات البيئة التالية في الـ shell لديك لإرسال بيانات القياس عن بُعد إلى ClickStack عبر OpenTelemetry Collector:
+بعد ذلك، ستحتاج إلى تهيئة متغيرات البيئة التالية في الـ shell لديك لإرسال بيانات القياس عن بُعد إلى ClickStack عبر OpenTelemetry Collector:
 
-<Tabs>
-  <Tab title="Managed ClickStack">
-    ```shell
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
-    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> 
-    ```
-  </Tab>
-
-  <Tab title="ClickStack Open Source">
-    ```shell
-    export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
-    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> 
-    ```
-  </Tab>
-</Tabs>
+```shell
+export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
+```
 
 *يُستخدم متغير البيئة `OTEL_SERVICE_NAME` للتعرّف على خدمتك في واجهة مستخدم ClickStack، ويمكن أن يكون أي اسم تريده.*
 

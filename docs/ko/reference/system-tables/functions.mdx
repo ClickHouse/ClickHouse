@@ -16,6 +16,7 @@ doc_type: 'reference'
 
 * `name` ([String](/ko/reference/data-types/string)) — 함수 이름입니다.
 * `is_aggregate` ([UInt8](/ko/reference/data-types/int-uint)) — 함수가 집계 함수인지 여부입니다.
+* `is_window` ([UInt8](/ko/reference/data-types/int-uint)) — 함수가 `OVER` 절과 함께만 사용할 수 있는 윈도 함수인지 여부입니다.
 * `case_insensitive` ([UInt8](/ko/reference/data-types/int-uint)) — 함수 이름을 대소문자와 관계없이 사용할 수 있는지 여부입니다.
 * `alias_to` ([String](/ko/reference/data-types/string)) — 함수 이름이 별칭인 경우 원래 함수 이름입니다.
 * `create_query` ([String](/ko/reference/data-types/string)) — 더 이상 사용되지 않습니다.

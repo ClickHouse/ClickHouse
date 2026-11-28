@@ -13,71 +13,61 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="http_max_field_name_size">
-  ## http_max_field_name_size
-</div>
+## http_max_field_name_size {#http_max_field_name_size}
 
 <SettingsInfoBlock type="UInt64" default_value="4096" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4096"},{"label": "Снижено значение по умолчанию, чтобы ограничить использование памяти HTTP-соединениями до аутентификации."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4096"},{"label": "Изменение было бэкпортировано в 26.1 и отражено там."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "4096"},{"label": "Снижено значение по умолчанию, чтобы ограничить использование памяти HTTP-соединениями до аутентификации."}]}]} />
 
 Максимальная длина имени поля в заголовках HTTP-запросов, параметрах запроса и данных формы.
 
-<div id="http_max_field_value_size">
-  ## http_max_field_value_size
-</div>
+Также ограничивает длину имени поля в заголовках HTTP-ответов, которые ClickHouse читает, выступая в роли клиента, например в табличной функции `url`.
+
+## http_max_field_value_size {#http_max_field_value_size}
 
 <SettingsInfoBlock type="UInt64" default_value="131072" />
 
 Максимальная длина значения поля в заголовках HTTP-запроса, параметрах запроса и данных формы.
 
-<div id="http_max_fields">
-  ## http_max_fields
-</div>
+Также ограничивает длину значения поля в заголовках HTTP-ответов, которые ClickHouse читает в роли клиента, например в табличной функции `url`.
+
+## http_max_fields {#http_max_fields}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "Снижено значение по умолчанию, чтобы ограничить использование памяти HTTP-соединениями до аутентификации."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "Изменение было бэкпортировано в 26.1 и зафиксировано там."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "1000"},{"label": "Снижено значение по умолчанию, чтобы ограничить использование памяти HTTP-соединениями до аутентификации."}]}]} />
 
 Максимальное количество полей в заголовках HTTP-запросов, параметрах запроса и данных формы.
 
-<div id="http_max_multipart_form_data_size">
-  ## http_max_multipart_form_data_size
-</div>
+Также ограничивает количество полей в заголовках HTTP-ответов, которые ClickHouse читает в роли клиента, например в табличной функции `url`.
+
+## http_max_multipart_form_data_size {#http_max_multipart_form_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
 Ограничение на размер содержимого multipart/form-data. Этот параметр нельзя задать через URL-параметры, его следует задавать в профиле пользователя. Обратите внимание, что содержимое разбирается, а внешние таблицы создаются в памяти до начала выполнения запроса. Это единственное ограничение, которое влияет на эту стадию (ограничения на максимальное использование памяти и максимальное время выполнения не действуют при чтении данных HTTP-формы).
 
-<div id="http_max_request_header_size">
-  ## http_max_request_header_size
-</div>
+## http_max_request_header_size {#http_max_request_header_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "10485760"},{"label": "Новая настройка, ограничивающая общий размер заголовков HTTP-запроса до прохождения аутентификации."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "10485760"},{"label": "Изменение было бэкпортировано в 26.1 и отражено там."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "10485760"},{"label": "Новая настройка, ограничивающая общий размер заголовков HTTP-запроса до прохождения аутентификации."}]}]} />
 
 Максимальный суммарный размер всех заголовков HTTP-запроса (включая имена и значения) в байтах.
 
-<div id="http_max_request_param_data_size">
-  ## http_max_request_param_data_size
-</div>
+## http_max_request_param_data_size {#http_max_request_param_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
 Ограничение на размер данных запроса, передаваемых в качестве параметра запроса в предопределённых HTTP-запросах.
 
-<div id="http_max_tries">
-  ## http_max_tries
-</div>
+## http_max_tries {#http_max_tries}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
 Максимальное количество попыток чтения по HTTP.
 
-<div id="http_max_uri_size">
-  ## http_max_uri_size
-</div>
+## http_max_uri_size {#http_max_uri_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 

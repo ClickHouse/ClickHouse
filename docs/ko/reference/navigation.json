@@ -110,8 +110,10 @@
                 "ko/reference/statements/create/masking-policy",
                 "ko/reference/statements/create/function",
                 "ko/reference/statements/create/handler",
+                "ko/reference/statements/create/skipping-index",
                 "ko/reference/statements/create/named-collection",
                 "ko/reference/statements/create/quota",
+                "ko/reference/statements/create/resource",
                 "ko/reference/statements/create/role",
                 "ko/reference/statements/create/row-policy",
                 "ko/reference/statements/create/settings-profile",
@@ -127,7 +129,8 @@
                 },
                 "ko/reference/statements/create/token",
                 "ko/reference/statements/create/user",
-                "ko/reference/statements/create/view"
+                "ko/reference/statements/create/view",
+                "ko/reference/statements/create/workload"
               ]
             },
             "ko/reference/statements/delete",
@@ -1055,6 +1058,7 @@
         "ko/reference/system-tables/blob_storage_log",
         "ko/reference/system-tables/build_options",
         "ko/reference/system-tables/certificates",
+        "ko/reference/system-tables/changelog",
         "ko/reference/system-tables/clusters",
         "ko/reference/system-tables/codecs",
         "ko/reference/system-tables/collations",

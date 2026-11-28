@@ -123,9 +123,7 @@ Los logs no estructurados, aunque también suelen tener cierta estructura inhere
 
 Recomendamos que los usuarios empleen logging estructurado y generen logs en JSON (es decir, ndjson) siempre que sea posible. Esto simplificará el procesamiento posterior de los logs, ya sea antes de enviarlos a ClickHouse con [procesadores del collector](https://opentelemetry.io/docs/collector/configuration/#processors) o en el momento de la inserción mediante vistas materializadas. En última instancia, los logs estructurados ahorrarán recursos de procesamiento y reducirán la CPU necesaria en su solución de ClickHouse.
 
-<div id="example">
-  ### Ejemplo {#example}
-</div>
+### Ejemplo {#example}
 
 Como ejemplo, proporcionamos un conjunto de datos de logs estructurados (JSON) y otro no estructurados, cada uno con aproximadamente 10 millones de filas, disponibles en los siguientes enlaces:
 
@@ -134,12 +132,12 @@ Como ejemplo, proporcionamos un conjunto de datos de logs estructurados (JSON) y
 
 Usamos el conjunto de datos estructurado en el ejemplo siguiente. Asegúrese de descargar y extraer este archivo para reproducir los ejemplos a continuación.
 
-A continuación se muestra una configuración sencilla del OTel collector que lee estos archivos del disco mediante el filelog receiver y envía los mensajes resultantes a stdout. Usamos el operator [`json_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/json_parser.md) porque nuestros logs están estructurados. Modifique la ruta al archivo access-structured.log.
+A continuación se muestra una configuración sencilla del recolector OTel que lee estos archivos del disco mediante el filelog receiver y envía los mensajes resultantes a stdout. Usamos el operador [`json_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/json_parser.md) porque nuestros logs están estructurados. Modifique la ruta al archivo access-structured.log.
 
 <Info>
-  **Considere usar ClickHouse para el análisis**
+  **Considere usar ClickHouse para analizar**
 
-  El ejemplo siguiente extrae el timestamp del log. Esto requiere el uso del operator `json_parser`, que convierte toda la línea del log en una cadena JSON y coloca el resultado en `LogAttributes`. Esto puede ser costoso desde el punto de vista computacional y [puede hacerse de forma más eficiente en ClickHouse](https://clickhouse.com/blog/worlds-fastest-json-querying-tool-clickhouse-local): [Extracción de estructura con SQL](/es/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql). Puede encontrar [aquí](https://pastila.nl/?01da7ee2/2ffd3ba8124a7d6e4ddf39422ad5b863#swBkiAXvGP7mRPgbuzzHFA==) un ejemplo equivalente no estructurado que usa [`regex_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/regex_parser.md) para lograrlo.
+  El ejemplo siguiente extrae la marca de tiempo del log. Esto requiere el uso del operador `json_parser`, que convierte toda la línea del log en una cadena JSON y coloca el resultado en `LogAttributes`. Esto puede ser costoso desde el punto de vista computacional y [puede hacerse de forma más eficiente en ClickHouse](https://clickhouse.com/blog/worlds-fastest-json-querying-tool-clickhouse-local): [Extracción de estructura con SQL](/es/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql). Puede encontrar [aquí](https://pastila.nl/?01da7ee2/2ffd3ba8124a7d6e4ddf39422ad5b863#swBkiAXvGP7mRPgbuzzHFA==) un ejemplo equivalente no estructurado que usa [`regex_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/regex_parser.md) para lograrlo.
 </Info>
 
 **[config-structured-logs.yaml](https://www.otelbin.io/#config=receivers%3A*N_filelog%3A*N___include%3A*N_____-_%2Fopt%2Fdata%2Flogs%2Faccess-structured.log*N___start*_at%3A_beginning*N___operators%3A*N_____-_type%3A_json*_parser*N_______timestamp%3A*N_________parse*_from%3A_attributes.time*_local*N_________layout%3A_*%22*.Y-*.m-*.d_*.H%3A*.M%3A*.S*%22*N*N*Nprocessors%3A*N__batch%3A*N____timeout%3A_5s*N____send*_batch*_size%3A_1*N*N*Nexporters%3A*N_logging%3A*N___loglevel%3A_debug*N*N*Nservice%3A*N_pipelines%3A*N___logs%3A*N_____receivers%3A_%5Bfilelog%5D*N_____processors%3A_%5Bbatch%5D*N_____exporters%3A_%5Blogging%5D%7E)**
@@ -170,12 +168,12 @@ service:
       exporters: [logging]
 ```
 
-Puedes seguir las [instrucciones oficiales](https://opentelemetry.io/docs/collector/installation/) para instalar el collector localmente. Es importante modificar esas instrucciones para usar la [distribución contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib) (que incluye el receiver `filelog`); por ejemplo, en lugar de `otelcol_0.102.1_darwin_arm64.tar.gz`, los usuarios descargarían `otelcol-contrib_0.102.1_darwin_arm64.tar.gz`. Las versiones están disponibles [aquí](https://github.com/open-telemetry/opentelemetry-collector-releases/releases).
+Puedes seguir las [instrucciones oficiales](https://opentelemetry.io/docs/collector/installation/) para instalar el recolector localmente. Es importante modificar esas instrucciones para usar la [distribución contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib) (que incluye el receiver `filelog`); por ejemplo, en lugar de `otelcol_0.102.1_darwin_arm64.tar.gz`, los usuarios descargarían `otelcol-contrib_0.102.1_darwin_arm64.tar.gz`. Las versiones están disponibles [aquí](https://github.com/open-telemetry/opentelemetry-collector-releases/releases).
 
-Una vez instalado, el OTel collector puede ejecutarse con los siguientes comandos:
+Una vez instalado, el recolector OTel puede ejecutarse con los siguientes comandos:
 
 ```bash
-./otelcol-contrib --config config-logs.yaml
+./otelcol-contrib --config config-structured-logs.yaml
 ```
 
 Suponiendo que se usan logs estructurados, los mensajes tendrán la siguiente forma en la salida:

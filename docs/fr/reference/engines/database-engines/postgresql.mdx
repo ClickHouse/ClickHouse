@@ -14,9 +14,7 @@ Fournit un accès en temps réel à la liste et à la structure des tables du se
 
 Prend en charge les modifications de la structure des tables (`ALTER TABLE ... ADD|DROP COLUMN`). Si le paramètre `use_table_cache` (voir la section paramètres du moteur ci-dessous) est défini sur `1`, la structure de la table est mise en cache et les modifications ne sont pas vérifiées, mais elle peut être mise à jour avec les requêtes `DETACH` et `ATTACH`.
 
-<div id="creating-a-database">
-  ## Créer une base de données
-</div>
+## Créer une base de données {#creating-a-database}
 
 ```sql
 CREATE DATABASE test_database
@@ -30,15 +28,13 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 * `user` — Utilisateur PostgreSQL.
 * `password` — Mot de passe de l’utilisateur.
 * `schema` — Schéma PostgreSQL.
-* `use_table_cache` — Définit si la structure de la table de la base de données est mise en cache ou non. Facultatif. Valeur par défaut : `0`.
+* `use_table_cache` — Définit si la structure de la table de la base de données est mise en cache ou non. Facultatif. Valeur par défaut : `0`.
 
-Les paramètres TLS/SSL sont transmis à `libpq` et peuvent être fournis via une [collection nommée](/fr/concepts/features/configuration/server-config/named-collections) ou sous forme d’arguments clé-valeur ajoutés en fin : `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` ou `verify-full`), ainsi que les certificats et la clé, sous l’une de deux formes. `sslrootcert` (certificat CA), `sslcert` (certificat client) et `sslkey` (clé privée du client) sont des chemins vers des fichiers locaux sur le serveur, acceptés uniquement depuis une collection nommée définie dans le fichier de configuration du serveur. `sslrootcert_pem`, `sslcert_pem` et `sslkey_pem` acceptent à la place le contenu littéral du fichier correspondant, peuvent être spécifiés depuis SQL (par exemple, `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`) et sont masqués dans les journaux et les requêtes `SHOW` comme un mot de passe. Lorsqu’ils ne sont pas définis, les valeurs par défaut de `libpq` s’appliquent (`sslmode=prefer`).
+Les paramètres TLS/SSL sont transmis à `libpq` et peuvent être fournis via une [collection nommée](/fr/concepts/features/configuration/server-config/named-collections) ou sous forme d’arguments clé-valeur ajoutés en fin : `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` ou `verify-full`), ainsi que les certificats et la clé, sous l’une de deux formes. `sslrootcert` (certificat CA), `sslcert` (certificat client) et `sslkey` (clé privée du client) sont des chemins vers des fichiers locaux sur le serveur, acceptés uniquement depuis une collection nommée définie dans le fichier de configuration du serveur. `sslrootcert_pem`, `sslcert_pem` et `sslkey_pem` acceptent à la place le contenu littéral du fichier correspondant, peuvent être spécifiés depuis SQL (par exemple, `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`) et sont masqués dans les journaux et les requêtes `SHOW` comme un mot de passe. Lorsqu’ils ne sont pas définis, les valeurs par défaut de `libpq` s’appliquent (`sslmode=prefer`). À moins qu’un certificat client (`sslcert` ou `sslcert_pem`) et une clé du client (`sslkey` ou `sslkey_pem`) ne soient tous deux configurés, ClickHouse envoie `sslcertmode=disable`, afin que `libpq` ne s’authentifie pas avec le certificat ou la clé ambiants par défaut du compte de service (`~/.postgresql/postgresql.{crt,key}`).
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## Prise en charge des types de données
-</div>
+## Prise en charge des types de données {#data-types-support}
 
 | PostgreSQL       | ClickHouse                                                         |
 | ---------------- | ------------------------------------------------------------------ |
@@ -60,9 +56,7 @@ Les paramètres TLS/SSL sont transmis à `libpq` et peuvent être fournis via un
   Le type PostgreSQL `numeric(p, 0)` avec une précision `p` supérieure à 76 (le maximum pris en charge par `Decimal256`) — par exemple `numeric(78, 0)`, couramment utilisé pour stocker des entiers sur 256 bits — est converti en [`Int256`](/fr/reference/data-types/int-uint) plutôt qu&#39;en `Decimal`. Les valeurs qui ne peuvent pas être représentées dans la plage de `Int256` sont rejetées avec une erreur.
 </Note>
 
-<div id="examples-of-use">
-  ## Exemples d’utilisation
-</div>
+## Exemples d’utilisation {#examples-of-use}
 
 Base de données dans ClickHouse échangeant des données avec le serveur PostgreSQL :
 
@@ -154,9 +148,7 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
-<div id="related-content">
-  ## Contenu connexe
-</div>
+## Contenu connexe {#related-content}
 
 * Blog : [ClickHouse et PostgreSQL : le mariage idéal pour les données - partie 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 * Blog : [ClickHouse et PostgreSQL : le mariage idéal pour les données - partie 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

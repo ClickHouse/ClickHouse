@@ -1,0 +1,107 @@
+---
+description: 'ClickHouse에 연결하기 위한 클라이언트, 드라이버, 프로토콜 또는 내장 인터페이스를 선택합니다'
+sidebarTitle: '개요'
+keywords: ['clients', 'interfaces', 'CLI', 'SQL console', 'drivers', 'protocols']
+slug: /concepts/features/connect-to-clickhouse
+title: 'ClickHouse에 연결'
+doc_type: 'landing-page'
+mode: wide
+---
+
+ClickHouse 사용 방식에 가장 적합한 인터페이스를 선택하십시오. 애플리케이션을 개발한다면 공식 언어별 클라이언트나 드라이버부터 시작하십시오. 대화형 작업에는 네이티브 도구나 웹 기반 도구를 사용하고, 직접 통합하려면 네트워크 프로토콜을 사용하십시오. 연결하기 전에 필요에 따라 [네트워크 포트](/ko/concepts/features/security/network-ports), [접근 권한](/ko/concepts/features/security/access-rights), [TLS](/ko/concepts/features/security/tls/configuring-tls)를 구성하십시오.
+
+## 네이티브 도구 {#native-tools}
+
+<CardGroup cols={2}>
+  <Card title="clickhousectl" icon="terminal" href="/ko/concepts/features/connect-to-clickhouse/native-tools/clickhousectl">
+    공식 ClickHouse CLI(`chctl`)로, 로컬 환경의 ClickHouse 및 Postgres 개발과 ClickHouse Cloud 관리를 지원합니다.
+  </Card>
+
+  <Card title="ClickHouse Client" icon="keyboard" href="/ko/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client">
+    명령줄 옵션과 설정 파일을 지원하는 네이티브 command-line client입니다.
+  </Card>
+
+  <Card title="웹 터미널" icon="globe" href="/ko/concepts/features/connect-to-clickhouse/native-tools/web-terminal">
+    WebSocket을 통해 브라우저에서 실행하는 `clickhouse-client` 세션입니다.
+  </Card>
+
+  <Card title="모델 컨텍스트 프로토콜(MCP)" icon="/images/mcp.svg" href="/ko/concepts/features/connect-to-clickhouse/native-tools/mcp">
+    표준화된 인터페이스를 통해 AI 어시스턴트를 ClickHouse에 연결합니다.
+  </Card>
+</CardGroup>
+
+## 드라이버 및 언어 클라이언트 {#drivers-and-language-clients}
+
+<CardGroup cols={2}>
+  <Card title="ADBC 드라이버" icon="database" href="/ko/concepts/features/connect-to-clickhouse/drivers/adbc">
+    ADBC 호환 애플리케이션을 ClickHouse에 연결합니다.
+  </Card>
+
+  <Card title="ODBC 드라이버" icon="database" href="/ko/concepts/features/connect-to-clickhouse/drivers/odbc">
+    ODBC 호환 애플리케이션을 ClickHouse에 연결합니다.
+  </Card>
+
+  <Card title="언어 클라이언트" icon="code" href="/ko/integrations/language-clients">
+    사용 중인 프로그래밍 언어에 맞는 공식 ClickHouse 클라이언트를 확인하십시오.
+  </Card>
+</CardGroup>
+
+## 프로토콜 {#protocols}
+
+<CardGroup cols={2}>
+  <Card title="HTTP 인터페이스" icon="globe" href="/ko/concepts/features/connect-to-clickhouse/protocols/http">
+    어떤 플랫폼이나 언어에서든 HTTP를 통해 ClickHouse를 사용합니다.
+  </Card>
+
+  <Card title="네이티브 TCP 인터페이스" icon="network-wired" href="/ko/concepts/features/connect-to-clickhouse/protocols/native-tcp">
+    ClickHouse 전용 클라이언트와 서버 간 통신에 native protocol을 사용합니다.
+  </Card>
+
+  <Card title="gRPC 인터페이스" icon="arrows-left-right" href="/ko/concepts/features/connect-to-clickhouse/protocols/grpc">
+    ClickHouse의 gRPC 인터페이스를 사용합니다.
+  </Card>
+
+  <Card title="Arrow Flight 인터페이스" icon="arrow-right-arrow-left" href="/ko/concepts/features/connect-to-clickhouse/protocols/arrow-flight">
+    Apache Arrow를 사용하여 Flight SQL 클라이언트를 연결합니다.
+  </Card>
+
+  <Card title="MySQL 인터페이스" icon="database" href="/ko/concepts/features/connect-to-clickhouse/protocols/compatibility/mysql">
+    MySQL 호환 클라이언트를 연결합니다.
+  </Card>
+
+  <Card title="PostgreSQL 인터페이스" icon="database" href="/ko/concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql">
+    PostgreSQL 호환 클라이언트를 연결합니다.
+  </Card>
+
+  <Card title="SSH 인터페이스" icon="terminal" href="/ko/concepts/features/connect-to-clickhouse/protocols/ssh">
+    SSH 클라이언트로 ClickHouse 서버에 연결합니다.
+  </Card>
+</CardGroup>
+
+## Prometheus {#prometheus}
+
+<CardGroup cols={2}>
+  <Card title="Prometheus API 및 PromQL" icon="chart-line" href="/ko/concepts/features/connect-to-clickhouse/prometheus">
+    Prometheus 메트릭을 ClickHouse에 저장하고 PromQL로 쿼리합니다.
+  </Card>
+
+  <Card title="Prometheus 메트릭 엔드포인트" icon="chart-line" href="/ko/concepts/features/connect-to-clickhouse/prometheus/metrics">
+    Prometheus 서버가 스크레이프할 수 있도록 ClickHouse 서버 메트릭을 노출합니다.
+  </Card>
+</CardGroup>
+
+## 내장 웹 인터페이스 {#built-in-web-interfaces}
+
+<CardGroup cols={2}>
+  <Card title="웹 SQL UI (Play)" icon="browser" href="/ko/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql">
+    ClickHouse가 `/play`에서 제공하는 브라우저 기반 내장 SQL 인터페이스입니다.
+  </Card>
+
+  <Card title="SQL 콘솔" icon="browser" href="/ko/concepts/features/connect-to-clickhouse/built-in-web-interfaces/sql-console">
+    쿼리를 실행하고 데이터를 탐색할 수 있는 내장 웹 인터페이스입니다.
+  </Card>
+
+  <Card title="문서 검색" icon="book-open" href="/ko/concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search">
+    실행 중인 ClickHouse 서버에 내장된 참고 문서를 검색할 수 있습니다.
+  </Card>
+</CardGroup>

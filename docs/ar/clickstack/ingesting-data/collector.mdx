@@ -228,30 +228,30 @@ GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hy
   ## المعالجة - التصفية، والتحويل، والإثراء {#processing-filtering-transforming-enriching}
 </div>
 
-سيرغب المستخدمون حتمًا في تصفية رسائل الأحداث وتحويلها وإثرائها أثناء الإدخال. ونظرًا إلى أن إعدادات موصل ClickStack لا يمكن تعديلها، فإننا نوصي المستخدمين الذين يحتاجون إلى مزيد من تصفية الأحداث ومعالجتها بأحد الخيارين التاليين:
+سيرغب المستخدمون حتمًا في تصفية رسائل الأحداث وتحويلها وإثرائها أثناء الإدخال. ويمكن للمستخدمين إضافة معالجات وpipelines إلى مُجمِّع ClickStack باستخدام [تهيئة مخصصة](#extending-collector-config). ولإبقاء هذه المعالجة خارج مُجمِّع ClickStack، فإننا نوصي المستخدمين بأحد الخيارين التاليين:
 
-* نشر نسختهم الخاصة من OTel collector لتنفيذ التصفية والمعالجة، ثم إرسال الأحداث إلى ClickStack collector عبر OTLP لإدخالها إلى ClickHouse.
-* نشر نسختهم الخاصة من OTel collector وإرسال الأحداث مباشرةً إلى ClickHouse باستخدام ClickHouse exporter.
+* نشر نسختهم الخاصة من جامع البيانات OTel لتنفيذ التصفية والمعالجة، ثم إرسال الأحداث إلى مُجمِّع ClickStack عبر OTLP لإدخالها إلى ClickHouse.
+* نشر نسختهم الخاصة من جامع البيانات OTel وإرسال الأحداث مباشرةً إلى ClickHouse باستخدام ClickHouse exporter.
 
-إذا كانت المعالجة تُنفَّذ باستخدام OTel collector، فنوصي بإجراء التحويلات على مثيلات gateway وتقليل العمل المنفَّذ على مثيلات agent إلى الحد الأدنى. وهذا يضمن أن تبقى الموارد المطلوبة من agents عند الطرف، التي تعمل على الخوادم، عند أقل مستوى ممكن. وعادةً ما نرى المستخدمين يكتفون بإجراء التصفية فقط (لتقليل استخدام الشبكة غير الضروري)، وضبط الطابع الزمني (عبر operators)، والإثراء الذي يتطلب سياقًا في agents. على سبيل المثال، إذا كانت مثيلات gateway موجودة في Kubernetes cluster مختلف، فسيكون من الضروري إجراء k8s enrichment في agent.
+إذا كانت المعالجة تُنفَّذ باستخدام جامع البيانات OTel، فنوصي بإجراء التحويلات على مثيلات البوابة وتقليل العمل المنفَّذ على مثيلات الوكيل إلى الحد الأدنى. وهذا يضمن أن تبقى الموارد المطلوبة من الوكلاء عند الطرف، التي تعمل على الخوادم، عند أقل مستوى ممكن. وعادةً ما نرى المستخدمين يكتفون بإجراء التصفية فقط (لتقليل استخدام الشبكة غير الضروري)، وضبط الطابع الزمني (عبر معاملات)، والإثراء الذي يتطلب سياقًا في الوكلاء. على سبيل المثال، إذا كانت مثيلات البوابة موجودة في Kubernetes cluster مختلف، فسيكون من الضروري إجراء k8s enrichment في الوكيل.
 
 يدعم OpenTelemetry ميزات المعالجة والتصفية التالية التي يمكنك الاستفادة منها:
 
-* **Processors** - تأخذ Processors البيانات التي تجمعها [receivers وتعدّلها أو تحوّلها](https://opentelemetry.io/docs/collector/transforming-telemetry/) قبل إرسالها إلى exporters. وتُطبَّق Processors بالترتيب المحدد في قسم `processors` ضمن إعدادات collector. وهي اختيارية، لكن [يُوصى عادةً](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor#recommended-processors) باستخدام الحد الأدنى منها. عند استخدام OTel collector مع ClickHouse، نوصي بقصر Processors على ما يلي:
+* **معالجات** - تأخذ المعالجات البيانات التي تجمعها [receivers وتعدّلها أو تحوّلها](https://opentelemetry.io/docs/collector/transforming-telemetry/) قبل إرسالها إلى exporters. وتُطبَّق المعالجات بالترتيب المحدد في قسم `processors` ضمن تهيئة collector. وهي اختيارية، لكن [يُوصى عادةً](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor#recommended-processors) باستخدام الحد الأدنى منها. عند استخدام جامع البيانات OTel مع ClickHouse، نوصي بقصر المعالجات على ما يلي:
 
-* استخدام [memory&#95;limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md) لمنع حالات نفاد الذاكرة في collector. راجع [تقدير الموارد](#estimating-resources) للاطلاع على التوصيات.
+* استخدام [memory&#95;limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md) لمنع حالات نفاد الذاكرة في جامع البيانات. راجع [تقدير الموارد](#estimating-resources) للاطلاع على التوصيات.
 
-* أي processor ينفّذ إثراءً استنادًا إلى السياق. على سبيل المثال، يتيح [Kubernetes Attributes Processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor) الضبط التلقائي لـ resource attributes الخاصة بـ spans وmetrics وlogs باستخدام metadata الخاصة بـ k8s، مثل إثراء الأحداث بمعرّف pod المصدر.
+* أي معالج ينفّذ إثراءً استنادًا إلى السياق. على سبيل المثال، يتيح [معالج Kubernetes Attributes](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor) الضبط التلقائي لـ resource attributes الخاصة بـ spans وmetrics وسجلات باستخدام metadata الخاصة بـ k8s، مثل إثراء الأحداث بمعرّف pod المصدر.
 
 * [Tail أو head sampling](https://opentelemetry.io/docs/concepts/sampling/) عند الحاجة إلى traces.
 
-* [Basic filtering](https://opentelemetry.io/docs/collector/transforming-telemetry/) - إسقاط الأحداث غير المطلوبة إذا تعذر تنفيذ ذلك عبر operator (انظر أدناه).
+* [Basic filtering](https://opentelemetry.io/docs/collector/transforming-telemetry/) - إسقاط الأحداث غير المطلوبة إذا تعذر تنفيذ ذلك عبر معامل (انظر أدناه).
 
-* [Batching](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - وهو أمر أساسي عند العمل مع ClickHouse لضمان إرسال البيانات على دفعات. راجع [&quot;Optimizing inserts&quot;](#optimizing-inserts).
+* [التجميع في دفعات](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - وهو أمر أساسي عند العمل مع ClickHouse لضمان إرسال البيانات على دفعات. راجع [&quot;Optimizing inserts&quot;](#optimizing-inserts).
 
-* **Operators** - توفّر [Operators](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) أبسط وحدة معالجة متاحة على مستوى receiver. ويجري دعم parsing الأساسي، مما يسمح بضبط حقول مثل Severity وTimestamp. كما يجري دعم parsing باستخدام JSON وregex هنا، إلى جانب تصفية الأحداث والتحويلات الأساسية. ونوصي بتنفيذ تصفية الأحداث هنا.
+* **معاملات** - توفّر [المعاملات](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) أبسط وحدة معالجة متاحة على مستوى receiver. ويجري دعم parsing الأساسي، مما يسمح بضبط حقول مثل Severity والطابع الزمني. كما يجري دعم parsing باستخدام JSON وregex هنا، إلى جانب تصفية الأحداث والتحويلات الأساسية. ونوصي بتنفيذ تصفية الأحداث هنا.
 
-نوصي المستخدمين بتجنّب الإفراط في معالجة الأحداث باستخدام operators أو [transform processors](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md). فقد يترتب على ذلك overhead كبير على الذاكرة ووحدة المعالجة المركزية، ولا سيما parsing الخاص بـ JSON. ومن الممكن تنفيذ كل المعالجة في ClickHouse عند insert time باستخدام materialized views وcolumns، مع بعض الاستثناءات - وتحديدًا الإثراء المعتمد على السياق، مثل إضافة metadata الخاصة بـ k8s. لمزيد من التفاصيل، راجع [Extracting structure with SQL](/ar/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql).
+نوصي المستخدمين بتجنّب الإفراط في معالجة الأحداث باستخدام معاملات أو [معالجات transform](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md). فقد يترتب على ذلك overhead كبير على الذاكرة ووحدة المعالجة المركزية، ولا سيما parsing الخاص بـ JSON. ومن الممكن تنفيذ كل المعالجة في ClickHouse عند insert time باستخدام materialized views وcolumns، مع بعض الاستثناءات - وتحديدًا الإثراء المعتمد على السياق، مثل إضافة metadata الخاصة بـ k8s. لمزيد من التفاصيل، راجع [Extracting structure with SQL](/ar/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql).
 
 <div id="example-processing">
   ### مثال {#example-processing}

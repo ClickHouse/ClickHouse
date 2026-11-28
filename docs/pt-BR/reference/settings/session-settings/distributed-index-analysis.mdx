@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
+import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -39,6 +40,16 @@ Usa réplicas de cluster&#95;for&#95;parallel&#95;replicas.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
 Habilita a análise de índice distribuída até mesmo para engines que não sejam SharedMergeTree (engine disponível apenas no Cloud).
+
+## distributed_index_analysis_on_stateless_workers {#distributed_index_analysis_on_stateless_workers}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+
+Executa a análise de índice distribuída em workers sem estado em uma consulta inicial que é executada como um plano distribuído (`make_distributed_plan`) e que mantém workers ou pode obtê-los por concessão temporária, independentemente de `distributed_index_analysis`. Os workers analisam as tabelas no armazenamento de objetos de uma tabela compartilhada. Por enquanto, habilitar esta configuração desativa a análise de índice nas réplicas (`distributed_index_analysis`); assim, as leituras que os workers não assumem, bem como as leituras de outras consultas, são analisadas localmente. Os workers precisam de streaming exchanges: com exchanges do tipo `Persisted` (`distributed_plan_force_exchange_kind` ou nenhum listener de streaming configurado), as leituras são analisadas localmente. Aplicam-se as configurações do MergeTree `distributed_index_analysis_min_parts_to_activate` e `distributed_index_analysis_min_indexes_bytes_to_activate`.
 
 ## distributed_index_analysis_only_on_coordinator {#distributed_index_analysis_only_on_coordinator}
 

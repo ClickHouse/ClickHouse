@@ -2,7 +2,7 @@
 title: Postgres ClickPipe CLI
 ---
 
-このページでは、Postgres CDC ClickPipe の作成、レプリケーションが開始されるまでの監視、ClickHouse 上のデータの検証を、すべて [clickhousectl](/ja/concepts/features/interfaces/cli) によるコマンドラインから行う方法を説明します。任意で使用できる `--interactive` ログインを除き、コマンドは非対話型です。`clickhousectl` は `--json` を指定すると JSON を出力し、コーディングエージェントを検出した場合は自動的に JSON を出力します。プレーンな値を取得するには、`cloud service query` に `--format` を指定してください。
+このページでは、Postgres CDC ClickPipe の作成、レプリケーションが開始されるまでの監視、ClickHouse 上のデータの検証を、すべて [clickhousectl](/ja/concepts/features/interfaces/cli) によるコマンドラインから行う方法を説明します。任意で使用できる `--interactive` ログインを除き、コマンドは非対話型です。`clickhousectl` は `--json` を指定すると JSON を出力し、コーディングエージェントを検出した場合は自動的に JSON を出力します。プレーンな値を取得するには、`cloud clickhouse query` に `--format` を指定してください。
 
 ## 前提条件 {#cli-prerequisites}
 
@@ -24,12 +24,12 @@ clickhousectl cloud auth login --interactive
 
 あるいは、`clickhousectl cloud auth login` に `--api-key` と `--api-secret` でキーとシークレットを渡すか、環境変数 `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` を設定します。ログイン時に認証情報が検証され、認証されたアイデンティティが表示されます。後から改めて確認するには `clickhousectl cloud auth whoami` を使用します。複数の組織に所属している場合は、各コマンドに `--org-id <id>` (または `--org-name <name>`) を追加してください。
 
-ソースとなる Postgres データベースは、あらかじめ CDC (変更データキャプチャ) 向けに準備しておく必要があります。具体的には、logical replication の有効化、レプリケーション用 USER の作成、そして ClickPipes の IP アドレスをファイアウォールで許可することです。ご利用のプロバイダに応じたセットアップガイドに従ってください。たとえば [Amazon RDS](/ja/integrations/clickpipes/postgres/source/rds)、[Supabase](/ja/integrations/clickpipes/postgres/source/supabase)、[Neon](/ja/integrations/clickpipes/postgres/source/neon-postgres)、セルフホストやその他のプロバイダの場合は [汎用 Postgres ソースガイド](/ja/integrations/clickpipes/postgres/source/generic) を参照してください。接続先には実際の Postgres ホストを指定してください。PgBouncer、RDS Proxy、Supabase Pooler などのプロキシやプーラーは CDC ではサポートされていません。
+ソースとなる Postgres データベースは、あらかじめ CDC (変更データキャプチャ) 向けに準備しておく必要があります。具体的には、logical replication の有効化、レプリケーション用 USER の作成、そして ClickPipes の IP アドレスをファイアウォールで許可することです。ご利用のプロバイダーに応じたセットアップガイドに従ってください。たとえば [Amazon RDS](/ja/integrations/clickpipes/postgres/source/rds)、[Supabase](/ja/integrations/clickpipes/postgres/source/supabase)、[Neon](/ja/integrations/clickpipes/postgres/source/neon-postgres)、セルフホストやその他のプロバイダーの場合は [汎用 Postgres ソースガイド](/ja/integrations/clickpipes/postgres/source/generic) を参照してください。接続先には実際の Postgres ホストを指定してください。PgBouncer、RDS Proxy、Supabase Pooler などのプロキシやプーラーは CDC ではサポートされていません。
 
-さらに、宛先となる稼働中の ClickHouse Cloud サービスも必要です。その ID は `clickhousectl cloud service list --json` で取得できます。まだない場合は、[Cloud クイックスタート](/ja/get-started/setup/cloud) に従って先に作成してください。
+さらに、宛先となる稼働中の ClickHouse Cloud サービスも必要です。その ID は `clickhousectl cloud clickhouse list --json` で取得できます。まだない場合は、[Cloud クイックスタート](/ja/get-started/setup/cloud) に従って先に作成してください。
 
 ```bash
-CH_ID=$(clickhousectl cloud service get --name my-service --json | jq -r .id)
+CH_ID=$(clickhousectl cloud clickhouse get --name my-service --json | jq -r .id)
 ```
 
 前提条件のステップで確認したソース接続情報を変数に設定します。このチュートリアルでは、単一のテーブル `public.orders` をレプリケーションします。このテーブル名と、それ以降のすべての参照箇所 (検証ステップのカラム名を含む) は、ご自身のテーブルに合わせて置き換えてください:
@@ -127,7 +127,7 @@ clickhousectl cloud clickpipe create postgres "$CH_ID" \
 このマッピングでは、`ssn` を宛先から完全に除外し、`customers` をソースの主キーではなく `(created_at, customer_id)` で並べ替えます:
 
 ```bash
-clickhousectl cloud service query "$CH_ID" \
+clickhousectl cloud clickhouse query "$CH_ID" \
   --query "SHOW CREATE TABLE customers" --format TSVRaw
 ```
 
@@ -147,7 +147,7 @@ ORDER BY (created_at, customer_id)
 SETTINGS index_granularity = 8192
 ```
 
-Notes:
+注記:
 
 * `sortingKeys` を指定すると `useCustomSortingKey` が自動的に設定されます。これがないと API はキーを無視するためです。認識できないフィールドは暗黙のうちに破棄されるのではなく、クライアント側で終了コード 2 として拒否されます。そのため `excludeColumns` のようなタイプミスは無視されずにエラーになります
 * `partitionKey` は並列度を高めるために初期スナップショットを分割するためのもので、書き込み先テーブルの `PARTITION BY` (こちらは `partitionByExpr`) とは無関係です
@@ -155,7 +155,9 @@ Notes:
 
 ### CDC settings {#cdc-settings}
 
-レプリケーション設定は作成時に指定するフラグです。`--sync-interval-seconds`、`--pull-batch-size`、`--initial-load-parallelism`、`--snapshot-rows-per-partition`、`--snapshot-parallel-tables`、`--allow-nullable-columns`、`--enable-failover-slots`、`--delete-on-merge` の8つです。パイプの作成後に変更できるのは `syncIntervalSeconds` と `pullBatchSize` のみで、snapshot および初期ロードに関する設定は作成時に固定されるため、この時点で決めておいてください。
+レプリケーション設定は作成時に指定するフラグです。`--sync-interval-seconds`、`--pull-batch-size`、`--initial-load-parallelism`、`--snapshot-rows-per-partition`、`--snapshot-parallel-tables`、`--allow-nullable-columns`、`--enable-failover-slots`、`--delete-on-merge`、`--use-json-native-format` の9つです。パイプの作成後に変更できるのは `syncIntervalSeconds` と `pullBatchSize` のみで、スナップショット および初期ロードに関する設定は作成時に固定されるため、この時点で決めておいてください。
+
+`--use-json-native-format true` を指定すると、`json` および `jsonb` カラムは `String` ではなく ClickHouse ネイティブの `JSON` 型として保存されます。この機能を使うには ClickHouse 25.3 以降であること、かつ組織でこの機能が有効になっていることが必要です。いずれかの条件を満たさない場合、JSON は `String` として保存されます。
 
 Postgres CDC (変更データキャプチャ) のパイプは設定をパイプ自体に保持しているため、`clickpipe get` で読み出せます。
 
@@ -247,7 +249,7 @@ CLI から宛先サービスに直接クエリを実行します。最初の呼�
 書き込み先テーブルは `ReplacingMergeTree` であるため、ソースでの更新や削除は新しいバージョンの行として届きます。`FINAL` を使用して現在のステートを読み取り、`WHERE _peerdb_is_deleted = 0` で削除済みの行を除外してください:
 
 ```bash
-clickhousectl cloud service query "$CH_ID" --json \
+clickhousectl cloud clickhouse query "$CH_ID" --json \
   --query "SELECT order_id, customer, amount FROM orders FINAL WHERE _peerdb_is_deleted = 0 ORDER BY order_id"
 ```
 
@@ -270,7 +272,7 @@ Binding the authenticated API key to the Query API endpoint for service 'my-serv
 PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USERNAME" -d "$PG_DATABASE" \
   -c "INSERT INTO orders (customer, amount) VALUES ('Frank', 12.34);"
 
-while [ "$(clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+while [ "$(clickhousectl cloud clickhouse query "$CH_ID" --format TabSeparated \
   --query "SELECT count() FROM orders FINAL WHERE _peerdb_is_deleted = 0")" != "6" ]; do
   sleep 10
 done

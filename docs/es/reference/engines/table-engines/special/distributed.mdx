@@ -136,7 +136,12 @@ Los clústeres se configuran en el [archivo de configuración del servidor](/es/
 <remote_servers>
     <logs>
         <!-- Inter-server per-cluster secret for Distributed queries
-             default: no secret (no authentication will be performed)
+             default: no secret (no authentication will be performed). Shards will
+             execute Distributed queries received over a remote connection as the
+             user configured for the replica. The initiator checks only the
+             privileges on the Distributed table, and the shard checks the
+             privileges of the configured user. A local replica
+             (prefer_localhost_replica) executes the query as the querying user.
 
              If set, then Distributed queries will be validated on shards, so at least:
              - such cluster should exist on the shard,
@@ -202,17 +207,17 @@ Los parámetros `host`, `port` y, opcionalmente, `user`, `password`, `secure`, `
 | `compression` | Utiliza compresión de datos.                                                                                                                                                                                                                                                                                                               | `true`               |
 | `bind_host`   | La dirección de origen que se usará al conectarse al servidor remoto desde este nodo. Solo se admiten direcciones IPv4. Está pensado para casos de uso avanzados de despliegue en los que es necesario establecer la dirección IP de origen que usan las consultas distribuidas de ClickHouse.                                             | -                    |
 
-Al especificar réplicas, se seleccionará una de las réplicas disponibles para cada uno de los segmentos al leer. Puede configurar el algoritmo de balanceo de carga (la preferencia por la réplica a la que se accede); consulte la opción [load&#95;balancing](/es/reference/settings/session-settings/load-balancing#load_balancing). Si no se establece la conexión con el servidor, se realizará un intento de conexión con un tiempo de espera corto. Si la conexión falla, se seleccionará la siguiente réplica, y así sucesivamente con todas las réplicas. Si el intento de conexión falla para todas las réplicas, se repetirá de la misma manera varias veces. Esto favorece la resiliencia, pero no proporciona tolerancia a fallos completa: un servidor remoto puede aceptar la conexión, pero no funcionar o funcionar mal.
+Al especificar réplicas, durante la lectura se seleccionará una de las réplicas disponibles para cada segmento. Puede configurar el algoritmo de balanceo de carga (la preferencia sobre a qué réplica acceder); consulte el parámetro de configuración [load&#95;balancing](/es/reference/settings/session-settings/load-balancing#load_balancing). Si no se establece la conexión con el servidor, se intentará conectar con un tiempo de espera breve. Si la conexión falla, se seleccionará la siguiente réplica, y así sucesivamente con todas las réplicas. Si el intento de conexión falla para todas las réplicas, se repetirá de la misma forma varias veces. Esto favorece la resiliencia, pero no proporciona una tolerancia a fallos completa: un servidor remoto podría aceptar la conexión, pero no funcionar o funcionar deficientemente.
 
-Puede especificar solo uno de los segmentos (en este caso, el procesamiento de consultas debería llamarse `remote`, en lugar de `distributed`) o cualquier número de segmentos. En cada segmento, puede especificar desde una hasta cualquier número de réplicas. Puede especificar un número diferente de réplicas para cada segmento.
+Puede especificar un único segmento (en cuyo caso el procesamiento de consultas debería denominarse remoto, y no distribuido) o tantos segmentos como quiera. En cada segmento puede especificar desde una réplica hasta cualquier número de ellas. También puede especificar un número distinto de réplicas para cada segmento.
 
 Puede especificar tantos clústeres como desee en la configuración.
 
-Para ver sus clústeres, use la tabla `system.clusters`.
+Para ver sus clústeres, utilice la tabla `system.clusters`.
 
-El motor `Distributed` permite trabajar con un clúster como si fuera un servidor local. Sin embargo, la configuración del clúster no puede especificarse dinámicamente; debe configurarse en el archivo de configuración del servidor. Normalmente, todos los servidores de un clúster tendrán la misma configuración de clúster (aunque no es obligatorio). Los clústeres del archivo de configuración se actualizan sobre la marcha, sin reiniciar el servidor.
+El motor `Distributed` permite trabajar con un clúster como si fuera un servidor local. Sin embargo, la configuración del clúster no puede especificarse dinámicamente; debe definirse en el archivo de configuración del servidor. Normalmente, todos los servidores de un clúster tienen la misma configuración de clúster (aunque no es obligatorio). Los clústeres del archivo de configuración se actualizan sobre la marcha, sin necesidad de reiniciar el servidor.
 
-Si necesita enviar una consulta a un conjunto desconocido de segmentos y réplicas cada vez, no necesita crear una tabla `Distributed`; use en su lugar la función de tabla `remote`. Consulte la sección [Funciones de tabla](/es/reference/functions/table-functions/index).
+Si cada vez necesita enviar una consulta a un conjunto desconocido de segmentos y réplicas, no es necesario crear una Tabla `Distributed`; utilice en su lugar la función de tabla `remote`. Consulte la sección [Funciones de tabla](/es/reference/functions/table-functions/index).
 
 ## Escritura de datos {#distributed-writing-data}
 

@@ -33,10 +33,18 @@ la [Swagger UI](/es/products/cloud/api-reference/organization/get-list-of-availa
 
 ## Límites de tasa {#rate-limits}
 
-Los desarrolladores pueden tener hasta 100 claves de API por organización. Cada clave de API tiene un
-límite de 10 solicitudes por cada ventana de 10 segundos. Si deseas aumentar la
-cantidad de claves de API o de solicitudes por cada ventana de 10 segundos para tu organización,
-ponte en contacto con support@clickhouse.com
+Los desarrolladores pueden tener hasta 100 claves de API por organización. Cada clave de API tiene estos
+límites por cada ventana de 10 segundos:
+
+* 40 solicitudes de lectura (`GET`)
+* 20 solicitudes de escritura (todos los demás métodos, por ejemplo `POST`, `PATCH` y `DELETE`)
+
+Cuando una solicitud supera un límite, la API devuelve el estado `429 Too Many Requests`
+con un encabezado `Retry-After`. El valor del encabezado indica el número de segundos que debes esperar
+antes de volver a enviar la solicitud.
+
+Si deseas aumentar la cantidad de claves de API o de solicitudes por cada ventana de 10 segundos
+para tu organización, ponte en contacto con support@clickhouse.com
 
 ## Proveedor de Terraform {#terraform-provider}
 

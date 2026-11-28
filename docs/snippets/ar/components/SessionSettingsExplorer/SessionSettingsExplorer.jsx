@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // يقيّم عارض الإنتاج في Mintlify المكوّن المُصدَّر دون
-  // الإبقاء على الارتباطات المعرّفة على مستوى الوحدة. لذا تحتفظ الحالة المُهيّأة كسولًا بالبيانات المُولَّدة ضمن
-  // نطاق التقييم هذا، مع إنشائها مرة واحدة فقط عند كل تركيب للمكوّن.
+  // Mintlify's production renderer evaluates the exported component without
+  // preserving module-scope bindings. Lazy state keeps the generated data in
+  // that evaluation scope while constructing it only once per mount.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -52,9 +52,10 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_*",
-      count: 54,
+      count: 55,
       settings: [
         { name: "allow_aggregate_partitions_independently", path: "/allow#allow_aggregate_partitions_independently", default: "1" },
+        { name: "allow_ai_functions", path: "/allow#allow_ai_functions", default: "1" },
         { name: "allow_archive_path_syntax", path: "/allow#allow_archive_path_syntax", default: "1" },
         { name: "allow_asynchronous_read_from_io_pool_for_merge_tree", path: "/allow#allow_asynchronous_read_from_io_pool_for_merge_tree", default: "0" },
         { name: "allow_block_nested_loop_join", path: "/allow#allow_block_nested_loop_join", default: "1" },
@@ -268,7 +269,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "async_insert_*",
-      count: 11,
+      count: 12,
       settings: [
         { name: "async_insert", path: "/async-insert#async_insert", default: "1" },
         { name: "async_insert_busy_timeout_decrease_rate", path: "/async-insert#async_insert_busy_timeout_decrease_rate", default: "0.2" },
@@ -280,19 +281,22 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "async_insert_max_query_number", path: "/async-insert#async_insert_max_query_number", default: "450" },
         { name: "async_insert_poll_timeout_ms", path: "/async-insert#async_insert_poll_timeout_ms", default: "10" },
         { name: "async_insert_select_as_async_insert", path: "/async-insert#async_insert_select_as_async_insert", default: "1" },
-        { name: "async_insert_use_adaptive_busy_timeout", path: "/async-insert#async_insert_use_adaptive_busy_timeout", default: "1" }
+        { name: "async_insert_use_adaptive_busy_timeout", path: "/async-insert#async_insert_use_adaptive_busy_timeout", default: "1" },
+        { name: "async_insert_use_deduplication_cache", path: "/async-insert#async_insert_use_deduplication_cache", default: "1" }
       ],
       children: []
     },
     {
       label: "automatic_parallel_*",
-      count: 5,
+      count: 7,
       settings: [
+        { name: "automatic_parallel_replicas_ignore_thresholds", path: "/automatic-parallel#automatic_parallel_replicas_ignore_thresholds", default: "0" },
         { name: "automatic_parallel_replicas_max_duplicated_read_ratio", path: "/automatic-parallel#automatic_parallel_replicas_max_duplicated_read_ratio", default: "0.5" },
         { name: "automatic_parallel_replicas_min_bytes_per_replica", path: "/automatic-parallel#automatic_parallel_replicas_min_bytes_per_replica", default: "1048576" },
         { name: "automatic_parallel_replicas_mode", path: "/automatic-parallel#automatic_parallel_replicas_mode", default: "0" },
         { name: "automatic_parallel_replicas_remember_boundary", path: "/automatic-parallel#automatic_parallel_replicas_remember_boundary", default: "1" },
-        { name: "automatic_parallel_replicas_statistics_drift_ratio", path: "/automatic-parallel#automatic_parallel_replicas_statistics_drift_ratio", default: "1.5" }
+        { name: "automatic_parallel_replicas_statistics_drift_ratio", path: "/automatic-parallel#automatic_parallel_replicas_statistics_drift_ratio", default: "1.5" },
+        { name: "automatic_parallel_replicas_undecided_retry_after_executions", path: "/automatic-parallel#automatic_parallel_replicas_undecided_retry_after_executions", default: "10" }
       ],
       children: []
     },
@@ -624,12 +628,13 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_*",
-      count: 7,
+      count: 8,
       settings: [
         { name: "distributed_aggregation_memory_efficient", path: "/distributed#distributed_aggregation_memory_efficient", default: "1" },
         { name: "distributed_connections_pool_size", path: "/distributed#distributed_connections_pool_size", default: "1024" },
         { name: "distributed_foreground_insert", path: "/distributed#distributed_foreground_insert", default: "0" },
         { name: "distributed_group_by_no_merge", path: "/distributed#distributed_group_by_no_merge", default: "0" },
+        { name: "distributed_group_by_top_k", path: "/distributed#distributed_group_by_top_k", default: "0" },
         { name: "distributed_insert_skip_read_only_replicas", path: "/distributed#distributed_insert_skip_read_only_replicas", default: "0" },
         { name: "distributed_product_mode", path: "/distributed#distributed_product_mode", default: "deny" },
         { name: "distributed_push_down_limit", path: "/distributed#distributed_push_down_limit", default: "1" }
@@ -702,10 +707,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_index_analysis_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "distributed_index_analysis", path: "/distributed-index-analysis#distributed_index_analysis", default: "0" },
         { name: "distributed_index_analysis_for_non_shared_merge_tree", path: "/distributed-index-analysis#distributed_index_analysis_for_non_shared_merge_tree", default: "0" },
+        { name: "distributed_index_analysis_on_stateless_workers", path: "/distributed-index-analysis#distributed_index_analysis_on_stateless_workers", default: "0" },
         { name: "distributed_index_analysis_only_on_coordinator", path: "/distributed-index-analysis#distributed_index_analysis_only_on_coordinator", default: "0" }
       ],
       children: []
@@ -767,7 +773,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 77,
+      count: 78,
       settings: [
         { name: "enable_adaptive_aggregator", path: "/enable#enable_adaptive_aggregator", default: "1" },
         { name: "enable_adaptive_memory_spill_scheduler", path: "/enable#enable_adaptive_memory_spill_scheduler", default: "0" },
@@ -782,6 +788,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "enable_elasticsearch", path: "/enable#enable_elasticsearch", default: "0" },
         { name: "enable_eval_table_function", path: "/enable#enable_eval_table_function", default: "0" },
         { name: "enable_extended_results_for_datetime_functions", path: "/enable#enable_extended_results_for_datetime_functions", default: "0" },
+        { name: "enable_fixed_and_packed_string_keys_in_aggregation", path: "/enable#enable_fixed_and_packed_string_keys_in_aggregation", default: "1" },
         { name: "enable_full_text_index", path: "/enable#enable_full_text_index", default: "1" },
         { name: "enable_function_early_short_circuit", path: "/enable#enable_function_early_short_circuit", default: "0" },
         { name: "enable_funnel_functions", path: "/enable#enable_funnel_functions", default: "0" },
@@ -901,10 +908,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_parallel_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "enable_parallel_blocks_marshalling", path: "/enable-parallel#enable_parallel_blocks_marshalling", default: "1" },
-        { name: "enable_parallel_single_level_merge", path: "/enable-parallel#enable_parallel_single_level_merge", default: "1" }
+        { name: "enable_parallel_single_level_merge", path: "/enable-parallel#enable_parallel_single_level_merge", default: "1" },
+        { name: "enable_parallel_single_level_merge_by_index", path: "/enable-parallel#enable_parallel_single_level_merge_by_index", default: "1" }
       ],
       children: []
     },
@@ -1161,39 +1169,36 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "iceberg_*",
-      count: 9,
+      count: 10,
       settings: [
         { name: "iceberg_delete_data_on_drop", path: "/iceberg#iceberg_delete_data_on_drop", default: "0" },
         { name: "iceberg_list_only_v_prefixed_metadata_files", path: "/iceberg#iceberg_list_only_v_prefixed_metadata_files", default: "0" },
         { name: "iceberg_manifest_min_count_to_compact", path: "/iceberg#iceberg_manifest_min_count_to_compact", default: "100" },
-        { name: "iceberg_max_number_datafiles_to_compact", path: "/iceberg#iceberg_max_number_datafiles_to_compact", default: "1000" },
+        { name: "iceberg_max_number_datafiles_to_compact", path: "/iceberg#iceberg_max_number_datafiles_to_compact", default: "100" },
         { name: "iceberg_orphan_files_min_retention_seconds", path: "/iceberg#iceberg_orphan_files_min_retention_seconds", default: "86400" },
         { name: "iceberg_orphan_files_older_than_seconds", path: "/iceberg#iceberg_orphan_files_older_than_seconds", default: "259200" },
         { name: "iceberg_snapshot_id", path: "/iceberg#iceberg_snapshot_id", default: "0" },
         { name: "iceberg_timestamp_ms", path: "/iceberg#iceberg_timestamp_ms", default: "0" },
-        { name: "iceberg_tolerate_conflicting_manifest_schemas", path: "/iceberg#iceberg_tolerate_conflicting_manifest_schemas", default: "1" }
+        { name: "iceberg_tolerate_conflicting_manifest_schemas", path: "/iceberg#iceberg_tolerate_conflicting_manifest_schemas", default: "1" },
+        { name: "iceberg_write_table_statistics_ndv", path: "/iceberg#iceberg_write_table_statistics_ndv", default: "0" }
       ],
       children: []
     },
     {
       label: "iceberg_compaction_*",
-      count: 5,
+      count: 4,
       settings: [
-        { name: "iceberg_compaction_commit_batch_size", path: "/iceberg-compaction#iceberg_compaction_commit_batch_size", default: "100" },
         { name: "iceberg_compaction_data_cleanup", path: "/iceberg-compaction#iceberg_compaction_data_cleanup", default: "10800" },
         { name: "iceberg_compaction_delay_bias", path: "/iceberg-compaction#iceberg_compaction_delay_bias", default: "10800" },
-        { name: "iceberg_compaction_max_bytes_in_data_file", path: "/iceberg-compaction#iceberg_compaction_max_bytes_in_data_file", default: "536870912" },
-        { name: "iceberg_compaction_max_rows_in_data_file", path: "/iceberg-compaction#iceberg_compaction_max_rows_in_data_file", default: "18446744073709551615" }
+        { name: "iceberg_compaction_max_bytes_to_merge", path: "/iceberg-compaction#iceberg_compaction_max_bytes_to_merge", default: "161061273600" },
+        { name: "iceberg_compaction_max_rows_to_merge", path: "/iceberg-compaction#iceberg_compaction_max_rows_to_merge", default: "18446744073709551615" }
       ],
       children: []
     },
     {
       label: "iceberg_data_*",
-      count: 2,
-      settings: [
-        { name: "iceberg_data_file_size_lower_threshold_compaction", path: "/iceberg-data#iceberg_data_file_size_lower_threshold_compaction", default: "402653184" },
-        { name: "iceberg_data_file_size_upper_threshold_compaction", path: "/iceberg-data#iceberg_data_file_size_upper_threshold_compaction", default: "966367641" }
-      ],
+      count: 1,
+      settings: [{ name: "iceberg_data_file_size_lower_threshold_compaction", path: "/iceberg-data#iceberg_data_file_size_lower_threshold_compaction", default: "402653184" }],
       children: []
     },
     {
@@ -1208,21 +1213,26 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "iceberg_insert_*",
-      count: 4,
+      count: 8,
       settings: [
+        { name: "iceberg_insert_commit_retry_initial_backoff_ms", path: "/iceberg-insert#iceberg_insert_commit_retry_initial_backoff_ms", default: "10" },
+        { name: "iceberg_insert_commit_retry_max_backoff_ms", path: "/iceberg-insert#iceberg_insert_commit_retry_max_backoff_ms", default: "5000" },
         { name: "iceberg_insert_max_bytes_in_data_file", path: "/iceberg-insert#iceberg_insert_max_bytes_in_data_file", default: "536870912" },
+        { name: "iceberg_insert_max_data_files_in_upload", path: "/iceberg-insert#iceberg_insert_max_data_files_in_upload", default: "8" },
         { name: "iceberg_insert_max_partitions", path: "/iceberg-insert#iceberg_insert_max_partitions", default: "100" },
         { name: "iceberg_insert_max_rows_in_data_file", path: "/iceberg-insert#iceberg_insert_max_rows_in_data_file", default: "1000000" },
+        { name: "iceberg_insert_max_sort_buffer_bytes", path: "/iceberg-insert#iceberg_insert_max_sort_buffer_bytes", default: "1073741824" },
         { name: "iceberg_insert_single_manifest_for_all_partitions", path: "/iceberg-insert#iceberg_insert_single_manifest_for_all_partitions", default: "0" }
       ],
       children: []
     },
     {
       label: "iceberg_metadata_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "iceberg_metadata_compression_method", path: "/iceberg-metadata#iceberg_metadata_compression_method", default: '""' },
         { name: "iceberg_metadata_log_level", path: "/iceberg-metadata#iceberg_metadata_log_level", default: "none" },
+        { name: "iceberg_metadata_previous_versions_max", path: "/iceberg-metadata#iceberg_metadata_previous_versions_max", default: "100" },
         { name: "iceberg_metadata_staleness_ms", path: "/iceberg-metadata#iceberg_metadata_staleness_ms", default: "0" }
       ],
       children: []
@@ -1319,7 +1329,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       label: "join_*",
       count: 7,
       settings: [
-        { name: "join_algorithm", path: "/join#join_algorithm", default: "direct,hash,ie_join" },
+        { name: "join_algorithm", path: "/join#join_algorithm", default: "direct,hash,inequality" },
         { name: "join_any_take_last_row", path: "/join#join_any_take_last_row", default: "0" },
         { name: "join_default_strictness", path: "/join#join_default_strictness", default: "ALL" },
         { name: "join_on_disk_max_files_to_merge", path: "/join#join_on_disk_max_files_to_merge", default: "64" },
@@ -1442,8 +1452,13 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "log_query_*",
-      count: 3,
+      count: 8,
       settings: [
+        { name: "log_query_plans", path: "/log-query#log_query_plans", default: "0" },
+        { name: "log_query_plans_join_matches", path: "/log-query#log_query_plans_join_matches", default: "0" },
+        { name: "log_query_plans_max_size", path: "/log-query#log_query_plans_max_size", default: "1048576" },
+        { name: "log_query_plans_probability", path: "/log-query#log_query_plans_probability", default: "1" },
+        { name: "log_query_plans_time", path: "/log-query#log_query_plans_time", default: "0" },
         { name: "log_query_settings", path: "/log-query#log_query_settings", default: "1" },
         { name: "log_query_threads", path: "/log-query#log_query_threads", default: "0" },
         { name: "log_query_views", path: "/log-query#log_query_views", default: "1" }
@@ -1501,7 +1516,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_*",
-      count: 28,
+      count: 29,
       settings: [
         { name: "max_analyze_depth", path: "/max#max_analyze_depth", default: "5000" },
         { name: "max_autoincrement_series", path: "/max#max_autoincrement_series", default: "1000" },
@@ -1514,6 +1529,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_expanded_ast_elements", path: "/max#max_expanded_ast_elements", default: "500000" },
         { name: "max_fetch_partition_retries_count", path: "/max#max_fetch_partition_retries_count", default: "5" },
         { name: "max_final_threads", path: "/max#max_final_threads", default: "auto(N)" },
+        { name: "max_generic_compression_threads", path: "/max#max_generic_compression_threads", default: "1" },
         { name: "max_http_get_redirects", path: "/max#max_http_get_redirects", default: "0" },
         { name: "max_limit_for_vector_search_queries", path: "/max#max_limit_for_vector_search_queries", default: "1000" },
         { name: "max_os_cpu_wait_time_ratio_to_throw", path: "/max#max_os_cpu_wait_time_ratio_to_throw", default: "0" },
@@ -1837,7 +1853,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "merge_tree_*",
-      count: 22,
+      count: 23,
       settings: [
         { name: "merge_tree_coarse_index_granularity", path: "/merge-tree#merge_tree_coarse_index_granularity", default: "8" },
         { name: "merge_tree_compact_parts_min_granules_to_multibuffer_read", path: "/merge-tree#merge_tree_compact_parts_min_granules_to_multibuffer_read", default: "16" },
@@ -1855,6 +1871,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "merge_tree_min_rows_for_concurrent_read_for_remote_filesystem", path: "/merge-tree#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem", default: "0" },
         { name: "merge_tree_min_rows_for_seek", path: "/merge-tree#merge_tree_min_rows_for_seek", default: "0" },
         { name: "merge_tree_prefetch_json_shared_data_substreams", path: "/merge-tree#merge_tree_prefetch_json_shared_data_substreams", default: "1" },
+        { name: "merge_tree_read_end_tasks_per_stream", path: "/merge-tree#merge_tree_read_end_tasks_per_stream", default: "32" },
         {
           name: "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability",
           path: "/merge-tree#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability",
@@ -2177,10 +2194,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "optimize_move_to_prewhere_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "optimize_move_to_prewhere", path: "/optimize-move-to-prewhere#optimize_move_to_prewhere", default: "1" },
-        { name: "optimize_move_to_prewhere_if_final", path: "/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final", default: "1" }
+        { name: "optimize_move_to_prewhere_if_final", path: "/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final", default: "1" },
+        { name: "optimize_move_to_prewhere_respect_short_circuit", path: "/optimize-move-to-prewhere#optimize_move_to_prewhere_respect_short_circuit", default: "1" }
       ],
       children: []
     },
@@ -2411,7 +2429,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 59,
+      count: 61,
       settings: [
         { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
         { name: "query_plan_aggregation_having_prefilter", path: "/query-plan#query_plan_aggregation_having_prefilter", default: "1" },
@@ -2427,6 +2445,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_filter_push_down", path: "/query-plan#query_plan_filter_push_down", default: "1" },
         { name: "query_plan_filter_push_down_below_limit_by", path: "/query-plan#query_plan_filter_push_down_below_limit_by", default: "1" },
         { name: "query_plan_fuse_filter_into_array_join", path: "/query-plan#query_plan_fuse_filter_into_array_join", default: "1" },
+        { name: "query_plan_join_multiway_merge", path: "/query-plan#query_plan_join_multiway_merge", default: "0" },
         { name: "query_plan_join_order_use_interesting_orders", path: "/query-plan#query_plan_join_order_use_interesting_orders", default: "1" },
         { name: "query_plan_join_shard_by_pk_ranges", path: "/query-plan#query_plan_join_shard_by_pk_ranges", default: "1" },
         { name: "query_plan_join_swap_table", path: "/query-plan#query_plan_join_swap_table", default: "auto" },
@@ -2463,8 +2482,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_remove_redundant_distinct", path: "/query-plan#query_plan_remove_redundant_distinct", default: "1" },
         { name: "query_plan_remove_redundant_sorting", path: "/query-plan#query_plan_remove_redundant_sorting", default: "1" },
         { name: "query_plan_remove_unused_columns", path: "/query-plan#query_plan_remove_unused_columns", default: "1" },
+        { name: "query_plan_remove_unused_joins", path: "/query-plan#query_plan_remove_unused_joins", default: "1" },
         { name: "query_plan_replace_always_true_filter", path: "/query-plan#query_plan_replace_always_true_filter", default: "1" },
-        { name: "query_plan_reuse_storage_ordering_for_window_functions", path: "/query-plan#query_plan_reuse_storage_ordering_for_window_functions", default: "0" },
+        { name: "query_plan_reuse_storage_ordering_for_window_functions", path: "/query-plan#query_plan_reuse_storage_ordering_for_window_functions", default: "1" },
         { name: "query_plan_short_circuit_constant_false_join", path: "/query-plan#query_plan_short_circuit_constant_false_join", default: "1" },
         { name: "query_plan_split_filter", path: "/query-plan#query_plan_split_filter", default: "1" },
         { name: "query_plan_text_index_add_hint", path: "/query-plan#query_plan_text_index_add_hint", default: "1" },
@@ -2510,8 +2530,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "read_in_*",
-      count: 4,
+      count: 5,
       settings: [
+        { name: "read_in_order_max_bytes_to_prefetch", path: "/read-in#read_in_order_max_bytes_to_prefetch", default: "134217728" },
         { name: "read_in_order_two_level_merge_threshold", path: "/read-in#read_in_order_two_level_merge_threshold", default: "100" },
         { name: "read_in_order_use_buffering", path: "/read-in#read_in_order_use_buffering", default: "1" },
         { name: "read_in_order_use_virtual_row", path: "/read-in#read_in_order_use_virtual_row", default: "1" },
@@ -2599,16 +2620,17 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "rewrite_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "rewrite_count_distinct_if_with_count_distinct_implementation", path: "/rewrite#rewrite_count_distinct_if_with_count_distinct_implementation", default: "0" },
-        { name: "rewrite_in_to_join", path: "/rewrite#rewrite_in_to_join", default: "0" }
+        { name: "rewrite_in_to_join", path: "/rewrite#rewrite_in_to_join", default: "0" },
+        { name: "rewrite_intersect_except_distinct_to_join", path: "/rewrite#rewrite_intersect_except_distinct_to_join", default: "1" }
       ],
       children: []
     },
     {
       label: "s3_*",
-      count: 18,
+      count: 20,
       settings: [
         { name: "s3_base", path: "/s3#s3_base", default: '""' },
         { name: "s3_check_objects_after_upload", path: "/s3#s3_check_objects_after_upload", default: "0" },
@@ -2616,8 +2638,10 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "s3_create_new_file_on_insert", path: "/s3#s3_create_new_file_on_insert", default: "0" },
         { name: "s3_ignore_file_doesnt_exist", path: "/s3#s3_ignore_file_doesnt_exist", default: "0" },
         { name: "s3_list_object_keys_size", path: "/s3#s3_list_object_keys_size", default: "1000" },
+        { name: "s3_list_object_parallelism", path: "/s3#s3_list_object_parallelism", default: "1" },
         { name: "s3_min_upload_part_size", path: "/s3#s3_min_upload_part_size", default: "16777216" },
         { name: "s3_path_filter_limit", path: "/s3#s3_path_filter_limit", default: "1000" },
+        { name: "s3_request_payer", path: "/s3#s3_request_payer", default: "none" },
         { name: "s3_request_timeout_ms", path: "/s3#s3_request_timeout_ms", default: "30000" },
         { name: "s3_skip_empty_files", path: "/s3#s3_skip_empty_files", default: "1" },
         { name: "s3_skip_hidden_files", path: "/s3#s3_skip_hidden_files", default: "0" },
@@ -2844,7 +2868,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       label: "table_*",
       count: 2,
       settings: [
-        { name: "table_engine_read_through_distributed_cache", path: "/table#table_engine_read_through_distributed_cache", default: "0" },
+        { name: "table_engine_read_through_distributed_cache", path: "/table#table_engine_read_through_distributed_cache", default: "auto" },
         { name: "table_function_remote_max_addresses", path: "/table#table_function_remote_max_addresses", default: "1000" }
       ],
       children: []
@@ -2995,7 +3019,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       settings: [
         { name: "use_page_cache_for_disks_without_file_cache", path: "/use-page#use_page_cache_for_disks_without_file_cache", default: "0" },
         { name: "use_page_cache_for_local_disks", path: "/use-page#use_page_cache_for_local_disks", default: "0" },
-        { name: "use_page_cache_for_object_storage", path: "/use-page#use_page_cache_for_object_storage", default: "0" },
+        { name: "use_page_cache_for_object_storage", path: "/use-page#use_page_cache_for_object_storage", default: "1" },
         { name: "use_page_cache_lookahead_for_text_index", path: "/use-page#use_page_cache_lookahead_for_text_index", default: "0" },
         { name: "use_page_cache_with_distributed_cache", path: "/use-page#use_page_cache_with_distributed_cache", default: "0" }
       ],
@@ -3057,8 +3081,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "use_text_*",
-      count: 6,
+      count: 7,
       settings: [
+        { name: "use_text_index_for_substring_search", path: "/use-text#use_text_index_for_substring_search", default: "0" },
         { name: "use_text_index_header_cache", path: "/use-text#use_text_index_header_cache", default: "1" },
         { name: "use_text_index_like_evaluation_by_dictionary_scan", path: "/use-text#use_text_index_like_evaluation_by_dictionary_scan", default: "1" },
         { name: "use_text_index_negative_tokens_cache", path: "/use-text#use_text_index_negative_tokens_cache", default: "1" },
@@ -3149,7 +3174,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "أخرى",
-      count: 162,
+      count: 164,
       settings: [
         { name: "adaptive_aggregator_disable_thaw", path: "/other#adaptive_aggregator_disable_thaw", default: "0" },
         { name: "adaptive_aggregator_freeze_threshold", path: "/other#adaptive_aggregator_freeze_threshold", default: "16384" },
@@ -3226,6 +3251,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "intersect_default_mode", path: "/other#intersect_default_mode", default: "ALL" },
         { name: "json_extract_named_tuples_as_objects", path: "/other#json_extract_named_tuples_as_objects", default: "0" },
         { name: "json_extract_use_cast_string_to_date_time_mode", path: "/other#json_extract_use_cast_string_to_date_time_mode", default: "1" },
+        { name: "json_use_optimized_type_conversion", path: "/other#json_use_optimized_type_conversion", default: "1" },
         { name: "kill_throw_if_noop", path: "/other#kill_throw_if_noop", default: "1" },
         { name: "least_greatest_legacy_null_behavior", path: "/other#least_greatest_legacy_null_behavior", default: "0" },
         { name: "legacy_array_join_function_nondeterministic_evaluation", path: "/other#legacy_array_join_function_nondeterministic_evaluation", default: "0" },
@@ -3302,6 +3328,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "transfer_overflow_mode", path: "/other#transfer_overflow_mode", default: "throw" },
         { name: "transform_null_in", path: "/other#transform_null_in", default: "0" },
         { name: "traverse_shadow_remote_data_paths", path: "/other#traverse_shadow_remote_data_paths", default: "0" },
+        { name: "truncate_removes_parts_immediately", path: "/other#truncate_removes_parts_immediately", default: "0" },
         { name: "union_default_mode", path: "/other#union_default_mode", default: '""' },
         { name: "unknown_packet_in_send_data", path: "/other#unknown_packet_in_send_data", default: "0" },
         { name: "variant_throw_on_type_mismatch", path: "/other#variant_throw_on_type_mismatch", default: "1" },
@@ -3318,6 +3345,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     }
   ])
   const [settingAliases] = useState(() => ({
+    allow_ai_functions: ["allow_experimental_ai_functions"],
     allow_correlated_subqueries: ["allow_experimental_correlated_subqueries"],
     allow_database_glue_catalog: ["allow_experimental_database_glue_catalog"],
     allow_database_iceberg: ["allow_experimental_database_iceberg"],
@@ -3555,14 +3583,14 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="ابحث في الإعدادات، مثل parallel replicas أو %materialized%"
+          placeholder="ابحث في الإعدادات، مثل: parallel replicas أو %materialized%"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} {matchingCount === 1 ? "إعداد مطابق" : "إعدادات مطابقة"}
+            {matchingCount === 1 ? "إعداد مطابق" : "إعدادات مطابقة"}: {matchingCount}
           </span>
         </div>
       )}

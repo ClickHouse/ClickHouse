@@ -20,6 +20,30 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="Нет" />Мягкий лимит на число активных соединений, которые distributed cache старается держать незанятыми. Когда число свободных соединений становится меньше distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections, закрываются соединения с самой давней активностью, пока это число снова не превысит лимит.
 
+## distributed_cache_max_request_processing_time_ms {#distributed_cache_max_request_processing_time_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="60000" changeable_without_restart="No" />Сервер распределённого кэша завершает запрос, если обрабатывает его дольше указанного числа миллисекунд с момента последнего `StartRequest` или `ContinueRequest` для этого запроса, не считая времени ожидания клиента; для каждого нового диапазона чтения отсчёт начинается заново. Запрос завершается, как только сервер получает возможность сообщить об этом, а если запрос так и не доходит до этого момента, его соединение закрывается через `distributed_cache_stuck_request_scan_interval_ms`. Значение 0 означает отсутствие ограничения.
+
+## distributed_cache_slow_down_min_stuck_requests {#distributed_cache_slow_down_min_stuck_requests}
+
+<SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />Сервер распределённого кэша просит клиента снизить скорость, только если зависло не менее указанного количества его запросов. Так клиент, у которого в обработке всего пара запросов, не получит такую просьбу из-за одного зависшего запроса. При значениях 0 и 1 решение принимается только на основе `distributed_cache_slow_down_stuck_requests_ratio`.
+
+## distributed_cache_slow_down_stuck_requests_ratio {#distributed_cache_slow_down_stuck_requests_ratio}
+
+<SettingsInfoBlock type="Double" default_value="0.2" changeable_without_restart="No" />Сервер распределённого кэша просит клиента снизить нагрузку, как только доля зависших среди его незавершённых запросов достигает этого значения; бездействующие соединения не учитываются. При значении 0 такая просьба никогда не отправляется.
+
+## distributed_cache_slow_down_window_ms {#distributed_cache_slow_down_window_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />Время в миллисекундах, в течение которого сервер распределённого кэша просит клиента не обращаться к нему, если слишком много запросов этого клиента зависло. Значение должно быть как минимум вдвое больше `distributed_cache_stuck_request_scan_interval_ms`, чтобы окно истекало только в том случае, если очередное сканирование его не продлило; значение 0 не допускается.
+
+## distributed_cache_stuck_request_no_progress_timeout_ms {#distributed_cache_stuck_request_no_progress_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />Сервер распределённого кэша закрывает соединение, если в рамках его запроса не было обмена данными в течение указанного числа миллисекунд (время ожидания клиента не учитывается). Значение 0 отключает это ограничение; при этом сканирование зависших запросов прекращается, только если `distributed_cache_max_request_processing_time_ms` также равно 0.
+
+## distributed_cache_stuck_request_scan_interval_ms {#distributed_cache_stuck_request_scan_interval_ms}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="5000" changeable_without_restart="No" />Интервал сканирования зависших запросов на сервере распределённого кэша, в миллисекундах.
+
 ## distributed_cache_temporary_data_background_retry_delay_milliseconds {#distributed_cache_temporary_data_background_retry_delay_milliseconds}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="30000" changeable_without_restart="No" />Задержка в миллисекундах перед фоновой повторной попыткой для закоммиченных временных данных.
@@ -75,6 +99,10 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 ## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />Действует только в ClickHouse Cloud. Максимальное количество диапазонов, которые механизм прогрева кэша держит в очереди для диска без локального файлового кэша; при превышении этого значения самые старые диапазоны отбрасываются (при наличии локального кэша используется его параметр `max_elements`). Ноль означает отсутствие ограничения.
+
+## distributed_cache_warmer_skip_parts_produced_in_current_availability_zone {#distributed_cache_warmer_skip_parts_produced_in_current_availability_zone}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Действует только в ClickHouse Cloud. Если механизм прогрева кэша прогревает только distributed cache (у диска части нет локального файлового кэша или кэш отключён для чтения), пропускаются части, созданные репликой в текущей зоне доступности: они были записаны через distributed cache и потому уже находятся в кэше этой зоны. Части неизвестного происхождения прогреваются всегда.
 
 ## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
 

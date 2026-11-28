@@ -12,17 +12,19 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки относятся к серверу ClickHouse и автоматически генерируются из исходного кода ClickHouse.
 
-<div id="snapshot_cleaner_period">
-  ## snapshot_cleaner_period
-</div>
+## snapshot_cleaner_max_replicas {#snapshot_cleaner_max_replicas}
 
-<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />
+<SettingsInfoBlock type="UInt64" default_value="3" changeable_without_restart="No" />
 
-Период полного удаления частей снимка для SharedMergeTree. Доступно только в ClickHouse Cloud
+Максимальное число реплик, на которых запускается компонент очистки снимков для каждой таблицы в registry снимков. Каждая реплика, на которой работает компонент очистки, сообщает об этом с помощью флага реплики `snapshot_cleaner_enabled`; реплики ранжируют сообщившие о себе реплики по rendezvous-хешу таблицы и имени реплики, и реплика обрабатывает таблицу, только если входит в число первых записей. Благодаря этому очистка разных таблиц распределяется по всему парку реплик, а объём дублирующейся работы остаётся ограниченным. Реплики, на которых компонент очистки отключён (`snapshot_cleaner_period = 0`), никогда не сообщают о себе и не выбираются. `0` означает отсутствие ограничения: каждая реплика обрабатывает все таблицы. Доступно только в ClickHouse Cloud
 
-<div id="snapshot_cleaner_pool_size">
-  ## snapshot_cleaner_pool_size
-</div>
+## snapshot_cleaner_period {#snapshot_cleaner_period}
+
+<SettingsInfoBlock type="UInt64" default_value="3600" changeable_without_restart="No" />
+
+Период полного удаления частей снимка для SharedMergeTree в секундах. Доступно только в ClickHouse Cloud
+
+## snapshot_cleaner_pool_size {#snapshot_cleaner_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="128" changeable_without_restart="No" />
 

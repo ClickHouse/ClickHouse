@@ -12,19 +12,29 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="distributed_ddl_entry_format_version">
-  ## distributed_ddl_entry_format_version
-</div>
+## distributed_ddl_entry_format_version {#distributed_ddl_entry_format_version}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
-分散 DDL (ON CLUSTER) クエリの互換性バージョン
+分散DDL (ON CLUSTER) クエリの互換性バージョンです。クラスター内の古いサーバーでもクエリを実行できるようにするには、
+より小さい値を使用してください。
+
+サーバーはバージョン `1` および `2` のエントリを実行しません。古いサーバーは設定値が `1`、`2`、
+`3` の場合にこれらのバージョンで書き込むため、アップグレード前にすべてのサーバーでこの設定を `4` 以上にし、分散DDL
+キューの処理が完了するまで待ってください。
+
+設定可能な値:
+
+* `3` — `4` と同じです。古いサーバーはバージョン `3` のエントリを拒否するため、`4` として書き込まれます。
+* `4` — エントリに session 内で変更された設定と OpenTelemetry トレースコンテキストが含まれ、`CREATE` クエリはイニシエーター上で正規化されます。
+* `5` — 上記に加えて、クエリの `initial_query_id` を保持します。
+* `6` — 上記に加えて、クエリが `BACKUP` または `RESTORE` の一部であるかどうかの情報を含みます。
+* `7` — 上記に加えて、親テーブルの UUID を含みます。`Replicated` データベースはこれを利用し、テーブルが存在する場合にのみクエリを実行します。
+* `8` — 上記に加えて、イニシエーターのユーザーとロールを含みます。これはサーバー設定 `distributed_ddl_use_initial_user_and_roles` が有効な場合に各ホストで使用されます。
 
 Cloud でのデフォルト値: `6`。
 
-<div id="distributed_ddl_output_mode">
-  ## distributed_ddl_output_mode
-</div>
+## distributed_ddl_output_mode {#distributed_ddl_output_mode}
 
 <SettingsInfoBlock type="DistributedDDLOutputMode" default_value="throw" />
 
@@ -42,9 +52,7 @@ Cloud でのデフォルト値: `6`。
 
 Cloud でのデフォルト値: `none_only_active`.
 
-<div id="distributed_ddl_task_timeout">
-  ## distributed_ddl_task_timeout
-</div>
+## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
 
 <SettingsInfoBlock type="Int64" default_value="180" />
 

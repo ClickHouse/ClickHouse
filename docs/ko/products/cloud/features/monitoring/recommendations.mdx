@@ -1,0 +1,55 @@
+---
+sidebarTitle: '권장 사항'
+title: '쿼리 및 스키마 권장 사항'
+description: 'ClickHouse Cloud가 쿼리 로그(query logs)와 테이블 스키마(schemas)를 바탕으로 제시하는 결정적 권장 사항입니다.'
+keywords: ['recommendations', 'schema recommendation', 'query recommendation', 'sorting key', 'ClickHouse Cloud', 'private preview']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
+ClickHouse Cloud는 쿼리 트래픽과 테이블 스키마(table schema)를 분석하여 성능 개선을 위한 권장 사항을 생성합니다. 이 검사는 LLM을 사용하지 않는 결정적 방식으로 수행되며, 사용자의 서비스에서 실행되지 않습니다.
+
+권장 사항은 다음 두 가지 종류로 나뉩니다.
+
+* 스키마 권장 사항은 **모니터링** &gt; **Tables**에 표시되며, 테이블 스키마에 적용할 수 있는 변경 사항을 제안합니다.
+* 쿼리 권장 사항은 **모니터링** &gt; **Query performance**에서 쿼리를 열면 표시되며, 쿼리에 적용할 수 있는 변경 사항을 제안합니다.
+  일부 스키마 권장 사항과 쿼리 권장 사항은 서로 겹칠 수 있습니다. 이 경우 쿼리 패턴(query pattern)과 테이블 스키마 중 어느 쪽을 수정해서든 문제를 해결할 수 있습니다.
+
+<Warning>
+  권장 사항은 프리뷰 단계의 기능입니다. 향후 변경될 수 있으며, 표준 ClickHouse Cloud SLA가 적용되지 않습니다.
+</Warning>
+
+## 스키마 권장 사항 {#schema-recommendations}
+
+이 권장 사항은 [모니터링](/ko/products/cloud/features/monitoring/cloud-console)의 테이블에 표시됩니다.
+
+| 권장 사항   | 표시 조건                                                 | 조치 방법                                                                                                                                                                                                                               |
+| ------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 정렬 키 변경 | 많은 쿼리가 동일한 컬럼으로 필터링하지만 해당 컬럼이 정렬 키에 포함되어 있지 않은 경우입니다. | 자주 사용하는 필터가 키와 일치하도록 정렬 키 변경을 고려하십시오. 이 작업을 수행하면 테이블이 재구성됩니다. [Schema Advisor](/ko/products/cloud/features/ai-ml/schema-advisor)로 이 변경 사항을 계획하고 배포할 수 있습니다.                                                                            |
+| 프로젝션 추가 | 많은 쿼리가 정렬 키에 포함되지 않은 소수의 컬럼으로 필터링하는 경우입니다.            | 해당 컬럼에 [프로젝션(projection)](/ko/data-modeling/projections)을 추가하십시오. 정렬 키를 변경하지 않고도 해당 쿼리의 속도를 높일 수 있습니다. [Schema Advisor](/ko/products/cloud/features/ai-ml/schema-advisor)는 `ALTER TABLE`로 이를 즉시 적용하므로 재구성이나 `EXCHANGE TABLES`가 필요하지 않습니다. |
+| 딕셔너리 사용 | 테이블에 대한 쿼리 대부분이 단일 행 조회인 경우입니다.                       | 읽기는 잦고 업데이트는 드문 차원 테이블이라면 [딕셔너리(dictionary)](/ko/sql-reference/statements/create/dictionary) 사용을 고려하십시오.                                                                                                                               |
+| 배치 삽입   | 테이블에 소규모 삽입이 빈번하게 발생하여 작은 데이터 파트(small parts)가 많이 생성되는 경우입니다.          | 각 파트가 커지도록 삽입을 배치로 묶으십시오. 파트 수가 적을수록 머지 작업이 줄어듭니다. [비동기 삽입(asynchronous inserts)](/ko/optimize/asynchronous-inserts)을 참조하십시오.                                                                                                          |
+
+## 쿼리 권장 사항 {#query-recommendations}
+
+이 권장 사항은 **모니터링** &gt; **Query performance**에서 정규화된 쿼리(normalized query)를 열면 표시됩니다. 이 페이지는 [쿼리 인사이트](/ko/products/cloud/features/sql-console-features/query-insights)의 차기 버전으로, 테이블별로 쿼리를 필터링하고 개별 쿼리를 열어 메트릭을 확인할 수 있습니다. 쿼리 권장 사항을 적용하려면 쿼리를 직접 수정해야 합니다. Schema Advisor는 이러한 권장 사항을 배포하지 않습니다.
+
+| 권장 사항                          | 표시 조건                                                                                                                                                                                                                                                     | 조치 방법                                                                                                                                   |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `uniq` 사용                      | 쿼리에서 `COUNT(DISTINCT ...)` 또는 [`uniqExact`](/ko/sql-reference/aggregate-functions/reference/uniqexact)를 사용하지만 근사 카운트로도 충분한 경우입니다.                                                                                                                            | 고유값이 많은 경우에는 [`uniq`](/ko/sql-reference/aggregate-functions/reference/uniq)를 사용하십시오. 메모리 사용량이 더 적습니다.                                      |
+| JSON을 네이티브로 저장                 | 쿼리 실행 중에 문자열 컬럼에서 JSON을 파싱하는 경우입니다.                                                                                                                                                                                                                       | 쿼리할 때마다 문자열을 파싱하는 대신 값을 [JSON](/ko/sql-reference/data-types/newjson) 컬럼이나 일반 컬럼(Ordinary Column)으로 저장하십시오.                                 |
+| 필요한 컬럼만 지정                     | 컬럼이 많은 테이블에서 쿼리가 `SELECT *` 또는 `alias.*`를 사용하는 경우입니다.                                                                                                                                                                                                     | ClickHouse가 나머지 컬럼을 읽지 않도록 필요한 컬럼만 명시하십시오.                                                                                              |
+| `OPTIMIZE ... FINAL`의 정기 실행 지양 | 쿼리가 테이블 전체를 다시 쓰는 `FINAL`과 함께 [`OPTIMIZE`](/ko/sql-reference/statements/optimize)를 실행하는 경우입니다.                                                                                                                                                               | `OPTIMIZE ... FINAL`을 정기 작업으로 실행하지 마십시오. 입출력(IO)과 CPU 부하가 크고 삽입을 차단할 수 있습니다.                                                            |
+| 정렬 병합 조인(sort-merge JOIN) 사용   | `JOIN`의 양쪽 입력이 이미 조인 키 기준으로 정렬되어 있는 경우입니다.                                                                                                                                                                                                                | ClickHouse가 입력을 다시 정렬하지 않도록 [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)을 `full_sorting_merge`로 설정하십시오. |
+| 정렬 키의 선행 컬럼을 기준으로 필터링          | 쿼리의 필터가 정렬 키의 선행 컬럼을 사용하지 않는 경우입니다. ClickHouse는 후행 키 컬럼으로도 그래뉼을 제외할 수 있지만, 그 효과는 떨어질 수 있습니다. [보조 키 컬럼(secondary key columns)을 기준으로 한 필터링](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns)을 참조하십시오. | `EXPLAIN indexes = 1`로 실행 계획을 확인하십시오. 쿼리 결과(query result)가 달라지지 않는 경우에만 선행 키 필터를 추가하십시오.                                                |
+| 비동기 삽입 허용                      | `INSERT`에서 비동기 삽입을 비활성화하여 작은 데이터 파트(small parts)가 많이 생성되는 경우입니다.                                                                                                                                                                                          | 작은 쓰기 작업이 하나로 합쳐지도록 [비동기 삽입(asynchronous inserts)](/ko/optimize/asynchronous-inserts)을 활성화된 상태로 유지하거나, 클라이언트에서 삽입을 배치로 묶어 처리하십시오.          |
+
+## 관련 페이지 {#related-pages}
+
+* [Schema Advisor](/ko/products/cloud/features/ai-ml/schema-advisor)
+* [클라우드 콘솔의 모니터링](/ko/products/cloud/features/monitoring/cloud-console)
+* [쿼리 인사이트](/ko/products/cloud/features/sql-console-features/query-insights)
+* [스키마(schema) 설계](/ko/data-modeling/schema-design)

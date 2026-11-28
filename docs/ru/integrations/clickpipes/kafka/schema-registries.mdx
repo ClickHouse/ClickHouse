@@ -16,10 +16,10 @@ ClickPipes поддерживает интеграцию с реестром с�
 
 ## Поддерживаемые реестры схем для стриминговых ClickPipes {#supported-schema-registries}
 
-Kafka ClickPipes поддерживают два типа реестров схем:
+Kafka ClickPipes поддерживают два семейства реестров схем:
 
 * [Реестры, совместимые с Confluent](#confluent-compatible-registries): любые реестры, API которых совместим с Confluent Schema Registry, включая сам Confluent Schema Registry и Redpanda Schema Registry. Поддерживаются Avro и Protobuf.
-* [AWS Glue Schema Registry](#aws-glue-schema-registry): для данных Avro, сериализованных с помощью AWS Glue SerDe, обычно поступающих из Amazon MSK.
+* [AWS Glue Schema Registry](#aws-glue-schema-registry): для данных Avro и Protobuf, сериализованных с помощью AWS Glue SerDe, обычно поступающих из Amazon MSK.
 
 Kinesis ClickPipes поддерживают AWS Glue Schema Registry для данных Avro и Protobuf.
 
@@ -61,12 +61,12 @@ ClickPipes динамически получает и применяет схе�
 
 ## AWS Glue Schema Registry {#aws-glue-schema-registry}
 
-Если ваши producer сериализуют Avro с помощью AWS Glue SerDe (например, `AWSKafkaAvroSerializer` для топика Amazon MSK), ClickPipes может получать эти схемы непосредственно из AWS Glue Schema Registry. Glue использует другой формат передачи данных и другой API, чем реестры, совместимые с Confluent, поэтому настраивается отдельно.
+Если ваши producer сериализуют Avro или Protobuf с помощью AWS Glue SerDe (например, `AWSKafkaAvroSerializer` или `GlueSchemaRegistryKafkaSerializer` для топика Amazon MSK), ClickPipes может получать эти схемы непосредственно из AWS Glue Schema Registry. Glue использует другой формат передачи данных и другой API, чем реестры, совместимые с Confluent, поэтому настраивается отдельно.
 
 Настроить AWS Glue Schema Registry можно в консоли ClickHouse Cloud, через API ClickPipes или с помощью Terraform-провайдера.
 
 <Note>
-  **Kafka:** реестры AWS Glue поддерживают только формат Avro. **Kinesis:** реестры AWS Glue поддерживают `AvroConfluent` и `Protobuf`. JSON через Glue SerDe не поддерживается.
+  Реестры AWS Glue поддерживают форматы `AvroConfluent` и `Protobuf` как для Kafka, так и для Kinesis. JSON через Glue SerDe не поддерживается. В отличие от реестров, совместимых с Confluent, здесь формат нельзя определить по реестру, поэтому явно укажите его при создании ClickPipe.
 </Note>
 
 ### Конфигурация {#glue-configuration}
@@ -87,6 +87,8 @@ ClickPipes динамически получает и применяет схе�
 | ARN роли IAM | Условно     | Выделенная роль для доступа к реестру. Необязательна, если ваш брокер использует аутентификацию IAM; в противном случае обязательна. | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
 
 URL реестра настраивать не требуется. Каждая запись, созданная Glue SerDe, содержит идентификатор своей версии схемы, который ClickPipes получает с помощью `glue:GetSchemaVersion` и кэширует; для каждой уникальной версии схемы выполняется один вызов API. Изменение схемы обрабатывается автоматически: если записи в потоке переключаются на новую версию схемы, она будет получена при первом обращении. Для Kinesis те же поля настраиваются через [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) или [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
+
+Для Protobuf записи должны иметь обрамление, которое формирует сериализатор AWS Glue: 18-байтовый заголовок Glue, затем индекс сообщения в виде беззнакового varint и затем сериализованное сообщение. Индекс — это позиция сообщения среди всех сообщений, определённых в файле схемы (включая вложенные), отсортированных по полному имени. Записи с заголовком Glue, но без индекса сообщения, не поддерживаются.
 
 ### Настройка IAM {#glue-iam-setup}
 
@@ -184,18 +186,19 @@ URL реестра настраивать не требуется. Каждая 
 
 ### Устранение неполадок {#glue-troubleshooting}
 
-| Ошибка                                                                                       | Причина и решение                                                                                                                                                                                                                                           |
-| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `access denied retrieving schema version …: check the IAM role grants glue:GetSchemaVersion` | У идентификатора IAM, используемого для доступа к реестру, отсутствует привилегия `glue:GetSchemaVersion`. При ролевом доступе в политике доверия роли также может не быть указан идентификатор роли вашего сервиса. Ещё раз проверьте настройку IAM выше. |
-| `… is not authorized to perform: sts:AssumeRole on resource: …`                              | В политике доверия указан неверный субъект. В ошибке указана точная роль, которая попыталась принять роль. Используйте это значение в политике доверия.                                                                                                     |
-| `schema version … not found in Glue schema registry`                                         | Записи ссылаются на версию схемы, которой нет в настроенном аккаунте или регионе. Убедитесь, что **регион AWS** совпадает с регионом реестра.                                                                                                              |
-| `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"` | Ваши producer регистрируют схемы в реестре, отличающемся от указанного для пайпа. Исправьте **Имя реестра** или настройте producer на правильный реестр.                                                                                                |
-| `the AWS Glue schema registry only supports the Avro format`                                 | Пайпы Glue поддерживают только формат Avro. JSON и Protobuf через Glue SerDe не поддерживаются.                                                                                                                                                             |
+| Ошибка                                                                                       | Причина и решение                                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access denied retrieving schema version …: check the IAM role grants glue:GetSchemaVersion` | У IAM-идентичности, используемой для доступа к реестру, отсутствует привилегия `glue:GetSchemaVersion`. При ролевом доступе в политике доверия роли также может не быть указан идентификатор роли вашего сервиса. Ещё раз проверьте настройку IAM выше.                                            |
+| `… is not authorized to perform: sts:AssumeRole on resource: …`                              | В политике доверия указан неверный субъект. В ошибке указана точная роль, которая попыталась принять роль. Используйте это значение в политике доверия.                                                                                                                                               |
+| `schema version … not found in Glue schema registry`                                         | Записи ссылаются на версию схемы, которой нет в настроенном аккаунте или регионе. Убедитесь, что **регион AWS** совпадает с регионом реестра.                                                                                                                                                         |
+| `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"` | Ваши producer регистрируют схемы в реестре, отличающемся от указанного для пайпа. Исправьте **Имя реестра** или настройте producer на правильный реестр.                                                                                                                                              |
+| `the AWS Glue schema registry only supports the Avro and Protobuf formats`                   | В ClickPipe реестр Glue используется с неподдерживаемым форматом, например JSON. Выберите Avro или Protobuf.                                                                                                                                                                                          |
+| `message index … out of range: Glue schema version … defines N messages`                     | Запись содержит заголовок Glue, но не содержит корректного индекса сообщения — как правило, потому что пользовательский сериализатор его не записал. В этом случае ClickPipes считывает первый байт сообщения как индекс. Записывайте индекс в producer так же, как это делает сериализатор AWS Glue. |
 
 ### Ограничения {#glue-limitations}
 
-* Kafka поддерживает только Avro. JSON Schema и Protobuf через Glue SerDe не поддерживаются.
-* Kinesis поддерживает `AvroConfluent` и `Protobuf` через AWS Glue Schema Registry. Загруженную схему Protobuf нельзя использовать совместно с реестром схем.
+* Kafka и Kinesis поддерживают `AvroConfluent` и `Protobuf` через AWS Glue Schema Registry. JSON Schema через Glue SerDe не поддерживается.
+* Загруженную схему Protobuf нельзя использовать совместно с реестром схем.
 
 ## Сопоставление схемы {#schema-mapping}
 

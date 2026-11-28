@@ -13,35 +13,39 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Esta configuración está disponible en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se genera automáticamente a partir del código fuente de ClickHouse.
 
-<div id="min_bytes_for_compact_part">
-  ## min_bytes_for_compact_part
-</div>
+## min_bytes_for_compact_part {#min_bytes_for_compact_part}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Configuración obsoleta, no tiene efecto.
 
-<div id="min_bytes_for_full_part_storage">
-  ## min_bytes_for_full_part_storage
-</div>
+## min_bytes_for_full_part_storage {#min_bytes_for_full_part_storage}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Tamaño mínimo sin comprimir en bytes para
 usar el tipo de almacenamiento Full para la data parte en lugar de packed
 
-<div id="min_bytes_for_wide_part">
-  ## min_bytes_for_wide_part
-</div>
+## min_bytes_for_object_shared_data_main_serialization_version {#min_bytes_for_object_shared_data_main_serialization_version}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+
+Tamaño mínimo sin comprimir, en bytes, que debe tener una parte para escribir los datos compartidos dentro del tipo JSON con la versión principal definida en
+[object&#95;shared&#95;data&#95;serialization&#95;version](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version).
+Las partes más pequeñas usan [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;small&#95;parts](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts).
+En el caso de una parte fusionada, el tamaño es el total de las partes fusionadas; en el de una parte modificada, el tamaño de la parte de origen.
+`0` deshabilita la comprobación de tamaño.
+
+## min_bytes_for_wide_part {#min_bytes_for_wide_part}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
 Número mínimo de bytes/filas en una data parte que puede almacenarse en formato `Wide`.
 Puede configurar una, ambas o ninguna de estas opciones.
 
-<div id="min_bytes_to_prewarm_caches">
-  ## min_bytes_to_prewarm_caches
-</div>
+## min_bytes_to_prewarm_caches {#min_bytes_to_prewarm_caches}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -50,9 +54,7 @@ Puede configurar una, ambas o ninguna de estas opciones.
 Tamaño mínimo (en bytes sin comprimir) para precalentar la caché de marcas y la caché del índice primario
 de las partes nuevas
 
-<div id="min_bytes_to_rebalance_partition_over_jbod">
-  ## min_bytes_to_rebalance_partition_over_jbod
-</div>
+## min_bytes_to_rebalance_partition_over_jbod {#min_bytes_to_rebalance_partition_over_jbod}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

@@ -18,11 +18,11 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <CloudOnlyBadge />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "auto"},{"label": "Lecture des données des moteurs de table et des fonctions de table de stockage d’objet via le Distributed Cache lorsqu’il est utilisé pour d’autres lectures."}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
-N&#39;a d&#39;effet que dans ClickHouse Cloud. Autorise la lecture depuis le distributed cache via les moteurs de table / fonctions de table (s3, azure, etc). Le cache utilise l&#39;ETag de l&#39;objet comme clé, de sorte qu&#39;un objet écrasé sur place ne soit jamais servi dans une version obsolète. Un objet dont l&#39;ETag est absent ou ne constitue pas un identifiant de contenu fort est lu directement depuis le stockage d’objet.
+N’a d’effet que dans ClickHouse Cloud. Autorise la lecture depuis le Distributed Cache via les moteurs de table et les fonctions de table (s3, azure, Iceberg, Delta Lake, etc.). Avec `auto` (la valeur par défaut), les lectures passent par le Distributed Cache lorsqu’il est utilisé pour d’autres lectures, selon le paramètre du serveur `enable_read_through_distributed_cache` et le paramètre `force_read_through_distributed_cache`. Le cache utilise comme clé soit l’ETag de l’object, pour éviter de servir une version obsolète d’un object remplacé au même emplacement, soit l’identité immuable d’un fichier de données, extraite des enregistrements de la table (Iceberg, Delta Lake), ce qui évite toute requête `HEAD`. Un object sans ETag fort ni identité de ce type est lu directement depuis le stockage d’objet. Il en va de même pour les lectures que le serveur de cache ne peut pas réexécuter : les lectures de tables `url`, les lectures `s3` avec `NOSIGN` ou avec `headers`, les lectures de fichiers de données dont le chemin est entièrement qualifié (un clone superficiel Delta Lake) et, sauf si le paramètre vaut `1`, les lectures `azure`.
 
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 

@@ -162,6 +162,15 @@ Utiliser des entiers signés pour les index de dictionnaire au format Arrow
 Écrit les valeurs `UUID` sous forme de simple `FixedSizeBinary(16)` Arrow, sans le type d&#39;extension `arrow.uuid` dans les métadonnées du champ.
 À utiliser avec les lecteurs Arrow qui ne prennent pas en charge le type d&#39;extension `arrow.uuid`.
 
+## output_format_arrow_variant_as_json_string {#output_format_arrow_variant_as_json_string}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre permettant d'écrire Variant sous forme de chaîne contenant sa représentation JSON dans une colonne Utf8 au lieu d'une union dense Arrow."}]}]} />
+
+Écrit les valeurs `Variant` dans une colonne Arrow `Utf8` nullable contenant la représentation JSON de chaque valeur (comme dans le format `JSONEachRow` : par exemple, une valeur `String` est entre guillemets), au lieu d&#39;une union dense Arrow. À utiliser avec les lecteurs Arrow qui ne prennent pas en charge les unions.
+Une valeur `NULL` est écrite sous forme de null Arrow, sauf dans une clé de `Map`, qu&#39;Arrow n&#39;autorise pas à être nulle : elle est alors représentée par le `null` JSON.
+
 ## output_format_avro_codec {#output_format_avro_codec}
 
 Codec de compression utilisé pour la sortie. Valeurs possibles : &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;, &#39;bzip2&#39;, &#39;xz&#39;.
@@ -763,6 +772,14 @@ Emplacement des filtres de Bloom dans le fichier Parquet. Les filtres de Bloom s
 
 Méthode de compression du format de sortie Parquet. Codecs pris en charge : snappy, lz4, brotli, zstd, gzip, none (non compressé)
 
+## output_format_parquet_data_page_row_limit {#output_format_parquet_data_page_row_limit}
+
+<SettingsInfoBlock type="UInt64" default_value="20000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "20000"},{"label": "Nouveau paramètre : une page de données Parquet se termine après 20000 lignes, comme avec parquet-mr et Arrow, afin que l'index de pages puisse ignorer des portions de colonnes qui se compressent bien."}]}]} />
+
+Nombre maximal de lignes dans une page de données, vérifié toutes les [output&#95;format&#95;parquet&#95;batch&#95;size](/fr/reference/settings/formats/output-format#output_format_parquet_batch_size) valeurs ; une page se termine également lorsqu&#39;elle atteint [output&#95;format&#95;parquet&#95;data&#95;page&#95;size](/fr/reference/settings/formats/output-format#output_format_parquet_data_page_size). Sans ce paramètre, une colonne qui se compresse bien, par exemple une colonne triée, peut faire tenir un groupe de lignes entier dans une seule page, et l&#39;index de pages ne peut alors en ignorer aucune portion. 0 signifie aucune limite.
+
 ## output_format_parquet_data_page_size {#output_format_parquet_data_page_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
@@ -858,6 +875,14 @@ Utiliser le type String de Parquet au lieu de Binary pour les colonnes de type S
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre."}]}]} />
 
 Encode les colonnes `Float32` et `Float64` (Parquet `FLOAT` et `DOUBLE`) avec l&#39;encodage `ALP` (Adaptive Lossless floating-Point). `ALP` est sans perte et compresse bien mieux que `PLAIN` les données à virgule flottante de nature décimale (prix, mesures, coordonnées). Ces colonnes sont écrites sans dictionnaire, et toute page pour laquelle `ALP` serait plus volumineux que `PLAIN` est écrite en `PLAIN`. Cet encodage ayant été ajouté récemment au format Parquet, il n&#39;est pas encore pris en charge par tous les lecteurs Parquet : ne l&#39;activez que si les fichiers sont destinés à des lecteurs compatibles.
+
+## output_format_parquet_use_data_page_v2 {#output_format_parquet_use_data_page_v2}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nouveau paramètre."}]}]} />
+
+Écrit les pages de données Parquet au format `DataPageV2` au lieu de `DataPage` (V1). `DataPageV2` stocke les niveaux de répétition et de définition sans compression, ce qui permet aux lecteurs d&#39;obtenir les valeurs nulles et les tailles de tableaux sans avoir à décompresser les valeurs. Ce format enregistre également le nombre de lignes et de valeurs nulles dans l&#39;en-tête de page, et fait débuter chaque page en limite de ligne. Certains lecteurs Parquet ne prennent pas en charge `DataPageV2`.
 
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
@@ -1159,6 +1184,39 @@ Ne prend effet que lorsque `output_format_pretty_grid_charset` vaut `UTF-8`.
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Lors de la sérialisation de colonnes Nullable avec les wrappers Google, sérialisez les valeurs par défaut sous forme de wrappers vides. Si cette option est désactivée, les valeurs par défaut et les valeurs NULL ne sont pas sérialisées
+
+## output_format_puffin_blob_type {#output_format_puffin_blob_type}
+
+<SettingsInfoBlock type="String" default_value="deletion-vector-v1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "deletion-vector-v1"},{"label": "Nouveau paramètre pour le format de sortie `Puffin` : le type des blobs écrits."}]}]} />
+
+Type des blobs écrits par le format de sortie `Puffin`. Valeurs possibles :
+
+* `deletion-vector-v1` - l&#39;entrée comporte deux colonnes : le fichier de données référencé et les positions des lignes supprimées ; un blob de vecteur de suppression est écrit pour chaque fichier de données référencé.
+* `apache-datasketches-theta-v1` - chaque colonne d&#39;entrée produit un blob de sketch Apache DataSketches Theta calculé sur ses valeurs non-NULL, dont la propriété `ndv` est définie sur le nombre estimé de valeurs distinctes, comme le fait Iceberg pour écrire les statistiques de colonne.
+
+## output_format_puffin_field_ids {#output_format_puffin_field_ids}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "Nouveau paramètre pour le format de sortie `Puffin` : identifiants de champ Iceberg des colonnes pour les blobs de sketches Theta."}]}]} />
+
+Identifiants de champ Iceberg des colonnes d&#39;entrée, séparés par des virgules, que le format de sortie `Puffin` écrit dans les `fields` des blobs `apache-datasketches-theta-v1`. Obligatoire pour écrire des sketches Theta.
+
+## output_format_puffin_sequence_number {#output_format_puffin_sequence_number}
+
+<SettingsInfoBlock type="Int64" default_value="-1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "-1"},{"label": "Nouveau paramètre pour le format de sortie `Puffin` : numéro de séquence des blobs de sketches Theta."}]}]} />
+
+Numéro de séquence Iceberg écrit dans les blobs `apache-datasketches-theta-v1` par le format de sortie `Puffin`, c&#39;est-à-dire le numéro de séquence du snapshot à partir duquel les statistiques ont été calculées. Obligatoire pour l&#39;écriture de sketches Theta.
+
+## output_format_puffin_snapshot_id {#output_format_puffin_snapshot_id}
+
+<SettingsInfoBlock type="Int64" default_value="-1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "-1"},{"label": "Nouveau paramètre pour le format de sortie `Puffin` : l'ID du snapshot des blobs de sketches Theta."}]}]} />
+
+ID du snapshot Iceberg écrit dans les blobs `apache-datasketches-theta-v1` par le format de sortie `Puffin` : il s&#39;agit du snapshot à partir duquel les statistiques ont été calculées. Obligatoire pour écrire des sketches Theta.
 
 ## output_format_schema {#output_format_schema}
 

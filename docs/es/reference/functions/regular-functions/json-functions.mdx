@@ -901,6 +901,130 @@ SELECT JSONExtractKeysCaseInsensitive('{"User": {"name": "John", "AGE": 25}}', '
 ['name','AGE']
 ```
 
+## JSONExtractLeafPathsAndValues {#JSONExtractLeafPathsAndValues}
+
+Introducido en: v26.11.0
+
+Igual que [`JSONExtractLeafValues`](#JSONExtractLeafValues), pero devuelve una tupla `(path, value)` por cada hoja escalar.
+Consulte la descripción de `JSONExtractLeafValues` para conocer las reglas que rigen las rutas y los argumentos `skip_regex` y `arrays`.
+
+<Note>
+  El resultado no depende de ajustes como `allow_simdjson`, `input_format_json_max_depth` o `json_type_escape_dots_in_keys`.
+  Por lo tanto, un índice sobre la función devuelve las mismas filas que un escaneo completo.
+</Note>
+
+**Sintaxis**
+
+```sql
+JSONExtractLeafPathsAndValues(json[, skip_regex[, arrays]])
+```
+
+**Argumentos**
+
+* `json` — Cadena JSON que se va a analizar. [`String`](/es/reference/data-types/string)
+* `skip_regex` — Opcional. Expresión regular constante (sintaxis de [re2](https://github.com/google/re2/wiki/Syntax)). Las rutas que coinciden se omiten junto con todo lo que cuelga de ellas. Una cadena vacía (valor predeterminado) no omite nada. [`const String`](/es/reference/data-types/string)
+* `arrays` — Opcional. Constante, sensible a mayúsculas y minúsculas. Indica cómo se tratan las matrices: `'skip'`, `'string'` o `'elements'` (valor predeterminado). [`const String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Devuelve las rutas y los valores de las hojas escalares. [`Array(Tuple(path String, value String))`](/es/reference/data-types/array)
+
+**Ejemplos**
+
+**Rutas y valores**
+
+```sql title=Query
+SELECT arrayMap(x -> (x.1, x.2), JSONExtractLeafPathsAndValues('{"a": {"b": "x"}, "c": [1, {"d": true}]}')) AS res;
+```
+
+```response title=Response
+┌─res──────────────────────────────────────────┐
+│ [('a.b','x'),('c[0]','1'),('c[1].d','true')] │
+└──────────────────────────────────────────────┘
+```
+
+## JSONExtractLeafValues {#JSONExtractLeafValues}
+
+Introducido en: v26.11.0
+
+Analiza una cadena JSON y devuelve los valores de todas las hojas escalares del objeto top-level como una matriz de cadenas, en el orden en que aparecen en el documento.
+Una hoja es una cadena, un número o un boolean. `null`, los objetos vacíos y las matrices vacías no generan ningún valor.
+Las cadenas se devuelven sin escapar, y los números y booleanos, como texto JSON (tal como los devuelve [`JSONExtractRaw`](#JSONExtractRaw)).
+Si el JSON no es válido o su nivel superior no es un objeto, el resultado es una matriz vacía.
+Si una clave aparece varias veces, se devuelven todos sus valores.
+
+La ruta de un valor se forma uniendo las claves con `.` y usando `[i]` para el índice de un elemento de una matriz; por ejemplo, `a.b`, `a[0]`, `a[0].b`, `a[0][1]`.
+Las claves no se escapan: una clave `a.b` y una clave anidada `b` dentro de `a` generan la misma ruta, `a.b`.
+A diferencia de lo que ocurre con el tipo de datos `JSON`, el parámetro de configuración [`json_type_escape_dots_in_keys`](/es/reference/settings/formats/other#json_type_escape_dots_in_keys) no se aplica.
+
+`skip_regex` se compara con cada ruta visitada (miembros de objetos a cualquier profundidad, miembros dentro de matrices y rutas de elementos de matrices como `a[0]`).
+Si hay una coincidencia, se omiten el valor y todo lo que contiene.
+Basta con una coincidencia parcial, como en [`match`](/es/reference/functions/regular-functions/string-search-functions#match): use `^` y `$` para que coincida con la ruta completa.
+A diferencia de lo que ocurre con `SKIP REGEXP` del tipo de datos `JSON`, el parámetro de configuración [`type_json_use_partial_match_to_skip_paths_by_regexp`](/es/reference/settings/formats/type-json#type_json_use_partial_match_to_skip_paths_by_regexp) no se aplica.
+
+En el modo `'string'`, las matrices se devuelven completas, sin límite de profundidad.
+
+<Note>
+  El resultado no depende de ajustes como `allow_simdjson`, `input_format_json_max_depth` y `json_type_escape_dots_in_keys`.
+  Por lo tanto, un índice sobre la función devuelve las mismas filas que un escaneo completo.
+</Note>
+
+Use [`JSONAllValues`](/es/reference/functions/regular-functions/json-functions#JSONAllValues) para columnas del tipo de datos `JSON`.
+
+**Sintaxis**
+
+```sql
+JSONExtractLeafValues(json[, skip_regex[, arrays]])
+```
+
+**Argumentos**
+
+* `json` — Cadena JSON que se va a analizar. [`String`](/es/reference/data-types/string)
+* `skip_regex` — Opcional. Expresión regular constante (sintaxis de [re2](https://github.com/google/re2/wiki/Syntax)). Las rutas que coinciden se omiten junto con todo lo que se encuentra por debajo de ellas. Una cadena vacía (valor predeterminado) no omite nada. [`const String`](/es/reference/data-types/string)
+* `arrays` — Opcional. Constante, sensible a mayúsculas y minúsculas. Define cómo se tratan las matrices: `'skip'` no produce nada para las matrices, `'string'` devuelve cada matriz como un único valor en JSON compacto y `'elements'` (valor predeterminado) recorre los elementos; en este caso, las rutas de los elementos son `a[0]`, `a[1]`, etc. [`const String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Devuelve los valores de las hojas escalares. [`Array(String)`](/es/reference/data-types/array)
+
+**Ejemplos**
+
+**Objetos anidados y matrices**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": {"b": "x", "c": 1.50}, "d": [true, null, {"e": "y"}], "f": null}') AS res;
+```
+
+```response title=Response
+┌─res────────────────────┐
+│ ['x','1.5','true','y'] │
+└────────────────────────┘
+```
+
+**Omisión de rutas**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": "x", "b_noindex": {"c": "y"}, "d": [{"e_noindex": "z", "f": "w"}]}', '.*_noindex$') AS res;
+```
+
+```response title=Response
+┌─res───────┐
+│ ['x','w'] │
+└───────────┘
+```
+
+**Matrices como cadenas**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": [1, 2], "b": "x"}', '', 'string') AS res;
+```
+
+```response title=Response
+┌─res───────────┐
+│ ['[1,2]','x'] │
+└───────────────┘
+```
+
 ## JSONExtractRaw {#JSONExtractRaw}
 
 Introducido en: v20.1.0

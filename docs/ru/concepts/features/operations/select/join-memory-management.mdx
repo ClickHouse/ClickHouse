@@ -25,14 +25,14 @@ doc_type: 'guide'
 
 Для других алгоритмов лимиты действуют иначе:
 
-* Для [`ie_join`](/ru/concepts/features/operations/select/join-algorithms#ie-join) лимиты применяются к суммарному объёму накопленных входных данных обеих сторон.
+* Для [`inequality`](/ru/concepts/features/operations/select/join-algorithms#inequality) лимиты применяются к суммарному объёму накопленных входных данных обеих сторон.
 * Для [перехода на резервный вариант block nested loop](/ru/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback) лимиты применяются к материализованной правой стороне, включая блоки, выгруженные на диск.
 * Для [`partial_merge`](/ru/concepts/features/operations/select/join-algorithms#partial-merge) достижение лимита не останавливает запрос, а меняет стратегию выполнения: JOIN начинает записывать свои отсортированные правые блоки на диск.
 
 ## Пороги сброса на диск {#spill-thresholds}
 
 * [`max_bytes_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) задаёт абсолютный порог сброса на диск в байтах для правой части JOIN, основанного на хешировании.
-* [`max_bytes_ratio_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) задаёт порог сброса на диск как долю памяти, остающейся в пределах ограничений памяти пользователя и сервера. Если ограничение памяти не настроено, эта доля ни на что не влияет.
+* [`max_bytes_ratio_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) задаёт порог сброса на диск как долю памяти, остающейся в пределах `max_memory_usage` запроса, а также ограничений памяти пользователя и сервера. Если ограничение памяти не настроено, эта доля ни на что не влияет.
 
 Если заданы обе настройки, применяется меньший из получившихся порогов. Пороговые значения действуют для `hash`, `parallel_hash`, `grace_hash`, значения `auto`, а также при переходе на резервный вариант block nested loop. Для их работы необходимо настроить путь для временных данных.
 
@@ -46,7 +46,7 @@ doc_type: 'guide'
 * **`partial_merge`.** Когда правая сторона достигает жёсткого лимита, отсортированные блоки правой стороны и их индексы минимумов и максимумов записываются во временные файлы.
 * **Переход на резервный вариант block nested loop.** Блоки правой стороны сжимаются в памяти, а после достижения порога сброса на диск записываются во временные файлы.
 
-Алгоритмы [`direct`](/ru/concepts/features/operations/select/join-algorithms#direct) и [`ie_join`](/ru/concepts/features/operations/select/join-algorithms#ie-join) не сбрасывают данные на диск.
+Алгоритмы [`direct`](/ru/concepts/features/operations/select/join-algorithms#direct) и [`inequality`](/ru/concepts/features/operations/select/join-algorithms#inequality) не сбрасывают данные на диск.
 
 Временные файлы записываются в хранилище, заданное настройкой сервера [`tmp_path`](/ru/reference/settings/server-settings/settings/tmp#tmp_path), [`tmp_policy`](/ru/reference/settings/server-settings/settings/tmp#tmp_policy) или [`temporary_data_in_cache`](/ru/reference/settings/server-settings/settings/temporary-data#temporary_data_in_cache). Чтение и запись временных файлов создают дополнительную нагрузку на дисковый ввод-вывод, поэтому JOIN со сбросом данных на диск выполняется медленнее, чем тот же JOIN в памяти.
 

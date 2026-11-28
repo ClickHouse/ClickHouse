@@ -1065,6 +1065,23 @@ Protobuf 포맷의 스키마 추론 시 지원되지 않는 타입의 필드를 
 
 텍스트 형식(CSV, TSV)을 읽는 동안 발생하는 오류를 기록하는 데 사용하는 파일 경로입니다.
 
+## input_format_skip_duplicated_fields {#input_format_skip_duplicated_fields}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "입력 데이터의 한 행에서 필드가 반복해서 나타날 때 예외를 발생시키는 대신 반복 출현을 건너뛰는 새로운 설정입니다."}]}]} />
+
+입력 데이터의 한 행 안에서 반복해서 나타나는 필드의 출현을 건너뛰는 기능을 활성화하거나 비활성화합니다.
+
+활성화하면 한 행에 두 번 이상 나타나는 필드는 `Duplicate field found` 예외를 발생시키지 않고 첫 번째 값을 유지하며, 나머지 출현은 건너뜁니다. 이 경우 스키마 추론은 해당 필드의 유형을 첫 번째 값을 기준으로 추론합니다.
+
+지원 형식:
+
+* `JSONEachRow` 및 JSON 객체를 같은 방식으로 읽는 포맷(`JSONStringsEachRow`, `JSONObjectEachRow`, `JSON`의 행). `input_format_import_nested_json`으로 읽는 중첩된 필드도 포함됩니다.
+* `BSONEachRow`
+* `TSKV`
+* `Form`
+
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
