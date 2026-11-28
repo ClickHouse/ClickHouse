@@ -28,6 +28,24 @@ void countJSONDeserializationElement();
 /// an untrusted array length cannot force a large allocation before the per-element budget check runs.
 size_t getJSONDeserializationRemainingElements();
 
+/// While alive, marks `json` as the only object `ASTFunction::readJSON` may restore with a parameterized
+/// name (`query_parameter_name`): the `table_function` of an `ASTTableExpression`, the only place the SQL
+/// parser builds one. Enforcing the slot at construction covers every owner of an `ASTFunction`, including
+/// those that keep it outside `children` (`ASTTTLElement`, `ASTBackupQuery`).
+class AllowParameterizedFunctionName
+{
+public:
+    explicit AllowParameterizedFunctionName(const Poco::JSON::Object * json);
+    ~AllowParameterizedFunctionName();
+    AllowParameterizedFunctionName(const AllowParameterizedFunctionName &) = delete;
+    AllowParameterizedFunctionName & operator=(const AllowParameterizedFunctionName &) = delete;
+
+    static bool isAllowedFor(const Poco::JSON::Object & json);
+
+private:
+    const Poco::JSON::Object * previous;
+};
+
 /// Returns true when the buffer [begin, end) begins with a valid SQL `SET` query. Used as an
 /// escape hatch when a non-ClickHouse dialect is active so users can still send
 /// `SET dialect = ...` queries in plain SQL to switch back to another dialect.

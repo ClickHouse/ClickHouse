@@ -496,6 +496,7 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
     /// `table_function` is parser-owned as an `ASTFunction`; `formatImpl` downcasts it with
     /// `table_function->as<ASTFunction>()->preferSubqueryToFunctionFormatting()`, so a wrong
     /// node type from malformed `clickhouse_json` must be rejected here.
+    AllowParameterizedFunctionName allow_parameterized_name(json.has("table_function") ? json.getObject("table_function").get() : nullptr);
     child = r.readScreenedChildOfType<ASTFunction>("table_function");
     if (child)
     {

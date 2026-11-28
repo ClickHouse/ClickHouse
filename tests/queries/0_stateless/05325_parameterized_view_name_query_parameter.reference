@@ -1,0 +1,12 @@
+1	Alice
+2	Bob
+4	Carol
+2	Bob
+SELECT * FROM {table:Identifier}(name_pattern = {name_pattern:String})
+id	UInt64
+name	String
+surname	String
+42
+CREATE VIEW default.test_05325_secret\nAS SELECT *\nFROM {f:Identifier}(\'[HIDDEN]\')
+CREATE VIEW default.test_05325_secret AS SELECT * FROM {f:Identifier}(\'[HIDDEN]\')
+1

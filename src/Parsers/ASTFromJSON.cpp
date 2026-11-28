@@ -110,6 +110,7 @@ static thread_local size_t json_deser_max_depth = 0;
 static thread_local size_t json_deser_max_elements = 0;
 static thread_local size_t json_deser_current_depth = 0;
 static thread_local size_t json_deser_current_elements = 0;
+static thread_local const Poco::JSON::Object * json_deser_parameterized_name_object = nullptr;
 
 namespace
 {
@@ -366,6 +367,22 @@ void dismantleJSON(const Poco::Dynamic::Var & root)
     }
 }
 
+}
+
+AllowParameterizedFunctionName::AllowParameterizedFunctionName(const Poco::JSON::Object * json)
+    : previous(json_deser_parameterized_name_object)
+{
+    json_deser_parameterized_name_object = json;
+}
+
+AllowParameterizedFunctionName::~AllowParameterizedFunctionName()
+{
+    json_deser_parameterized_name_object = previous;
+}
+
+bool AllowParameterizedFunctionName::isAllowedFor(const Poco::JSON::Object & json)
+{
+    return json_deser_parameterized_name_object == &json;
 }
 
 ASTPtr IAST::createFromJSON(const String & json)
