@@ -2096,6 +2096,7 @@ const Event Counters::num_counters = END;
 constexpr size_t counts_per_cache_line = DB::CH_CACHE_LINE_SIZE / sizeof(Count);
 static_assert((counts_per_cache_line & (counts_per_cache_line - 1)) == 0);
 extern const size_t per_cpu_stride = (static_cast<size_t>(END) + counts_per_cache_line - 1) & ~(counts_per_cache_line - 1);
+extern const size_t per_cpu_stride_bytes = per_cpu_stride * sizeof(Count);
 
 /// Per-CPU storage for `global_counters`, cache-line aligned. `Count` is trivially default-
 /// constructible, so this static array is a guaranteed zero-init BSS with no dynamic initializer:
