@@ -67,6 +67,8 @@ namespace DB::ErrorCodes
 {
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int ICEBERG_COMMIT_REJECTED;
+    extern const int ICEBERG_COMMIT_STATE_UNKNOWN;
     extern const int FAULT_INJECTED;
 }
 
@@ -897,7 +899,7 @@ bool GlueCatalog::commitTableUpdate(
         auto get_outcome = glue_client->GetTable(get_request);
         if (!get_outcome.IsSuccess())
             throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                update_may_have_landed ? DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN : DB::ErrorCodes::ICEBERG_COMMIT_REJECTED,
                 "Exception calling GetTable for table {}.{}: {}",
                 namespace_name, table_name, get_outcome.GetError().GetMessage());
 
@@ -932,7 +934,7 @@ bool GlueCatalog::commitTableUpdate(
                 return true;
 
             throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
                 "Unknown outcome of commit of {} to Glue table {}.{}: it now points to {}",
                 new_metadata_path, namespace_name, table_name, current_metadata_path);
         }
@@ -953,10 +955,19 @@ bool GlueCatalog::commitTableUpdate(
             return true;
 
         if (response.GetError().GetErrorType() != Aws::Glue::GlueErrors::CONCURRENT_MODIFICATION)
+        {
+            const auto error = response.GetError().GetErrorType();
+            const bool rejected = !update_may_have_landed && !request_retried
+                && (error == Aws::Glue::GlueErrors::ACCESS_DENIED
+                    || error == Aws::Glue::GlueErrors::INVALID_INPUT
+                    || error == Aws::Glue::GlueErrors::VALIDATION
+                    || error == Aws::Glue::GlueErrors::ENTITY_NOT_FOUND);
+            /// Explicit rejections are safe to clean up only when no earlier request may have landed.
             throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-                "Can not update metadata of table {}.{} in Glue catalog: {}",
+                rejected ? DB::ErrorCodes::ICEBERG_COMMIT_REJECTED : DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
+                "Iceberg Glue commit failed for table {}.{}: {}",
                 namespace_name, table_name, response.GetError().GetMessage());
+        }
 
         /// A rejected single attempt did not land; after an SDK retry the rejection may come from our own landed attempt.
         update_may_have_landed = update_may_have_landed || request_retried;
@@ -964,7 +975,7 @@ bool GlueCatalog::commitTableUpdate(
     }
 
     throw DB::Exception(
-        DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+        update_may_have_landed ? DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN : DB::ErrorCodes::ICEBERG_COMMIT_REJECTED,
         "Can not update metadata of table {}.{} in Glue catalog: it was modified concurrently {} times",
         namespace_name, table_name, MAX_UPDATE_TABLE_ATTEMPTS);
 }
@@ -977,7 +988,22 @@ bool GlueCatalog::updateMetadata(
     Poco::JSON::Object::Ptr /*new_snapshot*/,
     Poco::JSON::Object::Ptr new_metadata) const
 {
-    return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, nullptr, new_metadata);
+    try
+    {
+        return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, nullptr, new_metadata);
+    }
+    catch (...)
+    {
+        const int code = DB::getCurrentExceptionCode();
+        if (code == DB::ErrorCodes::ICEBERG_COMMIT_REJECTED || code == DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN)
+            throw;
+
+        /// The SDK may throw while reading a response after `UpdateTable` committed.
+        throw DB::Exception(
+            DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
+            "Iceberg Glue commit outcome is unknown for table {}.{}, the data may have been committed: {}",
+            namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
+    }
 }
 
 bool GlueCatalog::updateSchema(

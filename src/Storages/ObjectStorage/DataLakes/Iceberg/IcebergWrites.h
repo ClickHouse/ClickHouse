@@ -233,7 +233,7 @@ private:
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
-    /// Best-effort removal of the written data files and manifests; never throws.
+    /// Best-effort removal of the written data files, manifests, and statistics; never throws.
     void removeDataFilesAndManifests();
     /// Reads the latest committed metadata: on the first chunk to write the data files with it,
     /// after a commit lost to a concurrent commit to make it the base of the next attempt.
@@ -255,8 +255,11 @@ private:
     /// A commit attempt may have published the snapshot referencing the written files, so they must not be removed.
     bool commit_outcome_unknown = false;
 
-    /// The manifests are written once and reused on commit retries.
+    /// Staged manifests and manifest lists eligible for cleanup before a commit or after a confirmed rejection.
     Strings manifest_entries_in_storage;
+    /// Staged statistics eligible for cleanup before a commit or after a confirmed rejection.
+    std::optional<String> statistics_file_path;
+    /// The manifests are written once and reused on commit retries.
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
     std::vector<Int64> manifest_entry_row_counts;

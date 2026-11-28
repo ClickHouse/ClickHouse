@@ -1727,7 +1727,6 @@ void IcebergStorageSink::finalizeBuffers()
 
         if (initializeMetadata())
         {
-            committed = true;
             return;
         }
     }
@@ -1800,6 +1799,18 @@ void IcebergStorageSink::removeDataFilesAndManifests()
             tryLogCurrentException(log, fmt::format("Best-effort cleanup failed for {}", manifest_filename_in_storage));
         }
     }
+
+    if (statistics_file_path)
+    {
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(*statistics_file_path));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Best-effort cleanup failed for {}", *statistics_file_path));
+        }
+    }
 }
 
 bool IcebergStorageSink::initializeMetadata()
@@ -1837,15 +1848,15 @@ bool IcebergStorageSink::initializeMetadata()
         MetadataGenerator::SnapshotOperation::Append,
         refresh_cursor);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
-    std::optional<String> statistics_file_path;
 
-    auto cleanup = [&] (bool retry_because_of_metadata_conflict)
+    auto prepareRetryAfterMetadataConflict = [&]
     {
         auto best_effort_remove = [&](const String & path)
         {
             try
             {
                 object_storage->removeObjectIfExists(StoredObject(path));
+                std::erase(manifest_entries_in_storage, path);
             }
             catch (...)
             {
@@ -1853,11 +1864,8 @@ bool IcebergStorageSink::initializeMetadata()
             }
         };
 
-        /// A commit conflict keeps the data files and the manifests for the next attempt. Only the manifest list depends on the attempt.
-        if (!retry_because_of_metadata_conflict)
-            removeDataFilesAndManifests();
-
-        /// After a conflict the caller rebases the next attempt with `readLatestMetadata`.
+        /// A commit conflict keeps the data files and manifests for the next attempt, but removes its manifest list and statistics.
+        /// The caller reads the latest metadata with `readLatestMetadata` before the next attempt.
         best_effort_remove(storage_manifest_list_name);
         if (statistics_file_path)
             best_effort_remove(*statistics_file_path);
@@ -1975,35 +1983,28 @@ bool IcebergStorageSink::initializeMetadata()
                 write_manifest();
         }
         {
+            manifest_entries_in_storage.push_back(storage_manifest_list_name);
             auto buffer_manifest_list = object_storage->writeObject(
                 StoredObject(storage_manifest_list_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
-            try
-            {
-                generateManifestList(
-                    persistent_table_components.path_resolver,
-                    metadata, object_storage, context,
-                    manifest_entries,
-                    new_snapshot,
-                    manifest_entry_sizes,
-                    *buffer_manifest_list,
-                    Iceberg::FileContentType::DATA,
-                    /* use_previous_snapshots = */ true,
-                    /* per_entry_content_types = */ {},
-                    /* entry_counts = */ {},
-                    /* carry_forward_manifest_paths = */ {},
-                    /// Explicit, because after a conflict the default spec may differ from the one the manifests were written with.
-                    std::vector<Int64>(manifest_entries.size(), partition_spec_id),
-                    entry_partition_summaries,
-                    manifest_entry_row_counts,
-                    manifest_entry_file_counts);
-                buffer_manifest_list->finalize();
-            }
-            catch (...)
-            {
-                cleanup(false);
-                throw;
-            }
+            generateManifestList(
+                persistent_table_components.path_resolver,
+                metadata, object_storage, context,
+                manifest_entries,
+                new_snapshot,
+                manifest_entry_sizes,
+                *buffer_manifest_list,
+                Iceberg::FileContentType::DATA,
+                /* use_previous_snapshots = */ true,
+                /* per_entry_content_types = */ {},
+                /* entry_counts = */ {},
+                /* carry_forward_manifest_paths = */ {},
+                /// Explicit, because after a conflict the default spec may differ from the one the manifests were written with.
+                std::vector<Int64>(manifest_entries.size(), partition_spec_id),
+                entry_partition_summaries,
+                manifest_entry_row_counts,
+                manifest_entry_file_counts);
+            buffer_manifest_list->finalize();
         }
 
         if (column_sketches)
@@ -2054,7 +2055,7 @@ bool IcebergStorageSink::initializeMetadata()
                     context,
                     log))
             {
-                cleanup(true);
+                prepareRetryAfterMetadataConflict();
                 return false;
             }
             committed = true;
@@ -2067,7 +2068,7 @@ bool IcebergStorageSink::initializeMetadata()
     {
         /// The snapshot that references the files is published, or may be.
         if (!committed && !commit_outcome_unknown)
-            cleanup(false);
+            removeDataFilesAndManifests();
         throw;
     }
     return true;

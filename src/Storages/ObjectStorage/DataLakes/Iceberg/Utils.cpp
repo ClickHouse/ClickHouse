@@ -95,6 +95,7 @@ extern const int FILE_ALREADY_EXISTS;
 extern const int STALE_VERSION;
 extern const int S3_ERROR;
 extern const int CANNOT_WRITE_TO_FILE;
+extern const int ICEBERG_COMMIT_REJECTED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -709,8 +710,21 @@ bool commitMetadataFile(
 
             const auto catalog_filename = resolver.resolveForCatalog(metadata_file_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            committed = catalog->updateMetadata(
-                namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata);
+            try
+            {
+                committed = catalog->updateMetadata(
+                    namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::ICEBERG_COMMIT_REJECTED)
+                {
+                    commit_outcome_unknown = false;
+                    if (!catalog_writes_metadata_file)
+                        removeRejectedMetadataFile(resolver, metadata_file_info, object_storage);
+                }
+                throw;
+            }
 
             if (!committed)
             {

@@ -1,6 +1,8 @@
+import os
 import requests
 import time
 import uuid
+from urllib.parse import urlsplit
 
 import pandas as pd
 import pyarrow as pa
@@ -16,7 +18,7 @@ from pyiceberg.types import (
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
-from helpers.test_tools import TSV, csv_compare
+from helpers.test_tools import TSV, csv_compare, wait_condition
 
 BASE_URL = "http://lakekeeper:8181/catalog"
 CATALOG_NAME = "demo"
@@ -573,3 +575,331 @@ def test_namespace_writes(started_cluster, depth):
         assert identifier not in catalog.list_tables(namespace)
     finally:
         node.query(f"DROP DATABASE {db}")
+
+
+@pytest.fixture
+def commit_response_proxy(started_cluster):
+    node = started_cluster.instances["node1"]
+    port = 18081
+    proxy_path = "/var/lib/clickhouse/commit_response_proxy.py"
+    proxy_log = "/var/lib/clickhouse/commit_response_proxy.log"
+    node.copy_file_to_container(
+        os.path.join(os.path.dirname(__file__), "commit_response_proxy.py"), proxy_path
+    )
+    node.exec_in_container(
+        ["bash", "-c", f"python3 {proxy_path} {port} > {proxy_log} 2>&1 & echo $! > {proxy_path}.pid"]
+    )
+    control_url = f"http://{node.ip_address}:{port}/control"
+
+    def ready():
+        try:
+            return requests.get(f"{control_url}/ready", timeout=1).status_code == 200
+        except requests.ConnectionError:
+            return False
+
+    try:
+        wait_condition(ready, bool, max_attempts=100)
+        yield f"http://localhost:{port}/catalog", control_url
+    finally:
+        try:
+            requests.post(f"{control_url}/release", timeout=5).raise_for_status()
+        finally:
+            node.exec_in_container(
+                ["bash", "-c", f"kill $(cat {proxy_path}.pid)"], nothrow=True
+            )
+
+
+@pytest.mark.parametrize(
+    "response_mode,readback_mode,operation",
+    [
+        ("drop", "normal", "insert"),
+        ("server_error", "normal", "insert"),
+        ("drop", "superseded", "insert"),
+        ("drop", "read_error", "insert"),
+        ("drop", "missing", "insert"),
+        ("drop", "mismatch", "insert"),
+        # Force a replay before allowing reconciliation.
+        ("drop", "read_error_once", "insert"),
+        # A later rejection must not authorize cleanup of an earlier commit.
+        ("replay_reject", "read_error", "insert"),
+        ("replay_unavailable", "read_error", "insert"),
+        ("drop", "read_error", "mutation"),
+        ("drop", "read_error", "compaction"),
+        ("drop", "read_error", "drop_partition"),
+    ],
+)
+def test_preserves_files_after_lost_commit_response(
+    started_cluster, commit_response_proxy, response_mode, readback_mode, operation
+):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    proxy_url, control_url = commit_response_proxy
+    suffix = uuid.uuid4().hex
+    namespace = f"lost_commit_{suffix}"
+    database = f"lost_commit_{suffix}"
+    identifier = (namespace, "events")
+    table_name = f"{database}.`{namespace}.events`"
+    settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+    }
+    cancel = response_mode == "replay_unavailable"
+    if cancel:
+        settings["async_insert"] = 0
+    query_id = f"lost_commit_{suffix}"
+    node.query(
+        f"CREATE DATABASE {database} ENGINE = DataLakeCatalog("
+        f"'{proxy_url}', 'minio', '{minio_secret_key}') "
+        "SETTINGS catalog_type = 'rest', warehouse = 'demo', "
+        "storage_endpoint = 'http://minio1:9001/warehouse-rest'",
+        settings={"allow_database_iceberg": 1},
+    )
+    insert = None
+    try:
+        partition = "PARTITION BY id" if operation == "drop_partition" else ""
+        node.query(
+            f"CREATE TABLE {table_name} (id Int32) ENGINE = Iceberg {partition}",
+            settings=settings,
+        )
+        node.query(f"INSERT INTO {table_name} VALUES (1)", settings=settings)
+        assert node.query(f"SELECT id FROM {table_name}") == "1\n"
+        if operation != "insert":
+            node.query(f"INSERT INTO {table_name} VALUES (2)", settings=settings)
+        baseline_id = catalog.load_table(identifier).metadata.current_snapshot_id
+
+        # Intercept the next snapshot commit for this table.
+        requests.post(
+            f"{control_url}/arm",
+            json={
+                "identifier": {"namespace": [namespace], "name": "events"},
+                "response_mode": response_mode,
+                "readback_mode": readback_mode,
+            },
+            timeout=5,
+        ).raise_for_status()
+        queries = {
+            "insert": f"INSERT INTO {table_name} VALUES (2)",
+            "mutation": f"ALTER TABLE {table_name} DELETE WHERE id = 2",
+            "compaction": (
+                f"OPTIMIZE TABLE {table_name} MANIFEST SETTINGS "
+                "allow_experimental_iceberg_compaction = 1, iceberg_manifest_min_count_to_compact = 1"
+            ),
+            "drop_partition": f"ALTER TABLE {table_name} DROP PARTITION 2",
+        }
+        insert = node.get_query_request(
+            queries[operation], settings=settings, timeout=180, query_id=query_id
+        )
+        # waits until the proxy has forwarded that commit to the catalog
+        response = requests.get(f"{control_url}/committed", timeout=65)
+        response.raise_for_status()
+        attempted_snapshot = response.json()
+        # NOTE: at this point the catalog has committed the new snapshot, while
+        #       ClickHouse is still waiting.
+        snapshot_id = attempted_snapshot["snapshot-id"]
+        assert snapshot_id != baseline_id
+
+        # Read directly from the real catalog while ClickHouse still awaits its response.
+        committed_table = catalog.load_table(identifier)
+        assert committed_table.metadata.current_snapshot_id == snapshot_id
+        snapshot = committed_table.current_snapshot()
+        assert snapshot.manifest_list == attempted_snapshot["manifest-list"]
+        referenced = {snapshot.manifest_list}
+        referenced.update(manifest.manifest_path for manifest in snapshot.manifests(committed_table.io))
+        for task in committed_table.scan().plan_files():
+            referenced.add(task.file.file_path)
+            referenced.update(file.file_path for file in task.delete_files)
+
+        def missing_files():
+            return sorted(path for path in referenced if not committed_table.io.new_input(path).exists())
+
+        assert not missing_files(), "Committed files must exist before dropping the response"
+        expected_ids = [1] if operation in {"mutation", "drop_partition"} else [1, 2]
+        assert sorted(committed_table.scan().to_arrow().column("id").to_pylist()) == expected_ids
+
+        expected_snapshot_id = snapshot_id
+        if readback_mode == "superseded":
+            node.query(f"INSERT INTO {table_name} VALUES (3)", settings=settings)
+            expected_ids.append(3)
+            expected_snapshot_id = catalog.load_table(identifier).metadata.current_snapshot_id
+            assert expected_snapshot_id != snapshot_id
+
+        # Release the injected failure after verifying the committed files.
+        requests.post(f"{control_url}/release", timeout=5).raise_for_status()
+        if cancel:
+            # The eighth failure starts the default ten-second backoff.
+            node.wait_for_log_line(
+                f"Retrying Iceberg commit for {namespace}.events after attempt 8/10", timeout=60
+            )
+            counts = requests.get(f"{control_url}/counts", timeout=5)
+            counts.raise_for_status()
+            attempts = counts.json()["attempts"]
+            assert attempts == 8, counts.json()
+            node.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC", timeout=5)
+        _, insert_error = insert.get_answer_and_error()
+        insert = None
+        if cancel:
+            assert (
+                "QUERY_WAS_CANCELLED" in insert_error
+                or "ICEBERG_COMMIT_STATE_UNKNOWN" in insert_error
+            ), insert_error
+        elif readback_mode in {"read_error", "missing", "mismatch"}:
+            assert "ICEBERG_COMMIT_STATE_UNKNOWN" in insert_error, insert_error
+        else:
+            assert not insert_error, insert_error
+        counts = requests.get(f"{control_url}/counts", timeout=5)
+        counts.raise_for_status()
+        counts = counts.json()
+        if cancel:
+            assert counts["attempts"] == attempts, counts
+        elif readback_mode in {"read_error", "missing", "mismatch", "read_error_once"}:
+            assert counts["attempts"] == 2, counts
+            expected_status = 400 if response_mode == "replay_reject" else 409
+            assert counts["statuses"] == [expected_status], counts
+            assert counts["reads"] == 2, counts
+        requests.post(f"{control_url}/reset", timeout=5).raise_for_status()
+        current = catalog.load_table(identifier)
+        assert current.metadata.current_snapshot_id == expected_snapshot_id
+        missing = missing_files()
+        read_result, read_error = node.get_query_request(
+            f"SELECT id FROM {table_name} ORDER BY id", timeout=60
+        ).get_answer_and_error()
+        assert not missing, (
+            f"Snapshot {snapshot_id} remains committed, but ClickHouse deleted its "
+            f"referenced files after losing the commit response: {missing}. "
+            f"Insert error: {insert_error}\nRead error: {read_error}"
+        )
+        assert not read_error, f"Reading committed snapshot {snapshot_id} failed: {read_error}"
+        assert read_result == "".join(f"{value}\n" for value in expected_ids)
+        assert sorted(current.scan().to_arrow().column("id").to_pylist()) == expected_ids
+    finally:
+        requests.post(f"{control_url}/release", timeout=5).raise_for_status()
+        if insert is not None:
+            insert.get_answer_and_error()
+        requests.post(f"{control_url}/reset", timeout=5).raise_for_status()
+        node.query(f"DROP DATABASE {database}")
+
+
+def test_insert_retries_before_commit(started_cluster, commit_response_proxy):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    proxy_url, control_url = commit_response_proxy
+    namespace = f"retry_commit_{uuid.uuid4().hex}"
+    database = namespace
+    table_name = f"{database}.`{namespace}.events`"
+    settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        "async_insert": 0,
+    }
+    node.query(
+        f"CREATE DATABASE {database} ENGINE = DataLakeCatalog("
+        f"'{proxy_url}', 'minio', '{minio_secret_key}') "
+        "SETTINGS catalog_type = 'rest', warehouse = 'demo', "
+        "storage_endpoint = 'http://minio1:9001/warehouse-rest'",
+        settings={"allow_database_iceberg": 1},
+    )
+    try:
+        node.query(f"CREATE TABLE {table_name} (id Int32) ENGINE = Iceberg", settings=settings)
+        node.query(f"INSERT INTO {table_name} VALUES (1)", settings=settings)
+        requests.post(
+            f"{control_url}/arm",
+            json={
+                "identifier": {"namespace": [namespace], "name": "events"},
+                "response_mode": "unavailable",
+            },
+            timeout=5,
+        ).raise_for_status()
+        requests.post(f"{control_url}/release", timeout=5).raise_for_status()
+        node.query(f"INSERT INTO {table_name} VALUES (2)", settings=settings)
+
+        counts = requests.get(f"{control_url}/counts", timeout=5)
+        counts.raise_for_status()
+        assert counts.json() == {"attempts": 2, "statuses": [503, 200], "reads": 1}
+        attempted = requests.get(f"{control_url}/intercepted", timeout=5)
+        attempted.raise_for_status()
+        table = catalog.load_table((namespace, "events"))
+        assert table.metadata.current_snapshot_id == attempted.json()["snapshot-id"]
+        assert len(table.metadata.snapshots) == 2
+        assert sorted(table.scan().to_arrow().column("id").to_pylist()) == [1, 2]
+        assert node.query(f"SELECT id FROM {table_name} ORDER BY id") == "1\n2\n"
+    finally:
+        requests.post(f"{control_url}/reset", timeout=5).raise_for_status()
+        node.query(f"DROP DATABASE {database}")
+
+
+def test_insert_cleans_files_after_rejected_commit(started_cluster, commit_response_proxy):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    proxy_url, control_url = commit_response_proxy
+    namespace = f"rejected_commit_{uuid.uuid4().hex}"
+    database = namespace
+    identifier = (namespace, "events")
+    table_name = f"{database}.`{namespace}.events`"
+    settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        "async_insert": 0,
+    }
+    node.query(
+        f"CREATE DATABASE {database} ENGINE = DataLakeCatalog("
+        f"'{proxy_url}', 'minio', '{minio_secret_key}') "
+        "SETTINGS catalog_type = 'rest', warehouse = 'demo', "
+        "storage_endpoint = 'http://minio1:9001/warehouse-rest'",
+        settings={"allow_database_iceberg": 1},
+    )
+    insert = None
+    try:
+        node.query(
+            f"CREATE TABLE {table_name} (id Int32) ENGINE = Iceberg", settings=settings
+        )
+        node.query(f"INSERT INTO {table_name} VALUES (1)", settings=settings)
+        baseline = catalog.load_table(identifier)
+        baseline_id = baseline.metadata.current_snapshot_id
+        location = urlsplit(baseline.metadata.location)
+
+        def table_files():
+            return {
+                obj.object_name
+                for obj in started_cluster.minio_client.list_objects(
+                    location.netloc,
+                    prefix=location.path.lstrip("/").rstrip("/") + "/",
+                    recursive=True,
+                )
+            }
+
+        baseline_files = table_files()
+        requests.post(
+            f"{control_url}/arm",
+            json={
+                "identifier": {"namespace": [namespace], "name": "events"},
+                "response_mode": "reject",
+            },
+            timeout=5,
+        ).raise_for_status()
+        insert = node.get_query_request(
+            f"INSERT INTO {table_name} VALUES (2)", settings=settings, timeout=180
+        )
+        response = requests.get(f"{control_url}/intercepted", timeout=65)
+        response.raise_for_status()
+        attempted_snapshot_id = response.json()["snapshot-id"]
+        assert attempted_snapshot_id != baseline_id
+        uploaded_files = table_files() - baseline_files
+        assert any(path.endswith(".parquet") for path in uploaded_files)
+        assert any(path.endswith(".avro") for path in uploaded_files)
+
+        requests.post(f"{control_url}/release", timeout=5).raise_for_status()
+        _, error = insert.get_answer_and_error()
+        insert = None
+        assert "Injected commit rejection" in error
+        assert "ICEBERG_COMMIT_REJECTED" in error
+        counts = requests.get(f"{control_url}/counts", timeout=5)
+        counts.raise_for_status()
+        assert counts.json() == {"attempts": 1, "statuses": [400], "reads": 0}
+        assert catalog.load_table(identifier).metadata.current_snapshot_id == baseline_id
+        assert not uploaded_files.intersection(table_files())
+        assert node.query(f"SELECT id FROM {table_name} ORDER BY id") == "1\n"
+    finally:
+        requests.post(f"{control_url}/release", timeout=5).raise_for_status()
+        if insert is not None:
+            insert.get_answer_and_error()
+        node.query(f"DROP DATABASE {database}")

@@ -2201,6 +2201,9 @@ SinkToStoragePtr IcebergMetadata::write(
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         checkTableRootIsQueriedPath("INSERT");
+        if (catalog && !catalog->supportsMetadataUpdates())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Catalog does not support Iceberg inserts");
+
         /// The schema the query planned the inserted columns with, pinned in the metadata snapshot like for a read.
         std::optional<Int32> planned_schema_id;
         if (metadata_snapshot && metadata_snapshot->datalake_table_state)
