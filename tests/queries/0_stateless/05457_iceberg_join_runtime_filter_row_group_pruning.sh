@@ -74,6 +74,10 @@ echo '--- D a Nullable key ---'
 probe d "SELECT count(), sum(v) FROM fact AS f INNER JOIN dim AS d ON f.nk = d.k"
 report d
 
+echo '--- D2 a Nullable key, the [min, max] range when the exact set is too large ---'
+probe d2 "SELECT count(), sum(v) FROM fact AS f INNER JOIN dim AS d ON f.nk = d.k" "join_runtime_filter_exact_values_limit = 1"
+report d2
+
 echo '--- E a key under one cast ---'
 probe e "SELECT count(), sum(v) FROM fact AS f INNER JOIN dim AS d ON f.k32 = d.k"
 report e

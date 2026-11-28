@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -410,6 +412,32 @@ TEST(RuntimeFilterLookup, ReplacementFiltersTakeTheRowsFromFirstRow)
     ApproximateSetRuntimeFilter bloom_filter(1_MiB, 3);
     bloom_filter.insert(keys, /*first_row=*/2);
     expectMask(bloom_filter.find(probe, rows_passed), {0, 0, 1, 1});
+}
+
+TEST(RuntimeFilterLookup, ReplacementBloomFilterOfANullableKeySkipsTheNullRowsFromFirstRow)
+{
+    /// Row 0 is before `first_row`. The NULL rows keep the nested values 2 and 4, which are not keys.
+    tryRegisterFunctions();
+    const auto type = makeNullable(std::make_shared<DataTypeUInt64>());
+    auto make_keys = [](std::initializer_list<std::pair<UInt64, bool>> rows) -> ColumnPtr
+    {
+        auto nested = ColumnUInt64::create();
+        auto null_map = ColumnUInt8::create();
+        for (const auto & [value, is_null] : rows)
+        {
+            nested->insertValue(value);
+            null_map->insertValue(is_null);
+        }
+        return ColumnNullable::create(std::move(nested), std::move(null_map));
+    };
+    std::optional<size_t> rows_passed;
+
+    ApproximateSetRuntimeFilter bloom_filter(1_MiB, 3);
+    bloom_filter.insert(make_keys({{1, false}, {2, true}, {3, false}, {4, true}, {5, false}}), /*first_row=*/1);
+    const ColumnWithTypeAndName probe(make_keys({{1, false}, {2, false}, {3, false}, {4, false}, {5, false}, {3, true}}), type, "k");
+    expectMask(bloom_filter.find(probe, rows_passed), {0, 0, 1, 0, 1, 0});
+    ASSERT_TRUE(rows_passed.has_value());
+    EXPECT_EQ(*rows_passed, 2);
 }
 
 TEST(RuntimeFilterLookup, ExactSetReportsTheRowsItTookUntilItIsFull)

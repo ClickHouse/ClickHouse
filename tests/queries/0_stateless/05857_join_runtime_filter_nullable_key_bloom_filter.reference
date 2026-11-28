@@ -1,0 +1,51 @@
+bloom filter	93	81
+exact set	93	81
+no filter	93	81
+p.int64 = b.int64	bloom filter
+p.decimal = b.decimal	bloom filter
+p.string = b.string	bloom filter
+p.lc_string = b.lc_string	bloom filter
+p.int32 = b.int64	bloom filter
+p.lc_string = b.plain_string	bloom filter
+p.int8 = b.int8	bloom filter
+p.uint16 = b.uint16	bloom filter
+p.uint128 = b.uint128	bloom filter
+p.float64 = b.float64	bloom filter
+p.decimal76 = b.decimal76	bloom filter
+p.fixed_string = b.fixed_string	bloom filter
+p.fixed_string = b.string	bloom filter
+p.date32 = b.date32	bloom filter
+p.datetime64 = b.datetime64	bloom filter
+p.uuid = b.uuid	bloom filter
+p.ipv6 = b.ipv6	bloom filter
+p.enum8 = b.enum8	bloom filter
+p.bool = b.bool	bloom filter
+p.lc_fixed_string = b.lc_fixed_string	bloom filter
+p.lc_int32 = b.lc_int32	bloom filter
+RIGHT ANTI JOIN, limit 10000	exact set
+RIGHT ANTI JOIN, limit 1	bloom filter
+null probe, int64	0
+null probe, string	0
+null build, int64	23
+null build, string	23
+batch join_use_nulls, bloom filter	1
+batch join_use_nulls, exact set	1
+batch join_use_nulls, no filter	0
+batch keys and <=>, bloom filter	1
+batch keys and <=>, exact set	1
+batch keys and <=>, no filter	0
+batch keys, bloom filter	1
+batch keys, exact set	1
+batch keys, no filter	0
+batch no NULLs, only NULLs or no rows, bloom filter	1
+batch no NULLs, only NULLs or no rows, exact set	1
+batch no NULLs, only NULLs or no rows, no filter	0
+batch types, bloom filter	1
+batch types, exact set	1
+batch types, no filter	0
+no filter, join_use_nulls = transform_null_in = 0	0
+no filter, join_use_nulls = transform_null_in = 1	0
+null build, int64	1	23
+null build, string	1	23
+null probe, int64	1	0
+null probe, string	1	0

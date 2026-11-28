@@ -7,7 +7,7 @@ Runtime filter (dense bitset, 1000 unique keys)
 disabled bloom filter
 1	1
 nullable key
-Runtime filter (disabled: too many keys for exact set)
+Runtime filter (bloom filter)
 anti join
 Runtime filter (exact set, 1000 unique keys)
 Runtime filter (partial exact set, 1000 unique keys)

@@ -374,7 +374,7 @@ static void BM_ApproximateSetRuntimeFilterFindUInt64(benchmark::State & state)
     benchmarkFind(state, filter, type, probe_column);
 }
 
-/// Reference only: production uses `ExactSetRuntimeFilter` for nullable join keys.
+/// Production uses it for a nullable join key past the exact values limit.
 static void BM_ApproximateSetRuntimeFilterFindNullableUInt64(benchmark::State & state)
 {
     const auto key_count = static_cast<size_t>(state.range(0));
