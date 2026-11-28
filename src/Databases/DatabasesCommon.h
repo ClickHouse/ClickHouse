@@ -80,6 +80,9 @@ public:
 
     void ensurePopulated() const TSA_NO_THREAD_SAFETY_ANALYSIS;
 
+    /// The tables attached so far, without populating the deferred ones.
+    Tables getAttachedTables() const;
+
 protected:
     bool mayShadowDeferredTable(const String & table_name) const;
 

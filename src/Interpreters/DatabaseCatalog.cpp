@@ -310,11 +310,6 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         std::vector<StoragePtr> buffered_tables;
         for (const auto & database : current_databases)
         {
-            /// Only user databases: enumerating a predefined one can materialize a lazily created
-            /// system table during shutdown, and none of them holds a `Buffer` table anyway.
-            if (isPredefinedDatabase(database.first))
-                continue;
-
             /// Neither a data lake catalog nor a `Remote` database: listing their tables is a request
             /// to another server, which can be retried for minutes when that server is unreachable,
             /// and their tables hold no buffered rows.
@@ -329,6 +324,21 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 
             try
             {
+                /// Enumerating a predefined database can materialize its lazily created system tables during
+                /// shutdown, so take only the tables already attached to it, such as a user's `Buffer` table.
+                if (isPredefinedDatabase(database.first))
+                {
+                    if (const auto * own_tables = dynamic_cast<const DatabaseWithOwnTablesBase *>(database.second.get()))
+                    {
+                        for (const auto & [_, table] : own_tables->getAttachedTables())
+                        {
+                            ++total_tables;
+                            buffered_tables.push_back(table);
+                        }
+                    }
+                    continue;
+                }
+
                 for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
                 {
                     ++total_tables;
