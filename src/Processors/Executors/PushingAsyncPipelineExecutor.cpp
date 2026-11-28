@@ -8,7 +8,10 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Poco/Event.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -30,8 +33,9 @@ public:
 
     bool setData(Chunk chunk)
     {
+        std::optional<CPULeaseParkGuard> park;
         std::unique_lock lock(mutex);
-        condvar.wait(lock, [this] { return !has_data || is_finished; });
+        waitParked(lock, park, [this] { return !has_data || is_finished; });
 
         if (is_finished)
             return false;
@@ -54,8 +58,9 @@ protected:
 
     Chunk generate() override
     {
+        std::optional<CPULeaseParkGuard> park;
         std::unique_lock lock(mutex);
-        condvar.wait(lock, [this] { return has_data || is_finished; });
+        waitParked(lock, park, [this] { return has_data || is_finished; });
 
         Chunk res;
 
@@ -67,6 +72,19 @@ protected:
     }
 
 private:
+    /// The caller declares `park` before `lock`, so the lease is never parked or unparked under `mutex`.
+    template <typename Predicate>
+    void waitParked(std::unique_lock<std::mutex> & lock, std::optional<CPULeaseParkGuard> & park, Predicate predicate)
+    {
+        if (predicate())
+            return;
+
+        lock.unlock();
+        park.emplace();
+        lock.lock();
+        condvar.wait(lock, predicate);
+    }
+
     Chunk data;
     bool has_data = false;
     bool is_finished = false;
@@ -207,7 +225,10 @@ void PushingAsyncPipelineExecutor::finish()
 
     /// Join thread here to wait for possible exception.
     if (data && data->thread.joinable())
+    {
+        CPULeaseParkGuard park;
         data->thread.join();
+    }
 
     /// Rethrow exception to not swallow it in destructor.
     if (data)
