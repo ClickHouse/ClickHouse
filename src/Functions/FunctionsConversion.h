@@ -6314,7 +6314,7 @@ private:
     WrapperType createStringToEnumWrapper(bool requested_result_is_nullable) const;
 
     template <typename ColumnNumberType, typename EnumType>
-    WrapperType createNumberToEnumWrapper() const;
+    WrapperType createNumberToEnumWrapper(bool requested_result_is_nullable) const;
 
     template <typename EnumType>
     WrapperType createEnumToStringWrapper() const;
