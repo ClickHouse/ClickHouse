@@ -33,6 +33,7 @@
 #include <limits>
 #include <set>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <zstd.h>
@@ -44,6 +45,7 @@
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_COMPRESS;
+    extern const int DECIMAL_OVERFLOW;
     extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
@@ -176,12 +178,22 @@ struct StatisticsFixedStringRef
 };
 
 /// If SIGNED, compare as signed big endian integers.
-template<size_t S, bool SIGNED>
+/// If RUNTIME_SIZE, the values are `fixed_string_size` <= S bytes long, otherwise S bytes long.
+template<size_t S, bool SIGNED, bool RUNTIME_SIZE = false>
 struct StatisticsFixedStringCopy
 {
     bool empty = true;
+    size_t fixed_string_size = S;
     std::array<uint8_t, S> min {};
     std::array<uint8_t, S> max {};
+
+    [[nodiscard]] size_t size() const
+    {
+        if constexpr (RUNTIME_SIZE)
+            return fixed_string_size;
+        else
+            return S;
+    }
 
     void add(FixedLenByteArray a)
     {
@@ -190,7 +202,7 @@ struct StatisticsFixedStringCopy
         empty = false;
     }
 
-    void merge(const StatisticsFixedStringCopy<S, SIGNED> & s)
+    void merge(const StatisticsFixedStringCopy & s)
     {
         if (s.empty)
             return;
@@ -206,30 +218,30 @@ struct StatisticsFixedStringCopy
         parq::Statistics s;
         if (empty)
             return s;
-        s.__set_min_value(std::string(reinterpret_cast<const char *>(min.data()), S));
-        s.__set_max_value(std::string(reinterpret_cast<const char *>(max.data()), S));
+        s.__set_min_value(std::string(reinterpret_cast<const char *>(min.data()), size()));
+        s.__set_max_value(std::string(reinterpret_cast<const char *>(max.data()), size()));
         s.__set_is_min_value_exact(true);
         s.__set_is_max_value_exact(true);
         return s;
     }
 
-    inline static int compare(const uint8_t * lhs, const uint8_t * rhs)
+    int compare(const uint8_t * lhs, const uint8_t * rhs) const
     {
         if constexpr (SIGNED)
             /// Comparing the first byte as signed is sufficient.
             if (*lhs != *rhs) return int(int8_t(*lhs)) - int(int8_t(*rhs));
-        return memcmp(lhs, rhs, S);
+        return memcmp(lhs, rhs, size());
     }
 
     void addMin(const uint8_t * p)
     {
         if (empty || compare(p, min.data()) < 0)
-            memcpy(min.data(), p, S);
+            memcpy(min.data(), p, size());
     }
     void addMax(const uint8_t * p)
     {
         if (empty || compare(p, max.data()) > 0)
-            memcpy(max.data(), p, S);
+            memcpy(max.data(), p, size());
     }
 };
 
@@ -948,6 +960,41 @@ struct ConverterDecimal
     }
 
     size_t fixedStringSize() { return sizeof(T); }
+};
+
+/// Like ConverterDecimal, but writes each value in the minimum number of bytes for the precision of
+/// the type. The dropped leading bytes must be the sign extension of the kept ones.
+template <typename T>
+struct ConverterDecimalMinimalWidth
+{
+    using Statistics = StatisticsFixedStringCopy<sizeof(T), /*SIGNED=*/ true, /*RUNTIME_SIZE=*/ true>;
+
+    ConverterDecimal<T> converter;
+    DataTypePtr type;
+    size_t size;
+
+    ConverterDecimalMinimalWidth(const ColumnPtr & c, const DataTypePtr & type_)
+        : converter(c), type(type_), size(getDecimalMinimalByteSize(getDecimalPrecision(*type)))
+    {
+    }
+
+    const FixedLenByteArray * getBatch(size_t offset, size_t count)
+    {
+        converter.getBatch(offset, count);
+        const size_t dropped = sizeof(T) - size;
+        for (auto & value : converter.ptr_buf)
+        {
+            const uint8_t sign = (value.ptr[dropped] & 0x80) ? 0xff : 0;
+            for (size_t i = 0; i < dropped; ++i)
+                if (value.ptr[i] != sign)
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                        "A value of type {} is out of the range of its precision and does not fit into {} bytes", type->getName(), size);
+            value.ptr += dropped;
+        }
+        return converter.ptr_buf.data();
+    }
+
+    size_t fixedStringSize() { return size; }
 };
 
 /// Appends the `size` bytes at `source` compressed with `method` to `out`. `method` must not be `None`.
@@ -1746,8 +1793,8 @@ void writeColumnImpl(
     {
         fixed_string_size = converter.fixedStringSize();
 
-        if constexpr (std::is_same_v<typename Converter::Statistics, StatisticsFixedStringRef>)
-            page_statistics.fixed_string_size = converter.fixedStringSize();
+        page_statistics.fixed_string_size = converter.fixedStringSize();
+        total_statistics.fixed_string_size = converter.fixedStringSize();
     }
 
     s.column_chunk.meta_data.__isset.size_statistics = true;
@@ -2588,11 +2635,29 @@ void writeColumnChunkBody(
                 ConverterUUID(s.primitive_column));
         break;
 
+        /// `MinMaxType` is passed explicitly: a `Decimal` is not `std::is_signed`.
+        case TypeIndex::Decimal32:
+            if (options.output_decimal_minimal_physical_type)
+                writeColumnImpl<Int32Type>(
+                    s, options, out, ConverterNumeric<ColumnDecimal<Decimal32>, Int32, Int32>(s.primitive_column));
+            else
+                writeColumnImpl<FLBAType>(s, options, out, ConverterDecimal<Decimal32>(s.primitive_column));
+            break;
+        case TypeIndex::Decimal64:
+            if (options.output_decimal_minimal_physical_type)
+                writeColumnImpl<Int64Type>(
+                    s, options, out, ConverterNumeric<ColumnDecimal<Decimal64>, Int64, Int64>(s.primitive_column));
+            else
+                writeColumnImpl<FLBAType>(s, options, out, ConverterDecimal<Decimal64>(s.primitive_column));
+            break;
+
         #define D(source_type) \
-            writeColumnImpl<FLBAType>( \
-                s, options, out, ConverterDecimal<source_type>(s.primitive_column))
-        case TypeIndex::Decimal32:  D(Decimal32); break;
-        case TypeIndex::Decimal64:  D(Decimal64); break;
+            if (options.output_decimal_minimal_physical_type) \
+                writeColumnImpl<FLBAType>( \
+                    s, options, out, ConverterDecimalMinimalWidth<source_type>(s.primitive_column, s.type)); \
+            else \
+                writeColumnImpl<FLBAType>( \
+                    s, options, out, ConverterDecimal<source_type>(s.primitive_column))
         case TypeIndex::Decimal128: D(Decimal128); break;
         case TypeIndex::Decimal256: D(Decimal256); break;
         #undef D

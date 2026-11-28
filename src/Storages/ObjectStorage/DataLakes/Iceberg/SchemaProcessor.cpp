@@ -1903,6 +1903,7 @@ ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields)
     column_mapper->setIcebergOptionalPaths(IcebergSchemaProcessor::collectIcebergOptionalPaths(fields));
     column_mapper->setIcebergTimeFieldIds(IcebergSchemaProcessor::collectIcebergTimeFieldIds(fields));
     column_mapper->setIcebergInitialDefaults(IcebergSchemaProcessor::collectIcebergInitialDefaults(fields));
+    column_mapper->setIcebergSchema();
     return column_mapper;
 }
 

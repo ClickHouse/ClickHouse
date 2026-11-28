@@ -161,6 +161,10 @@ public:
     /// reached from `root`, the top level or a struct under a list or map, through structs only), empty if none.
     [[nodiscard]] String getIcebergFieldPath(const String & path, const String & root = {}) const;
 
+    /// Built from an Iceberg schema: a writer stores values in the physical types the Iceberg spec gives them.
+    void setIcebergSchema() { is_iceberg_schema = true; }
+    [[nodiscard]] bool isIcebergSchema() const { return is_iceberg_schema; }
+
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     [[nodiscard]] std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
 
@@ -173,6 +177,7 @@ private:
     bool has_iceberg_required_info = false;
     std::unordered_set<String> local_timestamp_paths;
     std::unordered_set<Int64> iceberg_time_field_ids;
+    bool is_iceberg_schema = false;
     std::unordered_map<String, IcebergInitialDefault> iceberg_initial_defaults;
     std::unordered_map<String, String> iceberg_struct_paths;
 };

@@ -597,3 +597,57 @@ def test_pyiceberg_v1_schema_evolution_ch_read(started_cluster_iceberg):
 
     rows = sorted(StaticTable.from_metadata(latest).scan().to_arrow().to_pylist(), key=lambda row: row["id"])
     assert rows == [{"id": 1, "extra": None}, {"id": 2, "extra": "x"}, {"id": 3, "extra": "y"}]
+
+
+def test_ch_write_decimal_spark_filter(started_cluster_iceberg):
+    """
+    ClickHouse writes decimals, Spark filters them with `=` and `IN`.
+
+    The Iceberg spec stores `decimal(P, S)` in Parquet as INT32 for P <= 9, INT64 for P <= 18, and otherwise as
+    FIXED_LEN_BYTE_ARRAY of the minimum width for P, and Iceberg Java hashes its bloom filter lookups in that width.
+    ClickHouse wrote FIXED_LEN_BYTE_ARRAY of the ClickHouse width (4, 8 or 16 bytes), so Spark skipped the matching
+    row groups and returned no rows.
+    """
+    node1 = started_cluster_iceberg.instances["node1"]
+    spark = started_cluster_iceberg.spark_session
+    ch_settings = {"allow_insert_into_iceberg": 1}
+
+    def spark_ids(table_dir, where):
+        view = "v_" + get_uuid_str()
+        spark.read.format("iceberg").load(table_dir).createOrReplaceTempView(view)
+        return sorted(row.id for row in spark.sql(f"SELECT id FROM {view} WHERE {where}").collect())
+
+    TABLE_NAME = "test_ch_write_decimal_spark_filter_" + get_uuid_str()
+    table_dir = f"{ICEBERG_DIR_NODE1}/default/{TABLE_NAME}"
+    node1.query(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id Int32, d5 Decimal(5, 2), d10 Decimal(10, 2), d20 Decimal(20, 2), s Tuple(x Decimal(5, 2), y Int32))
+        ENGINE=IcebergLocal(local, path = '{table_dir}')
+        PARTITION BY icebergTruncate(10, d5)
+        """,
+        settings=ch_settings,
+    )
+    node1.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1, 1.23, 1.23, 1.23, (1.23, 1)), (2, -4.56, -4.56, -4.56, (-4.56, 2)), (5, 0.05, 0.05, 0.05, (0.05, 5))",
+        settings=ch_settings,
+    )
+    for column in ["d5", "d10", "d20", "s.x"]:
+        assert spark_ids(table_dir, f"{column} = 1.23") == [1], column
+        assert spark_ids(table_dir, f"{column} = -4.56") == [2], column
+        assert spark_ids(table_dir, f"{column} IN (1.23, 0.05)") == [1, 5], column
+
+    table = StaticTable.from_metadata(latest_metadata_file(table_dir))
+    assert table.scan(row_filter="d10 == 1.23").to_arrow()["id"].to_pylist() == [1]
+
+    # Spark creates the table and writes a row, ClickHouse writes another one and rewrites it with `ALTER UPDATE`.
+    TABLE_NAME = "test_ch_write_decimal_spark_table_" + get_uuid_str()
+    table_dir = f"{ICEBERG_DIR_NODE1}/default/{TABLE_NAME}"
+    spark.sql(
+        f"CREATE TABLE node1_catalog.default.{TABLE_NAME} (id INT, d DECIMAL(10, 2)) USING iceberg OPTIONS('format-version'='2')"
+    )
+    spark.sql(f"INSERT INTO node1_catalog.default.{TABLE_NAME} VALUES (1, 1.23)")
+    node1.query(f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergLocal(local, path = '{table_dir}')")
+    node1.query(f"INSERT INTO {TABLE_NAME} VALUES (11, 1.23)", settings=ch_settings)
+    assert spark_ids(table_dir, "d = 1.23") == [1, 11]
+    node1.query(f"ALTER TABLE {TABLE_NAME} UPDATE id = 111 WHERE id = 11", settings=ch_settings)
+    assert spark_ids(table_dir, "d = 1.23") == [1, 111]
