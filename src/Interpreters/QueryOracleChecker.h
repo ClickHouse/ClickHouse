@@ -55,7 +55,7 @@ private:
 
     /// Try to insert random data into the table referenced by the SELECT query.
 
-    /// Check if the SELECT list contains aggregate functions.
+    /// Check if the SELECT list or the `WITH` clause contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
 
     /// Execute a query and return sorted deduplicated rows (set semantics).
