@@ -1,0 +1,28 @@
+small	23000	11842512237343826350
+small	23000	11842512237343826350
+two small streams	23000	9236065903297342397
+two small streams	23000	9236065903297342397
+many records	2500000	631555257105460152
+many records	2500000	631555257105460152
+heavy states	23000	18155839219091628803
+heavy states	23000	18155839219091628803
+wide fixed states	23000	2297414674261942198
+wide fixed states	23000	2297414674261942198
+wide keys	40000	10971790538870410999
+wide keys	40000	10971790538870410999
+wide keys, spilled	40000	10971790538870410999
+wide keys, spilled	40000	10971790538870410999
+heavy states	1	0
+many records	1	0
+small	1	0
+two small streams	1	0
+wide fixed states	1	0
+wide keys	1	0
+wide keys, spilled	1	1
+heavy states	8
+many records	8
+small	1
+two small streams	2
+wide fixed states	1
+wide keys	8
+wide keys, spilled	8
