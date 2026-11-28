@@ -24,7 +24,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id)
+    Int32 current_schema_id,
+    Int32 table_format_version)
 {
     SnapshotReferencedFiles files;
 
@@ -47,7 +48,7 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
                 continue;
 
             auto entries_handle = getManifestFileEntriesHandle(
-                object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id);
+                object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id, table_format_version);
 
             for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
                 files.data_file_paths.insert(entry->parsed_entry->file_path_key);
@@ -180,7 +181,13 @@ ReachableFilesResult collectReachableFiles(
     persistent_table_components.schema_processor->registerMetadata(metadata);
 
     auto snapshot_files = collectSnapshotReferencedFiles(
-        snapshots, object_storage, persistent_table_components, context, log, current_schema_id);
+        snapshots,
+        object_storage,
+        persistent_table_components,
+        context,
+        log,
+        current_schema_id,
+        metadata->getValue<Int32>(f_format_version));
 
     for (const auto & path : snapshot_files.manifest_list_paths)
         reachable.insert(resolver.resolve(path));

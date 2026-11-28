@@ -416,7 +416,13 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
             {
                 /// second, we fetch, parse and cache each manifest file
                 auto manifest_file_ptr = getManifestFileEntriesHandle(
-                    object_storage, persistent_components, ctx, log, entry, actual_table_state_snapshot.schema_id);
+                    object_storage,
+                    persistent_components,
+                    ctx,
+                    log,
+                    entry,
+                    actual_table_state_snapshot.schema_id,
+                    actual_data_snapshot->format_version);
             }
         }
 
@@ -526,7 +532,8 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         total_equality_deletes,
         refresh_cursor,
         metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr,
-        metadata_object->getArray(f_statistics));
+        metadata_object->getArray(f_statistics),
+        metadata_object->getValue<Int32>(f_format_version));
 }
 
 std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const
@@ -1512,7 +1519,13 @@ IcebergMetadata::IcebergFiles IcebergMetadata::getFilesForManifest(
 
     const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_index];
     auto handle = getManifestFileEntriesHandle(
-        object_storage, persistent_components, local_context, log, manifest_list_entry, table_state.schema_id);
+        object_storage,
+        persistent_components,
+        local_context,
+        log,
+        manifest_list_entry,
+        table_state.schema_id,
+        data_snapshot->format_version);
 
     IcebergFiles result;
     for (auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
@@ -1556,7 +1569,13 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
+            object_storage,
+            persistent_components,
+            context,
+            log,
+            manifest_list_entry,
+            table_state_snapshot->schema_id,
+            data_snapshot->format_version);
 
         if (!files_handle.areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
             return false;
@@ -1597,7 +1616,13 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
+            object_storage,
+            persistent_components,
+            context,
+            log,
+            manifest_list_entry,
+            table_state_snapshot->schema_id,
+            data_snapshot->format_version);
 
         if (!files_handle.areAllDataFilesEligibleForLazyMaterialization(table_state_snapshot->schema_id))
             return false;
@@ -1808,7 +1833,12 @@ IcebergMetadata::estimateRead(
 
         const auto & manifest_list_entry = fetch->key();
         const auto files_handle = getManifestFileEntriesHandle(
-            fetch->get(), persistent_components, context, manifest_list_entry, table_state_snapshot->schema_id);
+            fetch->get(),
+            persistent_components,
+            context,
+            manifest_list_entry,
+            table_state_snapshot->schema_id,
+            data_snapshot->format_version);
 
         const auto & manifest_position_deletes = files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE);
         position_deletes.insert(position_deletes.end(), manifest_position_deletes.begin(), manifest_position_deletes.end());
@@ -1899,7 +1929,8 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context, const
         object_storage, persistent_components, local_context, log, actual_data_snapshot->manifest_list_entries);
     while (auto fetch = manifests.take())
     {
-        auto manifest_file_ptr = getManifestFileEntriesHandle(fetch->get(), persistent_components, local_context, fetch->key(), schema_id);
+        auto manifest_file_ptr = getManifestFileEntriesHandle(
+            fetch->get(), persistent_components, local_context, fetch->key(), schema_id, actual_data_snapshot->format_version);
 
         if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
             || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
@@ -1931,7 +1962,13 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
-            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
+            object_storage,
+            persistent_components,
+            local_context,
+            log,
+            manifest_list_entry,
+            actual_table_state_snapshot.schema_id,
+            actual_data_snapshot->format_version);
         auto count = manifest_file_ptr.getBytesCountInAllDataFilesExcludingDeleted();
         if (!count.has_value())
             return {};

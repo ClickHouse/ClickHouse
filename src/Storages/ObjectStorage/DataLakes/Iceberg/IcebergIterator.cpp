@@ -394,7 +394,8 @@ Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(
         manifest_list_entry.partition_spec_id,
         local_context,
         manifest_filter_dag,
-        table_state_snapshot->schema_id);
+        table_state_snapshot->schema_id,
+        data_snapshot->format_version);
 }
 
 Iceberg::ProcessedManifestFileEntryPtr IcebergIterator::nextDataFileEntry()

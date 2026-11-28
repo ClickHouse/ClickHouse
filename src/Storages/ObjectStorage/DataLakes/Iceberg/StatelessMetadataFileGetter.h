@@ -44,14 +44,16 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
     ContextPtr local_context,
     LoggerPtr log,
     const ManifestFileCacheKey & cache_key,
-    Int32 table_snapshot_schema_id);
+    Int32 table_snapshot_schema_id,
+    Int32 table_format_version);
 
 Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesHandle(
     const ManifestFileCacheableInfo & manifest_file,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     const ManifestFileCacheKey & cache_key,
-    Int32 table_snapshot_schema_id);
+    Int32 table_snapshot_schema_id,
+    Int32 table_format_version);
 
 
 ManifestFileCacheKeys getManifestList(

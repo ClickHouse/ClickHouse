@@ -504,7 +504,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     Int32 partition_spec_id_,
     DB::ContextPtr context_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
-    Int32 table_snapshot_schema_id_)
+    Int32 table_snapshot_schema_id_,
+    Int32 table_format_version_)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestFileIteratorCreateMicroseconds);
 
@@ -519,8 +520,16 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 
     /// The manifest file's own format version governs how it is parsed. A v2 table may
     /// still reference v1 manifests produced before an external upgrade from v1 to v2,
-    /// and those must remain readable (the Iceberg spec assigns them sequence_number = 0).
+    /// and those must remain readable (the Iceberg spec assigns them sequence_number = 0);
+    /// a manifest newer than the table is invalid.
     const Int32 manifest_format_version = static_cast<Int32>(manifest_file_deserializer_->getFormatVersionFromManifestFileMetadata());
+    if (manifest_format_version > table_format_version_)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Manifest file '{}' has format-version {}, which is newer than the table's format-version {}",
+            path_to_manifest_file_,
+            manifest_format_version,
+            table_format_version_);
 
     for (const auto & column_name : {f_status, f_data_file})
     {
