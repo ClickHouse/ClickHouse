@@ -1199,13 +1199,11 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
         const size_t base_offset = offsets[static_cast<ssize_t>(prev_num_rows) - 1];
         if (end_of_rejected > prev_num_rows && offsets[end_of_rejected - 1] - base_offset >= MIN_REJECTED_BYTES_TO_SKIP)
         {
-            /// Read the rejected values as empty strings, as the `StringValueFilter` path does.
             skipped_bytes = offsets[end_of_rejected - 1] - base_offset;
             std::fill(offsets.begin() + prev_num_rows, offsets.begin() + end_of_rejected, base_offset);
             for (size_t i = end_of_rejected; i < offsets.size(); ++i)
                 offsets[i] -= skipped_bytes;
             stream->ignoreBig(skipped_bytes);
-            /// With a `StringValueFilter` the skipped values are not counted, like the values it replaces.
             if (!values_filtered)
                 settings.num_skipped_bytes += skipped_bytes;
             first_row_to_read = end_of_rejected;

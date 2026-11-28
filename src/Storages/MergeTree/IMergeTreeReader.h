@@ -313,7 +313,6 @@ protected:
     bool columns_cache_reads_possible = false;
     bool columns_cache_writes_possible = false;
 
-    /// See `takeBytesOfSkippedRows`.
     size_t bytes_of_skipped_rows = 0;
 
     /// How the marks of the part are cut into stripes, and the identity of every result column

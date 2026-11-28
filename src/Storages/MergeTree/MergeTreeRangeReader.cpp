@@ -213,7 +213,6 @@ size_t MergeTreeRangeReader::DelayedStream::read(
     /// and only increment amount delayed_rows
     if (position() == num_rows_before_from_mark + offset)
     {
-        /// A rejected prefix is kept only if it begins the delayed rows, so the rows are read in the same calls as without it.
         if (!num_delayed_rows)
             num_rejected_delayed_rows = num_rejected_rows;
         num_delayed_rows += num_rows;
