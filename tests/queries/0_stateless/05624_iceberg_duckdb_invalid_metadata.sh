@@ -48,7 +48,7 @@ do
 done
 
 # A v1 table whose manifest list references a v2 manifest (of the table `partition_float`).
-# Bug path-resolver: the path of the manifest is mangled to `ata/persistent/...`.
+# Bug https://github.com/ClickHouse/ClickHouse/issues/130002: it is read instead of being refused.
 echo "manifest_newer_than_table $(rejected "SELECT * FROM icebergLocal('data/persistent/manifest_newer_than_table')")"
 
 # Malformed decimal types: decimal(10), decimal(a,b), precision above 38, precision 0, scale above the precision.
@@ -60,8 +60,8 @@ done
 
 # The manifest list (with the manifests of the table `partition_bool`) references the partition spec 999 or -1,
 # which is not in the metadata.
-# Bugs metadata-file-names (`spec_id_999.metadata.json`), path-resolver (the manifests are outside of the directory
-# of the table) and unknown-spec-id.
+# The manifests are outside of the directory of the table.
+# Bugs metadata-file-names (`spec_id_999.metadata.json`) and unknown-spec-id.
 for f in spec_id_999 spec_id_negative
 do
     echo "manifest_list_invalid_spec_id $f $(rejected "SELECT * FROM icebergLocal('data/persistent/manifest_list_invalid_spec_id', SETTINGS iceberg_metadata_file_path = 'metadata/$f.metadata.json')")"

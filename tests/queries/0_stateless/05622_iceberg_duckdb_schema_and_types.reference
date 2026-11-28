@@ -48,9 +48,9 @@ struct_child Code: 53 [1,2]
 list_element Code: 53 [1,2]
 map_value Code: 53 [1,2]
 missing_map_keys
-map Code: 743
-struct Code: 743
-list Code: 743
+map 1	{'key':'value'}
+struct 1	({'key':'value'})
+list 1	[{'key':'value'}]
 missing_map 1	{}
 manifest_column_sizes 1	{'key':'value'}
 manifest_value_counts 1	{'key':'value'}

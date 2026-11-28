@@ -36,9 +36,8 @@ SELECT 'add_columns_with_defaults_in_struct';
 SELECT x.col1, x.col_boolean, x.col_integer, x.col_long, x.col_float, x.col_double, x.col_decimal, x.col_date, x.col_time, x.col_timestamp, x.col_timestamptz, x.col_string, x.col_uuid, hex(x.col_fixed), hex(x.col_binary)
 FROM (SELECT a AS x FROM $STRUCT_DEFAULTS) ORDER BY x.col_boolean;
 "
-# Reading a subcolumn of the struct directly. Bug https://github.com/ClickHouse/ClickHouse/issues/128304:
-# fails with `NOT_FOUND_COLUMN_IN_BLOCK` for the data file
-# whose struct has only 'col1', even for 'col1' itself.
+# Reading a subcolumn of the struct directly, including from the data file whose struct has only 'col1'
+# (https://github.com/ClickHouse/ClickHouse/issues/128304).
 $CLICKHOUSE_LOCAL -q "SELECT a.col1 FROM $STRUCT_DEFAULTS"
 
 # Column names that differ only in case.
@@ -50,7 +49,7 @@ SELECT uSeR_Id FROM icebergLocal('data/persistent/case_sensitive_names/default.d
 "
 
 # A table whose data file (without field ids) was added from another directory, `warehouse/example/mock_data.parquet`.
-# Bug path-resolver: the path of the data file is mangled to `ata/persistent/...`.
+# The path of the data file is outside of the table location (https://github.com/ClickHouse/ClickHouse/issues/129990).
 $CLICKHOUSE_LOCAL -q "
 SELECT 'column_mapping';
 SELECT * FROM icebergLocal('data/persistent/column_mapping/warehouse/default.db/my_table') ORDER BY ALL;
@@ -98,11 +97,12 @@ do
 done
 
 # A map key, a map in a struct and a map in a list with a field id in the data file that the table never assigned.
-# (DuckDB still reads the other columns of these data files, ClickHouse refuses the whole data file.)
+# DuckDB refuses to read `payload` of these data files. ClickHouse does not refuse a field id that is not in the schema
+# (https://github.com/ClickHouse/ClickHouse/pull/129421), and the key of a map is taken by its position, so the map is read.
 echo 'missing_map_keys'
 for t in map struct list
 do
-    echo "$t $(error_code "SELECT payload FROM icebergLocal('data/persistent/missing_map_keys/$t', SETTINGS iceberg_metadata_file_path = 'metadata/v1.metadata.json') FORMAT Null")"
+    echo "$t $($CLICKHOUSE_LOCAL -q "SELECT * FROM icebergLocal('data/persistent/missing_map_keys/$t', SETTINGS iceberg_metadata_file_path = 'metadata/v1.metadata.json')" 2>&1 | grep -o -m1 'Code: [0-9]*\|^[0-9].*')"
 done
 # A map column missing from the data file is empty.
 # The data files are fine, but the maps in the manifest (column_sizes, value_counts and so on) have no field id for the key.

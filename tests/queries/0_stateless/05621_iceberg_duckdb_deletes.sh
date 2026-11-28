@@ -84,7 +84,7 @@ SELECT count() FROM icebergLocal('data/persistent/moved_deletion_vector_path') W
 
 # The metadata of `legacy_bare_deletion_vector` with manifest lists in `deletion_vector_bitmap_count`:
 # a valid deletion vector, and deletion vectors whose bitmap count is huge, negative or larger than the blob.
-# Bugs metadata-file-names (`valid.metadata.json` and so on) and path-resolver (the manifests are outside of the directory of the table).
+# The manifests are outside of the directory of the table. Bug metadata-file-names (`valid.metadata.json` and so on).
 echo 'deletion_vector_bitmap_count'
 $CLICKHOUSE_LOCAL -q "SELECT id, source FROM icebergLocal('data/persistent/deletion_vector_bitmap_count', SETTINGS iceberg_metadata_file_path = 'metadata/valid.metadata.json') ORDER BY id"
 for c in count_huge count_negative count_truncated
