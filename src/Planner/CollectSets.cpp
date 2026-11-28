@@ -41,6 +41,26 @@ namespace ErrorCodes
 namespace
 {
 
+DataTypes getSetElementTypes(const ColumnsWithTypeAndName & set, const String & in_function_name, const Settings & settings)
+{
+    if (set.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Function '{}' second argument evaluated to Block with no columns",
+            in_function_name);
+
+    DataTypes set_element_types;
+    set_element_types.reserve(set.size());
+    /// Get the `set_element_types` from `set` instead of `in_first_argument` because
+    /// inside `getSetElementsForConstantValue`, we already do necessary transformation including
+    /// getting `dictionaryType` from `DataTypeLowCardinality`. Therefore, we can skip some steps here if
+    /// we directly use `set` to get the `set_element_types`.
+    for (const auto & elem : set)
+        set_element_types.push_back(elem.type);
+
+    return Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);
+}
+
 class CollectSetsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSetsVisitor>
 {
 public:
@@ -114,22 +134,7 @@ public:
                 : getSetElementsForConstantValue(
                       in_first_argument->getResultType(), constant_node->getColumn(), constant_node->getResultType(), params);
 
-            if (set.empty())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Function '{}' second argument evaluated to Block with no columns",
-                    function_node->getFunctionName());
-
-            DataTypes set_element_types;
-            set_element_types.reserve(set.size());
-            /// Get the `set_element_types` from `set` instead of `in_first_argument` because
-            /// inside `getSetElementsForConstantValue`, we already do necessary transformation including
-            /// getting `dictionaryType` from `DataTypeLowCardinality`. Therefore, we can skip some steps here if
-            /// we directly use `set` to get the `set_element_types`.
-            for (const auto & elem : set)
-                set_element_types.push_back(elem.type);
-
-            set_element_types = Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);
+            auto set_element_types = getSetElementTypes(set, function_node->getFunctionName(), settings);
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
 
             if (sets.findTuple(set_key, set_element_types))
@@ -142,6 +147,22 @@ public:
             else
 #endif
             sets.addFromTuple(set_key, std::move(ast), std::move(set), settings);
+        }
+        else if (auto scalar_column = tryGetScalarConstantColumn(in_second_argument, planner_context.getQueryContext()))
+        {
+            auto set = getSetElementsForConstantValue(
+                in_first_argument->getResultType(), scalar_column, in_second_argument->getResultType(),
+                GetSetElementParams{
+                    .transform_null_in = settings[Setting::transform_null_in],
+                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+                });
+            auto set_element_types = getSetElementTypes(set, function_node->getFunctionName(), settings);
+            auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
+
+            if (sets.findTuple(set_key, set_element_types))
+                return;
+
+            sets.addFromTuple(set_key, in_second_argument->toAST(), std::move(set), settings);
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION ||

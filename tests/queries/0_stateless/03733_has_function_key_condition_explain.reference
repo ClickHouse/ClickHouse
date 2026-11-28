@@ -266,7 +266,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               key_lc
-            Condition: (key_lc in 3-element set)
+            Condition: (_CAST(key_lc, \'String\') in 3-element set)
             Parts: 1/1
             Granules: 6/100
             Search Algorithm: generic exclusion search
