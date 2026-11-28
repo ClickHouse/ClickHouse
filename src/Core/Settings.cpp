@@ -1759,7 +1759,7 @@ The exact output depends on how the input is split into blocks and on the chosen
 The setting only affects queries that have `GROUP BY` keys. Aggregation without keys (for example, `SELECT count() FROM ...`) has a single group, so it is processed normally and always returns exactly one row, regardless of this setting.
 
 This setting is intended for special cases such as populating a materialized view with `POPULATE`, where the partial results are merged later in the background.
-)", 0, \
+)", EXPERIMENTAL, \
         {"26.12", false, false, "New setting to process `GROUP BY` in a streaming fashion: aggregate, finalize and flush the result for every block separately, without merging across blocks."}) \
     \
     DECLARE(Bool, skip_unavailable_shards, false, R"(
