@@ -78,19 +78,51 @@
     var path = window.location.pathname.slice(prefix.length).replace(/\/$/, '');
     if (path !== '/clickstack' && path.indexOf('/clickstack/') !== 0) return;
 
+    // Newer `Demo Days` are one shared page with individual updates marked by
+    // availability. They have no product-specific sibling URL, so selecting
+    // either product must not pretend to switch documents.
+    var sharedDemoDay = /^\/clickstack\/demo-days\/\d{4}\/[^/]+$/.test(path);
     var managed = path === '/clickstack/observability'
       || path.indexOf('/clickstack/observability/') === 0
       || path.indexOf('/clickstack/self-configured/') === 0;
-    document.querySelectorAll('a.nav-dropdown-item, a.mobile-nav-tabs-item').forEach(function (a) {
+    document.querySelectorAll(
+      'a.nav-dropdown-item, a.mobile-nav-tabs-item, .nav-dropdown-products-selector-content a',
+    ).forEach(function (a) {
       var href = new URL(a.href, window.location.origin).pathname.replace(/\/$/, '');
       var isManaged = href === prefix + '/clickstack/observability';
       var isOSS = href === prefix + '/clickstack';
       if (!isManaged && !isOSS) return;
-      if (managed === isManaged) {
+      if ((sharedDemoDay && (isManaged || isOSS)) || (!sharedDemoDay && managed === isManaged)) {
         if (a.getAttribute('aria-current') !== 'location') a.setAttribute('aria-current', 'location');
       } else {
         a.removeAttribute('aria-current');
       }
+    });
+
+    document.querySelectorAll('.nav-dropdown-products-selector-trigger').forEach(function (trigger) {
+      var label = trigger.querySelector('.truncate');
+      if (!label) return;
+
+      if (sharedDemoDay) {
+        if (!trigger.dataset.chSharedProduct) {
+          trigger.dataset.chSharedProductAriaLabel = trigger.getAttribute('aria-label') || '';
+        }
+        label.textContent = 'Both';
+        trigger.setAttribute('aria-label', 'ClickStack and ClickHouse Observability');
+        trigger.dataset.chSharedProduct = 'both';
+        return;
+      }
+
+      if (trigger.dataset.chSharedProduct === 'both') {
+        label.textContent = managed ? 'ClickHouse Observability' : 'ClickStack (OSS)';
+        if (trigger.dataset.chSharedProductAriaLabel) {
+          trigger.setAttribute('aria-label', trigger.dataset.chSharedProductAriaLabel);
+        } else {
+          trigger.removeAttribute('aria-label');
+        }
+        delete trigger.dataset.chSharedProductAriaLabel;
+      }
+      delete trigger.dataset.chSharedProduct;
     });
   }
 
