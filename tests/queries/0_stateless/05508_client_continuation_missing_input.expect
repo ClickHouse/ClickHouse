@@ -1,0 +1,103 @@
+#!/usr/bin/expect -f
+
+# Regression test: the single-line continuation probe
+# `ClientBase::queryNeedsContinuation` keeps a statement open on <ENTER> exactly
+# when more input can complete it.
+#
+# - With `implicit_select` (the default in `clickhouse-local`), `SET max_threads =`
+#   parses as an implicit `SELECT SET AS max_threads` with the `=` left over; the
+#   failure of the explicit `SET` at the end of input must still be seen, so the
+#   `INSERT` before it is not executed early.
+# - The SQL `SET` path of the Kusto parser fails at the end of input too.
+# - A Trino `SET SESSION max_threads =` is unfinished after the translation.
+# - A LogsQL `re(a,b)` has been read in full and fails validation; more input
+#   cannot repair it, so it is submitted and its error reported.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --output-format PrettyCompact --implicit_select 1 --enable_trino_dialect 1 --allow_experimental_kusto_dialect 1 --enable_logsql_dialect 1 --logsql_table logs --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+send -- "CREATE TABLE t_continuation (x UInt8) ENGINE = Memory\r"
+expect ":) "
+
+# `implicit_select`: complete the assignment on the continuation line. Give the
+# client time to react to the <ENTER> on its own: two lines sent back to back
+# arrive in a single read and are inserted as one pasted block.
+send -- "INSERT INTO t_continuation VALUES (1); SET max_threads =\r"
+sleep 1
+send -- "3\r"
+expect {
+    "Syntax error" { exit 1 }
+    ":) " {}
+}
+
+# Discard a buffer with an `INSERT` prefix: the `INSERT` must not have run.
+send -- "INSERT INTO t_continuation VALUES (2); SET max_threads =\r"
+sleep 1
+# Ctrl-C
+send -- "\3"
+expect ":) "
+
+send -- "SELECT count(), getSetting('max_threads') FROM t_continuation\r"
+expect -re {│ +1 │ +3 │}
+expect ":) "
+
+# Kusto: the SQL `SET` path.
+send -- "SET dialect = 'kusto'\r"
+expect ":) "
+send -- "SET max_threads =\r"
+sleep 1
+send -- "5\r"
+expect {
+    "Cannot parse the SET statement" { exit 1 }
+    ":) " {}
+}
+send -- "SET dialect = 'clickhouse'\r"
+expect ":) "
+send -- "SELECT getSetting('max_threads')\r"
+expect -re {│ +5 │}
+expect ":) "
+
+# Trino: `SET SESSION` is translated into a plain `SET`.
+send -- "SET dialect = 'trino'\r"
+expect ":) "
+send -- "SET SESSION max_threads =\r"
+sleep 1
+send -- "7\r"
+expect {
+    "Syntax error" { exit 1 }
+    ":) " {}
+}
+send -- "SET dialect = 'clickhouse'\r"
+expect ":) "
+send -- "SELECT getSetting('max_threads')\r"
+expect -re {│ +7 │}
+expect ":) "
+
+# LogsQL: a complete but invalid call is submitted on the first <ENTER>.
+send -- "SET dialect = 'logsql'\r"
+expect ":) "
+send -- "re(a,b)\r"
+expect "unexpected number of args for re()"
+expect ":) "
+
+send -- "\4"
+expect eof

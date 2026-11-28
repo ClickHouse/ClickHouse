@@ -1,0 +1,64 @@
+#!/usr/bin/expect -f
+
+# Regression test: the bracket heuristic of the single-line continuation probe
+# `ClientBase::queryNeedsContinuation` must not take a mismatched closing bracket
+# for an unfinished statement. No further input can repair `SELECT ([1)]` or
+# `SELECT (1]`, so <ENTER> has to submit them and report the syntax error instead
+# of inserting a newline forever. The Kusto scan follows the same rule.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --allow_experimental_kusto_dialect 1 --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# A genuinely unclosed bracket still folds the buffer.
+send -- "SELECT (1 +\r"
+# Give the client time to react to the <ENTER> on its own: input that arrives in a
+# single read is inserted as one pasted block, which would fold the buffer
+# regardless of what the continuation probe decides.
+sleep 1
+send -- "1)\r"
+expect {
+    "Syntax error" { exit 1 }
+    -re {│ +2 │} {}
+}
+expect ":) "
+
+# Mismatched closers are submitted at once (a fold would time out here).
+send -- "SELECT (\[1)]\r"
+expect "Syntax error"
+expect ":) "
+
+send -- "SELECT (1]\r"
+expect "Syntax error"
+expect ":) "
+
+# The same under the Kusto dialect.
+send -- "SET dialect = 'kusto'\r"
+expect ":) "
+
+send -- "print (\[1)]\r"
+expect "Syntax error"
+expect ":) "
+
+send -- "\4"
+expect eof

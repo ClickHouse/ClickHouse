@@ -22,6 +22,23 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+
+bool ParserPRQLQuery::isIncompleteAtEOF(std::string_view query)
+{
+#if !USE_PRQL
+    static_cast<void>(query);
+    return false;
+#else
+    uint8_t * output_ptr{nullptr};
+    uint64_t output_size{0};
+    const auto res = prql_to_sql(
+        reinterpret_cast<const uint8_t *>(query.data()), static_cast<uint64_t>(query.size()), &output_ptr, &output_size);
+    SCOPE_EXIT({ prql_free_pointer(output_ptr); });
+
+    return res == PRQL_INCOMPLETE_AT_END_OF_INPUT;
+#endif
+}
+
 bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserSetQuery set_p;

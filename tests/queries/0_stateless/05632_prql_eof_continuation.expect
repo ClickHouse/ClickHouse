@@ -1,0 +1,50 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest
+# Tag no-fasttest: PRQL is implemented in Rust, which is disabled in the fast-test build.
+
+# Regression test: the single-line continuation probe must recognize an
+# unfinished PRQL statement. The PRQL compiler reports a parse failure at the end
+# of input with a distinct result code. The first <ENTER> must keep the buffer
+# open, and the `SET` before it must not be executed early; the completed query
+# then reaches execution and fails only because the local test has no
+# `employees` table. Other PRQL errors are still submitted and reported.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --output-format PrettyCompact --enable_prql_dialect 1 --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# The tuple of `select {` is still open: the bracket heuristic of the probe does
+# not look at `{`, so only the PRQL compiler can tell that the input is missing.
+send -- "SET dialect = 'prql'; from employees | select {\r"
+sleep 1
+send -- "name}\r"
+expect {
+    "PRQL syntax error" { exit 1 }
+    -re {Unknown table expression identifier 'employees'|UNKNOWN_TABLE} {}
+}
+expect ":) "
+
+send -- "from employees | select {a)}\r"
+expect "PRQL syntax error"
+expect ":) "
+
+send -- "\4"
+expect eof

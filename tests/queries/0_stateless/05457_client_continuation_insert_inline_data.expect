@@ -1,0 +1,67 @@
+#!/usr/bin/expect -f
+
+# Regression test: in single-line interactive mode the continuation probe
+# `ClientBase::queryNeedsContinuation` must look past the inline data of an
+# `INSERT`. The parser stops at the data, so without skipping it the probe never
+# saw the unfinished statement after it, and <ENTER> on
+# `INSERT INTO t VALUES (1); SELECT` submitted the buffer: the row was inserted
+# and only then the syntax error of the trailing `SELECT` was reported.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --output-format PrettyCompact --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+send -- "CREATE TABLE t (x UInt8) ENGINE = Memory\r"
+expect ":) "
+
+# The trailing `SELECT` is unfinished, so <ENTER> must fold the buffer instead of
+# submitting it -- the `INSERT` is never executed.
+send -- "INSERT INTO t VALUES (1); SELECT\r"
+# Give the client time to react to the <ENTER> on its own: input that arrives in a
+# single read is inserted as one pasted block, which would fold the buffer
+# regardless of what the continuation probe decides.
+sleep 1
+# Discard the folded buffer without submitting it: a backspace at the start of a
+# continued line joins it with the previous one, so enough backspaces empty the
+# buffer while staying under the same prompt. 60 backspaces comfortably clear the
+# 33 characters (32 plus the folded newline) entered above.
+send -- [string repeat "\x7f" 60]
+
+# The discarded buffer must have left the table empty.
+send -- "SELECT count() FROM t\r"
+expect {
+    -re {│ +1 │} { exit 1 }
+    -re {│ +0 │} {}
+}
+expect ":) "
+
+# The same buffer with a complete trailing statement runs as a whole.
+send -- "INSERT INTO t VALUES (1); SELECT count() FROM t\r"
+expect {
+    "Syntax error" { exit 1 }
+    -re {│ +1 │} {}
+}
+expect ":) "
+
+send -- "\4"
+expect eof

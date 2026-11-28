@@ -1,12 +1,25 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/Exception.h>
 
 #include <string_view>
 #include <vector>
 
 namespace DB
 {
+
+/// The syntax error that the LogsQL lexer throws when the input ends inside a backtick-quoted
+/// (raw, multiline) string: the query is unfinished rather than wrong, and the next lines can
+/// complete it. (A double- or single-quoted string cannot span lines, so a newline could not
+/// complete it, and it is an ordinary syntax error.) It is an ordinary `SYNTAX_ERROR` for everyone else; the interactive
+/// client catches it by type to keep such a statement open for the next line
+/// (see `ParserLogsQLQuery::isIncompleteAtEOF`).
+class LogsQLUnexpectedEndOfInput : public Exception
+{
+public:
+    using Exception::Exception;
+};
 
 /// Lexer for LogsQL - the query language of VictoriaLogs.
 /// https://docs.victoriametrics.com/victorialogs/logsql/
@@ -34,22 +47,30 @@ public:
     void nextToken();
 
     /// The decoded text of the current token (for quoted tokens - the unquoted and unescaped content).
-    [[nodiscard]] const String & getToken() const { return token; }
+    [[nodiscard]] const String & getToken() const { noteInspection(); return token; }
 
     /// The raw text of the current token as it appears in the query.
-    [[nodiscard]] std::string_view getRawToken() const { return raw_token; }
+    [[nodiscard]] std::string_view getRawToken() const { noteInspection(); return raw_token; }
 
     /// The raw text of the previous token.
     [[nodiscard]] const String & getPrevRawToken() const { return prev_raw_token; }
 
     /// Whether the current token was quoted. Quoted tokens are never keywords.
-    [[nodiscard]] bool isQuoted() const { return quoted; }
+    [[nodiscard]] bool isQuoted() const { noteInspection(); return quoted; }
 
     /// Whether there was whitespace (or a comment) between the previous and the current token.
-    [[nodiscard]] bool skippedSpace() const { return skipped_space; }
+    [[nodiscard]] bool skippedSpace() const { noteInspection(); return skipped_space; }
 
     /// True if there are no more tokens.
-    [[nodiscard]] bool isEnd() const { return raw_token.empty() && current == end; }
+    [[nodiscard]] bool isEnd() const { noteInspection(); return isAtEndOfInput(); }
+
+    /// True if the end of input was examined as the current token: some caller asked whether it
+    /// is a keyword, a trailer, the end and so on, since the lexer last moved to it. A syntax error
+    /// thrown in this state is about the input missing at the end, e.g. after `error and`, while
+    /// one thrown without it is about tokens that have already been read, e.g. the argument count
+    /// of a complete `re(a,b)`, even though the lexer has reached the end of input by then.
+    /// Reading this does not count as an examination itself.
+    [[nodiscard]] bool hasExaminedEnd() const { return examined_end; }
 
     /// Case-insensitive comparison of the current token with the given keywords.
     /// Quoted tokens never match keywords.
@@ -71,6 +92,10 @@ public:
 
     /// Throws SYNTAX_ERROR with the current context appended to the message.
     [[noreturn]] void throwSyntaxError(const String & message) const;
+
+    /// Like `throwSyntaxError`, for an input that ends where more of it is required and can
+    /// follow on the next line, i.e. inside a backtick-quoted string. Throws `LogsQLUnexpectedEndOfInput`.
+    [[noreturn]] void throwUnexpectedEndOfInput(const String & message) const;
 
     struct State
     {
@@ -109,6 +134,18 @@ private:
     String prev_raw_token;
     bool quoted = false;
     bool skipped_space = false;
+
+    /// Set by `noteInspection` and cleared when the lexer moves (see `hasExaminedEnd`).
+    mutable bool examined_end = false;
+
+    [[nodiscard]] bool isAtEndOfInput() const { return raw_token.empty() && current == end; }
+
+    /// Called by the accessors of the current token.
+    void noteInspection() const
+    {
+        if (isAtEndOfInput())
+            examined_end = true;
+    }
 
     [[nodiscard]] bool isAllowedCompoundToken(const std::vector<std::string_view> & stop_tokens) const;
 

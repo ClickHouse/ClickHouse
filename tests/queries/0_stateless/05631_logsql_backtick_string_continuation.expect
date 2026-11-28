@@ -1,0 +1,50 @@
+#!/usr/bin/expect -f
+
+# Regression test: the single-line continuation probe must keep a LogsQL
+# statement open while a backtick-quoted (raw, multiline) string is being typed.
+# The LogsQL lexer throws on the unterminated string even when it is the first
+# token of the statement, before any parser exists to ask about the end of input.
+# The `SET` before it must not be executed early: the completed query is probed
+# under LogsQL and fails only because the local test has no `logs` table.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --output-format PrettyCompact --enable_logsql_dialect 1 --logsql_table logs --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+send -- "SET dialect = 'logsql'; `foo\r"
+sleep 1
+send -- "bar`\r"
+expect {
+    "unterminated backtick-quoted string" { exit 1 }
+    "Unknown table expression identifier 'logs'" {}
+}
+expect ":) "
+
+send -- "SET dialect = 'clickhouse'\r"
+expect ":) "
+
+# A double-quoted string cannot span lines: it is a syntax error to report.
+send -- "SET dialect = 'logsql'; \"foo\r"
+expect "unterminated quoted string"
+expect ":) "
+
+send -- "\4"
+expect eof

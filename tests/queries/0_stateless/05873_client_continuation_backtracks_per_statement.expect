@@ -1,0 +1,65 @@
+#!/usr/bin/expect -f
+
+# Regression test: the single-line continuation probe
+# `ClientBase::queryNeedsContinuation` must give every statement of the buffer its
+# own `max_parser_backtracks` budget, like `executeMultiQuery` does. With one
+# budget for the whole buffer, a run of individually valid statements exhausted
+# it, the resulting exception submitted the buffer, and the complete statements
+# were executed while the last one was still being typed.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+send -- "SET max_parser_backtracks = 100\r"
+expect ":) "
+
+send -- "CREATE TABLE t (x UInt8) ENGINE = Memory\r"
+expect ":) "
+
+# Many complete statements and an unfinished `SELECT` at the end: <ENTER> must fold
+# the buffer instead of submitting it.
+send -- "INSERT INTO t SELECT 1; [string repeat "SELECT (1) FORMAT Null; " 60]SELECT\r"
+# Give the client time to react to the <ENTER> on its own: input that arrives in a
+# single read is inserted as one pasted block, which would fold the buffer
+# regardless of what the continuation probe decides.
+sleep 1
+# Complete the last statement on the folded line: only now the buffer runs.
+send -- "count() FROM t\r"
+expect {
+    "Syntax error" { exit 1 }
+    "TOO_SLOW_PARSING" { exit 1 }
+    -re {│ +1 │} {}
+}
+expect ":) "
+
+# The `INSERT` ran exactly once, i.e. not on the first <ENTER> as well.
+send -- "SELECT count() + 100 FROM t\r"
+expect {
+    -re {│ +102 │} { exit 1 }
+    -re {│ +101 │} {}
+}
+expect ":) "
+
+send -- "\4"
+expect eof
