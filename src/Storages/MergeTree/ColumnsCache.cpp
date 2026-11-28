@@ -299,6 +299,16 @@ std::vector<ColumnsCache::MappedPtr> ColumnsCache::getMany(const UInt128 & colum
     const size_t num_keys = end_stripe - first_stripe;
     std::vector<MappedPtr> result(num_keys);
 
+    /// A read of a few granules looks up one stripe: one shard, without grouping the keys by shard.
+    if (num_keys == 1)
+    {
+        const Key key{column_identity, first_stripe};
+        result[0] = shardOf(key).get(key);
+        if (result[0])
+            result[0]->used.store(true, std::memory_order_relaxed);
+        return result;
+    }
+
     /// The keys of a column spread over the shards; each shard is locked once for its keys.
     std::vector<std::vector<size_t>> positions_by_shard(shards.size());
     for (size_t i = 0; i < num_keys; ++i)

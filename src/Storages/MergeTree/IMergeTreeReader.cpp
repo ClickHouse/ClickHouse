@@ -764,6 +764,15 @@ bool IMergeTreeReader::admitStripeToColumnsCache(size_t stripe)
     return stripe_admission->second;
 }
 
+bool IMergeTreeReader::isColumnsCacheRunDropped(const ColumnsCache::MappedPtr & existing, size_t first_mark, size_t end_mark) const
+{
+    /// A run disjoint from the entry, with a gap between them, replaces it only if it has more rows. A run that
+    /// touches or overlaps the entry is merged with it.
+    return existing
+        && (end_mark < existing->first_mark || existing->end_mark < first_mark)
+        && data_part_info_for_read->getIndexGranularity().getRowsCountInRange(first_mark, end_mark) <= existing->rows;
+}
+
 void IMergeTreeReader::addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, ColumnPtr column)
 {
     auto entry = makeColumnsCacheEntry();
