@@ -4,6 +4,7 @@ import logging
 import random
 import threading
 import time
+import uuid
 
 import pytest
 from google.protobuf.internal.encoder import _VarintBytes
@@ -531,6 +532,76 @@ def test_nats_insert(nats_cluster):
     nats_helpers.check_result(result, True)
 
 
+@pytest.mark.parametrize("ddl", ["DROP", "DETACH"])
+def test_nats_insert_racing_drop(nats_cluster, ddl):
+    # The table shutdown stops the event loop that sends the producer's messages, so the INSERT must fail, not wait forever.
+    table = f"test.nats_racing_{ddl.lower()}"
+    instance.query(
+        f"""
+        CREATE TABLE {table} (key UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'insert_racing_{ddl.lower()}',
+                     nats_format = 'TSV';
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, table)
+
+    query_id = f"nats_insert_racing_{ddl.lower()}_{uuid.uuid4().hex}"
+    result = {}
+
+    def insert():
+        result["error"] = instance.query_and_get_error(
+            f"INSERT INTO {table} SELECT number FROM numbers(50000000)", query_id=query_id, timeout=120
+        )
+        result["end"] = time.monotonic()
+
+    thread = threading.Thread(target=insert, daemon=True)
+    thread.start()
+
+    deadline = time.monotonic() + 60
+    written_rows = f"SELECT sum(written_rows) FROM system.processes WHERE query_id = '{query_id}'"
+    while instance.query(written_rows).strip() == "0":
+        assert time.monotonic() < deadline, "the INSERT did not start"
+        time.sleep(0.1)
+
+    instance.query(f"{ddl} TABLE {table}")
+    ddl_end = time.monotonic()
+    thread.join(timeout=60)
+    assert not thread.is_alive(), f"the INSERT hangs after {ddl} TABLE"
+    assert "Table is detached" in result["error"] and "(ABORTED)" in result["error"], result["error"]
+    # A flush onto the stopped event loop would wait for its 10 s timeout.
+    assert result["end"] - ddl_end < 9, result["end"] - ddl_end
+
+
+def test_nats_insert_materialized_column(nats_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.nats (a UInt64, m UInt64 MATERIALIZED a * 10, b UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'insert_materialized',
+                     nats_format = 'TSV',
+                     nats_row_delimiter = '\\n';
+    """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    async def insert_and_receive():
+        nc = await nats_connect_ssl(nats_cluster)
+        sub = await nc.subscribe("insert_materialized")
+        await nc.flush()
+        await asyncio.to_thread(
+            instance.query_with_retry, "INSERT INTO test.nats (a, b) VALUES (1, 2), (3, 4)"
+        )
+        messages = [(await sub.next_msg(60)).data.decode() for _ in range(2)]
+        await nc.drain()
+        return messages
+
+    # The MATERIALIZED column sits between the ordinary ones and is not written to the messages.
+    assert asyncio.run(insert_and_receive()) == ["1\t2\n", "3\t4\n"]
+
+
 def test_fetching_messages_without_mv(nats_cluster):
     instance.query(
         """
@@ -871,7 +942,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
             SETTINGS nats_url = 'nats1:4444',
                      nats_subjects = 'virtuals_mv',
                      nats_format = 'JSONEachRow';
-        CREATE TABLE test.view (key UInt64, value UInt64, subject String) ENGINE = MergeTree()
+        CREATE TABLE test.view (key UInt64, value UInt64, subject String, table_name String) ENGINE = MergeTree()
             ORDER BY key;
         """
     )
@@ -880,7 +951,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
     instance.query(
         """
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-        SELECT *, _subject as subject
+        SELECT *, _subject as subject, _table as table_name
         FROM test.nats_virtuals_mv;
         """
     )
@@ -913,6 +984,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
 """
 
     assert TSV(result) == TSV(expected)
+    assert instance.query("SELECT table_name, count() FROM test.view GROUP BY table_name") == "nats_virtuals_mv\t10\n"
 
 
 def test_nats_many_consumers_to_each_queue(nats_cluster):
@@ -1421,6 +1493,22 @@ def test_max_rows_per_message(nats_cluster):
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
 
+def test_max_rows_per_message_zero(nats_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'zero_rows',
+                     nats_format = 'JSONEachRow',
+                     nats_max_rows_per_message = 0;
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    assert "BAD_ARGUMENTS" in instance.query_and_get_error("INSERT INTO test.nats VALUES (1, 2)", timeout=60)
+
+
 def test_row_based_formats(nats_cluster):
     num_rows = 10
 
@@ -1669,3 +1757,132 @@ def test_hiding_credentials(nats_cluster):
     message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE test.{table_name}%'")
     assert "nats_password = \\'[HIDDEN]\\'" in  message
     assert "nats_credential_file = \\'[HIDDEN]\\'" in  message
+
+
+def test_nats_stream_error_mode_multirow_message(nats_cluster):
+    """One valid message with several rows used to break the chunk in `stream` error mode."""
+    instance.query(
+        """
+        CREATE TABLE test.nats (a UInt64, b String)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'stream_multirow',
+                     nats_format = 'JSONEachRow',
+                     nats_handle_error_mode = 'stream';
+        CREATE TABLE test.dst (a UInt64, b String, raw Nullable(String), err Nullable(String))
+            ENGINE = MergeTree ORDER BY a;
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.mv TO test.dst AS
+            SELECT a, b, _raw_message AS raw, _error AS err FROM test.nats;
+        """
+    )
+    nats_helpers.wait_for_mv_attached_to_table(instance, "test.nats")
+
+    # Two good rows in a single message, then one broken message.
+    good = '{"a":1,"b":"x"}\n{"a":2,"b":"y"}\n'
+    bad = "this is not json"
+    asyncio.run(publish_messages(nats_cluster, "stream_multirow", [good, bad]))
+
+    nats_helpers.wait_query_result(instance, "SELECT count() FROM test.dst", 3)
+
+    # Check the actual values, not just the count. Good rows keep their data and have
+    # NULL in both virtual columns. The broken row gets default data, the raw message
+    # and a non-NULL error.
+    result = instance.query(
+        "SELECT a, b, raw, err IS NULL FROM test.dst ORDER BY a, b"
+    )
+    assert result == (
+        "0\t\tthis is not json\t0\n"
+        "1\tx\t\\N\t1\n"
+        "2\ty\t\\N\t1\n"
+    )
+
+    # The exact error text depends on the parser, so only check that it is not empty.
+    assert instance.query("SELECT length(err) > 0 FROM test.dst WHERE a = 0") == "1\n"
+
+
+def test_nats_stream_error_mode_enum_type_default(nats_cluster):
+    """The row of a broken message gets the type default: the smallest element of an Enum without 0."""
+    instance.query(
+        """
+        CREATE TABLE test.nats (a UInt64, e Enum8('a' = 1, 'b' = 2))
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'stream_enum',
+                     nats_format = 'JSONEachRow',
+                     nats_handle_error_mode = 'stream';
+        CREATE TABLE test.dst (a UInt64, e Enum8('a' = 1, 'b' = 2), failed UInt8)
+            ENGINE = MergeTree ORDER BY a;
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.mv TO test.dst AS
+            SELECT a, e, isNotNull(_error) AS failed FROM test.nats;
+        """
+    )
+    nats_helpers.wait_for_mv_attached_to_table(instance, "test.nats")
+
+    asyncio.run(publish_messages(nats_cluster, "stream_enum", ['{"a":1,"e":"b"}', "not json"]))
+
+    nats_helpers.wait_query_result(instance, "SELECT count() FROM test.dst", 2)
+    assert instance.query("SELECT a, e, failed FROM test.dst ORDER BY a") == "0\ta\t1\n1\tb\t0\n"
+
+
+def test_nats_wait_for_flush_interval_reads_all_consumers(nats_cluster):
+    table_name = "test_serial_consumers"
+    subject = "serial_consumers"
+    messages_count = 300
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.{table_name};
+        DROP TABLE IF EXISTS test.dst;
+        DROP VIEW IF EXISTS test.mv;
+        CREATE TABLE test.{table_name} (key UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_format = 'JSONEachRow',
+                     nats_num_consumers = 4,
+                     nats_flush_interval_ms = 1000,
+                     nats_wait_for_flush_interval = 1,
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}';
+        CREATE TABLE test.dst (key UInt64) ENGINE = MergeTree ORDER BY key;
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, f"test.{table_name}")
+
+    instance.query(
+        f"""
+        CREATE MATERIALIZED VIEW test.mv TO test.dst AS SELECT key FROM test.{table_name};
+        """
+    )
+    nats_helpers.wait_for_mv_attached_to_table(instance, f"test.{table_name}")
+
+    async def publish():
+        nc = await nats_helpers.nats_connect_ssl(nats_cluster)
+        for i in range(messages_count):
+            await nc.publish(subject, json.dumps({"key": i}).encode())
+            await nc.flush()
+            await asyncio.sleep(0.01)
+        await nc.close()
+
+    asyncio.run(publish())
+
+    result = instance.query_with_retry(
+        "SELECT count(), uniqExact(key), min(key), max(key) FROM test.dst",
+        check_callback=lambda res: res.strip() == f"{messages_count}\t{messages_count}\t0\t{messages_count - 1}",
+        retry_count=60,
+        sleep_time=1,
+    )
+    assert result.strip() == f"{messages_count}\t{messages_count}\t0\t{messages_count - 1}"

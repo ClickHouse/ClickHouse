@@ -19,9 +19,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置：识别 HTTP 请求 URL 路径中的数据库名称。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "默认启用：HTTP 接口会将 URL 路径中的 `\/database\/` 组件解析为当前数据库。"}]}]} />
 
-启用后，HTTP 接口会识别 URL 路径中的 `/database/` 组件，并将其用作当前数据库。
+启用后，HTTP 接口会识别 URL 路径中的 `/database/` 组件，并将其用作当前数据库。此外，还支持基于路径、带数据库前缀的 `PUT` 上传，例如 `/database/table.CSV`。
 
-这是一个按用户生效的设置，用于控制是否解析已路由的路径式请求。路由本身由服务器级配置设置 `http_allow_path_requests` 全局控制 (默认开启) 。必须启用该设置，HTTP 接口才能将路径式请求 (例如 `/my_db/my_table.csv`) 路由到查询处理程序。由于路由决策在请求完成身份验证之前作出，因此不能依赖按用户生效的设置。`http_allow_path_requests` 关闭时，未知路径会返回普通的 `404`。路由后，会根据已通过身份验证用户的有效设置再次检查此设置，因此可针对特定用户、角色或 profile 选择性禁用。
+这是一个用户级设置，用于控制是否解析已路由的路径式请求。路由本身由服务端级配置设置 `http_allow_path_requests` 全局控制 (默认开启) 。必须启用该设置，HTTP 接口才能将路径式请求 (例如 `/my_db/my_table.csv`) 路由到查询处理程序。由于路由决策在请求完成身份验证之前作出，因此不能依赖用户级设置。`http_allow_path_requests` 关闭时，未知路径会返回普通的 `404`。路由后，会根据已通过身份验证用户的有效设置再次检查此设置，因此可针对特定用户、角色或 profile 选择性禁用。
 
 ## http_allow_filters_as_path {#http_allow_filters_as_path}
 
@@ -52,9 +52,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置：识别 HTTP 请求 URL 路径中的表名，支持可选的格式\/压缩扩展名。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "默认启用：HTTP 接口会将 URL 路径的最后一个组件解释为 `table[.format[.compression]]`，并返回 `SELECT * FROM table` 的结果作为响应。"}]}]} />
 
-启用后，HTTP 接口会将 URL 路径的最后一个组件识别为表名，其形式可以是 `table`、`table.format` 或 `table.format.compression`。该路径会被解释为 `SELECT * FROM table`。
+启用后，HTTP 接口会将 URL 路径的最后一个组件识别为表名，其形式可以是 `table`、`table.format` 或 `table.format.compression`。对于 `GET` 和 `HEAD` 请求，该路径会被解释为 `SELECT * FROM table`；对于基于路径的 `PUT` 请求，该路径用于指定上传数据所写入的已有目标表及所用的输入格式。
 
-与 [`http_allow_database_as_path`](/zh/reference/settings/session-settings/http#http_allow_database_as_path) 一样，这是一个按用户生效的设置；路径式请求的路由在全局范围内受服务器级配置设置 `http_allow_path_requests` 控制 (路由发生在身份验证之前) 。
+与 [`http_allow_database_as_path`](/zh/reference/settings/session-settings/http#http_allow_database_as_path) 一样，这是一个用户级设置；路径式请求的路由在全局范围内受服务端级配置设置 `http_allow_path_requests` 控制 (路由发生在身份验证之前) 。
 
 ## http_connection_timeout {#http_connection_timeout}
 
@@ -155,6 +155,8 @@ HTTP 发送超时时间 (以秒为单位) 。
 <SettingsInfoBlock type="Int64" default_value="3" />
 
 如果 [enable&#95;http&#95;compression = 1](/zh/reference/settings/session-settings/enable#enable_http_compression)，则设置 HTTP 请求响应中的数据压缩级别。
+
+该设置仅适用于基于 zlib 的压缩方法：`gzip` 和 `deflate`。其他压缩方法 (例如 `zstd`、`lz4`、`br`、`xz`) 的级别由 [output&#95;format&#95;compression&#95;level](/zh/reference/settings/formats/output-format#output_format_compression_level) 设置。
 
 可能的值：1 到 12 的数值。高于 `9` 的级别需要使用包含 `libdeflate` 的默认构建版本；不包含 `libdeflate` 的构建版本支持 1 到 9 级。
 

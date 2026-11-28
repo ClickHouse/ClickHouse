@@ -8,8 +8,6 @@ show_related_blogs: false
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 > このガイドでは、Snowflake から ClickHouse へデータを移行する方法を説明します。
 
 Snowflake から ClickHouse へデータを移行するには、
@@ -19,7 +17,11 @@ Snowflake の `COPY INTO` コマンドと ClickHouse の `INSERT INTO SELECT`
 
 <Steps>
   <Step title="Snowflake からデータをエクスポートする" id="1-exporting-data-from-snowflake">
-    <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="Snowflake から ClickHouse への移行" />
+    <div className="ch-image-md">
+      <Frame>
+        ![Snowflake から ClickHouse への移行](/images/migrations/migrate_snowflake_clickhouse.webp)
+      </Frame>
+    </div>
 
     Snowflake からデータをエクスポートするには、上図のように外部ステージを使用する必要があります。
 
@@ -56,9 +58,9 @@ Snowflake の `COPY INTO` コマンドと ClickHouse の `INSERT INTO SELECT`
   </Step>
 
   <Step title="ClickHouse にインポートする" id="2-importing-to-clickhouse">
-    データが中間 object storage にステージングされたら、以下のように [s3 table function](/ja/reference/functions/table-functions/s3) などの ClickHouse 関数を使用して、テーブルにデータを挿入できます。
+    データが中間 object storage にステージングされたら、以下のように [s3 table 関数](/ja/reference/functions/table-functions/s3) などの ClickHouse 関数を使用して、テーブルにデータを挿入できます。
 
-    この例では AWS S3 用の [s3 table function](/ja/reference/functions/table-functions/s3) を使用していますが、Google Cloud Storage には [gcs table function](/ja/reference/functions/table-functions/gcs)、Azure Blob Storage には [azureBlobStorage table function](/ja/reference/functions/table-functions/azureBlobStorage) を使用できます。
+    この例では AWS S3 用の [s3 table 関数](/ja/reference/functions/table-functions/s3) を使用していますが、Google Cloud Storage には [gcs table 関数](/ja/reference/functions/table-functions/gcs)、Azure Blob Storage には [azureBlobStorage table 関数](/ja/reference/functions/table-functions/azureBlobStorage) を使用できます。
 
     次のターゲットテーブルのスキーマを前提とします。
 
@@ -99,7 +101,7 @@ Snowflake の `COPY INTO` コマンドと ClickHouse の `INSERT INTO SELECT`
 
       元の Snowflake テーブルスキーマにある `VARIANT` および `OBJECT` カラムは、デフォルトでは JSON 文字列として出力されるため、ClickHouse への挿入時にキャストが必要になります。
 
-      `some_file` のようなネスト構造は、Snowflake によるコピー時に JSON 文字列へ変換されます。このデータをインポートするには、上記のように [JSONExtract function](/ja/reference/functions/regular-functions/json-functions#JSONExtract) を使用して、ClickHouse の挿入時にこれらの構造を Tuples に変換する必要があります。
+      `some_file` のようなネスト構造は、Snowflake によるコピー時に JSON 文字列へ変換されます。このデータをインポートするには、上記のように [JSONExtract 関数](/ja/reference/functions/regular-functions/json-functions#JSONExtract) を使用して、ClickHouse の挿入時にこれらの構造を Tuples に変換する必要があります。
     </Info>
   </Step>
 

@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 drop table if exists t;
 
 create table t (a UInt64, b UInt64) engine=MergeTree() order by (a);

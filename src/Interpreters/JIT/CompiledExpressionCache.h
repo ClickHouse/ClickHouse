@@ -16,7 +16,7 @@ public:
         : compiled_expression_size(compiled_expression_size_)
     {}
 
-    size_t getCompiledExpressionSize() const { return compiled_expression_size; }
+    [[nodiscard]] size_t getCompiledExpressionSize() const { return compiled_expression_size; }
 
     virtual ~CompiledExpressionCacheEntry() = default;
 

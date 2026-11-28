@@ -498,6 +498,7 @@ namespace DB
     MR_MACROS(RESTRICT, "RESTRICT") \
     MR_MACROS(RESTRICTIVE, "RESTRICTIVE") \
     MR_MACROS(RESUME, "RESUME") \
+    MR_MACROS(RETURNING, "RETURNING") \
     MR_MACROS(RETURNS, "RETURNS") \
     MR_MACROS(REVOKE, "REVOKE") \
     MR_MACROS(REWRITE_PARTS, "REWRITE PARTS") \
@@ -517,6 +518,7 @@ namespace DB
     MR_MACROS(SCHEME, "SCHEME") \
     MR_MACROS(SECOND, "SECOND") \
     MR_MACROS(SECONDS, "SECONDS") \
+    MR_MACROS(SEGMENTS, "SEGMENTS") \
     MR_MACROS(SELECT, "SELECT") \
     MR_MACROS(SEMI, "SEMI") \
     MR_MACROS(SEQUENTIAL, "SEQUENTIAL") \
@@ -531,6 +533,8 @@ namespace DB
     MR_MACROS(SET, "SET") \
     MR_MACROS(SETTING, "SETTING") \
     MR_MACROS(SETTINGS, "SETTINGS") \
+    MR_MACROS(SHARDS, "SHARDS") \
+    MR_MACROS(SHARED, "SHARED") \
     MR_MACROS(SHOW_ACCESS, "SHOW ACCESS") \
     MR_MACROS(SHOW_CREATE, "SHOW CREATE") \
     MR_MACROS(SHOW_ENGINES, "SHOW ENGINES") \
@@ -540,6 +544,7 @@ namespace DB
     MR_MACROS(SHOW_PROCESSLIST, "SHOW PROCESSLIST") \
     MR_MACROS(SHOW_SETTING, "SHOW SETTING") \
     MR_MACROS(SHOW, "SHOW") \
+    MR_MACROS(SHUFFLE, "SHUFFLE") \
     MR_MACROS(SIGNED, "SIGNED") \
     MR_MACROS(SIMILAR_TO, "SIMILAR TO") \
     MR_MACROS(SIMPLE, "SIMPLE") \
@@ -726,9 +731,9 @@ public:
 
     explicit ParserKeyword(Keyword keyword);
 
-    constexpr const char * getName() const override { return s.data(); }
+    [[nodiscard]] constexpr const char * getName() const override { return s.data(); }
 
-    Highlight highlight() const override { return Highlight::keyword; }
+    [[nodiscard]] Highlight highlight() const override { return Highlight::keyword; }
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -743,7 +748,7 @@ public:
     ParserToken(TokenType token_type_) : token_type(token_type_) {} /// NOLINT
 
 protected:
-    const char * getName() const override { return "token"; }
+    [[nodiscard]] const char * getName() const override { return "token"; }
 
     bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
     {
@@ -765,7 +770,7 @@ public:
     ParserTokenSequence(const std::vector<TokenType> & token_types_) : token_types(token_types_) {} /// NOLINT
 
 protected:
-    const char * getName() const override { return "token sequence"; }
+    [[nodiscard]] const char * getName() const override { return "token sequence"; }
 
     bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
     {
@@ -788,7 +793,7 @@ protected:
 class ParserNothing : public IParserBase
 {
 public:
-    const char * getName() const override { return "nothing"; }
+    [[nodiscard]] const char * getName() const override { return "nothing"; }
 
     bool parseImpl(Pos & /*pos*/, ASTPtr & /*node*/, Expected & /*expected*/) override { return true; }
 };

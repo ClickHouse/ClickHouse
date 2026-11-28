@@ -3,7 +3,7 @@
 
 SELECT * FROM eval('SELECT 1'); -- { serverError SUPPORT_IS_DISABLED }
 
-SET allow_experimental_eval_table_function = 1;
+SET enable_eval_table_function = 1;
 
 SELECT count() FROM system.table_functions WHERE name = 'eval';
 

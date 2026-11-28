@@ -25,7 +25,7 @@ avg(x)
 
 **返回值**
 
-返回算术平均值。如果 `x` 是数值，结果为 `Float64`；如果 `x` 为空，则返回 `NaN`。如果 `x` 是日期、时间或时间间隔，结果与 `x` 的类型相同：平均值会四舍五入到最接近的可表示值；如果 `x` 为空，则返回该类型的零值。返回类型可以是 [`Float64`](/zh/reference/data-types/float)、[`Date`](/zh/reference/data-types/date)、[`Date32`](/zh/reference/data-types/date32)、[`DateTime`](/zh/reference/data-types/datetime)、[`DateTime64(P)`](/zh/reference/data-types/datetime64)、[`Time`](/zh/reference/data-types/time)、[`Time64(P)`](/zh/reference/data-types/time64) 或 [`Interval`](/zh/reference/data-types/special-data-types/interval)
+返回算术平均值。如果 `x` 是数值，结果为 `Float64`；如果 `x` 为空，则返回 `NaN`。如果 `x` 是日期、时间或时间间隔，结果与 `x` 的类型相同：平均值会四舍五入到最接近的可表示值；如果 `x` 为空，则返回该类型的零值。如果 `x` 为 [`Nullable`](/zh/reference/data-types/nullable) 类型，结果类型为 `Nullable(T)`，其中 `T` 是对应的非 `Nullable` 类型 `x` 的结果类型 (数值输入为 `Float64`) ；输入为空时返回 `NULL`。返回类型可以是 [`Float64`](/zh/reference/data-types/float)、[`Date`](/zh/reference/data-types/date)、[`Date32`](/zh/reference/data-types/date32)、[`DateTime`](/zh/reference/data-types/datetime)、[`DateTime64(P)`](/zh/reference/data-types/datetime64)、[`Time`](/zh/reference/data-types/time)、[`Time64(P)`](/zh/reference/data-types/time64) 或 [`Interval`](/zh/reference/data-types/special-data-types/interval)
 
 **示例**
 

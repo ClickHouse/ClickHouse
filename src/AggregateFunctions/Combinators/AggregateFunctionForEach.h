@@ -84,25 +84,9 @@ private:
 
             char * new_state = arena.alignedAlloc(allocation_size, nested_func->alignOfData());
 
+            nested_func->createNestedStates(new_state, new_size, nested_size_of_data);
+
             size_t i = 0;
-            try
-            {
-                for (i = 0; i < new_size; ++i)
-                {
-                    nested_func->create(&new_state[i * nested_size_of_data]);
-                }
-            }
-            catch (...)
-            {
-                size_t cleanup_size = i;
-
-                for (i = 0; i < cleanup_size; ++i)
-                {
-                    nested_func->destroy(&new_state[i * nested_size_of_data]);
-                }
-
-                throw;
-            }
 
             /// Zero-sized nested state (aggregate over Nothing): the zero-byte arena
             /// allocation does not advance, so new_state aliases old_state. There is no
@@ -167,40 +151,6 @@ public:
     String getName() const override
     {
         return nested_func->getName() + "ForEach";
-    }
-
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        return nested_func->canMergeStateFromDifferentVariant(*rhs_nested);
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        const AggregateFunctionForEachData & rhs_state = data(rhs_place);
-        AggregateFunctionForEachData & state = ensureAggregateData(place, rhs_state.dynamic_array_size, *arena);
-
-        const size_t rhs_nested_size_of_data = ::Memory::alignUp(rhs_nested->sizeOfData(), rhs_nested->alignOfData());
-
-        const char * rhs_nested_state = rhs_state.array_of_aggregate_datas;
-        char * nested_state = state.array_of_aggregate_datas;
-
-        for (size_t i = 0; i < state.dynamic_array_size && i < rhs_state.dynamic_array_size; ++i)
-        {
-            nested_func->mergeStateFromDifferentVariant(nested_state, *rhs_nested, rhs_nested_state, arena);
-
-            rhs_nested_state += rhs_nested_size_of_data;
-            nested_state += nested_size_of_data;
-        }
     }
 
     static DataTypePtr createResultType(AggregateFunctionPtr nested_)
@@ -270,7 +220,7 @@ public:
         const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets = first_array_column.getOffsets();
 
-        size_t begin = offsets[row_num - 1];
+        size_t begin = offsets[static_cast<ssize_t>(row_num) - 1];
         size_t end = offsets[row_num];
 
         /// Sanity check. NOTE We can implement specialization for a case with single argument, if the check will hurt performance.
@@ -279,7 +229,7 @@ public:
             const ColumnArray & ith_column = assert_cast<const ColumnArray &>(*columns[i]);
             const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
 
-            if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[row_num - 1] != begin))
+            if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[static_cast<ssize_t>(row_num) - 1] != begin))
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Arrays passed to {} aggregate function have different sizes", getName());
         }
 
@@ -312,7 +262,7 @@ public:
         size_t end) const
     {
         for (const auto * offsets : trailing_offsets)
-            if ((*offsets)[row] != end || (row != 0 && (*offsets)[row - 1] != begin))
+            if ((*offsets)[row] != end || (row != 0 && (*offsets)[static_cast<ssize_t>(row) - 1] != begin))
                 throw Exception(
                     ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "Arrays passed to {} aggregate function have different sizes", getName());
@@ -327,7 +277,9 @@ public:
         size_t row,
         Arena * arena) const
     {
-        size_t begin = offsets[row - 1];
+        /// `offsets[-1]` is the guaranteed zero of `PaddedPODArray`'s left padding, as at `row_num`
+        /// above; an unsigned `row - 1` reaches the same byte only by wrapping twice.
+        size_t begin = offsets[static_cast<ssize_t>(row) - 1];
         size_t end = offsets[row];
         assertArraySizesMatch(trailing_offsets, row, begin, end);
         if (begin == end)
@@ -662,8 +614,8 @@ public:
                 {
                     arr_to.getOffsets().resize_assume_reserved(offsets_before);
                     const char * nested_state = data(place).array_of_aggregate_datas;
-                    for (size_t i = transferred; i-- > 0;)
-                        nested_func->rollbackInsertResult(nested_state + i * nested_size_of_data, arr_to.getData());
+                    for (size_t i = transferred; i > 0; --i)
+                        nested_func->rollbackInsertResult(nested_state + (i - 1) * nested_size_of_data, arr_to.getData());
                     throw;
                 }
 
@@ -693,8 +645,8 @@ public:
 
         offsets_to.resize_assume_reserved(offsets_to.size() - 1);
         const char * nested_state = state.array_of_aggregate_datas;
-        for (size_t i = state.dynamic_array_size; i-- > 0;)
-            nested_func->rollbackInsertResult(nested_state + i * nested_size_of_data, arr_to.getData());
+        for (size_t i = state.dynamic_array_size; i > 0; --i)
+            nested_func->rollbackInsertResult(nested_state + (i - 1) * nested_size_of_data, arr_to.getData());
     }
 
     bool allocatesMemoryInArena() const override

@@ -2,6 +2,7 @@
 
 #if USE_HIVE
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <fmt/core.h>
@@ -29,6 +30,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/parseURI.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -197,7 +199,7 @@ public:
         }
     }
 
-    FormatSettings updateFormatSettings(const std::unordered_set<int> & skip_splits)
+    FormatSettings updateFormatSettings(const UnorderedSetWithMemoryTracking<int> & skip_splits)
     {
         auto updated = format_settings;
         if (format == "HiveText")
@@ -434,7 +436,7 @@ StorageHive::StorageHive(
     , storage_settings(std::move(storage_settings_))
 {
     /// Check hive metastore url.
-    getContext()->getRemoteHostFilter().checkURL(Poco::URI(hive_metastore_url));
+    getContext()->getRemoteHostFilter().checkURL(parseURI(hive_metastore_url));
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -610,6 +612,10 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFilesFromPartition(
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
             "Partition value size not match, expect {}, but got {}", partition_names.size(), partition.values.size());
 
+    if (!partition_key_expr)
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+            "Hive metastore returned a partition for table {}.{}, but the table has no partition key", hive_database, hive_table);
+
     /// Join partition values in CSV format
     WriteBufferFromOwnString wb;
     for (size_t i = 0; i < partition.values.size(); ++i)
@@ -749,7 +755,7 @@ HiveFileWithSkipSplits StorageHive::getHiveFileIfNeeded(
     /// This set depends on the query filter, so it is kept query-local rather than stored on the shared
     /// cached file: an unfiltered read leaves it empty (read all splits), and concurrent queries with
     /// different filters do not interfere with each other's pruning.
-    std::unordered_set<int> skip_splits;
+    UnorderedSetWithMemoryTracking<int> skip_splits;
 
     if (filter_actions_dag && prune_level >= PruneLevel::File)
     {
@@ -807,7 +813,7 @@ bool StorageHive::supportsSubsetOfColumns() const
 class ReadFromHive : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromHive"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromHive"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromHive(
@@ -1156,8 +1162,6 @@ void registerStorageHive(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # Hive table engine
 
 <CloudNotSupportedBadge/>

@@ -64,24 +64,6 @@ public:
         return nested_func->getNormalizedStateType();
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        chassert(rhs.getNestedFunction() != nullptr);
-
-        return nested_func->canMergeStateFromDifferentVariant(*rhs.getNestedFunction());
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        chassert(rhs.getNestedFunction() != nullptr);
-
-        nested_func->mergeStateFromDifferentVariant(place, *rhs.getNestedFunction(), rhs_place, arena);
-    }
-
     bool isVersioned() const override
     {
         return nested_func->isVersioned();
@@ -224,6 +206,10 @@ public:
 
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
     bool isParallelizeMergePrepareNeeded() const override { return nested_func->isParallelizeMergePrepareNeeded(); }
+    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override { return nested_func->getEstimatedMergeWork(place); }
+    /// The adaptive sampler hashes the condition together with the nested arguments, so distinct
+    /// argument tuples bound the distinct admitted inputs from above.
+    size_t getStateBytesPerDistinctInput() const override { return nested_func->getStateBytesPerDistinctInput(); }
 
     bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {

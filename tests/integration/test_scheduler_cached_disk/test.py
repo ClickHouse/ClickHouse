@@ -143,12 +143,17 @@ def test_takeover_after_query_end():
         """
     )
     node.query("truncate table data_takeover")
-    node.query("insert into data_takeover select randomString(1000) from numbers(4000)")
+    node.query("insert into data_takeover select randomString(1000) from numbers(8000)")
     node.query("system drop filesystem cache")
 
-    settings = "max_threads = 1, filesystem_cache_allow_background_download = 0"
+    # One file segment for the whole `s.bin`, so the second query reads the rest of it only through the reader it takes over.
+    settings = (
+        "max_threads = 1, filesystem_cache_allow_background_download = 0,"
+        " filesystem_cache_boundary_alignment = 16777216"
+    )
+    # Reading past its first read buffer (1 MiB) makes the first query wait on the throttler while it is the downloader.
     query_a = node.get_query_request(
-        f"select s from data_takeover limit 1 format Null settings workload = 'wl_a', {settings}",
+        f"select s from data_takeover limit 1500 format Null settings workload = 'wl_a', {settings}",
         query_id="takeover_a",
     )
     deadline = time.monotonic() + 30
@@ -171,7 +176,15 @@ def test_takeover_after_query_end():
     query_a.get_answer()
     wait_query_end("takeover_a")
     cost_a = workload_cost("wl_a")
-    assert query_b.get_answer().strip() == "4000000"
+    assert query_b.get_answer().strip() == "8000000"
+    wait_query_end("takeover_b")
+    # `s.bin` is one segment and the second query finished downloading it.
+    assert_eq_with_retry(
+        node,
+        "select count(), countIf(file_segment_range_begin = 0 and state = 'DOWNLOADED' and downloaded_size = size)"
+        " from system.filesystem_cache where key = (select argMax(key, size) from system.filesystem_cache)",
+        "1\t1",
+    )
     # The rest of the segment, read through the reader the first query created, is charged to the second one.
     assert workload_cost("wl_a") == cost_a
     assert workload_cost("wl_b") > cost_a

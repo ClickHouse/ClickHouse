@@ -11,6 +11,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
+#include <Common/ServerOwnedMemory.h>
 #include <base/scope_guard.h>
 
 #include <map>
@@ -259,7 +260,7 @@ public:
         Job job_, Priority priority_, CurrentMetrics::Metric metric,
         const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_, bool query_cancellation_blocked_,
         bool capture_frame_pointers, ScopedDecrement available_threads_decrement_)
-        : job(job_), priority(priority_), metric_increment(metric),
+        : job(std::move(job_)), priority(priority_), metric_increment(metric),
         available_threads_decrement(std::move(available_threads_decrement_)),
         thread_trace_context(thread_trace_context_), query_cancellation_blocked(query_cancellation_blocked_),
         enable_job_stack_trace(capture_frame_pointers)
@@ -282,6 +283,19 @@ public:
     }
 };
 
+
+namespace
+{
+
+/// What the callable captured may be the query's, the rest was allocated as the server's.
+void releaseJob(std::optional<JobWithPriority> & job_data)
+{
+    job_data->job = {};
+    ServerOwnedMemoryScope server_owned;
+    job_data.reset();
+}
+
+}
 
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_)
@@ -328,7 +342,8 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     value = std::min(value, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     std::lock_guard lock(mutex);
-    remaining_pool_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
+    remaining_pool_capacity.fetch_add(
+        static_cast<Int64>(value) - static_cast<Int64>(max_threads), std::memory_order_relaxed);
 
     bool need_start_threads = (value > max_threads);
     bool need_finish_free_threads = (value < max_free_threads);
@@ -339,6 +354,7 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
     /// We have to also adjust queue size, because it limits the number of scheduled and already running jobs in total.
     queue_size = queue_size ? std::max(queue_size, max_threads) : 0;
     jobs.reserve(std::min(queue_size, MAX_JOBS_TO_RESERVE));
+    slot_freed.notify_all();
 
     if (need_start_threads)
     {
@@ -402,6 +418,8 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
     queue_size = value ? std::max(value, max_threads) : 0;
     /// Reserve memory to get rid of allocations
     jobs.reserve(std::min(queue_size, MAX_JOBS_TO_RESERVE));
+    /// A larger queue can admit the schedulers waiting for a slot.
+    slot_freed.notify_all();
 }
 
 template <typename Thread>
@@ -432,6 +450,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     ScopedDecrement available_threads_decrement(available_threads);
 
     std::unique_ptr<ThreadFromThreadPool> new_thread;
+    std::shared_ptr<std::condition_variable> idle_thread_cv;
     // Load the current capacity
     int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
     int64_t currently_available_threads = available_threads.load(std::memory_order_relaxed);
@@ -477,11 +496,18 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             /// nanoseconds (x 1'000) on top of `steady_clock::now()`, which overflows Int64 for such a
             /// count. Clamping keeps the wait well-defined: a negative timeout has already expired, so it
             /// gives up at once, and a count above the cap keeps meaning "wait until a thread frees up".
-            if (!job_finished.wait_for(lock, DB::saturatedMicroseconds(*wait_microseconds), pred))
+            if (!slot_freed.wait_for(lock, DB::saturatedMicroseconds(*wait_microseconds), pred))
                 return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
         }
         else
-            job_finished.wait(lock, pred);
+            slot_freed.wait(lock, pred);
+
+        /// A freed slot wakes only one scheduler, so pass the wakeup on while slots remain free.
+        /// This covers a scheduler that fails without taking the slot.
+        SCOPE_EXIT(
+            if (queue_size && scheduled_jobs < queue_size)
+                slot_freed.notify_one();
+        );
 
         if (finished)
             return on_error("finished");
@@ -547,7 +573,14 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
         try
         {
-            jobs.emplace(std::move(job),
+            /// A worker frees what the job holds besides the callable after detaching, so it is the server's. The callable
+            /// is moved in after, so that it stays the caller's when this throws; if the queue does, it is released like
+            /// on the worker.
+            std::optional<JobWithPriority> job_with_priority;
+            SCOPE_EXIT({ if (job_with_priority) releaseJob(job_with_priority); });
+            {
+                ServerOwnedMemoryScope server_owned;
+                job_with_priority.emplace(Job{},
                     priority,
                     metric_scheduled_jobs,
                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
@@ -557,6 +590,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                     /// capture_frame_pointers
                     DB::Exception::enable_job_stack_trace,
                     std::move(available_threads_decrement));
+            }
+            job_with_priority->job = std::move(job);
+            jobs.emplace(std::move(*job_with_priority));
 
             ++scheduled_jobs;
 
@@ -579,13 +615,18 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         /// avoids a thundering herd where every idle thread wakes, contends for the
         /// mutex, and goes back to sleep on every job schedule.
         ///
-        /// Notify while still holding `mutex`: once `idle_wakeup_flag` is set, a
-        /// spurious wakeup is enough for the worker to run and remove itself from
-        /// the pool, so the raw `ThreadFromThreadPool` pointer must not be used
-        /// after the lock is released.
+        /// Notify after releasing `mutex`, otherwise the woken thread blocks on it right away.
+        /// Once `idle_wakeup_flag` is set, a spurious wakeup is enough for the thread to run
+        /// and remove itself from the pool, so only its CV, not the thread, is used after unlock.
         if (ThreadFromThreadPool * thread_to_wake = popNewestIdleThreadNoLock())
-            wakeIdleThreadNoLock(thread_to_wake);
+        {
+            thread_to_wake->idle_wakeup_flag = true;
+            idle_thread_cv = thread_to_wake->cv;
+        }
     }
+
+    if (idle_thread_cv)
+        idle_thread_cv->notify_one();
 
     ProfileEvents::increment(std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
@@ -681,7 +722,7 @@ void ThreadPoolImpl<Thread>::wait()
     /// first worker-loop iteration, or a busy thread that will see the queued
     /// job when it finishes its current one). Waking all idle threads would
     /// destroy LIFO ordering — the whole point of this pool design.
-    job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
+    all_jobs_finished.wait(lock, [this] { return scheduled_jobs == 0; });
 
     if (first_exception)
     {
@@ -699,7 +740,7 @@ bool ThreadPoolImpl<Thread>::waitUntil(std::chrono::steady_clock::time_point dea
     ProfileEvents::increment(
         std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
         watch.elapsedMicroseconds());
-    return job_finished.wait_until(lock, deadline, [this] { return scheduled_jobs == 0; });
+    return all_jobs_finished.wait_until(lock, deadline, [this] { return scheduled_jobs == 0; });
 }
 
 template <typename Thread>
@@ -726,7 +767,7 @@ void ThreadPoolImpl<Thread>::finishNoLock(const std::lock_guard<std::mutex> &)
 
     /// Wake up all idle threads so they can see it and exit gracefully.
     wakeUpAllIdleThreadsNoLock();
-    job_finished.notify_all();
+    slot_freed.notify_all();
 }
 
 template <typename Thread>
@@ -843,7 +884,7 @@ template <typename Thread>
 void ThreadPoolImpl<Thread>::wakeIdleThreadNoLock(ThreadFromThreadPool * thread)
 {
     thread->idle_wakeup_flag = true;
-    thread->cv.notify_one();
+    thread->cv->notify_one();
 }
 
 template <typename Thread>
@@ -1037,9 +1078,15 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
                 --parent_pool.scheduled_jobs;
 
-                parent_pool.job_finished.notify_all();
+                if (parent_pool.scheduled_jobs == 0)
+                    parent_pool.all_jobs_finished.notify_all();
                 if (parent_pool.finished)
+                {
+                    parent_pool.slot_freed.notify_all();
                     parent_pool.wakeUpAllIdleThreadsNoLock(); /// `finished` was set, wake up other threads so they can finish themselves.
+                }
+                else
+                    parent_pool.slot_freed.notify_one();
             }
 
             /// LIFO idle thread scheduling: link this thread into the intrusive
@@ -1070,7 +1117,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             {
                 idle_wakeup_flag = false;
                 parent_pool.pushIdleThreadNoLock(this);
-                cv.wait(lock, [this]
+                cv->wait(lock, [this]
                 {
                     return idle_wakeup_flag
                         || !parent_pool.jobs.empty()
@@ -1108,7 +1155,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 {
                     ALLOW_ALLOCATIONS_IN_SCOPE;
                     /// job can contain packaged_task which can set exception during destruction
-                    job_data.reset();
+                    releaseJob(job_data);
                 }
                 job_is_done = true;
                 continue;
@@ -1180,7 +1227,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
-            job_data.reset();
+            releaseJob(job_data);
         }
         catch (...)
         {
@@ -1197,7 +1244,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
-            job_data.reset();
+            releaseJob(job_data);
         }
 
         DB::Exception::clearThreadFramePointers();

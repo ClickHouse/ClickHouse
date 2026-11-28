@@ -7,39 +7,45 @@ doc_type: 'guide'
 keywords: ['observabilidad', 'monitorización', 'nube', 'métricas', 'estado del sistema']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import ObservabilityIntegrations from '/snippets/es/_observability_integration_options.mdx';
 import DirectIntegrations from '/snippets/es/_direct_observability_integration_options.mdx';
+
 import CommunityMonitoring from '/snippets/es/_community_monitoring.mdx';
 
 Esta guía proporciona a los equipos empresariales que evalúan ClickHouse Cloud información exhaustiva sobre las capacidades de monitorización y observabilidad para implementaciones de producción. Los clientes empresariales suelen preguntar por las funciones de monitorización listas para usar, la integración con las pilas de observabilidad existentes, incluidas herramientas como Datadog y AWS CloudWatch, y cómo se compara la monitorización de ClickHouse con las implementaciones autogestionadas.
 
-<div id="advanced-observability">
-  ## Dashboard avanzado de observabilidad
-</div>
+## Dashboard avanzado de observabilidad {#advanced-observability}
 
-ClickHouse Cloud proporciona una supervisión integral mediante interfaces de dashboard integradas accesibles desde la sección monitorización. Estos dashboards visualizan métricas del sistema y de rendimiento en tiempo real sin necesidad de configuración adicional y son las herramientas principales para la monitorización de producción en tiempo real dentro de ClickHouse Cloud.
+ClickHouse Cloud proporciona una monitorización integral mediante interfaces de dashboard integradas accesibles desde la sección monitorización. Estos dashboards visualizan métricas del sistema y de rendimiento en tiempo real sin necesidad de configuración adicional y son las herramientas principales para la monitorización de producción en tiempo real dentro de ClickHouse Cloud.
 
-* **dashboard avanzado**: La interfaz principal del dashboard, accesible desde monitorización → dashboard avanzado, proporciona visibilidad en tiempo real de la tasa de consultas, el uso de recursos, el estado del sistema y el rendimiento del almacenamiento. Este dashboard no requiere autenticación independiente, no impedirá que las instancias entren en estado inactivo y no añade carga de consultas a su sistema de producción. Cada visualización se basa en consultas SQL personalizables, con gráficos predefinidos agrupados en métricas específicas de ClickHouse, de estado del sistema y específicas de Cloud. Puede ampliar la supervisión creando consultas personalizadas directamente en la SQL Console.
+* **dashboard avanzado**: La interfaz principal del dashboard, accesible desde monitorización → dashboard avanzado, proporciona visibilidad en tiempo real de la tasa de consultas, el uso de recursos, el estado del sistema y el rendimiento del almacenamiento. Este dashboard no requiere autenticación independiente, no impedirá que las instancias entren en estado inactivo y no añade carga de consultas a su sistema de producción. Cada visualización se basa en consultas SQL personalizables, con gráficos predefinidos agrupados en métricas específicas de ClickHouse, de estado del sistema y específicas de Cloud. Puede ampliar la monitorización creando consultas personalizadas directamente en la SQL Console.
 
 <Note>
   Acceder a estas métricas no ejecuta ninguna consulta en el servicio subyacente ni reactivará servicios inactivos.
 </Note>
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="dashboard avanzado" />
+<div className="ch-image-lg">
+  <Frame>
+    ![dashboard avanzado](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+  </Frame>
+</div>
 
 Los usuarios que deseen ampliar estas visualizaciones pueden usar la funcionalidad de dashboards de ClickHouse Cloud y consultar directamente las tablas del sistema.
 
-* **Dashboard avanzado nativo**: Una interfaz de dashboard alternativa accesible a través de &quot;You can still access the native advanced dashboard&quot; dentro de la sección monitorización. Se abre en una pestaña independiente con autenticación y proporciona una UI alternativa para supervisar el estado del sistema y del servicio. Este dashboard permite análisis avanzados, ya que puede modificar las consultas SQL subyacentes.
+* **Dashboard avanzado nativo**: Una interfaz de dashboard alternativa accesible a través de &quot;You can still access the native advanced dashboard&quot; dentro de la sección monitorización. Se abre en una pestaña independiente con autenticación y proporciona una UI alternativa para monitorizar el estado del sistema y del servicio. Este dashboard permite análisis avanzados, ya que puede modificar las consultas SQL subyacentes.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="dashboard avanzado" />
+<div className="ch-image-lg">
+  <Frame>
+    ![dashboard avanzado](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+  </Frame>
+</div>
 
 Ambos dashboards ofrecen visibilidad inmediata del estado y del rendimiento del servicio sin dependencias externas, lo que los diferencia de herramientas externas centradas en la depuración como ClickStack.
 
 Para obtener información detallada sobre las funciones del dashboard y las métricas disponibles, consulte la [documentación del dashboard avanzado](/es/products/cloud/features/monitoring/advanced-dashboard).
 
 <div id="query-insights">
-  ## Query Insights y monitorización de recursos
+  ## Query Insights y monitorización de recursos {#query-insights}
 </div>
 
 ClickHouse Cloud incluye capacidades adicionales de monitorización:
@@ -50,7 +56,7 @@ ClickHouse Cloud incluye capacidades adicionales de monitorización:
 Consulta la documentación de [Query Insights](/es/products/cloud/features/sql-console-features/query-insights) y [utilización de recursos](/es/guides/oss/deployment-and-scaling/monitoring/monitoring#resource-utilization) para obtener información detallada sobre estas funciones.
 
 <div id="prometheus">
-  ## Endpoint de métricas compatible con Prometheus
+  ## Endpoint de métricas compatible con Prometheus {#prometheus}
 </div>
 
 ClickHouse Cloud proporciona un endpoint de Prometheus. Esto le permite mantener los flujos de trabajo actuales, aprovechar la experiencia existente del equipo e integrar las métricas de ClickHouse en plataformas empresariales de monitorización, como Grafana, Datadog y otras herramientas compatibles con Prometheus.
@@ -67,7 +73,7 @@ El endpoint a nivel de organización federa las métricas de todos los servicios
 <ObservabilityIntegrations />
 
 <div id="clickstack-deployment">
-  ### Opciones de implementación de ClickStack
+  ### Opciones de implementación de ClickStack {#clickstack-deployment}
 </div>
 
 * **HyperDX en ClickHouse Cloud**  (vista previa privada): HyperDX puede ejecutarse en cualquier servicio de ClickHouse Cloud.
@@ -86,7 +92,7 @@ Para consultar todas las opciones de implementación y los detalles de la arquit
 <CommunityMonitoring />
 
 <div id="system-impact">
-  ## Consideraciones sobre el impacto en el sistema
+  ## Consideraciones sobre el impacto en el sistema {#system-impact}
 </div>
 
 Todos los enfoques anteriores se basan en una combinación de endpoints de Prometheus, gestión por parte de ClickHouse Cloud o consulta directa de tablas del sistema.

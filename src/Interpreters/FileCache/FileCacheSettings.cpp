@@ -20,7 +20,7 @@ namespace fs = std::filesystem;
 
 /// Keys that belong to the disk configuration layer (IDisk), not to the cache layer.
 /// They must be skipped when loading cache settings to avoid UNKNOWN_SETTING errors.
-static const std::set<std::string> non_cache_keys = {"type", "disk", "name", "data_background_cleanup", "thread_pool_size", "skip_access_check"};
+[[clang::no_destroy]] static const std::set<std::string> non_cache_keys = {"type", "disk", "name", "data_background_cleanup", "thread_pool_size", "skip_access_check"};
 
 namespace DB
 {
@@ -47,6 +47,8 @@ namespace ErrorCodes
     DECLARE(UInt64, background_download_max_file_segment_size, FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE_WITH_BACKGROUND_DOWLOAD, "Alignment-rounded prefetch threshold for an already-started segment, not a cap on total segment size. Below this size, background download fills up to the value rounded up to boundary_alignment. Once downloaded_size reaches it, background download continues up to downloaded_size rounded up to boundary_alignment", 0) \
     DECLARE(NonZeroUInt64, load_metadata_threads, FILECACHE_DEFAULT_LOAD_METADATA_THREADS, "Maximum number of threads used to load cache metadata at server startup", 0) \
     DECLARE(Bool, load_metadata_asynchronously, false, "Enables asynchronous loading of metadata on server startup", 0) \
+    DECLARE(NonZeroUInt64, background_cleanup_threads, FILECACHE_DEFAULT_BACKGROUND_CLEANUP_THREADS, "Maximum number of background cleanup threads. The cleanup removes each key which has no file segments left: the key from the cache metadata, its directory on disk together with any files which the cache does not know, and then the key prefix directory and the user directory if they became empty. It also removes the empty key directories found at server startup. One thread always runs, the others are started when cleanup tasks pile up and stop when none is left", 0) \
+    DECLARE(NonZeroUInt64, background_cleanup_elements_per_thread, FILECACHE_DEFAULT_BACKGROUND_CLEANUP_ELEMENTS_PER_THREAD, "One more background cleanup thread is started when the number of keys waiting for cleanup reaches this value multiplied by the number of running cleanup threads", 0) \
     DECLARE(Double, keep_free_space_size_ratio, FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO, "A ratio of free space which cache would try to uphold in the background", 0) \
     DECLARE(Double, keep_free_space_elements_ratio, FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO, "A ratio of free elements which cache would try to uphold in the background", 0) \
     DECLARE(UInt64, keep_free_space_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "A remove batch size of cache elements made by background thread which upholds free space/elements ratio", 0) \
@@ -54,7 +56,7 @@ namespace ErrorCodes
     DECLARE(NonZeroUInt64, invalidated_entries_cleanup_interval_ms, 10000, "Idle interval in milliseconds of the background task which purges invalidated (lazily-removed) priority queue entries", 0) \
     DECLARE(NonZeroUInt64, invalidated_entries_cleanup_threshold, 1000, "Number of accumulated invalidated priority queue entries which triggers their background removal", 0) \
     DECLARE(NonZeroUInt64, invalidated_entries_cleanup_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "Maximum number of invalidated priority queue entries removed under a single write lock per background iteration", 0) \
-    DECLARE(Bool, enable_filesystem_query_cache_limit, false, "Enable limiting maximum size of cache which can be written within a query", 0) \
+    DECLARE(Bool, enable_filesystem_query_cache_limit, false, "Deprecated setting, ignored. The per-query cache write limit was removed", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, cache_hits_threshold, 0, "Deprecated setting", 0) \
     DECLARE(Bool, enable_bypass_cache_with_threshold, false, "Undocumented. Not recommended for use", 0) \
     DECLARE(UInt64, bypass_cache_threshold, FILECACHE_BYPASS_THRESHOLD, "Undocumented. Not recommended for use", 0) \

@@ -49,6 +49,14 @@ Possible values:
 - 0 — always,
 - negative integer - never.
 
+## optimize_constant_columns_after_filter {#optimize_constant_columns_after_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to replace filtered columns with `ColumnConst` when an equality predicate proves that all passed values are equal to a constant."}]}]}/>
+
+Replace filtered columns with `ColumnConst` when an equality predicate proves that all passed values are equal to a constant.
+
 ## optimize_count_from_files {#optimize_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -72,7 +80,7 @@ Rewrite `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` into `dictGet('
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
+Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement. It is not applied to a `FINAL` read that uses vertical `FINAL` (see `enable_vertical_final`), unless a `LIMIT` lets the `DISTINCT` stop reading early or the read is already in order for another reason, such as `ORDER BY`.
 
 ## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
 
@@ -268,6 +276,18 @@ deposited additional filters above a `MergeTree` read step (e.g. predicate pushd
 `JOIN`, projection rewrites). When an existing `PREWHERE` is already present, the new
 filter is `AND`-merged into it instead of staying as a separate filter step.
 
+## optimize_projection_skip_index_ratio {#optimize_projection_skip_index_ratio}
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "New setting controlling when projection selection applies the base table's deferred skip indexes before comparing costs: the extra pass runs only if the best projection candidate reads more than this fraction of the parent's primary-key-only mark estimate. The previous value 1.0 restores the pre-existing behavior: with ratio = 1 the refinement never runs, because it could only matter for candidates that the primary-key-only comparison rejects anyway."}]}]}/>
+
+When `use_skip_indexes_on_data_read` is enabled, the base table's skip indexes are applied at data-read time, so the mark count that a normal projection candidate is compared against is estimated by the primary key only. If the best normal projection candidate reads more than this fraction of that estimate, and the base table has skip indexes usable for the query, the skip indexes are applied to the base table during planning and the refined mark count is used for the comparison. `0` always applies them, `1` keeps the primary-key-only comparison. Aggregate projections are not affected.
+
+Possible values:
+
+- A float in the range `[0, 1]`.
+
 ## optimize_qbit_distance_function_reads {#optimize_qbit_distance_function_reads}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -314,7 +334,9 @@ If it is set to true, it will respect aliases in WHERE/GROUP BY/ORDER BY, that w
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Optimize sorting by sorting properties of input stream
+If the data coming into an `ORDER BY` is already sorted by a prefix of the sorting key (for example, after a subquery with `ORDER BY` or a sort-merge join), only the rows with equal values of that prefix are sorted instead of sorting the whole data. The order of the result of a sort-merge join is also reused by the sorting for a later join.
+
+Takes effect only if `query_plan_enable_optimizations` is enabled.
 
 ## optimize_substitute_columns {#optimize_substitute_columns}
 

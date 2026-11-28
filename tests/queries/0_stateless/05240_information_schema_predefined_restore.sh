@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-darwin
+# no-darwin: `information_schema` and `INFORMATION_SCHEMA` collide in a `File()` backup on case-insensitive APFS, https://github.com/ClickHouse/ClickHouse/issues/127645
 set -e
 
 # `BACKUP DATABASE` includes every `information_schema` view under both name casings

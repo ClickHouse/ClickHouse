@@ -22,10 +22,9 @@ SET group_by_two_level_threshold_bytes = 1;
 -- randomization sets both external-group-by settings to 0 otherwise.
 SET max_bytes_before_external_group_by = 10737418240;
 SET max_bytes_ratio_before_external_group_by = 0;
--- The adaptive aggregator stands down for a single-stream scan anyway; pin it off so the shape
--- does not change if that rejection is ever lifted.
+-- The adaptive aggregator takes a single-stream scan too and would aggregate on its own path, so it
+-- is pinned off to keep the shapes on the ordinary path.
 SET enable_adaptive_aggregator = 0;
-SET max_rows_to_group_by = 0;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET serialize_query_plan = 0;
@@ -50,6 +49,7 @@ SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LI
 -- merging the losers' other states, which the conversion-stage selection cannot.
 SELECT k, count() AS c, max(u) FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_b_count_riders' FORMAT Null;
+-- A lone exact distinct count is served by the conversion-stage selection just like the lone count.
 SELECT k, uniqExact(u) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_c_uniq_exact' FORMAT Null;
 -- The extremum bound serves any number of per-thread tables.
@@ -58,11 +58,12 @@ SELECT k, max(u) AS m FROM threshold_top_k_events GROUP BY k ORDER BY m DESC LIM
 -- The sum of unsigned integers is subadditive just like the count.
 SELECT k, sum(u) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_e_sum' FORMAT Null;
--- The `If` and `Null` combinators forward the subadditive bound of the nested function.
+-- The `If` combinator forwards the subadditive bound of the nested function.
 SELECT k, countIf(u >= 2) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_f_count_if' FORMAT Null;
 SELECT k, sumIf(u, u >= 2) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_f_sum_if' FORMAT Null;
+-- The `Null` combinator keeps the name `uniqExact`, so the conversion-stage selection serves it too.
 SELECT k, uniqExact(nullIf(u, 0)) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_g_uniq_exact_null' FORMAT Null;
 
@@ -98,9 +99,9 @@ SELECT k, min(u) AS m FROM threshold_top_k_events GROUP BY k ORDER BY m DESC LIM
 SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_m_disabled', query_plan_aggregation_bucket_top_k = 0 FORMAT Null;
 
--- Shard-local final aggregation with the query plan serialized. The parameter is not on the wire,
--- and does not need to be: the optimization is a property of the plan shape, and the side that
--- runs the aggregation derives it from its own plan (a deserialized plan is optimized again in
+-- Shard-local final aggregation with the query plan serialized. The parameters are not on the wire,
+-- and do not need to be: the optimizations are a property of the plan shape, and the side that
+-- runs the aggregation derives them from its own plan (a deserialized plan is optimized again in
 -- `executeQuery` before it is turned into a pipeline). The session pins `serialize_query_plan = 0`
 -- above only to keep the local plan shape deterministic, not because the merge cannot survive it.
 CREATE TABLE threshold_top_k_events_dist AS threshold_top_k_events
@@ -123,7 +124,8 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
     AND log_comment != '05043_ttkm_dist_serialized'
 ORDER BY log_comment;
 
--- The shard's own query: the merge engages there exactly as it does locally.
+-- The shard's own query: as in `c_uniq_exact`, the conversion-stage selection serves the lone
+-- `uniqExact`, and the threshold merge yields to it.
 SELECT
     'dist_serialized',
     ProfileEvents['AggregationThresholdTopKMerges'] > 0,

@@ -509,7 +509,6 @@ DROP TABLE t_skip_empty_enum;
 -- Each partition uses one JSON column while the other JSON columns remain `{}`.
 -- Empty JSON columns must create no physical column before or after partition merges.
 -- ============================================================================
-SET allow_experimental_json_type = 1;
 DROP TABLE IF EXISTS t_skip_empty_partitioned_json;
 
 CREATE TABLE t_skip_empty_partitioned_json

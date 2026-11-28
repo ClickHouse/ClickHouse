@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Processors/IProcessor_fwd.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -9,6 +10,9 @@
 
 namespace DB
 {
+
+class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 
 class QueryPipelineProcessorsCollector;
 
@@ -116,6 +120,10 @@ public:
     /// Forget about current extremes, keeping totals. Needed before a join, whose inputs' extremes
     /// say nothing about the join result; they are recalculated above the join if they are wanted.
     void dropExtremes();
+    /// Take the extremes out of the pipeline, so that the following transforms do not process them,
+    /// and put them back with `attachExtremes`, converted to the header the pipeline has then.
+    void detachExtremes();
+    void attachExtremes();
 
     void addMergingAggregatedMemoryEfficientTransform(
         AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
@@ -163,7 +171,7 @@ public:
         size_t min_block_size_bytes,
         size_t max_streams,
         IQueryPlanStep * join_step,
-        bool keep_left_read_in_order,
+        bool keep_left_pipeline_layout,
         const std::optional<String> & seal_gate = std::nullopt,
         Processors * collected_processors = nullptr);
 
@@ -203,6 +211,18 @@ public:
         IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
+    /// Join N pipelines sorted by their keys with one transform per stream, created by `create_transform`.
+    /// With `by_shards` the streams of all pipelines are shards with the same borders, otherwise every
+    /// pipeline is merged into one sorted stream.
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesMultiwayMerge(
+        VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines,
+        const VectorWithMemoryTracking<Names> & key_names,
+        bool by_shards,
+        std::function<ProcessorPtr(const SharedHeaders &)> create_transform,
+        size_t max_block_size,
+        IQueryPlanStep * join_step,
+        Processors * collected_processors = nullptr);
+
     /// Add other pipeline and execute it before current one.
     /// Pipeline must have empty header, it should not generate any chunk.
     /// This is used for CreatingSets.
@@ -232,6 +252,9 @@ public:
 
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(ProgressCallback callback);
+
+    /// Carried only so that `getPipeline` can hand it to the pipeline, which owns it from then on.
+    void setStepProfiler(StepProfilerPtr step_profiler_) { step_profiler = std::move(step_profiler_); }
 
     /// Recommend number of threads for pipeline execution.
     size_t getNumThreads() const
@@ -294,12 +317,17 @@ private:
     bool read_stream_count_was_reduced = false;
 
     QueryStatusPtr process_list_element;
+    StepProfilerPtr step_profiler;
     ProgressCallback progress_callback = nullptr;
 
     void checkInitialized();
     void checkInitializedAndNotCompleted();
 
     void setCollectedProcessors(Processors * processors);
+
+    /// Merges the streams, sorted by the keys, into one sorted stream.
+    static void mergeToSingleSortedStream(
+        QueryPipelineBuilder & pipeline, const Names & key_names, size_t max_block_size, Processors * collected_processors);
 
     friend class QueryPipelineProcessorsCollector;
 };

@@ -19,9 +19,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
   [ClickHouse Managed Postgres](/ja/products/managed-postgres/overview) サービスもご覧ください。コンピュートと物理的に同一配置された NVMe storage を採用しており、EBS のようなネットワーク接続型ストレージを使用する代替手段と比べて、ディスク I/O がボトルネックになるワークロードで最大 10 倍高速なパフォーマンスを実現します。さらに、ClickPipes の Postgres CDC (変更データキャプチャ) コネクタを使用して、Postgres のデータを ClickHouse にレプリケートできます。
 </Tip>
 
-<div id="using-the-postgresql-table-engine">
-  ## PostgreSQL テーブルエンジンを使用する
-</div>
+## PostgreSQL テーブルエンジンを使用する {#using-the-postgresql-table-engine}
 
 `PostgreSQL` table engineを使用すると、ClickHouse からリモートの PostgreSQL server に保存されているデータに対して、**SELECT** および **INSERT** 操作を実行できます。
 この記事では、1 つのテーブルを使ったインテグレーションの基本的な方法を説明します。
@@ -205,9 +203,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
   </Step>
 </Steps>
 
-<div id="using-the-materializedpostgresql-database-engine">
-  ## MaterializedPostgreSQL データベースエンジンを使用する
-</div>
+## MaterializedPostgreSQL データベースエンジンを使用する {#using-the-materializedpostgresql-database-engine}
 
 <CloudNotSupportedBadge />
 
@@ -303,7 +299,7 @@ PostgreSQL データベースエンジンは、PostgreSQL のレプリケーシ�
     2. PostgreSQL データベースエンジンの実験的機能を有効にします:
 
     ```sql
-    SET allow_experimental_database_materialized_postgresql=1
+    SET enable_database_materialized_postgresql=1
     ```
 
     3. レプリケーション対象の新しいデータベースを作成し、初期テーブルを定義します:

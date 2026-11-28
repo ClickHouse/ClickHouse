@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Regression test: with `input_format_null_as_default = 0`, reading a NULL value from
 -- a nullable Parquet column into a non-Nullable column used to throw LOGICAL_ERROR
 -- "Unexpected number of rows in column subchunk" instead of the expected

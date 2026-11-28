@@ -26,7 +26,7 @@ public:
     class CurrentBufferExhausted : public std::exception
     {
     public:
-        const char * what() const noexcept override { return "WriteBuffer limit is exhausted"; }
+        [[nodiscard]] const char * what() const noexcept override { return "WriteBuffer limit is exhausted"; }
     };
 
     using BufferBase::set;
@@ -154,6 +154,12 @@ public:
 
 protected:
     WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
+
+    template <PaddedBufferStorage Storage>
+    void setPaddedStorage(const Storage & storage, size_t storage_offset, size_t size)
+    {
+        BufferBase::setPaddedStorage(storage, storage_offset, size, 0);
+    }
 
     virtual void finalizeImpl() { next(); }
     virtual void cancelImpl() noexcept { }

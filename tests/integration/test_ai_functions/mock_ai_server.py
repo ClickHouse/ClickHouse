@@ -32,11 +32,15 @@ Endpoints:
         same true/false heuristic used for the `aiFilter` fallback below).
       - Otherwise echoes the user message as plain text.
       Fixed tokens: 10 input, 5 output.
+  POST /v1/chat/completions_null_fields - like `/v1/chat/completions`, but every field of the structured reply is
+      null, as when the text contains none of them.
   POST /v1/chat/completions_no_structured_output — like `/v1/chat/completions`, but ignores
       `response_format` even when present, simulating a model/gateway that doesn't support
       structured output: for an `aiFilter` boolean-filter system prompt, returns plain `true` or
       `false`, or an unrecognized reply (`"gibberish"`) when the user message asks for it;
       otherwise echoes the user message as plain text.
+  POST /v1/chat/completions_leading_whitespace — like `/v1/chat/completions`, but the structured
+      reply starts with a newline, as some models return it.
   POST /v1/embeddings                — returns one deterministic embedding per input.
       Honors `dimensions` if provided, otherwise returns DEFAULT_EMBED_DIM floats.
       `prompt_tokens` = sum of input character lengths.
@@ -320,6 +324,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
             LAST_REQUEST["body"] = body
             LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
 
+        if parsed.path in ("/v1/metrics/openai", "/v1/metrics/anthropic"):
+            # A known delay provides a lower bound for the request timer.
+            time.sleep(0.02)
+            mode = parse_qs(parsed.query).get("mode", ["cached"])[0]
+            if parsed.path.endswith("anthropic"):
+                response = make_anthropic_response(extract_user_message(body))
+                response["usage"].update(
+                    cache_read_input_tokens=60, cache_creation_input_tokens=30
+                )
+                if mode == "malformed":
+                    del response["content"]
+                elif mode == "truncated":
+                    response["stop_reason"] = "max_tokens"
+            else:
+                response = make_success_response(
+                    extract_user_message(body), prompt_tokens=100
+                )
+                response["usage"]["prompt_tokens_details"] = {"cached_tokens": 60}
+                if mode == "no_details":
+                    del response["usage"]["prompt_tokens_details"]
+                elif mode == "null_details":
+                    response["usage"]["prompt_tokens_details"] = None
+                elif mode == "empty_details":
+                    response["usage"]["prompt_tokens_details"] = {}
+                elif mode == "malformed":
+                    response["choices"] = []
+                elif mode == "truncated":
+                    response["choices"][0]["finish_reason"] = "length"
+            if mode == "no_usage":
+                del response["usage"]
+            self._send_json(200, response)
+            return
+
         if parsed.path == "/v1/chat/slow":
             self._serve_slowly(lambda: make_success_response(extract_user_message(body)))
             return
@@ -367,6 +404,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(200, make_success_response(content))
             return
 
+        if parsed.path == "/v1/chat/completions_null_fields":
+            # A structured reply with every field `null`, as a model returns when the text has none of them.
+            properties = (extract_response_format(body) or {}).get("schema", {}).get("properties", {})
+            self._send_json(200, make_success_response(json.dumps({key: None for key in properties})))
+            return
+
         if parsed.path == "/v1/chat/completions_no_structured_output":
             # Ignores `response_format` on purpose, as a model/gateway that doesn't support
             # structured output would: replies with bare text for an `aiFilter` boolean-filter
@@ -376,6 +419,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 content = filter_match_response(user_msg)
             else:
                 content = user_msg
+            self._send_json(200, make_success_response(content))
+            return
+
+        if parsed.path == "/v1/chat/completions_leading_whitespace":
+            user_msg = extract_user_message(body)
+            json_schema = extract_response_format(body)
+            content = "\n" + build_structured_response(json_schema, user_msg)
             self._send_json(200, make_success_response(content))
             return
 

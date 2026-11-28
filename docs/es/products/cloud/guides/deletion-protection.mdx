@@ -1,0 +1,110 @@
+---
+sidebarTitle: 'Protección contra eliminación'
+slug: /cloud/manage/deletion-protection
+title: 'Protección contra la eliminación de servicios'
+description: 'Impide la eliminación de un servicio de ClickHouse Cloud hasta que se desactive la protección'
+keywords: ['protección contra eliminación', 'eliminar servicio', 'ClickHouse Cloud', 'configuración del servicio', 'deletionProtection']
+doc_type: 'guide'
+---
+
+La protección contra la eliminación de servicios es un parámetro de configuración de cada servicio que impide su eliminación hasta que lo desactive. Úsela en aquellos servicios de ClickHouse Cloud que quiera proteger frente a eliminaciones accidentales desde la consola de ClickHouse Cloud, a través de la [API de ClickHouse Cloud](/es/cloud/manage/api/api-overview) o con Terraform.
+
+<Note>
+  Esto se aplica a los servicios de ClickHouse Cloud. No se aplica a los servicios de [ClickHouse Managed Postgres](/es/cloud/managed-postgres).
+</Note>
+
+La protección está desactivada de forma predeterminada. Desactivarla no elimina el servicio. Un servicio protegido sigue en ejecución, y las consultas, el escalado y los demás ajustes no se ven afectados.
+
+Mientras la protección esté activada, se rechazarán las solicitudes de eliminación. `DELETE /v1/organizations/{organizationId}/services/{serviceId}` devuelve HTTP `409` hasta que desactive la protección. Además, el servicio debe estar detenido para poder eliminarse. Una vez cumplidas estas condiciones, la eliminación se ejecuta de forma asíncrona.
+
+## Quién puede cambiarla {#who-can-change-it}
+
+Para activar o desactivar la protección se necesita el permiso [`control-plane:service:delete`](/es/cloud/security/console-roles). Los administradores de la organización tienen este permiso. Consulte [Roles y permisos de la consola](/es/cloud/security/console-roles).
+
+Además, para activar la protección, la protección contra eliminación debe estar disponible para la organización, como ocurre en las organizaciones de ClickHouse Cloud. Si la organización no la tiene, una operación de creación o actualización que establezca `deletionProtection` en `true` devuelve HTTP `400`. Desactivar la protección no está sujeto a esa comprobación: se acepta cualquier solicitud que establezca `deletionProtection` en `false`, incluso para un servicio que ya está protegido.
+
+| Acción                                                   | Permiso                                                                                                                            |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Activar o desactivar el interruptor en la consola        | `control-plane:service:delete` sobre el servicio                                                                                   |
+| Establecer `deletionProtection` en un servicio existente | `control-plane:service:manage` y `control-plane:service:delete` sobre el servicio                                                  |
+| Enviar el valor que el servicio ya tiene                 | Solo `control-plane:service:manage`. Repetir el valor actual no requiere `control-plane:service:delete`                            |
+| Crear un servicio con `deletionProtection: true`         | `control-plane:organization:create-service` y `control-plane:service:delete` concedido para todos los servicios de la organización |
+| Eliminar el servicio                                     | `control-plane:service:delete` sobre el servicio. El servicio debe estar detenido y la protección, desactivada                     |
+
+Los servicios de ClickStack no se pueden actualizar mediante la Cloud API. Active o desactive su protección contra eliminación desde la consola.
+
+## Activar o desactivar la protección en la consola {#console}
+
+Abra el servicio y vaya a **Settings**. En **Protección contra eliminación**, utilice el interruptor. El cambio se guarda automáticamente.
+
+El interruptor está disponible para cualquier usuario que tenga el permiso `control-plane:service:delete` sobre ese servicio. Mientras la protección esté activada, la consola bloquea la acción de eliminación hasta que desactive el interruptor.
+
+## Configúrelo con la Cloud API {#cloud-api}
+
+El objeto del servicio tiene un campo de tipo boolean, `deletionProtection`. Configúrelo al crear un servicio (`POST /v1/organizations/{organizationId}/services`) o al actualizarlo (`PATCH /v1/organizations/{organizationId}/services/{serviceId}`). Las respuestas de las operaciones get y list incluyen este campo. Si no está presente, el servicio no está protegido.
+
+Para activar la protección:
+
+```bash
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
+  -d '{"deletionProtection": true}'
+```
+
+Para eliminar un servicio protegido, desactive la protección, detenga el servicio, espere a que se detenga y, a continuación, elimínelo. `PATCH .../state` con `"command": "stop"` requiere `control-plane:service:manage` y devuelve la respuesta antes de que el servicio se haya detenido. Si intenta eliminar el servicio mientras sigue en estado `stopping`, la solicitud se rechaza. Si intenta eliminar un servicio protegido, se devuelve `409` y el servicio no se elimina.
+
+Desactive la protección:
+
+```bash
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
+  -d '{"deletionProtection": false}'
+```
+
+Solicita la detención:
+
+```bash
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/state" \
+  -d '{"command": "stop"}'
+```
+
+Espere hasta que `result.state` sea `stopped` y, a continuación, elimínelo:
+
+```bash
+while [ "$(curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
+  | jq -r '.result.state')" != "stopped" ]; do
+  sleep 5
+done
+
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X DELETE \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID"
+```
+
+## Terraform {#terraform}
+
+<Note>
+  `deletion_protection` no está disponible en la versión más reciente publicada del provider, [v3.43.0](https://github.com/ClickHouse/terraform-provider-clickhouse/releases/tag/v3.43.0). El atributo se añadió en [terraform-provider-clickhouse#799](https://github.com/ClickHouse/terraform-provider-clickhouse/pull/799), que ya se ha fusionado pero aún no se ha incluido en ninguna versión. El ejemplo siguiente falla en v3.43.0 con un error de argumento no compatible. Utilice una versión del provider posterior a v3.43.0 que incluya el atributo.
+</Note>
+
+El recurso `clickhouse_service` admite `deletion_protection`. Mientras su valor sea `true`, fallarán tanto `terraform destroy` como cualquier cambio que implique reemplazar el servicio. Establézcalo en `false`, aplique ese cambio por separado y, después, elimine el servicio.
+
+Si se quita `deletion_protection` de la configuración, el valor actual del parámetro de configuración se mantiene sin cambios.
+
+```hcl
+resource "clickhouse_service" "example" {
+  # ...
+
+  deletion_protection = true
+}
+```
+
+Para establecer `deletion_protection = true` al crear un servicio, se necesita una clave de API con permisos para eliminar todos los servicios de la organización. Para modificarlo después, se necesita el permiso de eliminación sobre ese servicio.

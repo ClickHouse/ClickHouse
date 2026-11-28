@@ -7,14 +7,17 @@ keywords: ['azure', 'private link', 'privatelink']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Azure Private Link" />
 
 Esta guía muestra cómo usar Azure Private Link para proporcionar conectividad privada a través de una red virtual entre Azure (incluidos los servicios de clientes y de partners de Microsoft) y ClickHouse Cloud. Azure Private Link simplifica la arquitectura de red y protege la conexión entre los endpoints de Azure al eliminar la exposición de los datos a la Internet pública.
 
-<Image img="/images/cloud/security/azure-pe.webp" size="lg" alt="Descripción general de PrivateLink" background="white" />
+<div className="ch-image-lg ch-image-background-white">
+  <Frame>
+    ![Descripción general de PrivateLink](/images/cloud/security/azure-pe.webp)
+  </Frame>
+</div>
 
 <Warning>
   Azure Private Link solo admite conexiones iniciadas desde su Azure VNet hacia ClickHouse Cloud. No puede usarse para conexiones iniciadas desde ClickHouse Cloud hacia servicios de su VNet, como una base de datos privada.
@@ -29,9 +32,9 @@ Azure admite conectividad entre regiones mediante Private Link. Esto le permite 
 **Complete los siguientes pasos para habilitar Azure Private Link:**
 
 1. Obtenga el alias de conexión de Azure para Private Link
-2. Cree un Private Endpoint en Azure
-3. Agregue el Private Endpoint Resource ID a su organización de ClickHouse Cloud
-4. Agregue el Private Endpoint Resource ID a la lista de permitidos de sus servicios
+2. Cree un Punto de Conexión Privado en Azure
+3. Agregue el ID de Recurso del Punto de Conexión Privado a su organización de ClickHouse Cloud
+4. Agregue el ID de Recurso del Punto de Conexión Privado a la lista de permitidos de sus servicios
 5. Acceda a su servicio de ClickHouse Cloud mediante Private Link
 
 <Note>
@@ -39,7 +42,7 @@ Azure admite conectividad entre regiones mediante Private Link. Esto le permite 
 </Note>
 
 <div id="attention">
-  ## Atención
+  ## Atención {#attention}
 </div>
 
 ClickHouse intenta agrupar sus servicios para reutilizar el mismo [servicio de Private Link](https://learn.microsoft.com/en-us/azure/private-link/private-link-service-overview) publicado en la región de Azure. Sin embargo, esta agrupación no está garantizada, especialmente si distribuye sus servicios entre varias organizaciones de ClickHouse.
@@ -48,21 +51,23 @@ Si ya tiene Private Link configurado para otros servicios en su organización de
 Puede encontrar ejemplos de Terraform en el [repositorio de Terraform Provider](https://github.com/ClickHouse/terraform-provider-clickhouse/tree/main/examples/) de ClickHouse.
 
 <div id="obtain-azure-connection-alias-for-private-link">
-  ## Obtener el alias de conexión de Azure para Private Link
+  ## Obtener el alias de conexión de Azure para Private Link {#obtain-azure-connection-alias-for-private-link}
 </div>
 
-<div id="option-1-clickhouse-cloud-console-1">
-  ### Opción 1: consola de ClickHouse Cloud
-</div>
+### Opción 1: consola de ClickHouse Cloud {#option-1-clickhouse-cloud-console}
 
 En la consola de ClickHouse Cloud, abra el servicio que quiera conectar mediante PrivateLink y, a continuación, abra el menú **Settings**. Haga clic en el botón **Set up private endpoint**. Tome nota de `Service name` y `DNS name`, ya que se usarán para configurar Private Link.
 
-<Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="lg" alt="Puntos de conexión privados" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Puntos de conexión privados](/images/cloud/security/azure-privatelink-pe-create.webp)
+  </Frame>
+</div>
 
 Tome nota de `Service name` y `DNS name`; los necesitará en los siguientes pasos.
 
 <div id="option-2-api">
-  ### Opción 2: API
+  ### Opción 2: API {#option-2-api}
 </div>
 
 Antes de empezar, necesitarás una clave de API de ClickHouse Cloud. Puedes [crear una nueva clave](/es/products/cloud/features/admin-features/api/openapi) o usar una existente.
@@ -99,7 +104,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 Toma nota del `endpointServiceId`. Lo usarás en el paso siguiente.
 
 <div id="create-private-endpoint-in-azure">
-  ## Crear un Private Endpoint en Azure
+  ## Crear un Private Endpoint en Azure {#create-private-endpoint-in-azure}
 </div>
 
 <Warning>
@@ -112,79 +117,113 @@ Toma nota del `endpointServiceId`. Lo usarás en el paso siguiente.
 
 En esta sección, vamos a crear un Private Endpoint en Azure. Puede usar Azure Portal o Terraform.
 
-<div id="option-1-using-azure-portal-to-create-a-private-endpoint-in-azure">
-  ### Opción 1: Usar Azure Portal para crear un Private Endpoint en Azure
+### Opción 1: Uso del Portal de Azure para crear un Punto de Conexión Privado en Azure {#option-1-using-azure-portal-to-create-a-private-endpoint-in-azure}
+
+En el Portal de Azure, abra **Private Link Center → Puntos de Conexión Privados**.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Abrir Azure Private Center](/images/cloud/security/azure-private-link-center.webp)
+  </Frame>
 </div>
 
-En Azure Portal, abra **Private Link Center → Private Endpoints**.
+Haga clic en el botón **Create** para abrir el cuadro de diálogo de creación del Punto de Conexión Privado.
 
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Abrir Azure Private Center" border />
-
-Abra el cuadro de diálogo de creación de Private Endpoint haciendo clic en el botón **Create**.
-
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Abrir Azure Private Center" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Abrir Azure Private Center](/images/cloud/security/azure-private-link-center.webp)
+  </Frame>
+</div>
 
 ***
 
-En la siguiente pantalla, especifique las siguientes opciones:
+En la siguiente pantalla, especifique estas opciones:
 
-* **Subscription** / **Resource Group**: Elija la suscripción de Azure y el grupo de recursos para el Private Endpoint.
-* **Name**: Defina un nombre para el **Private Endpoint**.
-* **Region**: Elija una región en la que esté desplegada la VNet que se conectará a ClickHouse Cloud mediante Private Link.
+* **Subscription** / **Resource Group**: elija la suscripción de Azure y el grupo de recursos para el Punto de Conexión Privado.
+* **Name**: asigne un nombre al **Punto de Conexión Privado**.
+* **Region**: elija la región en la que se encuentra la VNet desplegada que se conectará a ClickHouse Cloud mediante Private Link.
 
-Después de completar los pasos anteriores, haga clic en el botón **Next: Resource**.
+Una vez completados los pasos anteriores, haga clic en el botón **Next: Resource**.
 
-<Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Crear configuración básica de Private Endpoint" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Creación del Punto de Conexión Privado: Basic](/images/cloud/security/azure-pe-create-basic.webp)
+  </Frame>
+</div>
 
 ***
 
 Seleccione la opción **Connect to an Azure resource by resource ID or alias**.
 
-Para **Resource ID or alias**, use el `endpointServiceId` que obtuvo en el paso [Obtain Azure connection alias for Private Link](#obtain-azure-connection-alias-for-private-link).
+En **Resource ID or alias**, utilice el `endpointServiceId` que obtuvo en el paso [Obtener el alias de conexión de Azure para Private Link](#obtain-azure-connection-alias-for-private-link).
 
 Haga clic en el botón **Next: Virtual Network**.
 
-<Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="Selección de recurso de Private Endpoint" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Selección del recurso del Punto de Conexión Privado](/images/cloud/security/azure-pe-resource.webp)
+  </Frame>
+</div>
 
 ***
 
-* **Virtual network**: Elija la VNet que desea conectar a ClickHouse Cloud mediante Private Link
-* **Subnet**: Elija la subred en la que se creará el Private Endpoint
+* **Virtual network**: elija la VNet que desea conectar a ClickHouse Cloud mediante Private Link
+* **Subnet**: elija la subred en la que se creará el Punto de Conexión Privado
 
 Opcional:
 
-* **Application security group**: Puede asociar un ASG al Private Endpoint y usarlo en Network Security Groups para filtrar el tráfico de red hacia o desde el Private Endpoint.
+* **Application security group**: puede asociar un ASG al Punto de Conexión Privado y utilizarlo en los grupos de seguridad de red para filtrar el tráfico de red entrante y saliente del Punto de Conexión Privado.
 
 Haga clic en el botón **Next: DNS**.
 
-<Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="Selección de red virtual de Private Endpoint" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Selección de la red virtual del Punto de Conexión Privado](/images/cloud/security/azure-pe-create-vnet.webp)
+  </Frame>
+</div>
 
 Haga clic en el botón **Next: Tags**.
 
 ***
 
-<Image img="/images/cloud/security/azure-pe-create-dns.webp" size="md" alt="Configuración de DNS de Private Endpoint" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Configuración de DNS del Punto de Conexión Privado](/images/cloud/security/azure-pe-create-dns.webp)
+  </Frame>
+</div>
 
-Opcionalmente, puede asociar etiquetas a su Private Endpoint.
+Si lo desea, puede asociar etiquetas a su Punto de Conexión Privado.
 
 Haga clic en el botón **Next: Review + create**.
 
 ***
 
-<Image img="/images/cloud/security/azure-pe-create-tags.webp" size="md" alt="Tags de Private Endpoint" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Etiquetas del Punto de Conexión Privado](/images/cloud/security/azure-pe-create-tags.webp)
+  </Frame>
+</div>
 
 Por último, haga clic en el botón **Create**.
 
-<Image img="/images/cloud/security/azure-pe-create-review.webp" size="md" alt="Revisión de Private Endpoint" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Revisión del Punto de Conexión Privado](/images/cloud/security/azure-pe-create-review.webp)
+  </Frame>
+</div>
 
-El **Connection status** del Private Endpoint creado estará en estado **Pending**. Cambiará al estado **Approved** una vez que agregue este Private Endpoint a la lista de permitidos del servicio.
+El **Connection status** del Punto de Conexión Privado creado será **Pending**. Pasará a **Approved** cuando agregue este Punto de Conexión Privado a la lista de permitidos del servicio.
 
-Abra la interfaz de red asociada al Private Endpoint y copie la **Private IPv4 address** (10.0.0.4 en este ejemplo); necesitará esta información en los siguientes pasos.
+Abra la interfaz de red asociada al Punto de Conexión Privado y copie la **Private IPv4 address** (10.0.0.4 en este ejemplo); necesitará este dato en los pasos siguientes.
 
-<Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="Dirección IP de Private Endpoint" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Dirección IP del Punto de Conexión Privado](/images/cloud/security/azure-pe-ip.webp)
+  </Frame>
+</div>
 
 <div id="option-2-using-terraform-to-create-a-private-endpoint-in-azure">
-  ### Opción 2: Usar Terraform para crear un Private Endpoint en Azure
+  ### Opción 2: Usar Terraform para crear un Private Endpoint en Azure {#option-2-using-terraform-to-create-a-private-endpoint-in-azure}
 </div>
 
 Use la siguiente plantilla para crear un Private Endpoint con Terraform:
@@ -204,35 +243,45 @@ resource "azurerm_private_endpoint" "example_clickhouse_cloud" {
 }
 ```
 
-<div id="obtaining-private-endpoint-resourceid">
-  ### Obtención del Private Endpoint Resource ID
+### Obtención del ID de Recurso del Punto de Conexión Privado {#obtaining-private-endpoint-resourceid}
+
+Para usar Private Link, debes agregar el Resource ID de la conexión del Punto de Conexión Privado a la lista de permitidos de tu servicio.
+
+El ID de Recurso del Punto de Conexión Privado aparece en el Portal de Azure. Abre el Punto de Conexión Privado creado en el paso anterior y haz clic en **JSON View**:
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Vista del Punto de Conexión Privado](/images/cloud/security/azure-pe-view.webp)
+  </Frame>
 </div>
 
-Para usar Private Link, debes agregar el Resource ID de la conexión del Private Endpoint a la lista de permitidos de tu servicio.
-
-El Private Endpoint Resource ID aparece en Azure Portal. Abre el Private Endpoint creado en el paso anterior y haz clic en **JSON View**:
-
-<Image img="/images/cloud/security/azure-pe-view.webp" size="lg" alt="Vista del Private Endpoint" border />
-
-Copia el campo `id` de nivel superior (el Resource ID del Private Endpoint, con el formato `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`) — no uses los campos `id` anidados dentro del objeto `properties`:
+Copia el campo `id` de nivel superior (el Resource ID del Punto de Conexión Privado, con el formato `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`) — no uses los campos `id` anidados dentro del objeto `properties`:
 
 **Método preferido: usar Resource ID**
 
-<Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="Private Endpoint Resource ID" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![ID de Recurso del Punto de Conexión Privado](/images/cloud/security/azure-pe-resource-id.webp)
+  </Frame>
+</div>
 
 **Método heredado: usar resourceGUID**
 Aún puedes usar resourceGUID por compatibilidad con versiones anteriores. Busca el campo `resourceGuid` y copia este valor:
 
-<Image img="/images/cloud/security/azure-pe-resource-guid.webp" size="lg" alt="Private Endpoint Resource GUID" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Punto de Conexión Privado Resource GUID](/images/cloud/security/azure-pe-resource-guid.webp)
+  </Frame>
+</div>
 
 <div id="setting-up-dns-for-private-link">
-  ## Configurar DNS para Private Link
+  ## Configurar DNS para Private Link {#setting-up-dns-for-private-link}
 </div>
 
 Deberá crear una zona DNS privada (`${location_code}.privatelink.azure.clickhouse.cloud`) y vincularla a su VNet para acceder a los recursos a través de Private Link.
 
 <div id="create-private-dns-zone">
-  ### Crear una zona DNS privada
+  ### Crear una zona DNS privada {#create-private-dns-zone}
 </div>
 
 **Opción 1: Usar Azure Portal**
@@ -250,21 +299,23 @@ resource "azurerm_private_dns_zone" "clickhouse_cloud_private_link_zone" {
 }
 ```
 
-<div id="create-a-wildcard-dns-record">
-  ### Crear un registro DNS con comodín
-</div>
+### Crear un registro DNS con comodín {#create-a-wildcard-dns-record}
 
-Cree un registro con comodín y apúntelo a su Private Endpoint:
+Cree un registro con comodín y apúntelo a su Punto de Conexión Privado:
 
-**Opción 1: Usar Azure Portal**
+**Opción 1: Usar el Portal de Azure**
 
 1. Abra el grupo de recursos `MyAzureResourceGroup` y seleccione la zona privada `${region_code}.privatelink.azure.clickhouse.cloud`.
 2. Seleccione + Record set.
 3. En Name, escriba `*`.
-4. En IP Address, escriba la dirección IP que aparece para Private Endpoint.
+4. En IP Address, escriba la dirección IP que aparece para el Punto de Conexión Privado.
 5. Seleccione **OK**.
 
-<Image img="/images/cloud/security/azure-pl-dns-wildcard.webp" size="lg" alt="Configuración de DNS con comodín de Private Link" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Configuración de DNS con comodín de Private Link](/images/cloud/security/azure-pl-dns-wildcard.webp)
+  </Frame>
+</div>
 
 **Opción 2: Usar Terraform**
 
@@ -281,7 +332,7 @@ resource "azurerm_private_dns_a_record" "example" {
 ```
 
 <div id="create-a-virtual-network-link">
-  ### Crear un vínculo de red virtual
+  ### Crear un vínculo de red virtual {#create-a-virtual-network-link}
 </div>
 
 Para vincular la zona DNS privada a una red virtual, deberá crear un vínculo de red virtual.
@@ -299,7 +350,7 @@ Siga esta guía para [vincular la red virtual a su zona DNS privada](https://lea
 Debe hacer que &quot;DNS name&quot;, obtenido en el paso [Obtener el alias de conexión de Azure para Private Link](#obtain-azure-connection-alias-for-private-link), apunte a la dirección IP del Private Endpoint. Esto garantiza que los servicios/componentes dentro de su VPC/red puedan resolverlo correctamente.
 
 <div id="verify-dns-setup">
-  ### Verifica la configuración de DNS
+  ### Verifica la configuración de DNS {#verify-dns-setup}
 </div>
 
 El dominio `xxxxxxxxxx.westus3.privatelink.azure.clickhouse.cloud` debe apuntar a la IP del Private Endpoint (10.0.0.4 en este ejemplo).
@@ -315,21 +366,23 @@ Address: 10.0.0.4
 ```
 
 <div id="add-the-private-endpoint-id-to-your-clickhouse-cloud-organization">
-  ## Añade el Private Endpoint Resource ID a tu organización de ClickHouse Cloud
+  ## Añade el Private Endpoint Resource ID a tu organización de ClickHouse Cloud {#add-the-private-endpoint-id-to-your-clickhouse-cloud-organization}
 </div>
 
-<div id="option-1-clickhouse-cloud-console">
-  ### Opción 1: consola de ClickHouse Cloud
+### Opción 1: consola de ClickHouse Cloud {#option-1-clickhouse-cloud-console-1}
+
+Para agregar un endpoint a la organización, ve al paso [Agregar el ID de Recurso del Punto de Conexión Privado a la lista de permitidos de tus servicios](#add-private-endpoint-id-to-services-allow-list). Al agregar el ID de Recurso del Punto de Conexión Privado a la lista de permitidos de los servicios mediante la consola de ClickHouse Cloud, se añade automáticamente a la organización.
+
+Para eliminar un endpoint, abre **Organization details -&gt; Puntos de Conexión Privados** y haz clic en el botón de eliminación para quitar el endpoint.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Eliminar Punto de Conexión Privado](/images/cloud/security/azure-pe-remove-private-endpoint.webp)
+  </Frame>
 </div>
-
-Para agregar un endpoint a la organización, ve al paso [Agregar el Private Endpoint Resource ID a la lista de permitidos de tus servicios](#add-private-endpoint-id-to-services-allow-list). Al agregar el Private Endpoint Resource ID a la lista de permitidos de los servicios mediante la consola de ClickHouse Cloud, se añade automáticamente a la organización.
-
-Para eliminar un endpoint, abre **Organization details -&gt; Private Endpoints** y haz clic en el botón de eliminación para quitar el endpoint.
-
-<Image img="/images/cloud/security/azure-pe-remove-private-endpoint.webp" size="lg" alt="Eliminar Private Endpoint" border />
 
 <div id="option-2-api">
-  ### Opción 2: API
+  ### Opción 2: API {#option-2-api-1}
 </div>
 
 Configure las siguientes variables de entorno antes de ejecutar cualquier comando:
@@ -389,14 +442,12 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 ```
 
 <div id="add-private-endpoint-id-to-services-allow-list">
-  ## Añade el Private Endpoint Resource ID a la lista de permitidos de tus servicios
+  ## Añade el Private Endpoint Resource ID a la lista de permitidos de tus servicios {#add-private-endpoint-id-to-services-allow-list}
 </div>
 
 De forma predeterminada, un servicio de ClickHouse Cloud no está disponible a través de una conexión de Private Link, incluso si dicha conexión de Private Link está aprobada y establecida. Debes añadir explícitamente el Private Endpoint Resource ID de cada servicio que deba estar disponible mediante Private Link.
 
-<div id="option-1-clickhouse-cloud-console-1">
-  ### Opción 1: consola de ClickHouse Cloud
-</div>
+### Opción 1: consola de ClickHouse Cloud {#option-1-clickhouse-cloud-console-2}
 
 En la consola de ClickHouse Cloud, abra el servicio que desea conectar mediante PrivateLink y, a continuación, vaya a **Settings**. Introduzca el `Resource ID` obtenido en el paso [anterior](#obtaining-private-endpoint-resourceid).
 
@@ -404,10 +455,14 @@ En la consola de ClickHouse Cloud, abra el servicio que desea conectar mediante 
   Si desea permitir el acceso desde una conexión de PrivateLink existente, use el menú desplegable del endpoint existente.
 </Note>
 
-<Image img="/images/cloud/security/azure-privatelink-pe-filter.webp" size="lg" alt="Filtro de endpoints privados" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Filtro de puntos de conexión privados](/images/cloud/security/azure-privatelink-pe-filter.webp)
+  </Frame>
+</div>
 
 <div id="option-2-api">
-  ### Opción 2: API
+  ### Opción 2: API {#option-2-api-2}
 </div>
 
 Configura estas variables de entorno antes de ejecutar cualquier comando:
@@ -458,25 +513,27 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 ```
 
 <div id="access-your-clickhouse-cloud-service-using-private-link">
-  ## Accede a tu servicio de ClickHouse Cloud mediante Private Link
+  ## Accede a tu servicio de ClickHouse Cloud mediante Private Link {#access-your-clickhouse-cloud-service-using-private-link}
 </div>
 
 Cada servicio con Private Link habilitado tiene un endpoint público y otro privado. Para conectarte mediante Private Link, debes usar un endpoint privado, que será `privateDnsHostname`<sup>API</sup> o `DNS name`<sup>console</sup>, obtenido en [Obtener el alias de conexión de Azure para Private Link](#obtain-azure-connection-alias-for-private-link).
 
 <div id="obtaining-the-private-dns-hostname">
-  ### Obtener el hostname DNS privado
+  ### Obtener el hostname DNS privado {#obtaining-the-private-dns-hostname}
 </div>
 
-<div id="option-1-clickhouse-cloud-console-3">
-  #### Opción 1: consola de ClickHouse Cloud
+#### Opción 1: consola de ClickHouse Cloud {#option-1-clickhouse-cloud-console-3}
+
+En la consola de ClickHouse Cloud, vaya a **Settings**. Haga clic en el botón **Set up private endpoint**. En el panel desplegable que se abre, copie el **nombre DNS**.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Nombre DNS del Punto de Conexión Privado](/images/cloud/security/azure-privatelink-pe-dns.webp)
+  </Frame>
 </div>
-
-En la consola de ClickHouse Cloud, vaya a **Settings**. Haga clic en el botón **Set up private endpoint**. En el panel desplegable que se abre, copie el **DNS Name**.
-
-<Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="lg" alt="Nombre DNS del Private Endpoint" border />
 
 <div id="option-2-api-3">
-  #### Opción 2: API
+  #### Opción 2: API {#option-2-api-3}
 </div>
 
 Define las siguientes variables de entorno antes de ejecutar cualquier comando:
@@ -508,11 +565,11 @@ En este ejemplo, la conexión al hostname `xxxxxxx.region_code.privatelink.azure
 Usa `privateDnsHostname` para conectarte a tu servicio de ClickHouse Cloud mediante Private Link.
 
 <div id="troubleshooting">
-  ## Solución de problemas
+  ## Solución de problemas {#troubleshooting}
 </div>
 
 <div id="test-dns-setup">
-  ### Comprobar la configuración de DNS
+  ### Comprobar la configuración de DNS {#test-dns-setup}
 </div>
 
 Ejecute el siguiente comando:
@@ -532,19 +589,19 @@ Address: 10.0.0.4
 ```
 
 <div id="connection-reset-by-peer">
-  ### La conexión se restableció por el extremo remoto
+  ### La conexión se restableció por el extremo remoto {#connection-reset-by-peer}
 </div>
 
 Lo más probable es que no se haya añadido el Private Endpoint Resource ID a la lista de permitidos del servicio. Vuelve a revisar el paso [*Añadir el Private Endpoint Resource ID a la lista de permitidos de tus servicios*](#add-private-endpoint-id-to-services-allow-list).
 
 <div id="private-endpoint-is-in-pending-state">
-  ### Private Endpoint está en estado pendiente
+  ### Private Endpoint está en estado pendiente {#private-endpoint-is-in-pending-state}
 </div>
 
 Lo más probable es que no se haya agregado el Private Endpoint Resource ID a la lista de permitidos del servicio. Vuelve al paso [*Agregar el Private Endpoint Resource ID a la lista de permitidos de tus servicios*](#add-private-endpoint-id-to-services-allow-list).
 
 <div id="test-connectivity">
-  ### Probar la conectividad
+  ### Probar la conectividad {#test-connectivity}
 </div>
 
 Si tiene problemas para conectarse mediante Private Link, compruebe la conectividad con `openssl`. Asegúrese de que el estado del endpoint de Private Link sea `Accepted`.
@@ -576,7 +633,7 @@ Verify return code: 0 (ok)
 ```
 
 <div id="checking-private-endpoint-filters">
-  ### Comprobar los filtros del Private Endpoint
+  ### Comprobar los filtros del Private Endpoint {#checking-private-endpoint-filters}
 </div>
 
 Configure las siguientes variables de entorno antes de ejecutar cualquier comando:
@@ -595,7 +652,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X GET -H "Content-Type: appl
 ```
 
 <div id="more-information">
-  ## Más información
+  ## Más información {#more-information}
 </div>
 
 Para obtener más información sobre Azure Private Link, consulte [azure.microsoft.com/en-us/products/private-link](https://azure.microsoft.com/en-us/products/private-link).

@@ -2,7 +2,7 @@
 With p_key (normal projection, hypothetical):
 reason: 10 marks would be read instead of 2 from the base table
 With p_agg (aggregate projection, hypothetical):
-reason: EXPLAIN WHATIF estimates normal (sorted) hypothetical projections only, aggregate projections are not estimated yet
+reason: the projection cannot compute the aggregation keys and functions of the query
 With p_where (normal projection, hypothetical):
 reason: the query WHERE does not imply the projection WHERE
 With p_nocol (normal projection, hypothetical):

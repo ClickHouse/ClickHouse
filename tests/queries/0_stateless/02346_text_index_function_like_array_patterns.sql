@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-msan
 
 -- Tests arbitrary LIKE/ILIKE patterns on a text index with the `array` tokenizer, where a token is the value.
 

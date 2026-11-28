@@ -60,7 +60,7 @@ private:
         char * end = continuation + continuation_size;
 
         /// internal buffer points to whole memory segment and working buffer - to free space for writing.
-        internalBuffer() = Buffer(const_cast<char *>(begin), end);
+        setInternalBuffer(Buffer(const_cast<char *>(begin), end));
         buffer() = Buffer(continuation, end);
     }
 

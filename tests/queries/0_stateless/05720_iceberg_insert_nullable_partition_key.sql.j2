@@ -1,0 +1,26 @@
+-- Tags: no-fasttest, need-query-parameters
+
+-- INSERT into a table partitioned by a Nullable(String) column with a NULL value
+-- writes a NULL partition and reads back every row, for both format versions and storages.
+
+SET allow_insert_into_iceberg = 1;
+
+{% macro engine(storage, table) -%}
+{% if storage == 'local' -%}
+IcebergLocal({CLICKHOUSE_DATABASE:String} || '/{{ table }}/')
+{%- else -%}
+IcebergS3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/{{ table }}/')
+{%- endif %}
+{%- endmacro %}
+
+{% for storage in ['local', 's3'] -%}
+{% for fv in [1, 2] -%}
+{% set t = 't_' ~ storage ~ '_v' ~ fv -%}
+DROP TABLE IF EXISTS {{ t }};
+CREATE TABLE {{ t }} (c0 Nullable(String)) ENGINE = {{ engine(storage, t) }} PARTITION BY (c0) SETTINGS iceberg_format_version = {{ fv }};
+INSERT INTO {{ t }} VALUES (NULL), ('Monetochka'), ('Maneskin'), ('Noize MC');
+SELECT * FROM {{ t }} ORDER BY ALL;
+DROP TABLE {{ t }};
+
+{% endfor -%}
+{% endfor -%}

@@ -107,7 +107,7 @@ def seed_public_data(local_dir):
     return Shell.check(" && ".join(copies) + f" && rm -rf {local_dir}", verbose=True)
 
 
-def seed_catalog(clickhouse):
+def seed_catalog(clickhouse_local):
     """For `requires_s3_catalog="1"`: table bucket `perf-catalog`, namespace `many`, tables t1..t200 with one row (id = n); idempotent."""
     catalog = f"http://localhost:{CATALOG_PORT}/v1"
     queries = [
@@ -132,7 +132,7 @@ def seed_catalog(clickhouse):
         f"timeout 60 sh -c 'until curl -sf -o /dev/null {catalog}/config; do sleep 1; done'"
         f" && (echo 's3tables.bucket -list -account {S3_ACCESS_KEY}' | {shell} | grep -q '{CATALOG_BUCKET}'"
         f" || echo 's3tables.bucket -create -name {CATALOG_BUCKET} -account {S3_ACCESS_KEY}' | {shell})"
-        f" && {clickhouse} local --queries-file {temp_dir}/perf_catalog_seed.sql",
+        f" && {clickhouse_local} --queries-file {temp_dir}/perf_catalog_seed.sql",
         verbose=True,
     )
 

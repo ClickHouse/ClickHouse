@@ -6,8 +6,6 @@ title: 'User Defined Functions (UDFs)'
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
@@ -19,8 +17,6 @@ ClickHouse supports several types of user defined functions (UDFs):
 - [Experimental driver-based executable UDFs](#driver-based-executable-user-defined-functions) let an operator-supplied "driver" turn a code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into an executable UDF at function-creation time (for example, by compiling it). They build on executable UDFs and require server-side driver configuration.
 
 ## Executable User Defined Functions {#executable-user-defined-functions}
-
-<BetaBadge/>
 
 <Note>
 In ClickHouse Cloud, executable UDFs are generally available and are created through the Cloud console, the Cloud API, or Terraform. See [User-defined functions in Cloud](/products/cloud/features/sql-console-features/user-defined-functions) for the Cloud-specific workflow, including the Native runtime for compiled binaries.
@@ -56,7 +52,13 @@ A function configuration contains the following settings:
 
 The command must read arguments from `STDIN` and must output the result to `STDOUT`. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
 
-## Executable User Defined Functions {#executable-user-defined-functions}
+<Note>
+With the `TabSeparated` format, ClickHouse escapes special characters in the arguments it sends and unescapes the command output, following the [TabSeparated escaping rules](/reference/formats/TabSeparated/TabSeparated#tabseparated-data-formatting). For example, a backslash in an argument reaches the command as `\\`, and a tab or a line feed as `\t` or `\n`. The command must escape its output in the same way. Otherwise, a backslash in the output, for example in JSON text, is read as the start of an escape sequence, and the result is wrong or fails to parse.
+
+If the command does not escape its output, use one of these formats instead:
+- [`TabSeparatedRaw`](/reference/formats/TabSeparated/TabSeparatedRaw): values are not escaped, so they must not contain tabs or line feeds.
+- [`JSONEachRow`](/reference/formats/JSON/JSONEachRow): strings can contain backslashes, tabs and line feeds. See the [JSON example](#udf-stdin) below.
+</Note>
 
 ## Examples {#examples}
 

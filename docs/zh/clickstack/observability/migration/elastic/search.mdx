@@ -1,0 +1,56 @@
+---
+slug: /clickstack/observability/migration/elastic/search
+title: '在 ClickHouse Observability 与 Elastic 中搜索'
+sidebarTitle: '搜索'
+description: '对比 Elastic 与全托管 ClickHouse Observability 的搜索语法，并说明使用自定义自管理 schema 时的注意事项。'
+doc_type: 'guide'
+keywords: ['clickstack', 'search', 'logs', 'observability', 'full-text search']
+---
+
+## 在 ClickHouse Observability 与 Elastic 中进行搜索 {#search-in-clickstack-and-elastic-self-configured}
+
+ClickHouse 是一个原生支持 SQL 的引擎，从设计之初就面向高性能分析型工作负载。相比之下，Elasticsearch 提供的是类 SQL 接口，会将 SQL 转译为底层的 Elasticsearch 查询 DSL——这意味着 SQL 在其中并非一等公民，且[功能覆盖程度](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations)有限。
+
+ClickHouse 不仅完整支持 SQL，还提供了一系列面向可观测性的扩展函数，例如 [`argMax`](/zh/reference/functions/aggregate-functions/argMax)、[`histogram`](/zh/reference/functions/aggregate-functions/parametric-functions#histogram) 和 [`quantileTiming`](/zh/reference/functions/aggregate-functions/quantileTiming)，可简化对结构化日志、指标和 trace 的查询。
+
+对于简单的日志和 trace 探索，可观测性 UI 提供了 [Lucene 风格语法](/zh/clickstack/observability/features/search)，可通过直观的文本方式对字段值查询、范围、通配符等进行过滤。这类似于 Elasticsearch 中的 [Lucene 语法](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax)以及 [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql) 的部分元素。
+
+搜索界面支持这种熟悉的语法，并在后台将其转换为高效的 SQL `WHERE` 子句，既让 Kibana 用户获得熟悉的使用体验，又能在需要时充分发挥 SQL 的强大能力。因此，您可以充分利用 ClickHouse 中全部的[字符串搜索函数](/zh/reference/functions/regular-functions/string-search-functions)、[相似度函数](/zh/reference/functions/regular-functions/string-functions#stringJaccardIndex)和[日期时间函数](/zh/reference/functions/regular-functions/date-time-functions)。
+
+以下搜索语法同时适用于托管服务和自管理服务。字段名称取决于您的 schema；示例中在适用之处均采用标准的 OpenTelemetry 日志字段。
+
+## ClickHouse Observability 搜索语法与 Elasticsearch 查询字符串对比 {#clickstack-vs-elasticsearch-query-string-self-configured}
+
+ClickHouse Observability 和 Elasticsearch 都提供灵活的查询语言，可直观地筛选日志和 trace。Elasticsearch 的查询字符串与其 DSL 和索引引擎紧密集成，而 ClickHouse Observability 支持一种受 Lucene 启发的语法，并在底层将其转换为 ClickHouse SQL。下表概述了常见搜索模式在两个系统中的行为，着重说明二者在语法上的相似之处以及在后端执行上的差异。
+
+| **功能**        | **ClickHouse Observability 语法**    | **Elasticsearch 语法**             | **说明**                                                                                                                                                                                    |
+| ------------- | ---------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 自由文本搜索        | `error`                            | `error`                          | ClickHouse Observability 会搜索数据源中已配置的全文表达式 (通常为 `Body`) ，默认采用不区分大小写的整词匹配，不会自动搜索所有列。                                                                                                        |
+| 字段匹配          | `SeverityText:error`               | `level:error`                    | 请使用 schema 中的字段名。在 ClickHouse Observability 中，未加引号的字符串字段搜索会匹配子字符串；如需精确相等匹配，请为值加上引号，例如 `SeverityText:"error"`。                                                                             |
+| 短语搜索          | `"disk full"`                      | `"disk full"`                    | 在已配置的全文表达式中匹配该短语。                                                                                                                                                                         |
+| 字段短语匹配        | `Body:"disk full"`                 | `message:"disk full"`            | 在 ClickHouse Observability 中，直接加引号的字段值采用相等匹配：匹配的是整个 body，而非较长消息中的某个短语。                                                                                                                    |
+| OR 条件         | `error OR warning`                 | `error OR warning`               | 对词项执行逻辑或；两个系统均原生支持。                                                                                                                                                                       |
+| AND 条件        | `error AND db`                     | `error AND db`                   | 两者都会转换为交集；用户语法完全相同。                                                                                                                                                                       |
+| 取反            | `NOT error` 或 `-error`             | `NOT error` 或 `-error`           | 排除匹配的事件。                                                                                                                                                                                  |
+| 分组            | `(error OR fail) AND db`           | `(error OR fail) AND db`         | 两者均支持标准布尔分组。                                                                                                                                                                              |
+| 通配符           | `error*` 或 `*fail*`                | `error*`、`*fail*`                | ClickHouse Observability 支持前导和尾随通配符，自由文本搜索中同样适用；但不支持 `f*ail` 这类位于中间的通配符。Elasticsearch 默认允许前导通配符，但可以禁用，且开销可能较大。                                                                            |
+| 范围 (数值/日期)    | `Duration:[100 TO 200]`            | `duration:[100 TO 200]`          | 方括号表示包含两端边界。请使用 schema 中的字段名和单位。                                                                                                                                                          |
+| 无界范围 (数值/日期)  | `Duration:>10` 或 `Duration:>=10`   | `duration:>10` 或 `duration:>=10` | 使用比较运算符表示开放式范围。                                                                                                                                                                           |
+| 包含/排除边界       | `Duration:{100 TO 200}`            | `duration:{100 TO 200}`          | 花括号表示排除两端边界。                                                                                                                                                                              |
+| 存在性检查         | `LogAttributes.log.file.path:*`    | `_exists_:user` 或 `field:*`      | 对于字符串值的 `Map` 属性，ClickHouse Observability 检查的是是否存在非空值。如需检查键是否存在 (无论其值为何) ，请使用 SQL `mapContains`；参见 [Schema 与缺失字段](#empty-value-differences-self-configured)。                              |
+| 正则表达式         | `match` 函数                         | `name:/joh?n(ath[oa]n)/`         | Lucene 语法目前不支持。可改用 SQL 配合 [`match`](/zh/reference/functions/regular-functions/string-search-functions#match) 函数或其他[字符串搜索函数](/zh/reference/functions/regular-functions/string-search-functions)。 |
+| 模糊匹配          | `editDistance('quikc', field) = 1` | `quikc~`                         | Lucene 语法目前不支持。可在 SQL 中使用距离函数，例如 `editDistance('rror', SeverityText) = 1`，或[其他相似度函数](/zh/reference/functions/regular-functions/string-functions#jaroSimilarity)。                             |
+| 邻近搜索          | 不支持                                | `"fox quick"~5`                  | Lucene 语法目前不支持。                                                                                                                                                                           |
+| 权重提升          | 不支持                                | `quick^2 fox`                    | ClickHouse Observability 目前不支持。                                                                                                                                                           |
+| 字段通配符         | 不支持                                | `service.*:error`                | ClickHouse Observability 目前不支持。                                                                                                                                                           |
+| 转义特殊字符        | 使用 `\` 转义预留字符                      | 相同                               | 预留符号必须转义。                                                                                                                                                                                 |
+
+## Schema 与缺失字段 {#empty-value-differences-self-configured}
+
+标准 OpenTelemetry schema 使用 `Body`、`SeverityText` 和 `ServiceName` 等字段，日志属性和资源属性分别存储在 `LogAttributes` 和 `ResourceAttributes` 中。请将 Elastic 字段名转换为已摄取数据中的对应字段，例如将 `level:error` 转换为 `SeverityText:error`。
+
+对于不可为空的列，省略的值会以该列的默认值 (例如空字符串) 表示。因此，仅凭 `ServiceName` 为空，无法判断发送方是省略了该值，还是显式发送了空字符串。
+
+对于使用自定义表的自管理部署，请使用您自己的列名，并检查这些列的默认值及是否可为空。[`Nullable`](/zh/reference/data-types/nullable) 列可以包含 `NULL`。
+
+在 SQL 查询中，可使用 `ServiceName != ''` 检查服务名称是否非空。存储在 `Map` 中的属性与顶层列不同：可使用 `mapContains(LogAttributes, 'log.file.path')` 检查某个属性键是否存在，即使其值为空也能正确判断。

@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-ordinary-database
+-- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 SET explain_query_plan_default = 'legacy';
 
 SET optimize_move_to_prewhere = 1;

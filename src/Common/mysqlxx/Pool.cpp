@@ -9,10 +9,60 @@
 #include <mysqlxx/Pool.h>
 #include <base/sleep.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <ctime>
 
+
+namespace DB::ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// `mysql_real_connect` reinterprets these hosts and port 0; reject them so it dials exactly what `remote_url_allow_hosts` checked.
+void checkConnectionTarget(const std::string & server, unsigned port, const std::string & socket)
+{
+    std::string_view meaning;
+    if (server.contains('\0'))
+        meaning = "the end of the host";
+    else if (server.find_first_of(";=") != std::string::npos)
+        meaning = "a connection string";
+    else if (server.contains("://"))
+        meaning = "a connection plugin URL";
+    else if (server.contains(','))
+        meaning = "a list of hosts";
+
+    if (!meaning.empty())
+    {
+        std::string printable;
+        for (const char c : server)
+            printable += c == '\0' ? std::string_view("\\0") : std::string_view(&c, 1);
+
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "MySQL host '{}' contains syntax which the MySQL client library would read as {}. "
+            "Specify a plain host and port, and use the `socket` and `ssl_*` settings instead",
+            printable, meaning);
+    }
+
+    if (socket.contains('\0'))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS, "MySQL socket for host '{}' contains a NUL byte, where the MySQL client library would end it", server);
+
+    /// The client library uses the socket only for an empty host or `localhost`, otherwise it connects over TCP.
+    const bool uses_socket = !socket.empty() && (server.empty() || server == "localhost");
+    if (port == 0 && !uses_socket)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "MySQL port 0 for host '{}' would be replaced by the default port of the MySQL client library. Specify the port explicitly",
+            server);
+}
+
+}
 
 namespace mysqlxx
 {
@@ -90,6 +140,7 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         ssl_params.ca_pem = get_ssl_param("ssl_ca_pem");
         ssl_params.cert_pem = get_ssl_param("ssl_cert_pem");
         ssl_params.key_pem = get_ssl_param("ssl_key_pem");
+        ssl_params.key_passphrase = get_ssl_param("ssl_key_passphrase");
 
         enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
             cfg.getBool(parent_config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE));
@@ -117,6 +168,7 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         ssl_params.ca_pem = cfg.getString(config_name + ".ssl_ca_pem", "");
         ssl_params.cert_pem = cfg.getString(config_name + ".ssl_cert_pem", "");
         ssl_params.key_pem = cfg.getString(config_name + ".ssl_key_pem", "");
+        ssl_params.key_passphrase = cfg.getString(config_name + ".ssl_key_passphrase", "");
 
         enable_local_infile = cfg.getBool(
             config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
@@ -327,7 +379,8 @@ void Pool::Entry::forceConnected() const
                 pool->rw_timeout,
                 pool->enable_local_infile,
                 pool->opt_reconnect,
-                pool->enable_compression);
+                pool->enable_compression,
+                pool->ssl_params.key_passphrase.c_str());
         }
         catch (mysqlxx::ConnectionFailed &)
         {
@@ -380,6 +433,9 @@ void Pool::initialize()
 
 Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
 {
+    /// All connections of the pool are created here.
+    checkConnectionTarget(server, port, socket);
+
     auto conn_ptr = std::make_unique<Connection>();
 
     try
@@ -404,7 +460,8 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             rw_timeout,
             enable_local_infile,
             opt_reconnect,
-            enable_compression);
+            enable_compression,
+            ssl_params.key_passphrase.c_str());
     }
     catch (mysqlxx::ConnectionFailed & e)
     {

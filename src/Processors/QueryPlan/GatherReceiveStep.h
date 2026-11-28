@@ -20,14 +20,14 @@ public:
         setStepDescription(exchange_id, exchange_id.size());
     }
 
-    String getName() const override { return "GatherReceive"; }
+    [[nodiscard]] String getName() const override { return "GatherReceive"; }
 
-    const String & getExchangeId() const { return exchange_id; }
+    [[nodiscard]] const String & getExchangeId() const { return exchange_id; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 

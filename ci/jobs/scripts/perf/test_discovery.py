@@ -11,6 +11,7 @@ ci/ imports; this module is deliberately the harness-side counterpart only.
 """
 
 import os
+import re
 from xml.etree import ElementTree
 
 
@@ -54,15 +55,13 @@ def test_requires_s3_catalog(test_path):
     return _root_flag(test_path, "requires_s3_catalog")
 
 
-def _iter_queries(parent, source_dir, stack):
-    """Yield `<query>` elements, descending into `<include>`d `<fragment>` files.
+def test_requires_local_read_dataset(test_path):
+    """Whether a test reads the local Iceberg TPC-H fixture."""
+    return _root_flag(test_path, "requires_local_read_dataset")
 
-    A detection-only counterpart to perf.py's expand_includes: it follows the same
-    `<include file="..."/>` -> `<fragment>` structure (paths relative to the file
-    that declares them, cycle-guarded), but only needs to find elements, not splice
-    or rewrite them. A missing or malformed fragment is skipped here; perf.py
-    reports the real error when it runs the test.
-    """
+
+def _iter_elements(parent, source_dir, stack, tag):
+    """Find matching elements in a test and its included fragments, guarding cycles."""
     for element in parent:
         if element.tag == "include":
             filename = element.get("file")
@@ -75,15 +74,15 @@ def _iter_queries(parent, source_dir, stack):
                 fragment = ElementTree.parse(path).getroot()
             except (OSError, ElementTree.ParseError):
                 continue
-            yield from _iter_queries(fragment, os.path.dirname(path), stack | {path})
+            yield from _iter_elements(fragment, os.path.dirname(path), stack | {path}, tag)
             continue
-        if element.tag == "query":
+        if element.tag == tag:
             yield element
-        yield from _iter_queries(element, source_dir, stack)
+        yield from _iter_elements(element, source_dir, stack, tag)
 
 
 def test_has_shell_query(test_path):
-    """Whether a test contains a `<query type="shell">`, including via `<include>`.
+    """Whether a test contains a `<query type="shell">` that is not disabled, including via `<include>`.
 
     Profile collection runs each test against a single instrumented server started
     without an HTTP port, invoking perf.py without `--binary` / `--http-port`. Shell
@@ -100,6 +99,97 @@ def test_has_shell_query(test_path):
         return False
     source_dir = os.path.dirname(os.path.abspath(test_path))
     return any(
-        q.get("type") == "shell"
-        for q in _iter_queries(root, source_dir, {os.path.realpath(test_path)})
+        q.get("type") == "shell" and q.get("disabled", "0") in ("0", "false", "")
+        for q in _iter_elements(root, source_dir, {os.path.realpath(test_path)}, "query")
     )
+
+
+def test_has_failpoint(test_path):
+    """Whether a test enables a server-wide failpoint, including via `<include>`."""
+    try:
+        root = ElementTree.parse(test_path).getroot()
+    except ElementTree.ParseError:
+        return False
+    source_dir = os.path.dirname(os.path.abspath(test_path))
+    return any(
+        e.get("action") == "enable"
+        for e in _iter_elements(root, source_dir, {os.path.realpath(test_path)}, "failpoint")
+    )
+
+
+# Tests that `perf.py --table-engine` cannot run, one name per line with the reason.
+ICEBERG_SKIP_LIST = "iceberg_skip_list.txt"
+
+# The engines that `perf.py --table-engine` rewrites, see `iceberg_engine.REWRITTEN_ENGINE`.
+# The `=` is optional in `ENGINE = Memory`.
+_MERGE_TREE_ENGINE = re.compile(r"ENGINE\s*=?\s*`?(\w*MergeTree|Memory)\b", re.IGNORECASE)
+
+
+def iceberg_skip_list(perf_dir):
+    """The test files listed in `tests/performance/iceberg_skip_list.txt`."""
+    path = os.path.join(perf_dir, ICEBERG_SKIP_LIST)
+    if not os.path.exists(path):
+        return set()
+    with open(path, encoding="utf-8") as f:
+        return {line.split("#", 1)[0].strip() for line in f} - {""}
+
+
+def test_runs_with_table_engine(test_path, skip_list):
+    """Whether the Iceberg configuration runs a test: one of its `create_query`s
+    creates a MergeTree-family or `Memory` table, it is not `long`, does not opt out with
+    `<test iceberg="0">` and is not in the skip list."""
+    if os.path.basename(test_path) in skip_list or test_is_long(test_path):
+        return False
+    root = ElementTree.parse(test_path).getroot()
+    if root.get("iceberg", "1") in ("0", "false"):
+        return False
+    source_dir = os.path.dirname(os.path.abspath(test_path))
+    return any(
+        _MERGE_TREE_ENGINE.search(e.text or "")
+        for e in _iter_elements(root, source_dir, {os.path.realpath(test_path)}, "create_query")
+    )
+
+
+# The code that the Iceberg configuration measures, and its harness: a pull
+# request that changes it runs the configuration on every selected test.
+ICEBERG_PERFORMANCE_PATHS = (
+    "src/Storages/ObjectStorage/",
+    "src/Databases/DataLake/",
+    "src/Processors/Formats/Impl/Parquet",
+    "tests/performance/scripts/",
+    "tests/performance/iceberg_skip_list.txt",
+    "ci/jobs/performance_tests.py",
+    "ci/jobs/scripts/perf/",
+)
+
+
+def _relative(path):
+    return path.removeprefix("./").removeprefix("/")
+
+
+def iceberg_code_changed(changed_files):
+    """Whether a changed file is under `ICEBERG_PERFORMANCE_PATHS`."""
+    return any(_relative(f).startswith(ICEBERG_PERFORMANCE_PATHS) for f in changed_files)
+
+
+def changed_tests(changed_files, perf_dir):
+    """The added or changed test files of `perf_dir` that still exist."""
+    prefix = _relative(perf_dir).rstrip("/") + "/"
+    tests = set()
+    for f in changed_files:
+        name = _relative(f).removeprefix(prefix)
+        if "/" not in name and name.endswith(".xml") and os.path.exists(os.path.join(perf_dir, name)):
+            tests.add(name)
+    return sorted(tests)
+
+
+def changed_iceberg_tests(changed_files, perf_dir):
+    """The added or changed test files of `perf_dir` that the Iceberg
+    configuration runs: a pull request that adds a test runs it in the
+    configuration, so that the test does not break it."""
+    skip_list = iceberg_skip_list(perf_dir)
+    return [
+        name
+        for name in changed_tests(changed_files, perf_dir)
+        if test_runs_with_table_engine(os.path.join(perf_dir, name), skip_list)
+    ]

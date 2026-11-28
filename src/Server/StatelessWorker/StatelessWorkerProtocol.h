@@ -26,8 +26,8 @@ struct TaskCollectors
     bool logs = false;
 
     static TaskCollectors parse(std::string_view value);
-    String toString() const;
-    bool any() const { return logs; }
+    [[nodiscard]] String toString() const;
+    [[nodiscard]] bool any() const { return logs; }
 };
 
 /// Forwarded worker text logs. Present on every reply while logs are collected, also when empty.

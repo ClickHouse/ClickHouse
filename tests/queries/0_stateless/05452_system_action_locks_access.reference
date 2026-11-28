@@ -1,0 +1,20 @@
+--- VIRTUAL PARTS UPDATE
+no grant
+ACCESS_DENIED
+ACCESS_DENIED
+grant on another table
+ACCESS_DENIED
+ACCESS_DENIED
+grant on the target table
+OK
+OK
+--- REDUCE BLOCKING PARTS
+no grant
+ACCESS_DENIED
+ACCESS_DENIED
+grant on another table
+ACCESS_DENIED
+ACCESS_DENIED
+grant on the target table
+OK
+OK

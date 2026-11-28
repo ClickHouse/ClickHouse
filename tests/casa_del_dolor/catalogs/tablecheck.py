@@ -1,6 +1,5 @@
 import logging
 import re
-import traceback
 import random
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
@@ -36,7 +35,7 @@ except ImportError:
     _VARIANT_TYPES = ()
 
 from .laketables import SparkTable, LakeFormat, LakeCatalogs
-from integration.helpers.client import Client
+from tests.integration.helpers.client import Client
 
 # Row-hash placeholder for SQL NULL, so rows with a NULL in a compared column are
 # still compared instead of silently dropped (Spark CONCAT/COLLECT_LIST and ClickHouse
@@ -372,6 +371,5 @@ class SparkAndClickHouseCheck:
                 return False
         except Exception as e:
             # If an error happens, ignore it, but log it
-            traceback.print_exc()
             self.logger.exception(e)
         return True

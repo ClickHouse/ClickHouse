@@ -23,6 +23,8 @@ class SelectionConfig:
     # The snapshot queries only read settled exports, so their results do not
     # change and can be shared by all jobs and pull requests.
     snapshot_query_cache_ttl_sec: int = 3600
+    # A refused CIDB connection is retried this long, then the targeted job skips.
+    cidb_refused_retry_sec: int = 180
     hunk_context_weight: float = 0.5
     # A changed hunk that overlaps no coverage region is attributed to the tests that
     # own both the nearest region before it and the nearest region after it, when both
@@ -35,6 +37,9 @@ class SelectionConfig:
     coverage_test_name_pattern: str = "^[0-9]{5}_"
     # A failed GitHub API read of the selection is retried this long, then the targeted job skips.
     github_retry_sec: int = 180
+    # Coverage queries are split by file into queries of at most this size: CIDB
+    # rejects queries over 256 KiB (`max_query_size`), and smaller ones run faster.
+    coverage_query_max_bytes: int = 32 * 1024
 
 
 SELECTION_CONFIG = SelectionConfig()

@@ -19,7 +19,7 @@ namespace Poco {
 namespace XML {
 
 
-const XMLString Entity::NODE_NAME = toXMLString("#entity");
+[[clang::no_destroy]] const XMLString Entity::NODE_NAME = toXMLString("#entity");
 
 
 Entity::Entity(Document* pOwnerDocument, const XMLString& name, const XMLString& publicId, const XMLString& systemId, const XMLString& notationName): 

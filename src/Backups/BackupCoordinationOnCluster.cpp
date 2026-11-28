@@ -12,6 +12,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <base/range.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -143,6 +144,39 @@ namespace
             return res;
         }
     };
+
+    /// Names of the ZooKeeper nodes keeping the directories of each type: part of the ZooKeeper layout shared by all hosts.
+    String getZooKeeperNodeName(UserDefinedSQLObjectType object_type)
+    {
+        switch (object_type)
+        {
+            case UserDefinedSQLObjectType::Function: return "functions";
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown user-defined SQL object type: {}", static_cast<size_t>(object_type));
+    }
+
+    String getZooKeeperNodeName(WorkloadEntityType entity_type)
+    {
+        switch (entity_type)
+        {
+            case WorkloadEntityType::Workload: return "workloads";
+            case WorkloadEntityType::Resource: return "resources";
+            case WorkloadEntityType::MAX: break;
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown workload entity type: {}", static_cast<size_t>(entity_type));
+    }
+
+    /// Reads the directories the hosts have added under `path`: each child is named after a host and keeps its directory.
+    template <typename Key>
+    void readDirectoriesOfHosts(
+        const Coordination::ZooKeeperWithFaultInjection::Ptr & zk,
+        const String & path,
+        const Key & key,
+        std::vector<typename BackupCoordinationReplicatedDirectories<Key>::DirectoryPath> & directories)
+    {
+        for (const String & host_id : zk->getChildren(path))
+            directories.push_back({key, host_id, zk->get(path + "/" + host_id)});
+    }
 }
 
 Strings BackupCoordinationOnCluster::excludeInitiator(const Strings & all_hosts)
@@ -220,6 +254,7 @@ void BackupCoordinationOnCluster::createRootNodes()
         zk->createIfNotExists(zookeeper_path + "/repl_access", "");
         zk->createIfNotExists(zookeeper_path + "/repl_sql_objects", "");
         zk->createIfNotExists(zookeeper_path + "/repl_workload_entities", "");
+        zk->createIfNotExists(zookeeper_path + "/repl_named_collections", "");
         zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
         zk->createIfNotExists(zookeeper_path + "/rocksdb_tables", "");
         zk->createIfNotExists(zookeeper_path + "/file_infos", "");
@@ -358,6 +393,25 @@ String BackupCoordinationOnCluster::deserializeFromMultipleZooKeeperNodes(const 
         res += part;
     }
     return res;
+}
+
+void BackupCoordinationOnCluster::createNodeOfCurrentHost(
+    const String & parent_path, std::initializer_list<String> key_segments, const String & value, const String & logging_name)
+{
+    auto holder = with_retries.createRetriesControlHolder(logging_name);
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(zk);
+        String path = parent_path;
+        for (const String & key_segment : key_segments)
+        {
+            path += "/" + key_segment;
+            zk->createIfNotExists(path, "");
+        }
+        path += "/" + current_host;
+        zk->createIfNotExists(path, value);
+    });
 }
 
 
@@ -550,18 +604,11 @@ void BackupCoordinationOnCluster::addReplicatedAccessFilePath(const String & acc
     }
 
     auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::addReplicatedAccessFilePath");
-    auto holder = with_retries.createRetriesControlHolder("addReplicatedAccessFilePath");
-    holder.retries_ctl.retryLoop(
-        [&, &zk = holder.faulty_zookeeper]()
-    {
-        with_retries.renewZooKeeper(zk);
-        String path = zookeeper_path + "/repl_access/" + escapeForFileName(access_zk_path);
-        zk->createIfNotExists(path, "");
-        path += "/" + AccessEntityTypeInfo::get(access_entity_type).name;
-        zk->createIfNotExists(path, "");
-        path += "/" + current_host;
-        zk->createIfNotExists(path, file_path);
-    });
+    createNodeOfCurrentHost(
+        zookeeper_path + "/repl_access",
+        {escapeForFileName(access_zk_path), AccessEntityTypeInfo::get(access_entity_type).name},
+        file_path,
+        "addReplicatedAccessFilePath");
 }
 
 Strings BackupCoordinationOnCluster::getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type) const
@@ -617,26 +664,11 @@ void BackupCoordinationOnCluster::addReplicatedSQLObjectsDir(const String & load
     }
 
     auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::addReplicatedSQLObjectsDir");
-    auto holder = with_retries.createRetriesControlHolder("addReplicatedSQLObjectsDir");
-    holder.retries_ctl.retryLoop(
-        [&, &zk = holder.faulty_zookeeper]()
-    {
-        with_retries.renewZooKeeper(zk);
-        String path = zookeeper_path + "/repl_sql_objects/" + escapeForFileName(loader_zk_path);
-        zk->createIfNotExists(path, "");
-
-        path += "/";
-        switch (object_type)
-        {
-            case UserDefinedSQLObjectType::Function:
-                path += "functions";
-                break;
-        }
-
-        zk->createIfNotExists(path, "");
-        path += "/" + current_host;
-        zk->createIfNotExists(path, dir_path);
-    });
+    createNodeOfCurrentHost(
+        zookeeper_path + "/repl_sql_objects",
+        {escapeForFileName(loader_zk_path), getZooKeeperNodeName(object_type)},
+        dir_path,
+        "addReplicatedSQLObjectsDir");
 }
 
 Strings BackupCoordinationOnCluster::getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const
@@ -644,7 +676,7 @@ Strings BackupCoordinationOnCluster::getReplicatedSQLObjectsDirs(const String & 
     auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::getReplicatedSQLObjectsDirs");
     std::lock_guard lock{replicated_sql_objects_mutex};
     prepareReplicatedSQLObjects();
-    return replicated_sql_objects->getDirectories(loader_zk_path, object_type, current_host);
+    return replicated_sql_objects->getDirectories({loader_zk_path, object_type}, current_host);
 }
 
 void BackupCoordinationOnCluster::prepareReplicatedSQLObjects() const
@@ -652,7 +684,7 @@ void BackupCoordinationOnCluster::prepareReplicatedSQLObjects() const
     if (replicated_sql_objects)
         return;
 
-    std::vector<BackupCoordinationReplicatedSQLObjects::DirectoryPathForSQLObject> directories_for_sql_objects;
+    std::vector<BackupCoordinationReplicatedDirectories<std::pair<String, UserDefinedSQLObjectType>>::DirectoryPath> directories_for_sql_objects;
     auto holder = with_retries.createRetriesControlHolder("prepareReplicatedSQLObjects");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
@@ -666,15 +698,9 @@ void BackupCoordinationOnCluster::prepareReplicatedSQLObjects() const
             String loader_zk_path = unescapeForFileName(escaped_loader_zk_path);
             String objects_path = path + "/" + escaped_loader_zk_path;
 
-            if (String functions_path = objects_path + "/functions"; zk->exists(functions_path))
-            {
-                UserDefinedSQLObjectType object_type = UserDefinedSQLObjectType::Function;
-                for (const String & host_id : zk->getChildren(functions_path))
-                {
-                    String dir = zk->get(functions_path + "/" + host_id);
-                    directories_for_sql_objects.push_back({loader_zk_path, object_type, host_id, dir});
-                }
-            }
+            UserDefinedSQLObjectType object_type = UserDefinedSQLObjectType::Function;
+            if (String functions_path = objects_path + "/" + getZooKeeperNodeName(object_type); zk->exists(functions_path))
+                readDirectoriesOfHosts(zk, functions_path, std::pair{loader_zk_path, object_type}, directories_for_sql_objects);
         }
     });
 
@@ -692,31 +718,11 @@ void BackupCoordinationOnCluster::addReplicatedWorkloadEntitiesDir(const String 
     }
 
     auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::addReplicatedWorkloadEntitiesDir");
-    auto holder = with_retries.createRetriesControlHolder("addReplicatedWorkloadEntitiesDir");
-    holder.retries_ctl.retryLoop(
-        [&, &zk = holder.faulty_zookeeper]()
-    {
-        with_retries.renewZooKeeper(zk);
-        String path = zookeeper_path + "/repl_workload_entities/" + escapeForFileName(loader_zk_path);
-        zk->createIfNotExists(path, "");
-
-        path += "/";
-        switch (entity_type)
-        {
-            case WorkloadEntityType::Workload:
-                path += "workloads";
-                break;
-            case WorkloadEntityType::Resource:
-                path += "resources";
-                break;
-            case WorkloadEntityType::MAX:
-                break;
-        }
-
-        zk->createIfNotExists(path, "");
-        path += "/" + current_host;
-        zk->createIfNotExists(path, dir_path);
-    });
+    createNodeOfCurrentHost(
+        zookeeper_path + "/repl_workload_entities",
+        {escapeForFileName(loader_zk_path), getZooKeeperNodeName(entity_type)},
+        dir_path,
+        "addReplicatedWorkloadEntitiesDir");
 }
 
 Strings BackupCoordinationOnCluster::getReplicatedWorkloadEntitiesDirs(const String & loader_zk_path, WorkloadEntityType entity_type) const
@@ -724,7 +730,7 @@ Strings BackupCoordinationOnCluster::getReplicatedWorkloadEntitiesDirs(const Str
     auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::getReplicatedWorkloadEntitiesDirs");
     std::lock_guard lock{replicated_workload_entities_mutex};
     prepareReplicatedWorkloadEntities();
-    return replicated_workload_entities->getDirectories(loader_zk_path, entity_type, current_host);
+    return replicated_workload_entities->getDirectories({loader_zk_path, entity_type}, current_host);
 }
 
 void BackupCoordinationOnCluster::prepareReplicatedWorkloadEntities() const
@@ -732,7 +738,7 @@ void BackupCoordinationOnCluster::prepareReplicatedWorkloadEntities() const
     if (replicated_workload_entities)
         return;
 
-    std::vector<BackupCoordinationReplicatedWorkloadEntities::DirectoryPathForWorkloadEntity> directories_for_workload_entities;
+    std::vector<BackupCoordinationReplicatedDirectories<std::pair<String, WorkloadEntityType>>::DirectoryPath> directories_for_workload_entities;
     auto holder = with_retries.createRetriesControlHolder("prepareReplicatedWorkloadEntities");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
@@ -746,24 +752,10 @@ void BackupCoordinationOnCluster::prepareReplicatedWorkloadEntities() const
             String loader_zk_path = unescapeForFileName(escaped_loader_zk_path);
             String entities_path = path + "/" + escaped_loader_zk_path;
 
-            if (String workloads_path = entities_path + "/workloads"; zk->exists(workloads_path))
+            for (auto entity_type : collections::range(WorkloadEntityType::MAX))
             {
-                WorkloadEntityType entity_type = WorkloadEntityType::Workload;
-                for (const String & host_id : zk->getChildren(workloads_path))
-                {
-                    String dir = zk->get(workloads_path + "/" + host_id);
-                    directories_for_workload_entities.push_back({loader_zk_path, entity_type, host_id, dir});
-                }
-            }
-
-            if (String resources_path = entities_path + "/resources"; zk->exists(resources_path))
-            {
-                WorkloadEntityType entity_type = WorkloadEntityType::Resource;
-                for (const String & host_id : zk->getChildren(resources_path))
-                {
-                    String dir = zk->get(resources_path + "/" + host_id);
-                    directories_for_workload_entities.push_back({loader_zk_path, entity_type, host_id, dir});
-                }
+                if (String type_path = entities_path + "/" + getZooKeeperNodeName(entity_type); zk->exists(type_path))
+                    readDirectoriesOfHosts(zk, type_path, std::pair{loader_zk_path, entity_type}, directories_for_workload_entities);
             }
         }
     });
@@ -771,6 +763,62 @@ void BackupCoordinationOnCluster::prepareReplicatedWorkloadEntities() const
     replicated_workload_entities.emplace();
     for (auto & directory : directories_for_workload_entities)
         replicated_workload_entities->addDirectory(std::move(directory));
+}
+
+void BackupCoordinationOnCluster::addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path)
+{
+    {
+        std::lock_guard lock{replicated_named_collections_mutex};
+        if (replicated_named_collections)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedNamedCollectionsDir() must not be called after preparing");
+    }
+
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::addReplicatedNamedCollectionsDir");
+    createNodeOfCurrentHost(
+        zookeeper_path + "/repl_named_collections",
+        {escapeForFileName(replication_id)},
+        dir_path,
+        "addReplicatedNamedCollectionsDir");
+}
+
+Strings BackupCoordinationOnCluster::getReplicatedNamedCollectionsDirs(const String & replication_id) const
+{
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::getReplicatedNamedCollectionsDirs");
+    std::lock_guard lock{replicated_named_collections_mutex};
+    prepareReplicatedNamedCollections();
+    return replicated_named_collections->getDirectories(replication_id, current_host);
+}
+
+bool BackupCoordinationOnCluster::doesInitiatorTakeNamedCollectionsExportDecision() const
+{
+    return stage_sync.doesInitiatorTakeNamedCollectionsAccessDecisions();
+}
+
+void BackupCoordinationOnCluster::prepareReplicatedNamedCollections() const
+{
+    if (replicated_named_collections)
+        return;
+
+    std::vector<BackupCoordinationReplicatedDirectories<String>::DirectoryPath> directories_for_named_collections;
+    auto holder = with_retries.createRetriesControlHolder("prepareReplicatedNamedCollections");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+    {
+        directories_for_named_collections.clear();
+        with_retries.renewZooKeeper(zk);
+
+        String path = zookeeper_path + "/repl_named_collections";
+        for (const String & escaped_replication_id : zk->getChildren(path))
+        {
+            String replication_id = unescapeForFileName(escaped_replication_id);
+            String collections_path = path + "/" + escaped_replication_id;
+            readDirectoriesOfHosts(zk, collections_path, replication_id, directories_for_named_collections);
+        }
+    });
+
+    replicated_named_collections.emplace();
+    for (auto & directory : directories_for_named_collections)
+        replicated_named_collections->addDirectory(std::move(directory));
 }
 
 void BackupCoordinationOnCluster::addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup)
@@ -953,6 +1001,11 @@ void BackupCoordinationOnCluster::addFileInfos(BackupFileInfos && file_infos_)
     auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::addFileInfos");
     /// Serialize `file_infos_` and write it to ZooKeeper's nodes.
     String file_infos_str = FileInfos::serialize(file_infos_);
+
+    /// Release the infos as soon as they are serialized: for millions of files they are gigabytes, and the
+    /// caller reads them back from the coordination. `swap`, not `clear`, which keeps the capacity.
+    BackupFileInfos{}.swap(file_infos_);
+
     serializeToMultipleZooKeeperNodes(zookeeper_path + "/file_infos/" + current_host, file_infos_str, "addFileInfos");
 }
 

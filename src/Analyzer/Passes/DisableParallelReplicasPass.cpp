@@ -2,11 +2,14 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -19,10 +22,29 @@ class DisableParallelReplicasVisitor : public InDepthQueryTreeVisitorWithContext
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<DisableParallelReplicasVisitor>;
-    using Base::Base;
+
+    /// With `dry_run`, only records whether some query or union keeps parallel replicas, see `disablesParallelReplicasInWholeTree`.
+    DisableParallelReplicasVisitor(ContextPtr context, bool dry_run_)
+        : Base(std::move(context))
+        , dry_run(dry_run_)
+    {
+    }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (dry_run)
+        {
+            /// The tree shows how a `MergeTree` table is read: with the context of the query around it. Any other
+            /// storage is opaque to it, so whether that read uses parallel replicas cannot be told from here.
+            StoragePtr storage;
+            if (const auto * table_node = node->as<TableNode>())
+                storage = table_node->getStorage();
+            else if (const auto * table_function_node = node->as<TableFunctionNode>())
+                storage = table_function_node->getStorage();
+            if (storage && !storage->isMergeTree())
+                reads_opaque_storage = true;
+        }
+
         if (!isScope(node))
             return;
 
@@ -47,6 +69,12 @@ public:
         /// and its ancestors, which plan it, but not a sibling branch.
         const bool blocker_in_subtree = blockers_seen > scope.blockers_seen_before;
         if (blockers_on_path == 0 && !blocker_in_subtree)
+        {
+            kept_in_some_query = true;
+            return;
+        }
+
+        if (dry_run)
             return;
 
         if (auto * query_node = node->as<QueryNode>())
@@ -54,6 +82,10 @@ public:
         if (auto * union_node = node->as<UnionNode>())
             disable(union_node->getMutableContext());
     }
+
+    /// Every query and union has a blocker on its path or in its subtree, so the pass turns parallel replicas off
+    /// in each of them, and no opaque storage, which might still use them, was read.
+    [[nodiscard]] bool disablesEverywhere() const { return !kept_in_some_query && !reads_opaque_storage; }
 
 private:
     struct Scope
@@ -127,16 +159,29 @@ private:
         node_context->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
     }
 
+    const bool dry_run;
     size_t blockers_seen = 0;
     size_t blockers_on_path = 0;
     std::vector<Scope> scopes;
+    bool kept_in_some_query = false;
+    bool reads_opaque_storage = false;
 };
 
 
 void DisableParallelReplicasPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    DisableParallelReplicasVisitor visitor(context);
+    DisableParallelReplicasVisitor visitor(context, /*dry_run=*/false);
     visitor.visit(query_tree_node);
+}
+
+bool disablesParallelReplicasInWholeTree(const QueryTreeNodePtr & query_tree_node)
+{
+    /// The same visitor walks the tree in the same order as the pass, so the answer cannot drift from what it does.
+    auto node = query_tree_node;
+    const auto & context = node->as<QueryNode>() ? node->as<QueryNode &>().getContext() : node->as<UnionNode &>().getContext();
+    DisableParallelReplicasVisitor visitor(context, /*dry_run=*/true);
+    visitor.visit(node);
+    return visitor.disablesEverywhere();
 }
 
 }

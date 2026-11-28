@@ -28,6 +28,7 @@ MASTER_FUNCTIONAL_TESTS_JOBS = (
     ]
     + JobConfigs.functional_tests_master_release_jobs
     + JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+    + JobConfigs.functional_tests_arm_binary_plan_based_parallel_replicas_jobs
 )
 
 clickhouse_binaries_with_tags = with_long_retention_tags(
@@ -41,8 +42,8 @@ workflow = Workflow.Config(
     engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *JobConfigs.tidy_build_arm_jobs,
-        *JobConfigs.build_jobs,
-        *JobConfigs.release_build_jobs_with_examples,
+        *JobConfigs.build_jobs_with_examples,
+        *JobConfigs.release_build_jobs,
         *JobConfigs.performance_reference_build_jobs,
         *[
             job.set_run_after(
@@ -64,7 +65,7 @@ workflow = Workflow.Config(
         *JobConfigs.stress_test_jobs,
         *JobConfigs.stress_test_azure_jobs,
         *JobConfigs.ast_fuzzer_jobs,
-        *JobConfigs.buzz_fuzzer_jobs,
+        *JobConfigs.lacasadeldolor_jobs,
         *JobConfigs.performance_comparison_with_master_head_jobs,
         *JobConfigs.clickbench_jobs,
         JobConfigs.sqltest_master_job,

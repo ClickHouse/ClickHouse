@@ -109,7 +109,7 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 
 ## الإعدادات {#settings}
 
-يمكن تهيئة مجمّع الاتصالات الذي يستخدمه محرك الجدول `PostgreSQL` (ودالة الجدول [`postgresql`](/ar/reference/functions/table-functions/postgresql)) لكل جدول على حدة باستخدام عبارة `SETTINGS`. وعند عدم تحديد إعداد معيّن، تُستخدم تلقائيًا قيمة إعداد `postgresql_*` المقابل على مستوى الاستعلام.
+يمكن تهيئة مجمّع الاتصالات الذي يستخدمه محرك الجدول `PostgreSQL` (ودالة الجدول [`postgresql`](/ar/reference/functions/table-functions/postgresql)) لكل جدول على حدة باستخدام عبارة `SETTINGS`. وعند عدم تحديد إعداد معيّن، تُستخدم تلقائيًا قيمة إعداد `postgresql_*` المقابل على مستوى الاستعلام. ويضيف الجدول الجديد، ما لم يكن مُستعادًا من نسخة احتياطية، إلى `SETTINGS` الخاصة به القيمَ التي يأخذها بهذه الطريقة وتختلف عن قيم الخادم، كالقيم المعيّنة باستخدام `SET` أو عبر ملف تعريف الإعدادات الخاص بالمستخدم، وذلك كي يحتفظ بها بعد إعادة تشغيل الخادم. أما القيمة المساوية لقيمة الخادم فلا تُخزَّن، ولذلك يتبع هذا الجدول قيمة الخادم إذا تغيّرت لاحقًا. ولا يُؤخذ الإعداد الذي تعيّنه مجموعة مسمّاة من الإعداد على مستوى الاستعلام، ومن ثَمّ لا يُخزَّن له شيء. وتُعدّ القيمة المخزَّنة جزءًا من `SETTINGS` الخاصة بالجدول، ولذلك فهي تتجاوز المفتاح نفسه إذا أُضيف إلى المجموعة المسمّاة لاحقًا، وإذا كان هذا المفتاح `NOT OVERRIDABLE`، يفشل تحميل الجدول مع الخطأ `Override not allowed`. وفي عبارة `SETTINGS` الخاصة بالجدول، لا يُؤخذ الإعداد الذي أُعيد ضبطه باستخدام `name = DEFAULT` من الإعداد على مستوى الاستعلام.
 
 ### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
@@ -156,11 +156,11 @@ SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_c
 
 ## تفاصيل التنفيذ {#implementation-details}
 
-تُنفَّذ استعلامات `SELECT` على جانب PostgreSQL بصيغة `COPY (SELECT ...) TO STDOUT` داخل معاملة PostgreSQL للقراءة فقط، مع تنفيذ `commit` بعد كل استعلام `SELECT`.
+تُنفَّذ استعلامات `SELECT` على جانب PostgreSQL بصيغة `COPY (SELECT ...) TO STDOUT` داخل معاملة PostgreSQL للقراءة فقط، مع تنفيذ `commit` بعد كل استعلام `SELECT`.
 
-تُنفَّذ عبارات `WHERE` البسيطة مثل `=`, `!=`, `>`, `>=`, `<`, `<=`, و`IN` على خادم PostgreSQL.
+تُنفَّذ عبارات `WHERE` البسيطة مثل `=`, `!=`, `>`, `>=`, `<`, `<=`, و`IN` على خادم PostgreSQL.
 
-تُنفَّذ جميع عمليات `JOIN`، وعمليات التجميع، والفرز، وشروط `IN [ array ]`، وقيد أخذ العينات الخاص بـ `LIMIT` في ClickHouse فقط بعد اكتمال الاستعلام إلى PostgreSQL.
+تُنفَّذ جميع عمليات `JOIN`، وعمليات التجميع، والفرز، وشروط `IN [ array ]` في ClickHouse بعد اكتمال الاستعلام إلى PostgreSQL. أما قيد أخذ العينات الخاص بـ `LIMIT` فلا يُدفَع إلى PostgreSQL إلا عندما يكون ذلك آمنًا ويكون الإعداد [external&#95;storage&#95;push&#95;down&#95;limit](/ar/reference/settings/session-settings/external-storage#external_storage_push_down_limit) مفعّلًا؛ وإلا فإنه يُنفَّذ في ClickHouse.
 
 ## تمرير استعلام بدلًا من اسم جدول {#passing-a-query}
 

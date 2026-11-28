@@ -15,7 +15,7 @@ doc_type: 'reference'
 
 ## Столбцы {#columns}
 
-* `trace` ([Array(UInt64)](/ru/reference/data-types/array)) — Адреса стека вызовов при выделении памяти, начиная с конечного кадра (по тому же соглашению, что и `system.trace_log.trace`). Пусто, если jemalloc не удалось раскрутить стек. Для символизации используйте `addressToSymbol` и `demangle` (требуется `allow_introspection_functions`).
+* `trace` ([Array(UInt64)](/ru/reference/data-types/array)) — Адреса стека вызовов при выделении памяти, начиная с конечного кадра. Адреса внутри основного бинарного файла ClickHouse хранятся как смещения в нём (по тому же соглашению, что и `system.trace_log.trace`), а кадры вне его хранятся как 0. Пусто, если jemalloc не удалось раскрутить стек. Для символизации используйте `addressToSymbol` и `demangle` (требуется `allow_introspection_functions`).
 * `age_ns` ([UInt64](/ru/reference/data-types/int-uint)) — Время существования выделения памяти в наносекундах относительно момента сброса профиля на диск.
 * `size` ([UInt64](/ru/reference/data-types/int-uint)) — Запрошенный размер выделения памяти в байтах.
 * `usize` ([UInt64](/ru/reference/data-types/int-uint)) — Доступный размер в байтах, то есть класс размера, до которого был округлён запрос.

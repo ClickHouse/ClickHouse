@@ -1,0 +1,22 @@
+keys32, string first, fixed-width part of 3 bytes	1
+keys32, two levels	1
+keys128, two levels	1
+keys32, external aggregation	1
+keys32, partitioned single-level merge	1
+keys32, preallocated	1
+keys32, preallocated two-level	1
+keys64, ROLLUP	1
+keys32, aggregation in order, long runs	1
+keys64, aggregation in order, short runs	1
+keys32, ORDER BY keys LIMIT	1
+keys64, ORDER BY count() LIMIT	1
+keys32, distributed two levels	1
+keys128, distributed two levels, serialized plan	1
+two levels	05481_keys128_two_level	1
+two levels	05481_keys32_external	1
+two levels	05481_keys32_two_level	1
+preallocated	05481_keys32_preallocated	1	0
+preallocated	05481_keys32_preallocated_two_level	1	1
+written to disk	05481_keys32_external	1
+top-K heap	05481_keys32_top_k_heap	1
+bucket top-K	05481_keys64_bucket_top_k	1

@@ -3,6 +3,16 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ci.praktika.utils import Shell
 
+PERFORMANCE_DATASETS = {
+    "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
+    "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
+    "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
+    "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
+    "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch_sf10.tar",
+    "tpch_ice10": "https://clickhouse-datasets.s3.amazonaws.com/h-ice/10/tpch_ice_sf10.tar",
+    "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
+}
+
 # Iceberg datasets unpacked into user_files as <database> -> (directory, tables); every job that downloads a tarball must also create the database via iceberg_database_queries, or the tests querying it fail.
 ICEBERG_DATASETS = {
     "tpch_ice10": (

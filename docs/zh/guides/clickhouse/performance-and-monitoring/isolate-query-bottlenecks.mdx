@@ -5,17 +5,16 @@ sidebar_label: '定位查询瓶颈'
 sidebar_position: 3
 title: '定位查询瓶颈'
 description: '通过可重复的三次运行对比，定位缓慢的 ClickHouse 查询中的瓶颈'
-doc_type: '指南'
+doc_type: 'guide'
 keywords: ['查询优化', '查询瓶颈', '性能', '基准测试']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import NYCTaxiExampleDataset from '/snippets/zh/_nyc_taxi_example_dataset.mdx';
 
 每次只修改查询的一部分，并将结果与稳定的基线进行比较，可使查询优化更容易。本指南介绍如何逐步简化查询，并通过比较各次运行结果的差异，识别对其耗时影响最大的操作。随后，您可以在选择优化方案前验证疑似瓶颈。
 
 <div id="before-you-begin">
-  ## 开始之前
+  ## 开始之前 {#before-you-begin}
 </div>
 
 首先，确定一个要调查的反复出现的慢查询模式。如果尚未确定，请参阅[诊断慢查询](/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)，其中详细说明了该流程。
@@ -29,7 +28,7 @@ import NYCTaxiExampleDataset from '/snippets/zh/_nyc_taxi_example_dataset.mdx';
 示例表使用 `ORDER BY ()`，因此其日期过滤器无法利用排序键在读取期间跳过数据。请使用该示例练习比较方法，而不要将其视为性能目标。
 
 <div id="how-it-works">
-  ## 工作原理
+  ## 工作原理 {#how-it-works}
 </div>
 
 逐步简化查询，可以比较移除某个处理阶段前后的耗时。这些差异有助于判断是否需要进一步分析扫描和筛选、分组、聚合计算，或排序和输出格式化等后续操作：
@@ -44,9 +43,7 @@ import NYCTaxiExampleDataset from '/snippets/zh/_nyc_taxi_example_dataset.mdx';
   这些差异是诊断性估算，并非对 ClickHouse 执行阶段的精确测量。更改查询可能会改变其执行计划、读取的列以及各阶段之间传递的数据。请根据结果提出假设，然后通过查询日志和 [`EXPLAIN`](/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) 进行验证。
 </Note>
 
-<div id="establish-a-repeatable-baseline">
-  ## 建立可重复的基线
-</div>
+## 建立可重复的基线 {#establish-a-repeatable-baseline}
 
 采用以下做法，确保测量结果具有可比性：
 
@@ -71,7 +68,11 @@ SET optimize_use_implicit_projections = 0;
 
 此工作流将受控执行查询与查询日志中的测量数据结合使用：
 
-<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="用于从查询日志中识别候选查询并隔离测试变更的工作流" />
+<div className="ch-image-lg">
+  <Frame>
+    ![用于从查询日志中识别候选查询并隔离测试变更的工作流](/images/guides/best-practices/query_optimization_diagram_1.webp)
+  </Frame>
+</div>
 
 按以下方式收集每次运行的测量数据：
 
@@ -131,7 +132,7 @@ SET optimize_use_implicit_projections = 0;
 </Tabs>
 
 <div id="run-progressively-simpler-queries">
-  ## 逐步简化查询并运行
+  ## 逐步简化查询并运行 {#run-progressively-simpler-queries}
 </div>
 
 为演示这三种比较，示例使用了分组的[日期范围工作负载](/zh/guides/clickhouse/performance-and-monitoring/query-optimization-example#date-range-aggregation)。您也可以将此方法应用于其他查询，无需遵循该完整示例。如果查询不包含 `GROUP BY`，请按下文说明跳过运行 B。
@@ -196,7 +197,7 @@ SET optimize_use_implicit_projections = 0;
 </Steps>
 
 <div id="interpret-the-differences">
-  ## 解读差异
+  ## 解读差异 {#interpret-the-differences}
 </div>
 
 应比较多次运行中具有代表性的耗时，而非将两次单独的计时结果相减。显著且持续存在的差异表明下一步应从何处着手调查：
@@ -209,7 +210,7 @@ SET optimize_use_implicit_projections = 0;
 | 三次运行的耗时相近      | 延迟来源可能是三个版本共有的，也可能是简化操作改变了执行计划 | 比较各次运行的 `read_rows`、`read_bytes` 和峰值内存占用。如果这些指标也相近，请调查运行 C 中保留的操作。否则，比较执行计划的差异 |
 
 <div id="compare-rows-read-with-count-result">
-  ### 将读取行数与 count 结果进行比较
+  ### 将读取行数与 count 结果进行比较 {#compare-rows-read-with-count-result}
 </div>
 
 将运行 C 的 `read_rows` 与其 `count` 返回的值进行比较。例如，如果 `read_rows` 为 1 亿，而 `count` 返回 100 万，则 ClickHouse 每统计一行，大约扫描了 100 行源数据。这表明过滤器排除了从表中读取的大多数行，但无法说明具体原因。此比率适用于简单的单表扫描。对于涉及多个数据源或投影的查询，应结合执行计划来解读 `read_rows`。
@@ -224,7 +225,7 @@ SET use_skip_indexes_on_data_read = 0;
 然后使用 [`EXPLAIN indexes = 1`](/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) 查看 ClickHouse 使用了哪些索引，以及每个索引跳过了多少 parts 和粒度。如果 ClickHouse 选中的粒度多于预期，请检查过滤器是否与表的排序键匹配，以及是否可通过分区剪枝或数据跳过索引跳过更多粒度。如果执行计划中没有 `Indexes` 部分，说明 `EXPLAIN` 未显示该查询的索引剪枝信息。相比之下，全表分析查询通常会读取表中的大部分数据。
 
 <div id="validate-the-suspected-bottleneck">
-  ## 验证疑似瓶颈
+  ## 验证疑似瓶颈 {#validate-the-suspected-bottleneck}
 </div>
 
 比较结果指向可能的瓶颈后，请先进行验证，再修改 schema 或查询。应根据疑似的延迟来源收集相应证据：
@@ -236,8 +237,6 @@ SET use_skip_indexes_on_data_read = 0;
 
 有关 `EXPLAIN` 返回的索引信息，请参阅[慢查询诊断指南](/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement)。进行一项有针对性的更改后，在相同条件下重复运行 A、B 和 C。确认该更改减少了预期的工作量，且未将瓶颈转移到其他位置。
 
-<div id="next-steps">
-  ## 后续步骤
-</div>
+## 后续步骤 {#next-steps}
 
-继续阅读[优化方法](/zh/guides/clickhouse/performance-and-monitoring/optimization-approaches)，针对疑似性能瓶颈采取一项或多项相应的优化措施。
+请继续阅读[优化方法](/zh/guides/clickhouse/performance-and-monitoring/optimization-approaches)，针对疑似瓶颈找出一项或多项有针对性的改进措施。
