@@ -1,0 +1,50 @@
+-- mapKeys
+[1,2]
+[1,2]
+[1,2]
+[1,1,0]
+[1]
+[1]
+[1,2]
+[2]
+[2]
+-- mapKeys and mapValues
+[2]
+[2]
+[2]
+[0,1,0]
+[]
+[]
+[]
+[]
+-- mapKeys with a postprocessor
+[2]
+[2]
+-- mapKeys and mapValues with a postprocessor
+[1,2]
+[1,2]
+[1,2]
+[1,2]
+[1,2]
+[1,2]
+[1,2]
+[1,2]
+-- mapKeys and mapValues with a postprocessor, Nullable values
+[2]
+[2]
+[2]
+[2]
+-- mapKeys, Nullable values, a tokenizer argument
+[2]
+[2]
+-- JSONAllPaths
+[1,2]
+[1,2]
+-- JSONAllPaths and JSONAllValues
+[2]
+[2]
+-- the values postprocessor makes a missing key match
+[]
+[]
+[]
+[]
