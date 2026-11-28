@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <Functions/CancellationBudget.h>
+#include <Interpreters/CancellationBudget.h>
 #include <Functions/GeoHash.h>
 
 #include <algorithm>

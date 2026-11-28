@@ -1,7 +1,7 @@
 #pragma once
 
 #include <base/types.h>
-#include <Functions/CancellationBudget.h>
+#include <Interpreters/CancellationBudget.h>
 
 
 namespace DB
