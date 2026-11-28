@@ -106,6 +106,7 @@ public:
     void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
     /// If Check for NULL and deserialize value into non-nullable column (and return true) or insert default value of nested type (and return false)
     static bool deserializeNullAsDefaultOrNestedWholeText(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization, const IDataType * nested_type = nullptr);

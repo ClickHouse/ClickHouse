@@ -560,6 +560,12 @@ void SerializationSparse::serializeTextXML(const IColumn & column, size_t row_nu
     nested->serializeTextXML(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
 }
 
+void SerializationSparse::serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
+    nested->serializeTextMarkdown(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
+}
+
 
 void SerializationSparse::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
