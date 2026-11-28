@@ -46,6 +46,11 @@ def ldap_cluster():
 
 
 def add_ldap_group(ldap_cluster, group_cn, member_cn):
+    # `member_cn` is either a name of a user or a list of such names.
+    member_cns = [member_cn] if isinstance(member_cn, str) else member_cn
+    members = "\n".join(
+        f"member: cn={cn},ou=users,dc=example,dc=org" for cn in member_cns
+    )
     code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
         [
             "sh",
@@ -53,7 +58,7 @@ def add_ldap_group(ldap_cluster, group_cn, member_cn):
             """echo "dn: cn={group_cn},dc=example,dc=org
 objectClass: top
 objectClass: groupOfNames
-member: cn={member_cn},ou=users,dc=example,dc=org" | \
+{members}" | \
 ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
     """.format(
                 host=ldap_cluster.ldap_host,
@@ -61,7 +66,7 @@ ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
                 admin_bind_dn=LDAP_ADMIN_BIND_DN,
                 admin_password=LDAP_ADMIN_PASSWORD,
                 group_cn=group_cn,
-                member_cn=member_cn,
+                members=members,
             ),
         ],
         demux=True,
@@ -257,6 +262,296 @@ def test_remote_query_user_does_not_exist_locally(ldap_cluster):
 
     instance2.query("DROP USER IF EXISTS non_local", user="common_user", password="qwerty")
     instance2.query("DROP TABLE IF EXISTS test_table SYNC", user="common_user", password="qwerty")
+
+
+def add_ldap_group_with_escaped_name(ldap_cluster, group_cn, member_cn):
+    ldif = [
+        "dn: cn=" + group_cn.replace("\\", "\\\\") + ",dc=example,dc=org",
+        "objectClass: top",
+        "objectClass: groupOfNames",
+        f"member: cn={member_cn},ou=users,dc=example,dc=org",
+    ]
+    # Pass the LDIF lines as arguments to avoid any processing of the backslashes by the shell.
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            'printf "%s\\n" "$@" | ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}'.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+            ),
+            "sh",
+        ]
+        + ldif,
+        demux=True,
+    )
+    logging.debug(f"ldapadd code:{code} stdout:{stdout}, stderr:{stderr}")
+    assert code == 0
+
+
+def test_common_role_with_dot_in_name():
+    # The role `ldap.common.role` is defined in `users.xml` and assigned to all LDAP users on instance2
+    # with `<roles><ldap.common.role/></roles>`. Both names come from config keys with escaped dots,
+    # and both must be un-escaped to match.
+    assert instance2.query(
+        "SELECT role_name FROM system.current_roles", user="janedoe", password="qwerty"
+    ) == TSV([["ldap.common.role"]])
+
+
+def test_mapped_role_with_legacy_escaped_name(ldap_cluster):
+    # The role `ldap.mapped.role` is defined in `users.xml`. It used to be stored under the escaped name
+    # `ldap\.mapped\.role`, so an LDAP group can still map to that legacy spelling of the name.
+    group_cn = "clickhouse-ldap\\.mapped\\.role"
+    add_ldap_group_with_escaped_name(ldap_cluster, group_cn, member_cn="johndoe")
+
+    users_xml = "/etc/clickhouse-server/users.d/users.xml"
+    try:
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == TSV([["ldap.mapped.role"]])
+
+        # Change the role in `users.xml`. The notification about the change carries the real name of the role,
+        # and the role must stay granted.
+        instance1.replace_in_config(
+            users_xml,
+            "<ldap.mapped.role/>",
+            "<ldap.mapped.role><grants><query>GRANT SELECT ON system.one</query></grants></ldap.mapped.role>",
+        )
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+        assert instance1.query(
+            "SELECT count() FROM system.grants WHERE role_name = 'ldap.mapped.role'", user="common_user", password="qwerty"
+        ) == "1\n"
+
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == TSV([["ldap.mapped.role"]])
+    finally:
+        instance1.replace_in_config(
+            users_xml,
+            "<ldap.mapped.role><grants><query>GRANT SELECT ON system.one</query></grants></ldap.mapped.role>",
+            "<ldap.mapped.role/>",
+        )
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+        delete_ldap_group(ldap_cluster, group_cn=group_cn.replace("\\", "\\\\"))
+
+
+def test_mapped_role_with_legacy_escaped_name_defined_after_login(ldap_cluster):
+    # The user logs in while the role `ldap.late.role` is not defined yet, so the legacy escaped name
+    # `ldap\.late\.role` mapped from LDAP cannot be resolved. When the role is added to `users.xml`
+    # later, the notification about it carries the real name of the role, and the role must be granted.
+    group_cn = "clickhouse-ldap\\.late\\.role"
+    add_ldap_group_with_escaped_name(ldap_cluster, group_cn, member_cn="johndoe")
+
+    users_xml = "/etc/clickhouse-server/users.d/users.xml"
+    late_role = "<ldap.late.role><grants><query>GRANT SELECT ON system.one</query></grants></ldap.late.role>"
+    try:
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == ""
+
+        instance1.replace_in_config(users_xml, "<ldap.mapped.role/>", "<ldap.mapped.role/>" + late_role)
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == TSV([["ldap.late.role"]])
+    finally:
+        instance1.replace_in_config(users_xml, "<ldap.mapped.role/>" + late_role, "<ldap.mapped.role/>")
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+        delete_ldap_group(ldap_cluster, group_cn=group_cn.replace("\\", "\\\\"))
+
+
+def test_mapped_role_with_legacy_escaped_name_not_granted_after_recreation(ldap_cluster):
+    # The legacy escaped name `ldap\.recreated\.role` mapped from LDAP is resolved to the role `ldap.recreated.role`
+    # defined in `users.xml`. After that role is removed, a SQL role with the same real name must not be granted,
+    # because the mapped name `ldap\.recreated\.role` does not resolve to it.
+    group_cn = "clickhouse-ldap\\.recreated\\.role"
+    add_ldap_group_with_escaped_name(ldap_cluster, group_cn, member_cn="johndoe")
+
+    users_xml = "/etc/clickhouse-server/users.d/users.xml"
+    xml_role = "<ldap.recreated.role/>"
+    try:
+        instance1.replace_in_config(users_xml, "<ldap.mapped.role/>", "<ldap.mapped.role/>" + xml_role)
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == TSV([["ldap.recreated.role"]])
+
+        instance1.replace_in_config(users_xml, "<ldap.mapped.role/>" + xml_role, "<ldap.mapped.role/>")
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+        instance1.query("CREATE ROLE `ldap.recreated.role`", user="common_user", password="qwerty")
+
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == ""
+    finally:
+        instance1.replace_in_config(users_xml, "<ldap.mapped.role/>" + xml_role, "<ldap.mapped.role/>")
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+        instance1.query("DROP ROLE IF EXISTS `ldap.recreated.role`", user="common_user", password="qwerty")
+        delete_ldap_group(ldap_cluster, group_cn=group_cn.replace("\\", "\\\\"))
+
+
+def test_failed_role_reconciliation_is_retried(ldap_cluster):
+    # The mapped role is renamed, so the mapped name does not resolve to it anymore and the role must be revoked.
+    # The first attempt to update the user fails. The change must stay pending and be reconciled
+    # on the next notification, even though that notification is not about this role.
+    admin = {"user": "common_user", "password": "qwerty"}
+    group_cn = "clickhouse-retried_role"
+    add_ldap_group(ldap_cluster, group_cn=group_cn, member_cn="johndoe")
+
+    try:
+        instance1.query("CREATE ROLE retried_role", **admin)
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == TSV([["retried_role"]])
+
+        instance1.query("SYSTEM ENABLE FAILPOINT ldap_access_storage_fail_role_reconciliation", **admin)
+        instance1.query("ALTER ROLE retried_role RENAME TO retried_role_renamed", **admin)
+
+        instance1.query("CREATE ROLE retried_role_unrelated", **admin)
+
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == ""
+    finally:
+        instance1.query("SYSTEM DISABLE FAILPOINT ldap_access_storage_fail_role_reconciliation", **admin)
+        instance1.query("DROP ROLE IF EXISTS retried_role, retried_role_renamed, retried_role_unrelated", **admin)
+        delete_ldap_group(ldap_cluster, group_cn=group_cn)
+
+
+def test_partially_applied_role_reconciliation_is_reverted(ldap_cluster):
+    # Two users are mapped to a role which is created after they have logged in. The reconciliation of the new role
+    # fails after the first user is updated, so that user already has the role while the second one does not.
+    # Then the role is renamed before a successful retry: the mapped name is resolved to a role
+    # neither before nor after that change, but the role granted by the failed attempt must be revoked anyway.
+    admin = {"user": "common_user", "password": "qwerty"}
+    failpoint = "ldap_access_storage_fail_role_reconciliation_after_first_user"
+    group_cn = "clickhouse-partial_role"
+    ldap_users = [("janedoe", "qwerty"), ("johndoe", "qwertz")]
+    add_ldap_group(ldap_cluster, group_cn=group_cn, member_cn=[name for name, _ in ldap_users])
+
+    def current_roles(user, password):
+        return instance1.query(
+            "SELECT role_name FROM system.current_roles", user=user, password=password
+        )
+
+    def granted_roles():
+        return instance1.query(
+            "SELECT user_name, granted_role_name FROM system.role_grants"
+            " WHERE user_name IN ('janedoe', 'johndoe') ORDER BY ALL",
+            **admin,
+        )
+
+    try:
+        for user, password in ldap_users:
+            assert current_roles(user, password) == ""
+
+        instance1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("CREATE ROLE partial_role", **admin)
+
+        # The users are updated in the order of their names.
+        instance1.wait_for_log_line(
+            "Injected failure of the reconciliation of LDAP role changes after the update of the first user"
+        )
+        # The users do not log in while the changes are pending: a login resolves the mapped names again,
+        # so it would hide the partially applied state.
+        assert granted_roles() == TSV([["janedoe", "partial_role"]])
+
+        instance1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("ALTER ROLE partial_role RENAME TO partial_role_renamed", **admin)
+
+        assert granted_roles() == ""
+        for user, password in ldap_users:
+            assert current_roles(user, password) == ""
+    finally:
+        instance1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("DROP ROLE IF EXISTS partial_role, partial_role_renamed", **admin)
+        delete_ldap_group(ldap_cluster, group_cn=group_cn)
+
+
+def test_login_during_pending_role_reconciliation_resolves_roles_again(ldap_cluster):
+    # Two users are mapped to a role, and the role is renamed, so it must be revoked from both of them.
+    # The reconciliation keeps failing after the first user is updated, so the second user still has the role.
+    # When that user logs in again with the same LDAP groups, the mapped name must be resolved again
+    # instead of keeping the outdated role until the pending changes are reconciled.
+    admin = {"user": "common_user", "password": "qwerty"}
+    failpoint = "ldap_access_storage_fail_role_reconciliation_after_first_user"
+    group_cn = "clickhouse-stale_role"
+    ldap_users = [("janedoe", "qwerty"), ("johndoe", "qwertz")]
+    add_ldap_group(ldap_cluster, group_cn=group_cn, member_cn=[name for name, _ in ldap_users])
+
+    def current_roles(user, password):
+        return instance1.query(
+            "SELECT role_name FROM system.current_roles", user=user, password=password
+        )
+
+    try:
+        instance1.query("CREATE ROLE stale_role", **admin)
+        for user, password in ldap_users:
+            assert current_roles(user, password) == TSV([["stale_role"]])
+
+        # The notification is delivered before the query returns, and the users are updated in the order of their names.
+        instance1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("ALTER ROLE stale_role RENAME TO stale_role_renamed", **admin)
+
+        for user, password in reversed(ldap_users):
+            assert current_roles(user, password) == ""
+    finally:
+        instance1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("DROP ROLE IF EXISTS stale_role, stale_role_renamed", **admin)
+        delete_ldap_group(ldap_cluster, group_cn=group_cn)
+
+
+def test_role_granted_by_login_during_pending_role_reconciliation_is_revoked(ldap_cluster):
+    # The mapped role is renamed and another role takes its name, while both reconciliations fail before any user
+    # is updated. A login during the pending changes resolves the mapped name again and grants the replacement role.
+    # Then the replacement role is renamed too, and this time the reconciliation succeeds: the mapped name is not
+    # resolved to any role anymore, so the role granted by that login must be revoked.
+    admin = {"user": "common_user", "password": "qwerty"}
+    failpoint = "ldap_access_storage_fail_role_reconciliation"
+    group_cn = "clickhouse-replaced_role"
+    add_ldap_group(ldap_cluster, group_cn=group_cn, member_cn="johndoe")
+
+    def current_roles():
+        return instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        )
+
+    def granted_roles():
+        return instance1.query(
+            "SELECT granted_role_name FROM system.role_grants WHERE user_name = 'johndoe' ORDER BY ALL",
+            **admin,
+        )
+
+    try:
+        instance1.query("CREATE ROLE replaced_role", **admin)
+        instance1.query("CREATE ROLE replaced_role_spare", **admin)
+        assert current_roles() == TSV([["replaced_role"]])
+
+        # The failpoint is triggered only once, so it is enabled before each of the failing changes.
+        instance1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("ALTER ROLE replaced_role RENAME TO replaced_role_old", **admin)
+        instance1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("ALTER ROLE replaced_role_spare RENAME TO replaced_role", **admin)
+        assert granted_roles() == TSV([["replaced_role_old"]])
+
+        # The login grants the role which has taken the mapped name.
+        assert current_roles() == TSV([["replaced_role"]])
+        assert granted_roles() == TSV([["replaced_role"]])
+
+        instance1.query("ALTER ROLE replaced_role RENAME TO replaced_role_new", **admin)
+
+        # The state is checked without a login, which would resolve the mapped name again.
+        assert granted_roles() == ""
+        assert current_roles() == ""
+    finally:
+        instance1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", **admin)
+        instance1.query(
+            "DROP ROLE IF EXISTS replaced_role, replaced_role_spare, replaced_role_old, replaced_role_new", **admin
+        )
+        delete_ldap_group(ldap_cluster, group_cn=group_cn)
 
 
 def add_ldap_user(ldap_cluster, user_cn, password):

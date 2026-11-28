@@ -28,12 +28,14 @@
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
+#include <Poco/String.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <cstring>
 #include <base/FnTraits.h>
 #include <base/range.h>
+#include <optional>
 #include <string_view>
 #include <unordered_set>
 #include <boost/container/flat_set.hpp>
@@ -52,6 +54,37 @@ namespace ErrorCodes
 
 namespace
 {
+    /// The name for an access entity comes from a config key, so any dot in the
+    /// name is escaped with a backslash by Poco::XMLConfiguration.
+    /// This function removes the backslash to get the correct name.
+    String unescapeDots(const String & name)
+    {
+        return Poco::replace(name, "\\.", ".");
+    }
+
+    /// Resolves a reference to an entity defined in `users.xml` against the set of IDs of such entities.
+    /// Entities are now stored under their un-escaped names, but a config written for an older server may
+    /// reference them by the escaped spelling (e.g. `<profile>my\.profile</profile>`) as a work-around for
+    /// the previously-stored escaped name. To stay backward compatible we accept both spellings: the exact
+    /// one first, then the un-escaped one. Returns `std::nullopt` when neither spelling is present in `allowed_ids`.
+    std::optional<UUID> resolveIDFromUsersConfig(
+        AccessEntityType type, const String & name, const std::unordered_set<UUID> & allowed_ids)
+    {
+        auto id = UsersConfigParser::generateID(type, name);
+        if (allowed_ids.contains(id))
+            return id;
+
+        auto unescaped_name = unescapeDots(name);
+        if (unescaped_name != name)
+        {
+            id = UsersConfigParser::generateID(type, unescaped_name);
+            if (allowed_ids.contains(id))
+                return id;
+        }
+
+        return std::nullopt;
+    }
+
     template <typename T>
     void parseGrant(T & entity, const String & string_query, const std::unordered_set<UUID> & role_ids_from_users_config, const AccessControl & access_control, LoggerPtr log)
     {
@@ -115,13 +148,19 @@ namespace
 
             for (const auto & role_name : role_names)
             {
-                auto role_id = UsersConfigParser::generateID(AccessEntityType::ROLE, role_name);
-                if (!role_ids_from_users_config.contains(role_id))
+                UUID role_id;
+                if (auto resolved_id = resolveIDFromUsersConfig(AccessEntityType::ROLE, role_name, role_ids_from_users_config))
                 {
-                    if (const auto role = access_control.find<Role>(role_name))
-                        role_id = *role;
-                    else
-                        LOG_WARNING(log, "Role {} is not defined and will be ignored for grant query '{}'.", role_name, string_query);
+                    role_id = *resolved_id;
+                }
+                else if (const auto role = access_control.find<Role>(role_name))
+                {
+                    role_id = *role;
+                }
+                else
+                {
+                    role_id = UsersConfigParser::generateID(AccessEntityType::ROLE, role_name);
+                    LOG_WARNING(log, "Role {} is not defined and will be ignored for grant query '{}'.", role_name, string_query);
                 }
 
                 roles_to_grant.push_back(role_id);
@@ -438,10 +477,7 @@ namespace
         auto user = std::make_shared<User>();
         String user_config = "users." + user_name;
 
-        /// If the user name contains a dot, it is escaped with a backslash when parsed from the config file.
-        /// We need to remove the backslash to get the correct user name.
-        Poco::replaceInPlace(user_name, "\\.", ".");
-        user->setName(user_name);
+        user->setName(unescapeDots(user_name));
 
         const auto auth_methods_config = user_config + ".auth_methods";
         bool has_auth_methods = config.has(auth_methods_config);
@@ -501,11 +537,11 @@ namespace
         if (config.has(profile_name_config))
         {
             auto profile_name = config.getString(profile_name_config);
-            auto profile_id = UsersConfigParser::generateID(AccessEntityType::SETTINGS_PROFILE, profile_name);
-            if (!allowed_profile_ids.contains(profile_id))
+            auto profile_id = resolveIDFromUsersConfig(AccessEntityType::SETTINGS_PROFILE, profile_name, allowed_profile_ids);
+            if (!profile_id)
                 throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "Profile {} was not found", profile_name);
             SettingsProfileElement profile_element;
-            profile_element.parent_profile = profile_id;
+            profile_element.parent_profile = *profile_id;
             user->settings.push_back(std::move(profile_element));
         }
 
@@ -635,7 +671,6 @@ namespace
         return user;
     }
 
-
     RolePtr parseRole(
         const Poco::Util::AbstractConfiguration & config,
         const String & role_name,
@@ -644,9 +679,9 @@ namespace
         LoggerPtr log)
     {
         auto role = std::make_shared<Role>();
-        role->setName(role_name);
-
         String role_config = "roles." + role_name;
+
+        role->setName(unescapeDots(role_name));
 
         const auto grants_config = role_config + ".grants";
         if (config.has(grants_config))
@@ -667,7 +702,6 @@ namespace
     QuotaPtr parseQuota(const Poco::Util::AbstractConfiguration & config, const String & quota_name, const std::vector<UUID> & user_ids)
     {
         auto quota = std::make_shared<Quota>();
-        quota->setName(quota_name);
 
         auto parse_prefix_bits = [&](const String & path, UInt8 max_bits) -> std::optional<MaskBits>
         {
@@ -684,6 +718,8 @@ namespace
         };
 
         String quota_config = "quotas." + quota_name;
+
+        quota->setName(unescapeDots(quota_name));
         if (config.has(quota_config + ".keyed_by_ip"))
         {
             quota->key_type = QuotaKeyType::IP_ADDRESS;
@@ -851,8 +887,9 @@ namespace
         const AccessControl & access_control)
     {
         auto profile = std::make_shared<SettingsProfile>();
-        profile->setName(profile_name);
         String profile_config = "profiles." + profile_name;
+
+        profile->setName(unescapeDots(profile_name));
 
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(profile_config, keys);
@@ -862,11 +899,11 @@ namespace
             if (key == "profile" || key.starts_with("profile["))
             {
                 String parent_profile_name = config.getString(profile_config + "." + key);
-                auto parent_profile_id = UsersConfigParser::generateID(AccessEntityType::SETTINGS_PROFILE, parent_profile_name);
-                if (!allowed_parent_profile_ids.contains(parent_profile_id))
+                auto parent_profile_id = resolveIDFromUsersConfig(AccessEntityType::SETTINGS_PROFILE, parent_profile_name, allowed_parent_profile_ids);
+                if (!parent_profile_id)
                     throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "Parent profile '{}' was not found", parent_profile_name);
                 SettingsProfileElement profile_element;
-                profile_element.parent_profile = parent_profile_id;
+                profile_element.parent_profile = *parent_profile_id;
                 profile->elements.emplace_back(std::move(profile_element));
                 continue;
             }
@@ -900,7 +937,18 @@ UsersConfigParser::UsersConfigParser(AccessControl & access_control_)
 UUID UsersConfigParser::generateID(AccessEntityType type, const String & name)
 {
     Poco::MD5Engine md5;
-    md5.update(name);
+    if (type == AccessEntityType::ROLE || type == AccessEntityType::QUOTA || type == AccessEntityType::SETTINGS_PROFILE)
+    {
+        /// Roles, quotas, and settings profiles from `users.xml` used to be stored under their escaped config keys
+        /// (e.g. `my\.role`), and their IDs were generated from these keys. Keep generating the IDs from the escaped
+        /// spelling, so that the references to these entities persisted in other access storages (by ID) still resolve.
+        /// The names of users have been un-escaped earlier, and their IDs are generated from the un-escaped names.
+        md5.update(Poco::replace(name, ".", "\\."));
+    }
+    else
+    {
+        md5.update(name);
+    }
     char type_storage_chars[] = " USRSXML";
     type_storage_chars[0] = AccessEntityTypeInfo::get(type).unique_char;
     md5.update(type_storage_chars, strlen(type_storage_chars));
@@ -976,7 +1024,13 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseQuotas(const Poco::Util::Ab
     for (const auto & user_name : user_names)
     {
         if (config.has("users." + user_name + ".quota"))
-            quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(AccessEntityType::USER, user_name));
+        {
+            /// The `<quota>` value is a plain text reference to a quota name. Canonicalize it with `unescapeDots`
+            /// so that both the natural dotted spelling and the old escaped work-around spelling (e.g.
+            /// `<quota>my\.quota</quota>`) map to the same un-escaped key the quota is later looked up by.
+            String quota_name = unescapeDots(config.getString("users." + user_name + ".quota"));
+            quota_to_user_ids[quota_name].push_back(generateID(AccessEntityType::USER, unescapeDots(user_name)));
+        }
     }
 
     Poco::Util::AbstractConfiguration::Keys quota_names;
@@ -989,7 +1043,10 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseQuotas(const Poco::Util::Ab
     {
         try
         {
-            auto it = quota_to_user_ids.find(quota_name);
+            /// `quota_name` is a config key with dots escaped; `quota_to_user_ids` is keyed by the un-escaped
+            /// quota name. Both spellings of a `<quota>` reference were already canonicalized on insertion, so
+            /// a single un-escaped lookup matches users that referenced the quota with either spelling.
+            auto it = quota_to_user_ids.find(unescapeDots(quota_name));
             const std::vector<UUID> & quota_users = (it != quota_to_user_ids.end()) ? std::move(it->second) : std::vector<UUID>{};
             quotas.push_back(parseQuota(config, quota_name, quota_users));
         }
@@ -1029,9 +1086,9 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseRowPolicies(const Poco::Uti
                 if (((database_key == "database") || (database_key.starts_with("database["))) && config.has(database_config + "[@name]"))
                     database_name = config.getString(database_config + "[@name]");
                 else if (size_t bracket_pos = database_key.find('['); bracket_pos != std::string::npos)
-                    database_name = database_key.substr(0, bracket_pos);
+                    database_name = unescapeDots(database_key.substr(0, bracket_pos));
                 else
-                    database_name = database_key;
+                    database_name = unescapeDots(database_key);
 
                 Poco::Util::AbstractConfiguration::Keys table_keys;
                 config.keys(database_config, table_keys);
@@ -1044,9 +1101,9 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseRowPolicies(const Poco::Uti
                     if (((table_key == "table") || (table_key.starts_with("table["))) && config.has(table_config + "[@name]"))
                         table_name = config.getString(table_config + "[@name]");
                     else if (size_t bracket_pos = table_key.find('['); bracket_pos != std::string::npos)
-                        table_name = table_key.substr(0, bracket_pos);
+                        table_name = unescapeDots(table_key.substr(0, bracket_pos));
                     else
-                        table_name = table_key;
+                        table_name = unescapeDots(table_key);
 
                     String filter_config = table_config + ".filter";
                     all_filters_map[{database_name, table_name}][user_name] = config.getString(filter_config);
@@ -1074,10 +1131,14 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseRowPolicies(const Poco::Uti
                 filter = "1";
             }
 
+            /// The user name comes from a config key, so any dot in the name is escaped with a backslash.
+            /// The user entity is stored under the un-escaped name, so we must use the un-escaped name here as well.
+            String unescaped_user_name = unescapeDots(user_name);
+
             auto policy = std::make_shared<RowPolicy>();
-            policy->setFullName(user_name, database, table_name);
+            policy->setFullName(unescaped_user_name, database, table_name);
             policy->filters[static_cast<size_t>(RowPolicyFilterType::SELECT_FILTER)] = filter;
-            policy->to_roles.add(generateID(AccessEntityType::USER, user_name));
+            policy->to_roles.add(generateID(AccessEntityType::USER, unescaped_user_name));
             policies.push_back(policy);
         }
     }
@@ -1120,7 +1181,7 @@ std::unordered_set<UUID> UsersConfigParser::getAllowedIDs(
     config.keys(configuration_key, keys);
     std::unordered_set<UUID> ids;
     for (const auto & key : keys)
-        ids.emplace(generateID(type, key));
+        ids.emplace(generateID(type, unescapeDots(key)));
     return ids;
 }
 }

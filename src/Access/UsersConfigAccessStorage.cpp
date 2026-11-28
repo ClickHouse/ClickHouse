@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -138,7 +139,22 @@ void UsersConfigAccessStorage::reload(ReloadMode /* reload_mode */)
 
 std::optional<UUID> UsersConfigAccessStorage::findImpl(AccessEntityType type, const String & name) const
 {
-    return memory_storage.find(type, name);
+    if (auto id = memory_storage.find(type, name))
+        return id;
+
+    /// Roles, quotas, and settings profiles from `users.xml` used to be stored under their escaped config keys
+    /// (e.g. `my\.role`), and now they are stored under the un-escaped names (`my.role`). The old spelling can still
+    /// come from many places: server settings (`default_profile`, `system_profile`, etc.), queued `ON CLUSTER` tasks,
+    /// role names sent by a server of an older version in a distributed query, `SET profile = ...`, and so on.
+    /// To keep these references working, resolve the escaped spelling to the entity with the un-escaped name.
+    if (type == AccessEntityType::ROLE || type == AccessEntityType::QUOTA || type == AccessEntityType::SETTINGS_PROFILE)
+    {
+        String unescaped_name = Poco::replace(name, "\\.", ".");
+        if (unescaped_name != name)
+            return memory_storage.find(type, unescaped_name);
+    }
+
+    return {};
 }
 
 
