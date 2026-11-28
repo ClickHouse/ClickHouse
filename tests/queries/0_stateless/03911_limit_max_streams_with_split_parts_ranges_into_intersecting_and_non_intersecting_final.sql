@@ -14,7 +14,7 @@ DROP TABLE IF EXISTS t;
 -- The number of partition (50) as well as parts is much larger than the allowed number of streams. Let's check that we won't produce too many streams:
 -- it is still allowed to process each partition independently (thus producing 50 streams), but we should not split parts into smaller ranges within partitions.
 -- With that said, since `split_parts_ranges_into_intersecting_and_non_intersecting_final` is enabled, we should also detect non-intersecting ranges, so the
--- resulting number of `AggregatingTransform`-s should be 50 (one per partition) + 5 (for non-intersecting ranges; specific for the given dataset) = 55.
+-- resulting number of `AggregatingTransform`-s should be 50 (one per partition) + 9 (for non-intersecting ranges; specific for the given dataset) = 59.
 SET split_parts_ranges_into_intersecting_and_non_intersecting_final = 1, split_intersecting_parts_ranges_into_layers_final = 1, do_not_merge_across_partitions_select_final = 1;
 SET optimize_move_to_prewhere_if_final = 0;
 SET optimize_aggregation_in_order = 0;
