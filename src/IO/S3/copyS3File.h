@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <IO/S3Settings.h>
+#include <IO/S3/getObjectInfo.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <base/types.h>
@@ -19,6 +20,32 @@ class SeekableReadBuffer;
 class StdStreamFromReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
+
+/// What a guarded copy asks of the DESTINATION, and which generation of the SOURCE it may read.
+struct S3CopyFileSettings
+{
+    /// Refuses the write when the destination already exists, as `If-None-Match: *`.
+    String if_none_match;
+    /// The properties of the source, which `CopyObject` carries for free. They are restated on every request that
+    /// creates the destination anew (`PutObject` and `CreateMultipartUpload`, whether its parts are uploaded or copied
+    /// with `UploadPartCopy`) and never on `CopyObject`, so the caller does not have to predict which route the copy takes:
+    /// a guarded copy, a disabled native copy, a file above `max_single_operation_copy_size` and a runtime fallback
+    /// from `CopyObject` all end up on one of those requests.
+    std::optional<S3::ObjectHeaders> source_headers;
+    /// The user metadata of the source. Unlike `object_metadata` it does not turn `CopyObject` to
+    /// `MetadataDirective::REPLACE`; `object_metadata` wins if both are given.
+    std::optional<ObjectAttributes> source_metadata;
+    std::optional<ObjectAttributes> source_tags;
+    /// Reads the tags of the source when `source_tags` is not given. Called at most once, and only if the copy
+    /// reaches a request that has to restate them, so a plain `CopyObject` costs no `GetObjectTagging`.
+    std::function<ObjectAttributes()> source_tags_reader;
+    /// The source `ETag` to pin the copy to (sent as `x-amz-copy-source-if-match` on `CopyObject` and every
+    /// `UploadPartCopy`), or empty; the caller must pin `fallback_file_reader` to the same generation.
+    String source_if_match;
+    /// The source version to copy on a versioned bucket, or empty for the current one; the read-and-write
+    /// fallback must be opened at the same version by the caller.
+    String source_version_id;
+};
 
 /// Builds the S3 upload request body for the part [offset, offset + size) of the source.
 /// The part is read fully into memory up front, so the returned body has no failable inner
@@ -51,7 +78,8 @@ bool copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    const S3CopyFileSettings & copy_settings = {});
 
 /// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object of size `src_object_size`.
 ///
@@ -91,8 +119,8 @@ void copyDataToS3File(
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
-
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    const S3CopyFileSettings & copy_settings = {});
 }
 
 #endif

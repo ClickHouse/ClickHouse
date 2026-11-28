@@ -4,6 +4,7 @@
 #include <chrono>
 #include <optional>
 #include <Common/Macros.h>
+#include <Common/SharedMutex.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
@@ -51,7 +52,7 @@ public:
     StorageObjectStorageConfigurationPtr getObjectStorageConfiguration() const { return configuration; }
 #endif
 
-    ObjectStorageType getType() { return type; }
+    ObjectStorageType getType() const { return type; }
 
     void read(
         QueryPlan & query_plan,
@@ -116,7 +117,7 @@ public:
     void rebuildObjectStorageClient(ContextPtr rebuild_context);
 
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
-    static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
+    static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode, ObjectStorageType storage_type);
 
     /// Generate id for the S3(Azure/etc)Queue commit.
     /// Used for system.s3(azure/etc)_queue_log.
@@ -164,6 +165,10 @@ private:
     /// it needs to be available in Keeper metadata for older server versions.
     /// Therefore it is not in AfterProcessingSettings.
     AfterProcessingSettings after_processing_settings TSA_GUARDED_BY(mutex);
+    /// The action lives in Keeper metadata and its companion settings in `after_processing_settings`, so they cannot be
+    /// swapped in one step. `alter` holds this exclusively while it publishes both, and a batch holds it shared while it
+    /// captures both, so a batch always gets the action together with the destination that belongs to it.
+    mutable SharedMutex after_processing_publication_mutex;
     bool commit_on_select TSA_GUARDED_BY(mutex);
     bool deduplication_v2 TSA_GUARDED_BY(mutex);
 
@@ -220,6 +225,7 @@ private:
         ContextPtr local_context,
         bool commit_once_processed,
         bool is_direct_select,
+        ObjectStorageQueueAction after_processing,
         size_t max_processed_files_override = 0);
 
     /// Get number of dependent materialized views.
@@ -240,7 +246,9 @@ private:
     void postProcess(
         const StoredObjects & successful_objects,
         UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
-        const ObjectStorageQueueMetadata & metadata) const;
+        const ObjectStorageQueueMetadata & metadata,
+        ObjectStorageQueueAction after_processing,
+        const AfterProcessingSettings & after_processing_settings_) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,

@@ -16,6 +16,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <mutex>
+#include <string_view>
 
 namespace DB
 {
@@ -235,6 +236,34 @@ AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const
 /// `GetProperties`, `ListBlobs` and `Download` answer, so an absent or empty header means the endpoint
 /// is not behaving correctly.
 String getETag(const Azure::ETag & etag, const String & blob_path);
+
+/// `Azure::ETag::ToString` aborts when the optional `ETag` header is absent (even in release builds),
+/// so never call it directly on a value from a remote endpoint.
+inline String getETagOrEmpty(const Azure::ETag & etag)
+{
+    return etag.HasValue() ? etag.ToString() : "";
+}
+
+/// A listing gives the bare tag (`0x8D...`) while a download or `HEAD` gives it quoted, so compare
+/// only the opaque part: the quotes and a `W/` weak prefix are dropped.
+inline String normalizeETag(const String & etag)
+{
+    std::string_view tag = etag;
+    if (tag.starts_with("W/"))
+        tag.remove_prefix(2);
+    if (tag.size() >= 2 && tag.front() == '"' && tag.back() == '"')
+    {
+        tag.remove_prefix(1);
+        tag.remove_suffix(1);
+    }
+    return String(tag);
+}
+
+/// The quoted form of `etag`, as conditional headers such as `If-Match` require (a listing gives it bare).
+inline String toQuotedETag(const String & etag)
+{
+    return "\"" + normalizeETag(etag) + "\"";
+}
 
 #endif
 
