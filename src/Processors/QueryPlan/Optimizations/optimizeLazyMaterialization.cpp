@@ -430,7 +430,7 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const V
     return { std::move(main_filter_step), std::move(split_result.second), std::move(new_required_inputs) };
 }
 
-static ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
+static ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step, const String & index_column_name)
 {
     const auto part_offset_columns = reading_step.addStartingPartOffsetAndPartOffset();
     const bool added_part_starting_offset = part_offset_columns.added_part_starting_offset;
@@ -442,7 +442,7 @@ static ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
 
     auto plus = FunctionFactory::instance().get("plus", nullptr);
     const auto * global_offset_node = &dag.addFunction(plus, dag.getInputs(), {});
-    global_offset_node = &dag.addAlias(*global_offset_node, "__global_row_index");
+    global_offset_node = &dag.addAlias(*global_offset_node, index_column_name);
 
     dag.getOutputs().push_back(global_offset_node);
 
@@ -499,7 +499,14 @@ static bool allExpressionsSuitableForLazyMaterialization(const QueryPlan::Node *
     return true;
 }
 
-bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization)
+bool optimizeLazyMaterialization2(
+    QueryPlan::Node & root,
+    QueryPlan & query_plan,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & settings,
+    size_t max_limit_for_lazy_materialization,
+    const String & index_column_name,
+    const std::function<bool(const Names &)> & accept_lazily_read_columns)
 {
     if (root.children.size() != 1)
         return false;
@@ -712,6 +719,9 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
                     required_names.insert(merging_params.is_deleted_column);
             }
 
+            if (accept_lazily_read_columns && !accept_lazily_read_columns(read_from_merge_tree->getLazilyReadColumns(required_names)))
+                return false;
+
             merge_tree_lazy_reading = read_from_merge_tree->keepOnlyRequiredColumnsAndCreateLazyReadStep(required_names);
             if (!merge_tree_lazy_reading)
                 return false;
@@ -789,7 +799,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     /// produces it directly.
     if (read_from_merge_tree)
     {
-        auto main_global_offset_dag = calculateGlobalOffset(*read_from_merge_tree);
+        auto main_global_offset_dag = calculateGlobalOffset(*read_from_merge_tree, index_column_name);
         auto main_global_offset_step = std::make_unique<ExpressionStep>(main_plan.getCurrentHeader(), std::move(main_global_offset_dag));
         main_plan.addStep(std::move(main_global_offset_step));
     }
@@ -860,7 +870,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     const auto & lhs_plan_header = main_plan.getCurrentHeader();
     const auto & rhs_plan_header = lazy_plan.getCurrentHeader();
 
-    auto join_lazy_columns = std::make_unique<JoinLazyColumnsStep>(lhs_plan_header, rhs_plan_header, lazy_materializing_rows);
+    auto join_lazy_columns = std::make_unique<JoinLazyColumnsStep>(lhs_plan_header, rhs_plan_header, lazy_materializing_rows, index_column_name);
 
     QueryPlan result_plan;
 

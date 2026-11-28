@@ -5642,9 +5642,11 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
 
     required_source_columns = all_column_names;
 
+    if (lazy_read_rows)
+        earlier_lazy_read_rows.push_back(std::move(lazy_read_rows));
     lazy_read_rows = std::make_shared<LazyMaterializingRows>();
     new_reading->setLazyMaterializingRows(lazy_read_rows);
-    columns_read_lazily = columns_to_remove;
+    columns_read_lazily.insert(columns_read_lazily.end(), columns_to_remove.begin(), columns_to_remove.end());
 
     return new_reading;
 }
@@ -5950,6 +5952,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// The parts this read finally reads are the ones the lazy read of the columns it leaves out reads its rows from.
     if (lazy_read_rows)
         lazy_read_rows->addPartsOfMainRead(result.parts_with_ranges, storage_snapshot);
+    for (const auto & rows : earlier_lazy_read_rows)
+        rows->addPartsOfMainRead(result.parts_with_ranges, storage_snapshot);
 
     /// Before any pool or processor copies the settings: both build the PREWHERE steps and must agree on them.
     reader_settings.read_ahead_prewhere_columns = canReadPrewhereColumnsAhead(result.parts_with_ranges);
@@ -7788,6 +7792,7 @@ void ReadFromMergeTree::shareLazyReadOf(const ReadFromMergeTree & other)
 {
     lazy_read_rows = other.lazy_read_rows;
     columns_read_lazily = other.columns_read_lazily;
+    earlier_lazy_read_rows = other.earlier_lazy_read_rows;
 }
 
 void ReadFromMergeTree::setDistributedRead(size_t bucket_count)

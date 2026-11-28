@@ -743,7 +743,7 @@ public:
     /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by their part
     /// offsets. The read puts the parts it reads where the lazy read reads them from, when it builds its pipeline.
     bool hasLazilyReadColumns() const { return !columns_read_lazily.empty(); }
-    /// The columns the lazy read reads for the rows of this one.
+    /// The columns the lazy reads read for the rows of this one.
     const Names & getColumnsReadLazily() const { return columns_read_lazily; }
     /// Makes this read, which replaces `other` or serves some of its parts, put its parts where the lazy read of `other`
     /// reads them from.
@@ -1038,6 +1038,8 @@ private:
     /// The rows the lazy read of the columns this read leaves out reads, and those columns. See `hasLazilyReadColumns`.
     LazyMaterializingRowsPtr lazy_read_rows;
     Names columns_read_lazily;
+    /// The rows of the earlier lazy reads of a read split more than once; filled with the parts of this read as well.
+    VectorWithMemoryTracking<LazyMaterializingRowsPtr> earlier_lazy_read_rows;
 
     ExpressionActionsPtr virtual_row_conversion;
 

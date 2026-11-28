@@ -1,0 +1,31 @@
+<test>
+    <!-- Two-stage vector search over quantized codes: the text is needed for the final LIMIT rows only, not for every
+         row of the shortlist, which is scattered over the granules. -->
+    <settings>
+        <enable_quantized_codec>1</enable_quantized_codec>
+        <vector_search_use_quantized_codes>1</vector_search_use_quantized_codes>
+        <vector_search_index_fetch_multiplier>10</vector_search_index_fetch_multiplier>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE vector_search_quantized_codes_lazy_output (id UInt64, vec Array(Float32) CODEC(Quantized('rabitq', 128)), text String)
+        ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1024
+    </create_query>
+
+    <!-- 1000 clusters of vectors scattered over the rows. -->
+    <fill_query>
+        INSERT INTO vector_search_quantized_codes_lazy_output
+        SELECT number,
+            arrayMap(i -> toFloat32((toInt64(sipHash64(number % 1000, i) % 2001) - 1000) / 1000.
+                + 0.6 * (toInt64(sipHash64(number, i) % 2001) - 1000) / 1000.), range(128)),
+            randomPrintableASCII(1000)
+        FROM numbers_mt(300000) SETTINGS max_threads = 8
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE vector_search_quantized_codes_lazy_output FINAL</fill_query>
+
+    <query>SELECT id, text FROM vector_search_quantized_codes_lazy_output ORDER BY cosineDistance(vec, (SELECT vec FROM vector_search_quantized_codes_lazy_output WHERE id = 4242)) LIMIT 10 FORMAT Null</query>
+    <query>SELECT id, text FROM vector_search_quantized_codes_lazy_output ORDER BY cosineDistance(vec, (SELECT vec FROM vector_search_quantized_codes_lazy_output WHERE id = 4242)) LIMIT 100 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS vector_search_quantized_codes_lazy_output</drop_query>
+</test>
