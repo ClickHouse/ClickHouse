@@ -76,6 +76,7 @@ void registerTableFunctions()
     registerTableFunctionExplain(factory);
     registerTableFunctionTraceView(factory);
     registerTableFunctionTimeSeries(factory);
+    registerTableFunctionUnnest(factory);
 
     registerTableFunctionObjectStorage(factory);
     registerTableFunctionObjectStorageCluster(factory);
