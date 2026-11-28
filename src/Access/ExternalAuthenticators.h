@@ -4,6 +4,7 @@
 #include <Access/GSSAcceptor.h>
 #include <Access/HTTPAuthClient.h>
 #include <Access/LDAPClient.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Interpreters/ClientInfo.h>
 #include <base/defines.h>
 #include <base/extended_types.h>
@@ -61,9 +62,19 @@ private:
     using LDAPCaches = std::map<String, LDAPCache>;               // server name -> cache
     using LDAPParams = std::map<String, LDAPClient::Params>;      // server name -> params
 
+    struct LDAPUnreachableEntry
+    {
+        std::chrono::steady_clock::time_point last_failure;
+        std::chrono::steady_clock::time_point until;
+        String last_error;
+    };
+
+    using LDAPUnreachables = MapWithMemoryTracking<String, LDAPUnreachableEntry>; // server name -> breaker state
+
     mutable std::mutex mutex;
     LDAPParams ldap_client_params_blueprint TSA_GUARDED_BY(mutex) ;
     mutable LDAPCaches ldap_caches TSA_GUARDED_BY(mutex) ;
+    mutable LDAPUnreachables ldap_unreachable_until TSA_GUARDED_BY(mutex) ;
     std::optional<GSSAcceptorContext::Params> kerberos_params TSA_GUARDED_BY(mutex) ;
     std::unordered_map<String, HTTPAuthClientParams> http_auth_servers TSA_GUARDED_BY(mutex) ;
 

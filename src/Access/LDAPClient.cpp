@@ -65,6 +65,17 @@ void LDAPClient::Params::updateHash(SipHash & hash) const
     ::updateHash(hash, user);
     ::updateHash(hash, password);
     ::updateHash(hash, static_cast<int>(follow_referrals)); // Include follow referral behavior
+    ::updateHash(hash, static_cast<int>(protocol_version));
+    ::updateHash(hash, static_cast<int>(enable_tls));
+    ::updateHash(hash, static_cast<int>(tls_minimum_protocol_version));
+    ::updateHash(hash, static_cast<int>(tls_require_cert));
+    ::updateHash(hash, tls_cert_file);
+    ::updateHash(hash, tls_key_file);
+    ::updateHash(hash, tls_ca_cert_file);
+    ::updateHash(hash, tls_ca_cert_dir);
+    ::updateHash(hash, tls_cipher_suite);
+    ::updateHash(hash, static_cast<int>(sasl_mechanism));
+    ::updateHash(hash, search_limit);
 
     if (user_dn_detection)
         user_dn_detection->updateHash(hash);
@@ -177,6 +188,8 @@ void LDAPClient::handleError(int result_code, String text)
 
     if (result_code != LDAP_SUCCESS)
     {
+        last_error_code = result_code;
+
         const char * raw_err_str = ldap_err2string(result_code);
         if (raw_err_str && *raw_err_str != '\0')
         {
@@ -583,6 +596,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                         message += matched_msg;
                     }
 
+                    last_error_code = rc;
                     throw Exception(ErrorCodes::LDAP_ERROR, "LDAP search failed{}", message);
                 }
 
@@ -590,7 +604,12 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
             }
 
             case -1:
+            {
+                int rc = LDAP_SUCCESS;
+                ldap_get_option(handle, LDAP_OPT_RESULT_CODE, &rc);
+                last_error_code = rc;
                 throw Exception(ErrorCodes::LDAP_ERROR, "Failed to process LDAP search message");
+            }
         }
     }
 

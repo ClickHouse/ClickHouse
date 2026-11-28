@@ -1,0 +1,19 @@
+<clickhouse>
+    <users>
+        <user_failover>
+            <ldap>
+                <server>failover</server>
+            </ldap>
+        </user_failover>
+        <user_breaker>
+            <ldap>
+                <server>breaker</server>
+            </ldap>
+        </user_breaker>
+        <user_cached>
+            <ldap>
+                <server>cached</server>
+            </ldap>
+        </user_cached>
+    </users>
+</clickhouse>

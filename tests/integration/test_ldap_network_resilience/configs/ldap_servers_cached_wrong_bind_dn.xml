@@ -1,0 +1,11 @@
+<clickhouse>
+    <!-- Overrides a parameter that participates in the verification cache hash, so a preserved
+         entry must not be reused after this file is added and the configuration is reloaded.
+         ClickHouse merges the files of `config.d` in lexicographic order and the last file wins,
+         so the name of this file must sort after `ldap_servers.xml`, which defines the base value. -->
+    <ldap_servers>
+        <cached>
+            <bind_dn>cn=johndoe,ou=users,dc=example,dc=org</bind_dn>
+        </cached>
+    </ldap_servers>
+</clickhouse>
