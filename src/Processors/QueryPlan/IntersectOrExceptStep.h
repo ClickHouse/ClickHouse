@@ -17,6 +17,7 @@ public:
     [[nodiscard]] String getName() const override { return "IntersectOrExcept"; }
 
     [[nodiscard]] Operator getOperator() const { return current_operator; }
+    [[nodiscard]] size_t getMaxThreads() const { return max_threads; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
