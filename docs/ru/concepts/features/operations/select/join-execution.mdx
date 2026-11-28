@@ -1,0 +1,53 @@
+---
+title: 'Как ClickHouse выполняет JOIN'
+sidebarTitle: 'Выполнение'
+description: 'Этапы построения и проверки, а также оптимизации JOIN в планировщике запросов.'
+keywords: ['JOIN execution', 'build side', 'probe side', 'JOIN planner', 'JOIN reordering', 'filter pushdown']
+doc_type: 'guide'
+---
+
+Большинство алгоритмов соединения выполняются в два этапа:
+
+* **Этап построения.** ClickHouse полностью считывает один из входных наборов данных и сохраняет его в структуре данных, пригодной для поиска совпадений, например в хеш-таблице или в наборе отсортированных блоков. Этот вход называется стороной построения.
+* **Этап проверки.** ClickHouse поблочно считывает в потоковом режиме второй вход и сопоставляет каждую строку со структурой данных, созданной на этапе построения. Этот вход называется проверяемой стороной.
+
+Этап проверки начинается только после завершения этапа построения. Поэтому объём памяти, необходимый для JOIN, определяется в основном размером стороны построения.
+
+По умолчанию стороной построения является правая часть JOIN, а проверяемой стороной — левая. Некоторые алгоритмы работают иначе. У [алгоритма `direct`](/ru/concepts/features/operations/select/join-algorithms#direct) нет этапа построения, поскольку правая часть уже существует в виде структуры ключ-значение. [Алгоритм `full_sorting_merge`](/ru/concepts/features/operations/select/join-algorithms#full-sorting-merge) сортирует оба входа и выполняет их слияние. [Алгоритм `ie_join`](/ru/concepts/features/operations/select/join-algorithms#ie-join) накапливает оба входа целиком и только затем соединяет их.
+
+## Поведение планировщика запросов {#query-planner-behavior}
+
+Планировщик запросов может изменять входные данные JOIN до начала работы алгоритма. При этом применяются следующие оптимизации.
+
+### Автоматический выбор стороны построения {#automatic-build-side-selection}
+
+Начиная с версии 24.12, планировщик может менять местами два входа JOIN так, чтобы меньший из них стал стороной построения. Он сравнивает оценочное количество строк на обоих входах и, если левый вход по оценке меньше, меняет их местами для JOIN, основанного на хешировании. Это поведение управляется настройкой [`query_plan_join_swap_table`](/ru/reference/settings/session-settings/query-plan#query_plan_join_swap_table).
+
+Если входы поменялись местами, `LEFT` JOIN выполняется как `RIGHT` JOIN, и наоборот. Изменённый порядок можно увидеть в выводе `EXPLAIN`.
+
+### Переупорядочивание JOIN для нескольких таблиц {#multi-table-join-reordering}
+
+Если запрос соединяет несколько таблиц в одном подзапросе, планировщик может изменить порядок их соединения. Настройка [`query_plan_optimize_join_order_limit`](/ru/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) задаёт максимальное число таблиц, порядок которых может изменить планировщик. Значение по умолчанию — `10`. Значение `1` отключает переупорядочивание.
+
+### Использование статистики столбцов {#use-of-column-statistics}
+
+Выбор стороны построения (build side) и переупорядочивание JOIN зависят от оценок количества строк. Без статистики столбцов планировщик строит оценки на основе первичного индекса, и они могут быть неточными. Если [статистика столбцов](/ru/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) доступна, планировщик использует её для оценки селективности фильтров и мощности ключей JOIN.
+
+Настройка [`use_statistics`](/ru/reference/settings/session-settings/use-statistics#use_statistics) определяет, использует ли оптимизатор статистику. Настройка [`materialize_statistics_on_insert`](/ru/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) определяет, строится ли статистика для вновь вставленных данных.
+
+### Проталкивание фильтров {#filter-pushdown}
+
+Если включена настройка [`query_plan_filter_push_down`](/ru/reference/settings/session-settings/query-plan#query_plan_filter_push_down), планировщик переносит условия из `WHERE` ниже JOIN, чтобы каждый вход фильтровался до этапов построения (build) и проверки (probe).
+
+* Условие, которое ссылается на столбцы только одного входа, применяется к этому входу.
+* Для `LEFT` JOIN условия не проталкиваются в правый вход. Для `RIGHT` JOIN условия не проталкиваются в левый вход.
+* Условие на ключ JOIN одного входа можно применить и к другому входу, поскольку для каждой совпавшей строки значения ключевых столбцов обоих входов равны.
+* Условия не проталкиваются в уже заполненную правую сторону (например, в словарь), а также в правую сторону `ASOF` JOIN.
+
+## Связанные страницы {#related-pages}
+
+* [Использование JOIN в ClickHouse](/ru/concepts/features/operations/select/joining-tables)
+* [Алгоритмы соединения](/ru/concepts/features/operations/select/join-algorithms)
+* [Управление памятью при JOIN и сброс данных на диск](/ru/concepts/features/operations/select/join-memory-management)
+* [Настройки JOIN](/ru/concepts/features/operations/select/join-settings)
+* [Минимизация и оптимизация JOIN](/ru/concepts/best-practices/minimize-optimize-joins)

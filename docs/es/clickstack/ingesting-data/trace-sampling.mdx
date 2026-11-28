@@ -14,7 +14,7 @@ Una vez muestreados los datos, las agregaciones ingenuas son incorrectas: `count
 ClickStack resuelve esto con un motor de consultas consciente del muestreo. Cuando configuras una expresión de tasa de muestreo en una fuente de trazas, el generador de consultas reescribe las agregaciones de SQL para ponderar cada span según su tasa de muestreo, en dashboards, alertas y búsquedas ad hoc.
 
 <div id="how-it-works">
-  ## Cómo funciona
+  ## Cómo funciona {#how-it-works}
 </div>
 
 Cuando una fuente de trazas tiene configurado `sampleRateExpression`, ClickStack la envuelve así:
@@ -41,22 +41,16 @@ El generador de consultas reescribe entonces las agregaciones:
   Los percentiles con muestreo usan `quantileTDigestWeighted`, un sketch aproximado de T-Digest. Los resultados son muy similares, pero no exactos.
 </Note>
 
-<div id="configuring">
-  ## Configuración de la expresión de tasa de muestreo
-</div>
+## Configuración de la expresión de tasa de muestreo {#configuring}
 
 Abra la fuente de trazas en **Configuración de la fuente** e introduzca la expresión de ClickHouse que evalúa la tasa de muestreo por `span` en el campo **Expresión de tasa de muestreo**.
 
 Por ejemplo, si el tail-sampling processor de OpenTelemetry escribe la tasa en `SpanAttributes['SampleRate']`:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Campo Expresión de tasa de muestreo en la Configuración de la fuente de ClickStack](/images/clickstack/trace-sampling-source-settings.webp)
-
-</Frame>
-
+  <Frame>
+    ![Campo Expresión de tasa de muestreo en la Configuración de la fuente de ClickStack](/images/clickstack/trace-sampling-source-settings.webp)
+  </Frame>
 </div>
 
 Una vez configurada, todos los gráficos, dashboards, alertas y paneles del dashboard del servicio aplican automáticamente agregaciones ponderadas por muestreo. No es necesario modificar las consultas individuales.

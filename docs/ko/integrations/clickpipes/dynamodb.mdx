@@ -27,13 +27,9 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
     AWS 가이드는 [여기](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html)에서 확인하십시오.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![DynamoDB Kinesis 스트림](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
-
-    </Frame>
-
+      <Frame>
+        ![DynamoDB Kinesis 스트림](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -42,18 +38,14 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
     **DynamoDB JSON 포맷으로 &quot;Full export&quot;를 수행해야 합니다.**
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![DynamoDB S3 내보내기](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
-
-    </Frame>
-
+      <Frame>
+        ![DynamoDB S3 내보내기](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="ClickHouse에 스냅샷 로드하기" id="3-load-the-snapshot-into-clickhouse">
-    ### 필요한 테이블 생성
+### 필요한 테이블 생성 {#create-necessary-tables}
 
     DynamoDB의 스냅샷 데이터는 다음과 같은 형식입니다:
 
@@ -116,7 +108,7 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
     * 테이블은 파티션 키를 정렬 키(`ORDER BY`로 지정)로 사용해야 합니다
       * 동일한 정렬 키를 가진 행은 `version` 컬럼을 기준으로 중복 제거됩니다.
 
-    ### 스냅샷 ClickPipe 생성
+### 스냅샷 ClickPipe 생성 {#create-the-snapshot-clickpipe}
 
     이제 S3의 스냅샷 데이터를 ClickHouse로 로드하는 ClickPipe를 생성할 수 있습니다. [여기](/ko/integrations/clickpipes/object-storage/amazon-s3/overview)의 S3 ClickPipe 가이드를 따르되, 다음 설정을 사용하십시오:
 
@@ -143,13 +135,9 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
       * 아래와 같이 다른 필드를 해당 대상 컬럼에 매핑합니다
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![DynamoDB 컬럼 매핑](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
-
-    </Frame>
-
+      <Frame>
+        ![DynamoDB 컬럼 매핑](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
+      </Frame>
     </div>
   </Step>
 

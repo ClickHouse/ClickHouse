@@ -10,7 +10,7 @@ keywords: ['ClickHouse Cloud', '암호화', 'CMEK', 'KMS 키 폴러']
 import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <div id="storage-encryption">
-  ## 스토리지 수준 암호화
+  ## 스토리지 수준 암호화 {#storage-encryption}
 </div>
 
 ClickHouse Cloud에는 기본적으로 클라우드 제공업체가 관리하는 AES-256 키를 사용하는 저장 시 암호화가 적용되어 있습니다. 자세한 내용은 다음 문서를 참조하십시오.
@@ -20,7 +20,7 @@ ClickHouse Cloud에는 기본적으로 클라우드 제공업체가 관리하는
 * [저장 데이터용 Azure 스토리지 암호화](https://learn.microsoft.com/en-us/azure/storage/common/storage-service-encryption)
 
 <div id="database-encryption">
-  ## 데이터베이스 수준 암호화
+  ## 데이터베이스 수준 암호화 {#database-encryption}
 </div>
 
 <EnterprisePlanFeatureBadge feature="Enhanced Encryption" />
@@ -30,7 +30,7 @@ ClickHouse Cloud에는 기본적으로 클라우드 제공업체가 관리하는
 강화된 암호화는 현재 AWS 및 GCP 서비스에서 사용할 수 있습니다. Azure도 곧 지원될 예정입니다.
 
 <div id="transparent-data-encryption-tde">
-  ### 투명한 데이터 암호화(TDE)
+  ### 투명한 데이터 암호화(TDE) {#transparent-data-encryption-tde}
 </div>
 
 TDE는 서비스 생성 시 활성화해야 합니다. 기존 서비스는 생성 후에 암호화할 수 없습니다. TDE를 한 번 활성화하면 비활성화할 수 없습니다. 서비스의 모든 데이터는 계속 암호화된 상태로 유지됩니다. 활성화한 후 TDE를 비활성화하려면 새 서비스를 생성한 다음 해당 서비스로 데이터를 마이그레이션해야 합니다.
@@ -42,7 +42,7 @@ TDE는 서비스 생성 시 활성화해야 합니다. 기존 서비스는 생�
 5. Create service를 클릭합니다
 
 <div id="customer-managed-encryption-keys-cmek">
-  ### 고객 관리형 암호화 키(CMEK)
+  ### 고객 관리형 암호화 키(CMEK) {#customer-managed-encryption-keys-cmek}
 </div>
 
 <Warning>
@@ -137,35 +137,29 @@ TDE는 서비스 생성 시 활성화해야 합니다. 기존 서비스는 생�
 </Accordion>
 
 <div id="key-rotation">
-  #### 키 순환
+  #### 키 순환 {#key-rotation}
 </div>
 
 CMEK를 설정한 후에는 위 절차에 따라 새 KMS 키를 생성하고 권한을 부여해 키를 순환하십시오. 그런 다음 서비스 설정으로 돌아가 새 ARN(AWS), Key Resource Path(GCP) 또는 Key Name(Azure)을 붙여 넣고 설정을 저장하십시오. 새 키를 적용하기 위해 서비스가 다시 시작됩니다.
 
 <div id="kms-key-poller">
-  #### KMS 키 폴러
+  #### KMS 키 폴러 {#kms-key-poller}
 </div>
 
 CMEK를 사용하는 경우 제공된 KMS 키의 유효성을 10분마다 확인합니다. KMS 키에 대한 액세스가 유효하지 않으면 ClickHouse 서비스가 중지됩니다. 서비스를 다시 재개하려면 이 가이드의 단계에 따라 KMS 키 액세스를 복원한 후 서비스를 다시 시작하십시오.
 
 <div id="backup-and-restore">
-  ### 백업 및 복원
+  ### 백업 및 복원 {#backup-and-restore}
 </div>
 
 백업은 해당 서비스와 동일한 키를 사용해 암호화됩니다. 암호화된 백업을 복원하면 원래 인스턴스와 동일한 KMS 키를 사용하는 암호화된 인스턴스가 생성됩니다. 필요한 경우 복원 후 KMS 키를 순환할 수 있습니다. 자세한 내용은 [키 순환](#key-rotation)을 참조하십시오.
 
-<div id="performance">
-  ## 성능
-</div>
+## 성능 {#performance}
 
 데이터베이스 암호화는 ClickHouse에 내장된 [데이터 암호화용 가상 파일 시스템 기능](/ko/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system)을 활용해 데이터를 암호화하고 보호합니다. 이 기능에 사용되는 알고리즘은 `AES_256_CTR`이며, 워크로드에 따라 5~15%의 성능 저하가 발생할 수 있습니다.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![CMEK 성능 저하](/images/_snippets/cmek-performance.webp)
-
-</Frame>
-
+  <Frame>
+    ![CMEK 성능 저하](/images/_snippets/cmek-performance.webp)
+  </Frame>
 </div>

@@ -1,0 +1,59 @@
+---
+slug: /clickstack/self-configured/ingesting-data/schemas
+description: 'الجداول والمخططات المستخدمة في Self-managed ClickHouse Observability'
+sidebarTitle: 'الجداول والمخططات'
+title: 'الجداول والمخططات'
+doc_type: 'reference'
+keywords: ['clickstack', 'schema', 'data model', 'table design', 'logs']
+---
+
+import OtelLogsSchema from '/snippets/ar/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/ar/clickstack/_schema_otel_traces.mdx';
+import OtelMetricsGaugeSchema from '/snippets/ar/clickstack/_schema_otel_metrics_gauge.mdx';
+import OtelMetricsSumSchema from '/snippets/ar/clickstack/_schema_otel_metrics_sum.mdx';
+import OtelMetricsHistogramSchema from '/snippets/ar/clickstack/_schema_otel_metrics_histogram.mdx';
+import OtelMetricsExponentialHistogramSchema from '/snippets/ar/clickstack/_schema_otel_metrics_exponential_histogram.mdx';
+import OtelMetricsSummarySchema from '/snippets/ar/clickstack/_schema_otel_metrics_summary.mdx';
+import HyperdxSessionsSchema from '/snippets/ar/clickstack/_schema_hyperdx_sessions.mdx';
+
+<Note>
+  تتناول هذه الصفحة **Self-managed ClickHouse Observability**. للاطلاع على التجربة المُدارة بالكامل التي نوصي بها، راجع الوثائق [هنا](/ar/clickstack/observability/overview).
+</Note>
+
+يستخدم جامع البيانات في ClickHouse Observability [مُصدِّر ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md) لإنشاء الجداول في ClickHouse وإدراج البيانات فيها.
+
+تُنشأ الجداول التالية لكل نوع من أنواع البيانات في قاعدة البيانات `default`. ويمكنك تغيير قاعدة البيانات المستهدفة هذه بتعديل متغير البيئة `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` في الصورة التي تستضيف جامع البيانات.
+
+## السجلات {#logs}
+
+<OtelLogsSchema />
+
+## التتبّع {#traces}
+
+<OtelTracesSchema />
+
+## المقاييس {#metrics}
+
+### مقاييس من نوع Gauge {#gauge}
+
+<OtelMetricsGaugeSchema />
+
+### مقاييس المجموع {#sum}
+
+<OtelMetricsSumSchema />
+
+### مقاييس المدرج التكراري {#histogram}
+
+<OtelMetricsHistogramSchema />
+
+### المدرجات التكرارية الأسية {#exponential-histograms}
+
+<OtelMetricsExponentialHistogramSchema />
+
+### جدول Summary {#summary-table}
+
+<OtelMetricsSummarySchema />
+
+## الجلسات {#sessions}
+
+<HyperdxSessionsSchema />
