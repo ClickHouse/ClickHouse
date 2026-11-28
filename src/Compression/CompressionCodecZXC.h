@@ -20,14 +20,10 @@ public:
 
     [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    /// zxc decodes literals with 32-byte SIMD "wild" loads that can read up to
-    /// ZXC_PAD_SIZE (32) bytes past the end of the compressed input. Reserve slack
-    /// at the end of the (de)compression buffers so these over-reads stay inside
-    /// allocated memory. This is the same mechanism `LZ4` uses. The over-read
-    /// bytes are only ever wild-copied and never influence results; MemorySanitizer
-    /// false positives from zxc's SIMD kernels are handled separately by building
-    /// zxc scalar under MSan (see contrib/zxc-cmake).
-    [[nodiscard]] UInt32 getAdditionalSizeAtTheEndOfBuffer() const override { return 64; }
+    /// Room for zxc's wild copies past the decompressed data and its 32-byte over-reads past the compressed input,
+    /// as for `LZ4`. MemorySanitizer false positives from zxc's SIMD kernels are handled by building zxc scalar under
+    /// MSan (see contrib/zxc-cmake).
+    [[nodiscard]] UInt32 getAdditionalSizeAtTheEndOfBuffer() const override;
 
     void updateHash(SipHash & hash) const override;
 
