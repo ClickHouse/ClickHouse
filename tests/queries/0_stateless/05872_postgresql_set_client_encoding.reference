@@ -1,0 +1,22 @@
+--- the encoding command of psql calls PQsetClientEncoding
+UTF8
+1
+--- the spellings of UTF8, and DEFAULT, which restores it
+SET
+SET
+SET
+SET
+SET
+SET
+connection_is_still_usable
+1
+(1 row)
+--- a statement after it in the same packet is executed
+20261124
+--- a statement with another encoding, or a malformed one, is not a no-op
+rejected: SET client_encoding TO 'LATIN1'
+rejected: SET client_encoding = 'SQL_ASCII'
+rejected: SET client_encoding TO 'DEFAULT'
+rejected: SET client_encoding TO ''
+rejected: SET client_encoding TO 'UTF8' extra
+rejected: SET client_encoding

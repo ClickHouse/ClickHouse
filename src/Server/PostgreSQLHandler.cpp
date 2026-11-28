@@ -578,6 +578,19 @@ bool isSingleStatementQuery(const String & query)
     return true;
 }
 
+/// PostgreSQLWire serializes text as UTF8 without transcoding, so UTF8 is the only client encoding the
+/// server can agree to: accepting another one would tell the client to decode those UTF8 bytes using a
+/// different encoding. The name is normalized like PostgreSQL does: non-alphanumeric characters and case
+/// are ignored, so `UTF8`, `utf-8`, `UTF_8` and the documented alias `UNICODE` are all accepted.
+bool isUTF8ClientEncoding(std::string_view name)
+{
+    String normalized_encoding;
+    for (char c : name)
+        if (isAlphaNumericASCII(c))
+            normalized_encoding += toUpperASCII(c);
+    return normalized_encoding == "UTF8" || normalized_encoding == "UNICODE";
+}
+
 std::optional<String> classifyNoOpDriverCommand(const String & query)
 {
     /// Only treat the packet as a no-op when it consists of a single statement. A simple-query
@@ -680,18 +693,21 @@ std::optional<String> classifyNoOpDriverCommand(const String & query)
     }
 
     /// The JDBC driver opens every connection with `SET extra_float_digits = 3` and
-    /// `SET application_name = '...'`. Neither parameter has a ClickHouse counterpart, so these two -
-    /// and only these two - are acknowledged as no-ops. The statement must be exactly a single
-    /// well-formed `SET` of one of these parameters: anything else (another parameter, a trailing
-    /// statement, a query merely containing such text as a literal) falls through to normal
-    /// processing, where it is executed or fails with a proper error.
+    /// `SET application_name = '...'`. Neither parameter has a ClickHouse counterpart, so these two
+    /// are acknowledged as no-ops. So is `SET client_encoding`, but only for the encoding the server
+    /// already uses: `PQsetClientEncoding` of libpq, which the `\encoding` command of `psql` calls,
+    /// sends `set client_encoding to '...'`, and a client that sends it right after connecting,
+    /// usually with `UNICODE`, could not connect otherwise. No other parameter is accepted.
+    /// The statement must be exactly a single well-formed `SET` of one of these parameters: anything
+    /// else (another parameter, a trailing statement, a query merely containing such text as a
+    /// literal) falls through to normal processing, where it is executed or fails with a proper error.
     if (command == "SET")
     {
         /// PostgreSQL allows an optional `SESSION` or `LOCAL` scope keyword.
         String name = take_identifier(/* allow_dots = */ false);
         if (name == "SESSION" || name == "LOCAL")
             name = take_identifier(/* allow_dots = */ false);
-        if (name != "EXTRA_FLOAT_DIGITS" && name != "APPLICATION_NAME")
+        if (name != "EXTRA_FLOAT_DIGITS" && name != "APPLICATION_NAME" && name != "CLIENT_ENCODING")
             return std::nullopt;
 
         /// `SET name = value` or `SET name TO value`.
@@ -711,9 +727,12 @@ std::optional<String> classifyNoOpDriverCommand(const String & query)
         /// token such as a number, `DEFAULT`, or a bare identifier.
         if (!has_more())
             return std::nullopt;
+        std::string_view value;
+        bool value_is_quoted = false;
         if (prefix[pos] == '\'')
         {
             ++pos;
+            const size_t start = pos;
             while (pos < prefix.size())
             {
                 if (prefix[pos] == '\'')
@@ -729,6 +748,8 @@ std::optional<String> classifyNoOpDriverCommand(const String & query)
             }
             if (pos >= prefix.size())
                 return std::nullopt;
+            value = std::string_view(prefix).substr(start, pos - start);
+            value_is_quoted = true;
             ++pos;
         }
         else
@@ -741,8 +762,15 @@ std::optional<String> classifyNoOpDriverCommand(const String & query)
                 ++pos;
             if (pos == start)
                 return std::nullopt;
+            value = std::string_view(prefix).substr(start, pos - start);
         }
         if (has_more())
+            return std::nullopt;
+
+        /// The server keeps sending UTF8 whatever the client asks for, so a `client_encoding` is
+        /// acknowledged only if it is UTF8, or `DEFAULT`, which restores the encoding of the server.
+        /// Any other encoding falls through and fails, like in the startup packet.
+        if (name == "CLIENT_ENCODING" && !isUTF8ClientEncoding(value) && (value_is_quoted || value != "DEFAULT"))
             return std::nullopt;
         return command;
     }
@@ -1041,15 +1069,7 @@ bool PostgreSQLHandler::startup()
     if (const auto client_encoding_it = start_up_msg->parameters.find("client_encoding");
         client_encoding_it != start_up_msg->parameters.end())
     {
-        /// PostgreSQLWire serializes text as UTF8 without transcoding. Accepting another client encoding
-        /// would tell clients to decode those UTF8 bytes using a different encoding.
-        /// Normalize the name like PostgreSQL does: ignore non-alphanumeric characters and case,
-        /// so `UTF8`, `utf-8`, `UTF_8` and the documented alias `UNICODE` are all accepted.
-        String normalized_encoding;
-        for (char c : client_encoding_it->second)
-            if (isAlphaNumericASCII(c))
-                normalized_encoding += toUpperASCII(c);
-        if (normalized_encoding != "UTF8" && normalized_encoding != "UNICODE")
+        if (!isUTF8ClientEncoding(client_encoding_it->second))
         {
             message_transport->send(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
@@ -2267,8 +2287,8 @@ void PostgreSQLHandler::processQuery()
             }
 
             /// Accept driver-specific session-management commands (e.g. `RESET ALL`, `UNLISTEN *`, the
-            /// JDBC handshake's `SET application_name` / `SET extra_float_digits`) as no-ops instead of
-            /// failing them with a syntax error.
+            /// JDBC handshake's `SET application_name` / `SET extra_float_digits`, `SET client_encoding`
+            /// to UTF8) as no-ops instead of failing them with a syntax error.
             if (auto noop_command_tag = classifyNoOpDriverCommand(sql_query))
             {
                 message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(std::move(*noop_command_tag)), true);
