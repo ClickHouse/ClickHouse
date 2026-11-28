@@ -57,6 +57,30 @@ OPTIMIZE TABLE t_05595_ts FINAL; -- { serverError INCORRECT_QUERY }
 SELECT count() FROM t_05595_samples;
 SELECT value FROM prometheusQuery(t_05595_ts, 'm', toDateTime64('2100-01-01 00:00:00', 3)) ORDER BY value;
 
+-- External samples and tags with an inner metric families table: TRUNCATE is allowed, but it must not truncate
+-- the inner recent samples and time ranges tables, which mirror the untouched external samples table.
+DROP TABLE IF EXISTS t_05595_ts2;
+DROP TABLE IF EXISTS t_05595_samples2;
+DROP TABLE IF EXISTS t_05595_tags2;
+
+CREATE TABLE t_05595_samples2 (id UUID, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE t_05595_tags2 (id UUID, metric_name LowCardinality(String), tags Map(LowCardinality(String), String)) ENGINE = ReplacingMergeTree ORDER BY (metric_name, id);
+CREATE TABLE t_05595_ts2 ENGINE = TimeSeries SETTINGS version = 9 SAMPLES t_05595_samples2 TAGS t_05595_tags2;
+
+INSERT INTO t_05595_ts2 (metric_name, tags, samples) VALUES
+    ('m', map('env', 'a'), [(toDateTime64('2100-01-01 00:00:00', 3), 1.)]),
+    ('m', map('env', 'b'), [(toDateTime64('2100-01-01 00:00:00', 3), 2.)]),
+    ('m', map('env', 'c'), [(toDateTime64('2100-01-01 00:00:00', 3), 3.)]);
+
+TRUNCATE TABLE t_05595_ts2;
+
+SELECT count() FROM t_05595_samples2;
+SELECT value FROM prometheusQuery(t_05595_ts2, 'm', toDateTime64('2100-01-01 00:00:00', 3)) ORDER BY value;
+
+DROP TABLE t_05595_ts2;
+DROP TABLE t_05595_tags2;
+DROP TABLE t_05595_samples2;
+
 -- Fully owned TimeSeries tables can still be truncated.
 CREATE TABLE t_05595_owned ENGINE = TimeSeries;
 TRUNCATE TABLE t_05595_owned;
