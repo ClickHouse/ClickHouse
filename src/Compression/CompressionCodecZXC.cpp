@@ -263,7 +263,7 @@ private:
 
     static bool tryReserve(State & state, Int64 size)
     {
-        const Int64 budget = static_cast<Int64>(2 * getNumberOfCPUCoresToUse() * max_pooled_workspace);
+        const Int64 budget = 2 * static_cast<Int64>(getNumberOfCPUCoresToUse()) * static_cast<Int64>(max_pooled_workspace);
         if (state.idle_bytes.fetch_add(size, std::memory_order_relaxed) + size <= budget)
             return true;
         state.idle_bytes.fetch_sub(size, std::memory_order_relaxed);
