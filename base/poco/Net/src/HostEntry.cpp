@@ -25,6 +25,13 @@ HostEntry::HostEntry()
 {
 }
 
+
+HostEntry::HostEntry(const std::string& name, const AddressList& addresses):
+	_name(name),
+	_addresses(addresses)
+{
+}
+
 	
 HostEntry::HostEntry(struct hostent* entry)
 {

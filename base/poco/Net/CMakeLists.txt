@@ -42,4 +42,4 @@ target_compile_options (_poco_net
 )
 
 target_include_directories (_poco_net SYSTEM PUBLIC "include")
-target_link_libraries (_poco_net PUBLIC Poco::Foundation)
+target_link_libraries (_poco_net PUBLIC Poco::Foundation PRIVATE ch_contrib::c-ares)

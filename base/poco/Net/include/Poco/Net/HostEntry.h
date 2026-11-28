@@ -51,6 +51,9 @@ namespace Net
 #endif
 
 
+        HostEntry(const std::string & name, const AddressList & addresses);
+        /// Creates the HostEntry from a canonical name and a list of addresses.
+
         HostEntry(const HostEntry & entry);
         /// Creates the HostEntry by copying another one.
 
