@@ -1,0 +1,12 @@
+stuck	1	1	1	8
+consuming	1	2	16
+1
+-- a round that fails before it reads the file
+stuck	1	8
+-- a file truncated in place while the rounds fail before reading it
+c.jsonl	stuck	1	0	8
+x.jsonl	stuck	1	8	16
+-- a file that a failed round marked stuck and that could not be opened is consuming once it can be read
+bad.jsonl	stuck
+link.jsonl	consuming
+7
