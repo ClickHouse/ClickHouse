@@ -343,6 +343,14 @@ void QueryConditionCache::write(
 
     auto [entry, inserted] = cache.getOrSet(key, load_func);
 
+    /// An entry with another number of marks was written for an earlier part with the same name.
+    if (entry->matching_marks.size() != marks_count)
+    {
+        chassert(false, "Query condition cache entry has a different number of marks than the part");
+        entry = load_func();
+        cache.set(key, entry);
+    }
+
     /// Try to avoid acquiring the RW lock below (*) by early-ing out. Matters for systems with lots of cores.
     {
         std::shared_lock shared_lock(entry->mutex); /// cheap

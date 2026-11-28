@@ -10699,6 +10699,9 @@ Pipe MergeTreeData::alterPartition(
                 break;
 
             case PartitionCommand::FORGET_PARTITION:
+                /// New parts of the partition get the names of the dropped ones, whose query condition cache entries may still exist.
+                /// Cleared first: the Keeper removal in `forgetPartition` can take effect even when it throws.
+                getContext()->clearQueryConditionCache();
                 forgetPartition(command.partition, query_context);
                 break;
 
