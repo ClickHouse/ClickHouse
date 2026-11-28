@@ -106,6 +106,8 @@ private:
     ASTPtr query_ast;
     String query_string;
     ClusterPtr cluster;
+    /// The index of the shard of every sharding key slot, the same in all sinks of the INSERT query.
+    std::shared_ptr<const Cluster::SlotToShard> slot_to_shard;
     size_t inserted_blocks = 0;
     size_t inserted_rows = 0;
 

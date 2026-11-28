@@ -18,6 +18,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST_erase.h>
+#include <Storages/Distributed/DistributedBucketMap.h>
 
 namespace
 {
@@ -79,8 +80,15 @@ bool shardContains(
         return false;
 
     UInt64 value = sharding_value.safeGet<UInt64>();
-    const auto shard_num = data.slots[value % data.slots.size()] + 1;
-    return data.shard_info.shard_num == shard_num;
+    const UInt64 slot = value % data.slots.size();
+    if (data.shard_info.shard_num == data.slots[slot] + 1)
+        return true;
+
+    if (!data.bucket_map || !data.bucket_map->has_previous_shards)
+        return false;
+
+    const auto & previous_shard_nums = data.bucket_map->ranges[data.bucket_map->slot_to_range[slot]].previous_shard_nums;
+    return std::ranges::contains(previous_shard_nums, data.shard_info.shard_num);
 }
 
 }

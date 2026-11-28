@@ -1,0 +1,85 @@
+-- buckets 0 and 1 are on shard 1, buckets 2 and 3 on shard 2
+shard_0	[0,1,4,5]
+shard_1	[2,3,6,7]
+-- without previous shards, the old rows of a bucket assigned to another shard are not found
+0
+-- with previous shards, they are found
+2	[(0,0,1,[]),(1,1,2,[1]),(2,3,2,[])]
+-- new rows go only to the shard of the bucket
+shard_0	[0,1,4,5,8,12]
+shard_1	[2,3,6,7,9,10,11,13,14,15]
+-- shards are skipped by the bucket map with its previous shards, prefer_localhost_replica = 0
+1	5
+2	13
+1	4
+1	5
+2	9
+2	13
+1	5
+2	9
+1	4
+1	5
+2	9
+2	13
+-- shards are skipped by the bucket map with its previous shards, prefer_localhost_replica = 1
+1	5
+2	13
+1	4
+1	5
+2	9
+2	13
+1	5
+2	9
+1	4
+1	5
+2	9
+2	13
+-- GROUP BY the sharding key merges the rows of a value from all its shards
+shard_0	[0,1,4,5,8,12]
+shard_1	[2,3,5,6,7,9,10,11,13,14,15]
+5	2
+9	1
+5	2
+5
+5
+9
+1
+1
+-- shards that are not previous shards of a bucket are skipped, with a stray row on shard 1
+2	6
+1	5
+1	6
+2	6
+1	5
+2	6
+2	6
+1	5
+1	6
+2	6
+1	5
+2	6
+-- a bucket can go back to its previous shard, and previous shards are read only for their buckets
+3	[(0,0,2,[1]),(1,1,1,[2]),(2,3,2,[])]
+shard_0	[0,1,4,5,8,12,17]
+shard_1	[2,3,6,7,9,10,11,13,14,15,16]
+1	4
+1	5
+2	9
+2	16
+1	17
+-- GROUP BY the sharding key is finished on the shards again without previous shards
+0
+-- invalid previous shards are not loaded
+Previous shard 2 of bucket range 1-1 is invalid
+Previous shard 1 of bucket range 1-1 is invalid
+Previous shard 0 of bucket range 1-1 is invalid
+No previous shards are listed for bucket range 1-1
+Cannot parse
+expected ''previous''
+4	[(0,0,1,[]),(1,3,2,[])]
+-- a bucket can have several previous shards, but not a shard that the cluster does not have
+11	[(0,0,1,[]),(1,1,2,[3,1]),(2,3,2,[])]
+assigns buckets to shard 3, but cluster test_cluster_two_shards_different_databases has 2 shards
+-- a query that does not skip shards does not need the map
+The bucket ranges cover 1 of 4 buckets
+18
