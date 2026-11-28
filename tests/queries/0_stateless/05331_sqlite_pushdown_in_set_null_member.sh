@@ -8,7 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # ClickHouse leaves the `NULL` members out of an `IN` set, while SQLite follows the SQL three-valued logic, so a set
 # holding a `NULL` makes a negated `IN` UNKNOWN for every row it does not contain. The filter pushed to SQLite must
-# select the rows the local filter selects, so the set must reach it without its `NULL` members.
+# select the rows the local filter selects, so the set must reach it without its `NULL` members. A row value on the
+# left with a `NULL` element is not a member of the set either, so the filter pushed to SQLite tests that element.
 
 BASE="${USER_FILES_PATH}/05331_sqlite_in_set_null_${CLICKHOUSE_DATABASE}"
 DB_PATH="${BASE}/data.sqlite"
@@ -48,3 +49,7 @@ check "NOT ((s, k) IN (('7', 1), ('x', NULL)))"
 check "NOT (s IN (NULL))"
 check "s IN ('7', NULL)"
 check "s IN ('7', NULL, 'x')"
+check "NOT ((s, k) IN (('7', 3)))"
+check "((s, k) IN (('7', 3))) = 0"
+check "NOT (tuple(s) IN (tuple('7')))"
+check "(s, k) IN (('7', 1))"

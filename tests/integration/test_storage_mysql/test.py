@@ -710,6 +710,7 @@ def test_mysql_not_in_null(started_cluster):
 
     # ClickHouse ignores a `NULL` member of an `IN` set, while MySQL applies the three-valued logic,
     # so the set must reach MySQL without it. A `Decimal` set is written as `tuple(...)`, not as a literal.
+    # Likewise a row value with a `NULL` element is not a member of the set.
     for predicate, expected in [
         ("money NOT IN (1, NULL)", 3),
         ("NOT (money IN (1, NULL))", 3),
@@ -717,9 +718,12 @@ def test_mysql_not_in_null(started_cluster):
         ("money NOT IN (NULL)", 6),
         ("price NOT IN (toDecimal64(1.5, 2), NULL)", 3),
         ("price IN (toDecimal64(1.5, 2), NULL)", 3),
+        ("(money, id) NOT IN ((1, 0), (1, 5))", 8),
+        ("NOT ((money, id) IN ((1, 0), (1, 5)))", 8),
+        ("(money, id) IN ((1, 0), (1, 5))", 1),
     ]:
         local = node1.query(
-            f"SELECT countIf({predicate}) FROM (SELECT {money} AS money, {price} AS price FROM numbers(9))"
+            f"SELECT countIf({predicate}) FROM (SELECT number AS id, {money} AS money, {price} AS price FROM numbers(9))"
         )
         remote = node1.query(f"SELECT count() FROM {table_name} WHERE {predicate}")
         assert int(local) == expected, predicate
@@ -734,6 +738,11 @@ def test_mysql_not_in_null(started_cluster):
             f"SELECT count() FROM {table_name} WHERE {predicate} SETTINGS external_table_strict_query = 1"
         )
         assert int(remote) == 3, predicate
+
+    remote = node1.query(
+        f"SELECT count() FROM {table_name} WHERE (money, id) NOT IN ((1, 0), (1, 5)) SETTINGS external_table_strict_query = 1"
+    )
+    assert int(remote) == 8
 
     node1.query(f"DROP TABLE {table_name}")
     drop_mysql_table(conn, table_name)
