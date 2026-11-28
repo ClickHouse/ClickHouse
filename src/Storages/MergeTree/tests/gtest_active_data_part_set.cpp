@@ -73,6 +73,48 @@ TEST(ActiveDataPartSet, DisjointPartsBothAdd)
     EXPECT_EQ(2u, set.size());
 }
 
+/// A part rejected as intersecting leaves the set unchanged, including the parts it contains.
+TEST(ActiveDataPartSet, RejectedIntersectingPartKeepsContainedParts)
+{
+    ActiveDataPartSet set(FORMAT_VERSION);
+
+    EXPECT_EQ(ActiveDataPartSet::AddPartOutcome::Added, set.tryAdd("202601_1_2_1"));
+    EXPECT_EQ(ActiveDataPartSet::AddPartOutcome::Added, set.tryAdd("202601_3_5_1"));
+
+    /// Contains `202601_1_2_1`, intersects `202601_3_5_1`.
+    String reason;
+    EXPECT_EQ(ActiveDataPartSet::AddPartOutcome::HasIntersectingPart, set.tryAdd("202601_1_4_2", &reason));
+    EXPECT_FALSE(reason.empty());
+    EXPECT_EQ((Strings{"202601_1_2_1", "202601_3_5_1"}), set.getParts());
+}
+
+/// Same, with the contained part on the right of the insertion point.
+TEST(ActiveDataPartSet, RejectedIntersectingPartKeepsContainedPartsOnTheRight)
+{
+    ActiveDataPartSet set(FORMAT_VERSION);
+
+    EXPECT_EQ(ActiveDataPartSet::AddPartOutcome::Added, set.tryAdd("all_2_3_1"));
+    EXPECT_EQ(ActiveDataPartSet::AddPartOutcome::Added, set.tryAdd("all_4_6_1"));
+
+    /// Contains `all_2_3_1`, intersects `all_4_6_1`.
+    EXPECT_EQ(ActiveDataPartSet::AddPartOutcome::HasIntersectingPart, set.tryAdd("all_1_5_2"));
+    EXPECT_EQ((Strings{"all_2_3_1", "all_4_6_1"}), set.getParts());
+}
+
+TEST(ActiveDataPartSet, AddReplacesContainedPartsInOrder)
+{
+    ActiveDataPartSet set(FORMAT_VERSION);
+    EXPECT_TRUE(set.add("all_1_1_0"));
+    EXPECT_TRUE(set.add("all_2_2_0"));
+    EXPECT_TRUE(set.add("all_3_3_0"));
+    EXPECT_TRUE(set.add("all_5_5_0"));
+
+    Strings replaced;
+    EXPECT_TRUE(set.add("all_1_3_1", &replaced));
+    EXPECT_EQ((Strings{"all_1_1_0", "all_2_2_0", "all_3_3_0"}), replaced);
+    EXPECT_EQ((Strings{"all_1_3_1", "all_5_5_0"}), set.getParts());
+}
+
 
 /// `OverlappingPartCovering` tests ---------------------------------------------------------------
 ///
