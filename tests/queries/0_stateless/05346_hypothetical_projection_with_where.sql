@@ -1,4 +1,4 @@
--- a projection with WHERE stores only the rows that pass its filter, and a part with no such rows has no projection part
+-- a projection with WHERE stores only the rows that pass its filter, and a part with no such rows has an empty projection part
 -- the twin table has the projection materialized and shows the read that the optimizer selects
 
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0, enable_parallel_replicas = 0, log_queries = 1;
@@ -22,7 +22,7 @@ INSERT INTO t_real SELECT number + 30000, number % 100, number * 10 + 1 FROM num
 
 CREATE HYPOTHETICAL PROJECTION p ON t_est (SELECT a, b, v WHERE v % 10 = 0 ORDER BY b);
 
-SELECT '-- the query filter implies the filter of the projection, the optimizer reads the second part from the base table';
+SELECT '-- the query filter implies the filter of the projection, the second part has an empty projection part';
 SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN WHATIF projection_scan_budget_rows = 0 SELECT a, b, v FROM t_est WHERE b = 40 AND v % 10 = 0)
 WHERE match(line, '^(Baseline|With |marks:|rows:|status:|verdict:)');
