@@ -5,7 +5,9 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNothing.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/Volnitsky.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -13,6 +15,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/HasTokenImpl.h>
 #include <Functions/TokenSearchArgumentTypes.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
@@ -291,6 +294,22 @@ void executeString(
     }
 
     col_result.resize(input_rows_count);
+
+    if constexpr (std::is_same_v<std::decay_t<decltype(col_input)>, ColumnString>
+                  && (HasTokensTraits::mode == HasAnyAllTokensMode::Any || HasTokensTraits::mode == HasAnyAllTokensMode::All))
+    {
+        /// With one needle both functions are `hasToken`: `splitByNonAlpha` splits exactly at the bytes `isTokenSeparator` accepts.
+        if (tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha && tokens.size() == 1)
+        {
+            const String & needle = tokens.begin()->first;
+            if (std::ranges::any_of(needle, isTokenSeparator))
+                std::ranges::fill(col_result, UInt8(0));
+            else
+                HasTokenImpl<HasTokensTraits, Volnitsky, false>::vectorConstant(
+                    col_input.getChars(), col_input.getOffsets(), needle, nullptr, col_result, nullptr, input_rows_count);
+            return;
+        }
+    }
 
     if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
         searchOnString(col_input, col_result, input_rows_count, tokenizer, HasAnyTokensMatcher(tokens));

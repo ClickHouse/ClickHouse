@@ -1,0 +1,38 @@
+all bytes
+0	0	66
+rows
+ab	1	1	1	1	1
+xab	0	0	0	0	0
+abx	0	0	0	0	0
+x ab	1	1	1	1	1
+ab x	1	1	1	1	1
+a	0	0	0	0	0
+b	0	0	0	0	0
+	0	0	0	0	0
+ab_c	1	1	1	1	1
+c-ab	1	1	1	1	1
+пab	0	0	0	0	0
+abп	0	0	0	0	0
+ab€	0	0	0	0	0
+aab ab	1	1	1	1	1
+xa	0	0	0	0	0
+b c	0	0	0	0	0
+ab.ab	1	1	1	1	1
+a\0b	0	0	0	0	0
+x a	0	0	0	0	0
+b x	0	0	0	0	0
+corpus
+a	0	0	2691
+ab	0	0	2879
+п	0	0	2714
+ä	0	0	2748
+€	0	0	2649
+1a	0	0	194
+a b	0	0	0
+a_b	0	0	0
+empty	0	0	0
+two needles	0
+ngrams	0
+wrappers
+0	0
+1	0	1	0
