@@ -937,6 +937,12 @@ public:
     ConnectionPtr getPooledConnection(
         const ConnectionTimeouts & timeouts, UInt64 * connect_time, std::optional<std::chrono::steady_clock::time_point> deadline)
     {
+        /// Checked on every checkout, before a stored connection is reused: the pool is shared by all requests to
+        /// the endpoint, so a connection made for an internal request (inside `NameResolutionFilter::InternalScope`)
+        /// must not be handed to a request that may not resolve the host. This is also the check of the target
+        /// host of a proxied connection, which the proxy resolves.
+        NameResolutionFilter::check(host);
+
         std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> expired_connections;
 
         SCOPE_EXIT({
@@ -1143,10 +1149,9 @@ private:
         /// there would break certificate verification. Routing it through the cache needs a
         /// resolved-proxy-host field in the session, mirroring `setResolvedHost`.
         ///
-        /// The target host is resolved by the proxy, so it is checked against `remote_url_allow_hosts` here, and
-        /// the proxy itself, which comes from the server configuration or the environment, is not.
-        NameResolutionFilter::check(host);
-
+        /// The target host is resolved by the proxy; it has been checked against `remote_url_allow_hosts` in
+        /// `getPooledConnection`. The proxy itself, which comes from the server configuration or the environment,
+        /// is not checked.
 #if USE_SILK
         /// `HTTPSClientSession::connect` tunnels through a separate proxy session and wraps its socket in TLS
         /// with ordinary Poco sockets, so the connection would block despite its transport.
