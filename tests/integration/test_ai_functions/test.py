@@ -936,24 +936,24 @@ def test_custom_headers_authenticate_gateway(
 
 
 @pytest.mark.parametrize(
-    "provider,path,embedding,header,auth_prefix",
+    "provider,path,embedding,header,prefix,suffix",
     [
-        ("openai", "/v1/error_marker", False, "X-Tenant", ""),
-        ("anthropic", "/v1/raw_error_marker", False, "X-Tenant", ""),
-        ("openai", "/v1/raw_error_marker", True, None, ""),
-        ("openai", "/v1/error_marker", False, "Authorization", ""),
-        ("openai", "/v1/raw_error_marker", False, "Authorization", ""),
-        ("openai", "/v1/error_marker", False, "Authorization", " "),
-        ("openai", "/v1/raw_error_marker", False, "Authorization", "\t"),
+        ("openai", "/v1/error_marker", False, "X-Tenant", "", ""),
+        ("anthropic", "/v1/raw_error_marker", False, "X-Tenant", "", ""),
+        ("openai", "/v1/raw_error_marker", True, None, "", ""),
+        ("openai", "/v1/error_marker", False, "Authorization", "Bearer ", ""),
+        ("openai", "/v1/raw_error_marker", False, "Authorization", "Bearer ", ""),
+        ("openai", "/v1/error_marker", False, "Authorization", " Bearer ", ""),
+        ("openai", "/v1/raw_error_marker", False, "Authorization", "\tBearer ", ""),
+        ("openai", "/v1/error_marker", False, "X-API-Key", " ", " "),
+        ("anthropic", "/v1/raw_error_marker", False, "X-API-Key", "\t", "\t"),
     ],
 )
 def test_provider_error_hides_configured_values(
-    header_collection, provider, path, embedding, header, auth_prefix
+    header_collection, provider, path, embedding, header, prefix, suffix
 ):
     secret = "fixture-credential-marker"
-    header_value = (
-        f"{auth_prefix}Bearer {secret}" if header == "Authorization" else secret
-    )
+    header_value = f"{prefix}{secret}{suffix}"
     collection = header_collection(
         provider,
         f"http://localhost:{MOCK_PORT}{path}",

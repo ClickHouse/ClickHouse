@@ -41,19 +41,19 @@ String IAIProvider::formatProviderError(int status_code, const String & response
         if (contains_value(api_key) || std::any_of(custom_headers.begin(), custom_headers.end(),
                 [&](const HTTPHeaderEntry & header)
                 {
-                    if (contains_value(header.value))
+                    std::string_view value(header.value);
+                    const auto begin = value.find_first_not_of(" \t");
+                    if (begin == std::string_view::npos)
+                        return false;
+                    value = value.substr(begin, value.find_last_not_of(" \t") - begin + 1);
+                    if (contains_value(value))
                         return true;
                     if (Poco::icompare(header.name, "Authorization") != 0)
                         return false;
-                    std::string_view value(header.value);
-                    const auto scheme_begin = value.find_first_not_of(" \t");
-                    const auto scheme_end = value.find_first_of(" \t", scheme_begin);
+                    const auto scheme_end = value.find_first_of(" \t");
                     if (scheme_end == std::string_view::npos)
                         return false;
-                    const auto first = value.find_first_not_of(" \t", scheme_end);
-                    if (first == std::string_view::npos)
-                        return false;
-                    return contains_value(value.substr(first, value.find_last_not_of(" \t") - first + 1));
+                    return contains_value(value.substr(value.find_first_not_of(" \t", scheme_end)));
                 }))
             return String("[REDACTED]");
         return sanitize(text.substr(0, limit));
