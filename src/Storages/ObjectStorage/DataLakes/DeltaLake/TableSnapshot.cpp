@@ -108,6 +108,7 @@ public:
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
+        const DB::NameSet & binary_columns_,
         const DB::ActionsDAG * filter_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
@@ -125,6 +126,7 @@ public:
         , table_schema(table_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
+        , binary_columns(binary_columns_)
         , callback(callback_)
         , list_batch_size(list_batch_size_)
         , log(log_)
@@ -204,7 +206,7 @@ public:
     {
         if (filter.has_value() && enable_engine_predicate)
         {
-            auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, getContext(), table_schema);
+            auto predicate = getEnginePredicate(filter.value(), binary_columns, engine_predicate_exception, getContext(), table_schema);
             scan = KernelUtils::unwrapResult(
                 ::scan(
                     kernel_snapshot_state->snapshot.get(),
@@ -664,6 +666,7 @@ private:
     const DB::NamesAndTypesList table_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
+    const DB::NameSet binary_columns;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
     const LoggerPtr log;
@@ -1018,6 +1021,7 @@ DB::ObjectIterator TableSnapshot::iterate(
         schema->table_schema,
         schema->physical_names_map,
         schema->partition_columns,
+        schema->binary_columns,
         filter_dag,
         callback,
         list_batch_size,
@@ -1034,7 +1038,7 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
     if (!schema.has_value())
     {
         auto state = getKernelSnapshotState();
-        auto [table_schema, physical_names_map, timestamp_ntz_paths]
+        auto [table_schema, physical_names_map, timestamp_ntz_paths, binary_columns]
             = getTableSchemaFromSnapshot(state->snapshot.get(), state->engine.get());
 
         if (table_schema.empty())
@@ -1063,6 +1067,7 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
             .physical_names_map = std::move(physical_names_map),
             .partition_columns = std::move(partition_columns),
             .timestamp_ntz_paths = std::move(timestamp_ntz_paths),
+            .binary_columns = std::move(binary_columns),
         });
     }
 }

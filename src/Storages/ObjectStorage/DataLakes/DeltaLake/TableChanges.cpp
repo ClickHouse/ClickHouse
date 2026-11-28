@@ -286,7 +286,7 @@ DB::NamesAndTypesList TableChanges::getSchema() const
     auto engine = createEngine(*helper);
     auto table_changes = createTableChanges(version_range, *helper, engine.get());
     KernelSharedSchema kernel_schema(::table_changes_schema(table_changes.get()));
-    schema = convertToClickHouseSchema(kernel_schema.get(), engine.get());
+    schema = convertToClickHouseSchema(kernel_schema.get(), engine.get()).schema;
 
     LOG_TRACE(log, "Change data feed schema: {}", schema->toString());
     return schema.value();
@@ -305,7 +305,8 @@ DB::ObjectIterator TableChanges::iterate(
     /// The fields of structs have physical names too, as in the columns read from the data files: a requested subcolumn
     /// (e.g. `c-t.c-t-x` for `t.x`) is found by its physical name in the type of the column that the transform outputs.
     KernelSharedSchema logical_schema(::table_changes_schema(table_changes.get()));
-    auto expression_schema = convertToClickHouseSchema(logical_schema.get(), engine.get());
+    auto logical_columns = convertToClickHouseSchema(logical_schema.get(), engine.get());
+    auto & expression_schema = logical_columns.schema;
     /// The predicate refers to the columns by their logical names.
     const auto predicate_schema = expression_schema;
     if (!physical_names_map.empty())
@@ -324,7 +325,7 @@ DB::ObjectIterator TableChanges::iterate(
     std::exception_ptr predicate_exception;
     std::shared_ptr<EnginePredicate> predicate;
     if (filter_dag && context->getSettingsRef()[DB::Setting::delta_lake_enable_engine_predicate])
-        predicate = getEnginePredicate(*filter_dag, predicate_exception, context, predicate_schema);
+        predicate = getEnginePredicate(*filter_dag, logical_columns.binary_columns, predicate_exception, context, predicate_schema);
     KernelTableChangesScan scan(KernelUtils::unwrapResult(
         ::table_changes_scan(table_changes.release(), engine.get(), predicate.get()), "table_changes_scan"));
     if (predicate_exception)
@@ -332,7 +333,7 @@ DB::ObjectIterator TableChanges::iterate(
 
     /// The columns of the data files, with physical names.
     KernelSharedSchema physical_schema(::table_changes_scan_physical_schema(scan.get()));
-    auto read_schema = convertToClickHouseSchema(physical_schema.get(), engine.get());
+    auto read_schema = convertToClickHouseSchema(physical_schema.get(), engine.get()).schema;
 
     LOG_TRACE(
         log, "Reading the change data feed of versions [{}, {}], read schema: {}, expression schema: {}",
