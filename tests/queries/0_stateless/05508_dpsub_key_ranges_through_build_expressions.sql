@@ -70,6 +70,11 @@ SELECT '-- the negated keys cover the whole probe range too, and the range of `k
 SELECT if(countIf(explain LIKE '%FullSortingMergeJoin%') > 0, 'uses a merge join', 'hash joins only') FROM (EXPLAIN PLAN
     SELECT sum(probe.v + a.v + build_wide.v) FROM probe JOIN (SELECT negate(k) AS nk, v FROM build_negated) AS a ON probe.k = a.nk JOIN build_wide ON probe.k = build_wide.k);
 
+-- `0 - k` is a function of `k` and a constant, through which the distinct count of `k` propagates, but not its range.
+SELECT '-- the same keys as `0 - k`: no range either, as with `negate(k)`';
+SELECT if(countIf(explain LIKE '%FullSortingMergeJoin%') > 0, 'uses a merge join', 'hash joins only') FROM (EXPLAIN PLAN
+    SELECT sum(probe.v + a.v + build_wide.v) FROM probe JOIN (SELECT 0 - k AS nk, v FROM build_negated) AS a ON probe.k = a.nk JOIN build_wide ON probe.k = build_wide.k);
+
 SELECT '-- a cast that happens to keep every value: no range either, and the same plan as with one over the whole range';
 SELECT if(countIf(explain LIKE '%FullSortingMergeJoin%') > 0, 'uses a merge join', 'hash joins only') FROM (EXPLAIN PLAN
     SELECT sum(probe.v + a.v + build_wide.v) FROM probe JOIN (SELECT toInt64(toInt32(k)) AS nk, v FROM build_wide2) AS a ON probe.k = a.nk JOIN build_wide ON probe.k = build_wide.k);
@@ -97,6 +102,7 @@ SETTINGS enable_join_runtime_filters = 0;
 SELECT '-- the results do not depend on the plan';
 SELECT count(), sum(probe.v + a.v + build_wide.v) FROM probe JOIN (SELECT k AS nk, v FROM build_wide2) AS a ON probe.k = a.nk JOIN build_wide ON probe.k = build_wide.k;
 SELECT count(), sum(probe.v + a.v + build_wide.v) FROM probe JOIN (SELECT negate(k) AS nk, v FROM build_negated) AS a ON probe.k = a.nk JOIN build_wide ON probe.k = build_wide.k;
+SELECT count(), sum(probe.v + a.v + build_wide.v) FROM probe JOIN (SELECT 0 - k AS nk, v FROM build_negated) AS a ON probe.k = a.nk JOIN build_wide ON probe.k = build_wide.k;
 SELECT count(), sum(probe.v + a.v + build_wide.v) FROM probe JOIN (SELECT toInt64(toInt32(k)) AS nk, v FROM build_wide2) AS a ON probe.k = a.nk JOIN build_wide ON probe.k = build_wide.k;
 SELECT count(), sum(probe.v + a.v + build_wide.v) FROM probe JOIN (SELECT k AS nk, v FROM build_tenth) AS a ON probe.k = a.nk JOIN build_wide ON probe.k = build_wide.k;
 SELECT count(), sum(probe.v + a.v + build_wide.v) FROM probe JOIN (SELECT k AS nk, any(v) AS v FROM build_tenth GROUP BY k) AS a ON probe.k = a.nk JOIN build_wide ON probe.k = build_wide.k;

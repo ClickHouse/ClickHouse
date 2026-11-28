@@ -187,6 +187,11 @@ inline bool isLambdaBodyDeterministicInScopeOfQuery(const ExpressionActions & ex
     return allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
 }
 
+inline bool isLambdaBodyServerConstant(const ExpressionActions & expression_actions)
+{
+    return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isServerConstant(); });
+}
+
 inline bool isLambdaBodyStateful(const ExpressionActions & expression_actions)
 {
     return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isStateful(); });
@@ -302,6 +307,7 @@ public:
 
     bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
     bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
+    bool isServerConstant() const override { return isLambdaBodyServerConstant(*expression_actions); }
     bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
     bool isExpensive() const override { return isLambdaBodyExpensive(*expression_actions); }
     bool hasObservableSideEffects() const override { return isLambdaBodyWithObservableSideEffects(*expression_actions); }
@@ -453,6 +459,7 @@ public:
 
     bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
     bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
+    bool isServerConstant() const override { return isLambdaBodyServerConstant(*expression_actions); }
     bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
     bool hasObservableSideEffects() const override { return isLambdaBodyWithObservableSideEffects(*expression_actions); }
 

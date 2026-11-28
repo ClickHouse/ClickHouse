@@ -59,7 +59,7 @@ enum ColumnStatsTransformation : UInt16
     /// The distinct count was lowered to an estimated row count, which can be below the true distinct count.
     EstimatedRowCountClamp = 1 << 1,
     /// The column is a function of the measured one that cannot increase the distinct count but can change values
-    /// (e.g. `roundToExp2(k)` or a `CAST`), so the measured range and NULL fraction do not describe it.
+    /// (e.g. `roundToExp2(k)`, `dateTrunc('month', k)` or a `CAST`), so the measured range and NULL fraction do not describe it.
     NDVBoundExpression = 1 << 2,
     /// The statistics cover only some of the rows they describe, e.g. when some parts lack the statistic, or when the
     /// bounds miss the values of some rows (data lake files with a NULL count but without bounds).
