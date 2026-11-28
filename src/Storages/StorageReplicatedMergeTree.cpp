@@ -10533,8 +10533,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             {
                 Transaction transaction(*dest_table_storage, NO_TRANSACTION_RAW);
 
-                /// Lock the parts of both tables in the same order whatever the direction of the move,
-                /// so that moves in opposite directions cannot deadlock.
+                /// Lock the parts of both tables in a fixed (address) order, so moves in opposite directions cannot deadlock.
                 const bool lock_src_first = std::less<const MergeTreeData *>()(this, dest_table_storage.get());
                 auto first_data_parts_lock = lock_src_first ? lockParts() : dest_table_storage->lockParts();
                 auto second_data_parts_lock = lock_src_first ? dest_table_storage->lockParts() : lockParts();
