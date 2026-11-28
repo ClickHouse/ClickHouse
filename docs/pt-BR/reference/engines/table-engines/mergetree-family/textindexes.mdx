@@ -63,7 +63,7 @@ Dado um token de busca, essa estrutura de índice permite localizar rapidamente 
 ## Criando um índice de texto {#creating-a-text-index}
 
 Os índices de texto estão disponíveis de forma geral (GA) no ClickHouse 26.2 e versões mais recentes.
-Nessas versões, não é necessário configurar nenhuma opção especial para usar o índice de texto.
+Nessas versões, não é necessário configurar nenhuma configuração especial para usar o índice de texto.
 Recomendamos fortemente usar versões do ClickHouse &gt;= 26.2 em produção.
 
 <Note>
@@ -94,6 +94,7 @@ CREATE TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -135,6 +136,7 @@ ALTER TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -623,6 +625,12 @@ O formato em disco ainda não é estável, portanto este parâmetro é experimen
 Criar um índice com `support_phrase_search = 1` exige, portanto, que a configuração do MergeTree [`allow_experimental_text_index_phrase_search`](/pt-BR/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) esteja habilitada.
 Defina `support_phrase_search = 0` (o padrão) para manter o armazenamento somente com posting list; os índices de texto criados sem esse argumento continuam sem posições.
 As posições armazenadas podem ser inspecionadas na coluna `positions` da função de tabela [mergeTreeTextIndex](/pt-BR/reference/functions/table-functions/mergeTreeTextIndex).
+
+Em um índice sobre uma coluna `Array`, os tokens de todos os elementos de uma linha compartilham uma única sequência de posições, e o parâmetro experimental `position_increment_gap` (padrão: `63`, entre `1` e `127`) define o número de posições livres entre dois elementos.
+A lacuna mantém uma frase dentro de um único elemento, como [`hasPhrase`](#functions-example-hasphrase) exige, de modo que a função possa ser respondida por leituras diretas do índice.
+Uma lacuna maior aumenta o tamanho dos dados de posição.
+Elementos sem tokens (strings vazias, `NULL`) não adicionam lacuna.
+O parâmetro exige `support_phrase_search = 1` e não é compatível com o tokenizador `array`: nesse caso, cada elemento é um único token, e uma frase abrange elementos consecutivos.
 
 <Warning>
   Esse argumento é experimental e deve ser usado apenas para testes.

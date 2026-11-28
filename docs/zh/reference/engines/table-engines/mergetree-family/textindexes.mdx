@@ -94,6 +94,7 @@ CREATE TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -135,6 +136,7 @@ ALTER TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -611,7 +613,7 @@ ORDER BY tuple();
 后者转而通过字典扫描进行求值 (`use_text_index_like_evaluation_by_dictionary_scan = 1`、`splitByNonAlpha` 或 `array` 分词器、无预处理器或后处理器) ，`col LIKE 'ClickHouse%'` 也会走这条路径，因为 analyzer 阶段的 [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/zh/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) 会将其重写为 `startsWith`。
 参见 [LIKE/ILIKE 查询](#like-ilike-queries-perf)。
 
-⁵ *兼容分词器*列不包含 [`keyValuePairs`](#tokenizer-key-value-pairs) 分词器，它是专用于 `Map` 列的分词器。
+⁵ *兼容的分词器*列不包含 [`keyValuePairs`](#tokenizer-key-value-pairs) 分词器，它是专用于 `Map` 列的分词器。
 
 **实验性功能：短语搜索支持参数 (可选) **。
 
@@ -622,6 +624,12 @@ ORDER BY tuple();
 因此，使用 `support_phrase_search = 1` 创建索引时，需要启用 MergeTree 设置 [`allow_experimental_text_index_phrase_search`](/zh/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search)。
 将 `support_phrase_search = 0` (默认值) 可保持仅倒排列表存储；未使用此参数创建的文本索引将不包含位置信息。
 可以通过表函数 [mergeTreeTextIndex](/zh/reference/functions/table-functions/mergeTreeTextIndex) 的 `positions` 列查看已存储的位置信息。
+
+对于建立在 `Array` 列上的索引，一行中所有元素的标记共享同一个位置序列，实验性参数 `position_increment_gap` (默认值：`63`，取值范围为 `1` 到 `127`) 用于设置相邻两个元素之间预留的空闲位置数。
+该间隔可确保短语不会跨越元素 (这是 [`hasPhrase`](#functions-example-hasphrase) 的要求) ，从而使该函数能够直接从索引读取结果。
+间隔越大，位置数据占用的空间越大。
+不含标记的元素 (空字符串、`NULL`) 不会增加间隔。
+该参数要求 `support_phrase_search = 1`，且不支持 `array` 分词器：在该分词器下，每个元素即为一个标记，短语本身就跨越连续的多个元素。
 
 <Warning>
   此参数为实验性功能，仅应用于测试。

@@ -94,6 +94,7 @@ CREATE TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -135,6 +136,7 @@ ALTER TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -623,6 +625,12 @@ ORDER BY tuple();
 따라서 `support_phrase_search = 1`로 인덱스를 생성하려면 MergeTree 설정 [`allow_experimental_text_index_phrase_search`](/ko/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search)를 활성화해야 합니다.
 포스팅 리스트만 저장하는 방식을 유지하려면 `support_phrase_search = 0`(기본값)으로 설정하십시오. 이 인수를 지정하지 않고 생성된 텍스트 인덱스에는 위치 정보가 저장되지 않습니다.
 저장된 위치는 테이블 함수 [mergeTreeTextIndex](/ko/reference/functions/table-functions/mergeTreeTextIndex)의 `positions` 컬럼에서 확인할 수 있습니다.
+
+`Array` 컬럼에 대한 인덱스에서는 한 행의 모든 원소의 토큰이 하나의 위치 시퀀스를 공유하며, 실험적 매개변수 `position_increment_gap`(기본값: `63`, `1`에서 `127` 사이)은 두 원소 사이에 비워 두는 위치의 개수를 설정합니다.
+이 공백은 [`hasPhrase`](#functions-example-hasphrase)가 요구하는 대로 구문이 하나의 원소를 벗어나지 않도록 하므로, 이 함수는 인덱스에서 직접 읽기로 처리됩니다.
+공백이 클수록 위치 데이터의 크기가 증가합니다.
+토큰이 없는 원소(빈 문자열, `NULL`)는 공백을 추가하지 않습니다.
+이 매개변수는 `support_phrase_search = 1`이 필요하며 `array` 토크나이저에서는 지원되지 않습니다. 이 토크나이저에서는 각 원소가 하나의 토큰이며, 구문이 연속된 원소에 걸쳐 있기 때문입니다.
 
 <Warning>
   이 인수는 실험적이며 테스트 용도로만 사용해야 합니다.

@@ -63,11 +63,11 @@ Dado un token de búsqueda, esta estructura de índice permite encontrar rápida
 ## Crear un índice de texto {#creating-a-text-index}
 
 Los índices de texto están disponibles de forma general (GA) en ClickHouse 26.2 y versiones posteriores.
-En estas versiones, no es necesario configurar ninguna opción especial para usar el índice de texto.
+En estas versiones, no es necesario configurar ningún ajuste especial para usar el índice de texto.
 Recomendamos encarecidamente usar ClickHouse &gt;= 26.2 para casos de uso en producción.
 
 <Note>
-  Los índices de texto pueden usarse con cualquier versión de ClickHouse &gt;= 26.2, independientemente de la configuración [compatibility](/es/reference/settings/session-settings/compatibility#compatibility).
+  Los índices de texto pueden usarse con cualquier versión de ClickHouse &gt;= 26.2, independientemente del ajuste [compatibility](/es/reference/settings/session-settings/compatibility#compatibility).
 </Note>
 
 Para crear un índice de texto, use la siguiente sintaxis:
@@ -94,6 +94,7 @@ CREATE TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -135,6 +136,7 @@ ALTER TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -623,6 +625,12 @@ El formato en disco aún no es estable, por lo que este parámetro es experiment
 Por lo tanto, crear un índice con `support_phrase_search = 1` requiere que esté habilitado el ajuste de MergeTree [`allow_experimental_text_index_phrase_search`](/es/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search).
 Establezca `support_phrase_search = 0` (el valor predeterminado) para conservar el almacenamiento solo con posting lists; los índices de texto creados sin este argumento siguen sin posiciones.
 Las posiciones almacenadas se pueden consultar en la columna `positions` de la función de tabla [mergeTreeTextIndex](/es/reference/functions/table-functions/mergeTreeTextIndex).
+
+En un índice sobre una columna `Array`, los tokens de todos los elementos de una fila comparten una única secuencia de posiciones, y el parámetro experimental `position_increment_gap` (predeterminado: `63`, entre `1` y `127`) establece el número de posiciones libres entre dos elementos.
+El hueco mantiene cada frase dentro de un único elemento, como exige [`hasPhrase`](#functions-example-hasphrase), de modo que la función se resuelve mediante lecturas directas del índice.
+Un hueco mayor aumenta el tamaño de las posiciones.
+Los elementos sin tokens (cadenas vacías, `NULL`) no añaden ningún hueco.
+El parámetro requiere `support_phrase_search = 1` y no es compatible con el tokenizador `array`: con este tokenizador, cada elemento es un único token y una frase abarca elementos consecutivos.
 
 <Warning>
   Este argumento es experimental y solo debe usarse para pruebas.

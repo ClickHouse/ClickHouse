@@ -94,6 +94,7 @@ CREATE TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -109,7 +110,7 @@ ORDER BY key
 
 * [String](/ja/reference/data-types/string) と [FixedString](/ja/reference/data-types/fixedstring)
 * [Array(String)](/ja/reference/data-types/array) と [Array(FixedString)](/ja/reference/data-types/array)
-* [Map](/ja/reference/data-types/map)。[`keyValuePairs`](#tokenizer-key-value-pairs) トークナイザーを使用して `Map` カラムに定義するか、[mapKeys](/ja/reference/functions/regular-functions/tuple-map-functions#mapKeys) または [mapValues](/ja/reference/functions/regular-functions/tuple-map-functions#mapValues) 関数を使用してマップのキーまたは値のみに定義します
+* [Map](/ja/reference/data-types/map)。[`keyValuePairs`](#tokenizer-key-value-pairs) トークナイザーを使用して `Map` カラムに定義するか、[mapKeys](/ja/reference/functions/regular-functions/tuple-map-functions#mapKeys) または [mapValues](/ja/reference/functions/regular-functions/tuple-map-functions#mapValues) 関数を使用してMapのキーまたは値のみに定義します
 * [JSON](/ja/reference/data-types/newjson) ([JSONAllPaths](/ja/reference/functions/regular-functions/json-functions#JSONAllPaths) および [`JSONAllValues`](/ja/reference/functions/regular-functions/json-functions#JSONAllValues) 関数経由)
 
 [Nullable(T)](/ja/reference/data-types/nullable) 型および [LowCardinality()](/ja/reference/data-types/lowcardinality) 型のカラムにも対応しており、`Array(Nullable(String or FixedString))` も含まれます。
@@ -135,6 +136,7 @@ ALTER TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -623,6 +625,12 @@ ORDER BY tuple();
 そのため、`support_phrase_search = 1` を指定して索引を作成するには、MergeTree 設定 [`allow_experimental_text_index_phrase_search`](/ja/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) を有効にする必要があります。
 ポスティングリストのみの保存を維持するには `support_phrase_search = 0` (デフォルト) を設定してください。この引数を指定せずに作成されたテキスト索引には位置情報は含まれません。
 保存された位置情報は、テーブル関数 [mergeTreeTextIndex](/ja/reference/functions/table-functions/mergeTreeTextIndex) の `positions` カラムで確認できます。
+
+`Array` カラム上の索引では、1 行内のすべての要素のトークンが 1 つの位置シーケンスを共有します。実験的なパラメータ `position_increment_gap` (デフォルト: `63`、`1` から `127` の範囲) は、要素と要素の間に空ける位置の数を設定します。
+このギャップによって、[`hasPhrase`](#functions-example-hasphrase) の要件どおりフレーズが 1 つの要素内に収まるため、この関数は索引からの direct read で処理できます。
+ギャップを大きくすると、位置情報のサイズが増加します。
+トークンを持たない要素 (空文字列、`NULL`) ではギャップは追加されません。
+このパラメータを使用するには `support_phrase_search = 1` が必要です。また、`array` トークナイザーではサポートされていません。このトークナイザーでは各要素が 1 つのトークンとなり、フレーズが連続する要素にまたがるためです。
 
 <Warning>
   この引数は 実験的 であり、テスト用途でのみ使用してください。

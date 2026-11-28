@@ -94,6 +94,7 @@ CREATE TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -135,6 +136,7 @@ ALTER TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -623,6 +625,12 @@ ORDER BY tuple();
 Поэтому для создания индекса с `support_phrase_search = 1` требуется, чтобы была включена настройка MergeTree [`allow_experimental_text_index_phrase_search`](/ru/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search).
 Установите `support_phrase_search = 0` (значение по умолчанию), чтобы сохранить хранение только списков вхождений; текстовые индексы, созданные без этого аргумента, остаются без позиций.
 Сохранённые позиции можно просмотреть в столбце `positions` табличной функции [mergeTreeTextIndex](/ru/reference/functions/table-functions/mergeTreeTextIndex).
+
+Для индекса по столбцу типа `Array` токены всех элементов строки используют общую последовательность позиций, а экспериментальный параметр `position_increment_gap` (по умолчанию: `63`, от `1` до `127`) задаёт количество свободных позиций между двумя соседними элементами.
+Пропуск не даёт фразе выйти за пределы одного элемента, как того требует [`hasPhrase`](#functions-example-hasphrase), поэтому функция может обрабатываться прямым чтением из индекса.
+Чем больше пропуск, тем больше объём данных о позициях.
+Элементы без токенов (пустые строки, `NULL`) пропуска не добавляют.
+Параметр требует `support_phrase_search = 1` и не поддерживается с токенизатором `array`: в нём каждый элемент является одним токеном, и фраза охватывает несколько последовательных элементов.
 
 <Warning>
   Этот аргумент является экспериментальным и должен использоваться только для тестирования.

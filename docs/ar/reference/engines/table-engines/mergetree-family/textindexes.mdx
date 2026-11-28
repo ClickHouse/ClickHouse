@@ -94,6 +94,7 @@ CREATE TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -109,7 +110,7 @@ ORDER BY key
 
 * [String](/ar/reference/data-types/string) و[FixedString](/ar/reference/data-types/fixedstring)،
 * [Array(String)](/ar/reference/data-types/array) و[Array(FixedString)](/ar/reference/data-types/array)،
-* [Map](/ar/reference/data-types/map)، إما على العمود من النوع `Map` باستخدام مُقسِّم الرموز [`keyValuePairs`](#tokenizer-key-value-pairs)، أو على مفاتيح الخريطة أو قيمها فقط باستخدام الدالة [mapKeys](/ar/reference/functions/regular-functions/tuple-map-functions#mapKeys) أو [mapValues](/ar/reference/functions/regular-functions/tuple-map-functions#mapValues)، و
+* [Map](/ar/reference/data-types/map)، إما على العمود من النوع `Map` باستخدام مُقسِّم الرموز [`keyValuePairs`](#tokenizer-key-value-pairs)، أو على مفاتيح Map أو قيمها فقط باستخدام الدالة [mapKeys](/ar/reference/functions/regular-functions/tuple-map-functions#mapKeys) أو [mapValues](/ar/reference/functions/regular-functions/tuple-map-functions#mapValues)، و
 * [JSON](/ar/reference/data-types/newjson) (باستخدام الدالتين [JSONAllPaths](/ar/reference/functions/regular-functions/json-functions#JSONAllPaths) و[`JSONAllValues`](/ar/reference/functions/regular-functions/json-functions#JSONAllValues)).
 
 كما أن الأعمدة من النوع [Nullable(T)](/ar/reference/data-types/nullable) و[LowCardinality()](/ar/reference/data-types/lowcardinality) مدعومة أيضًا، بما في ذلك `Array(Nullable(String or FixedString))`.
@@ -135,6 +136,7 @@ ALTER TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -553,22 +555,22 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 | [hasAny](/ar/reference/functions/regular-functions/array-functions#hasAny)                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | نعم                                      | `array`                                                                           | نعم               |
 | [hasAll](/ar/reference/functions/regular-functions/array-functions#hasAll)                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | نعم                                      | `array`                                                                           | نعم               |
 
-¹ تستخدم `LIKE` و`match` القراءة المباشرة كاستدلال مع مُقسِّمات الرموز المدرجة، وإلا فإنها تعود إلى المسح الشامل.
-وتدعم `LIKE` أيضًا التقييم عبر فحص القاموس (المفعّل عبر `use_text_index_like_evaluation_by_dictionary_scan`) لمُقسِّمَي الرموز `splitByNonAlpha` و`array` دون معالج مسبق أو معالج لاحق، انظر القسم [استعلامات LIKE/ILIKE](#like-ilike-queries-perf) أدناه.
-تُقيَّم [مقارنات `position`](#functions-example-position) على أنها `LIKE '%needle%'`، لذا يخدمها فحص القاموس هذا أيضًا، بما في ذلك مع مُقسِّم الرموز `array`.
+¹ تستخدم `LIKE` و`match` القراءة المباشرة كاستدلال مع مُقسِّمات الرموز المدرجة، وإلا فإنها تعود إلى المسح الشامل.
+وتدعم `LIKE` أيضًا التقييم عبر فحص القاموس (المفعّل عبر `use_text_index_like_evaluation_by_dictionary_scan`) لمُقسِّمَي الرموز `splitByNonAlpha` و`array` دون معالج مسبق أو معالج لاحق، انظر القسم [استعلامات LIKE/ILIKE](#like-ilike-queries-perf) أدناه.
+تُقيَّم [مقارنات `position`](#functions-example-position) على أنها `LIKE '%needle%'`، لذا يخدمها فحص القاموس هذا أيضًا، بما في ذلك مع مُقسِّم الرموز `array`.
 
-² لا تُدعم `ILIKE` إلا عبر التقييم بفحص القاموس (`use_text_index_like_evaluation_by_dictionary_scan = 1`، مع مُقسِّم الرموز `splitByNonAlpha` أو `array`).
-ولا توجد عودة إلى استخدام الفهرس كاستدلال للأنماط التي لا يدعمها فحص القاموس: فإذا كان الإعداد معطّلًا أو لم يكن مُقسِّم الرموز ضمن المجموعة المدعومة، فلن يُستخدم الفهرس مع `ILIKE`.
+² لا تُدعم `ILIKE` إلا عبر التقييم بفحص القاموس (`use_text_index_like_evaluation_by_dictionary_scan = 1`، مع مُقسِّم الرموز `splitByNonAlpha` أو `array`).
+ولا توجد عودة إلى استخدام الفهرس كاستدلال للأنماط التي لا يدعمها فحص القاموس: فإذا كان الإعداد معطّلًا أو لم يكن مُقسِّم الرموز ضمن المجموعة المدعومة، فلن يُستخدم الفهرس مع `ILIKE`.
 ويجب أن يكون المعالج المسبق، إن وُجد، `lower` أو `upper`؛ ولا تُدعم المعالجات اللاحقة.
 كما أن بعض سلاسل البحث غير مؤهلة، انظر [استعلامات LIKE/ILIKE](#like-ilike-queries-perf).
 
 ³ لا تدعم `hasPhrase` على فهرس نصي من نوع `splitByRegexp` وجود معالج لاحق: إذ يُرفض هذا الجمع مع رمي استثناء، لأن إعادة الكتابة على مستوى الصف التي يجريها المعالج اللاحق تفترض رموزًا مقسّمة بالمسافات على نمط `splitByNonAlpha`. أما من دون معالج لاحق، فإن `splitByRegexp` مدعوم بالكامل من قِبل `hasPhrase`.
 
 ⁴ تبحث `startsWith` و`endsWith` في الرموز الكاملة لسلسلة البحث، ويكون الرمز الواقع عند الطرف المفتوح من سلسلة البحث غير مكتمل لأن القيمة تستمر عنده: فـ `startsWith(col, 'ClickHouse is')` تبحث عن الرمز `ClickHouse`، بينما `startsWith(col, 'ClickHouse')` ليس لديها رمز كامل للبحث عنه.
-وتُقيَّم الحالة الأخيرة بدلًا من ذلك عبر فحص القاموس (`use_text_index_like_evaluation_by_dictionary_scan = 1`، مع مُقسِّم الرموز `splitByNonAlpha` أو `array`، ودون معالج مسبق أو معالج لاحق)، وهو المسار نفسه الذي يسلكه `col LIKE 'ClickHouse%'` لأن تمريرة الـ analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ar/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) تعيد كتابته إلى `startsWith`.
+وتُقيَّم الحالة الأخيرة بدلًا من ذلك عبر فحص القاموس (`use_text_index_like_evaluation_by_dictionary_scan = 1`، مع مُقسِّم الرموز `splitByNonAlpha` أو `array`، ودون معالج مسبق أو معالج لاحق)، وهو المسار نفسه الذي يسلكه `col LIKE 'ClickHouse%'` لأن تمريرة الـ analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ar/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) تعيد كتابته إلى `startsWith`.
 انظر [استعلامات LIKE/ILIKE](#like-ilike-queries-perf).
 
-⁵ يتجاهل عمود *مُقسِّمات الرموز المتوافقة* مُقسِّم الرموز [`keyValuePairs`](#tokenizer-key-value-pairs)، وهو مُقسِّم الرموز متخصص لأعمدة `Map`.
+⁵ يتجاهل عمود *مُقسِّمات الرموز المتوافقة* مُقسِّم الرموز [`keyValuePairs`](#tokenizer-key-value-pairs)، وهو مُقسِّم الرموز متخصص لأعمدة `Map`.
 
 **تجريبي: وسيطة دعم البحث عن العبارات (اختيارية)**.
 
@@ -579,6 +581,12 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 لذلك، يتطلب إنشاء فهرس مع `support_phrase_search = 1` تمكين إعداد MergeTree [`allow_experimental_text_index_phrase_search`](/ar/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search).
 اضبط `support_phrase_search = 0` (الافتراضي) للاحتفاظ بتخزين يعتمد على قائمة الترحيل فقط؛ وتبقى الفهارس النصية التي أُنشئت دون هذه الوسيطة بلا مواضع.
 يمكن فحص المواضع المخزّنة في العمود `positions` من دالة الجدول [mergeTreeTextIndex](/ar/reference/functions/table-functions/mergeTreeTextIndex).
+
+بالنسبة إلى الفهرس المُنشأ على عمود من نوع `Array`، تتشارك رموز جميع عناصر الصف الواحد تسلسلًا واحدًا من المواضع، وتحدد المعلمة التجريبية `position_increment_gap` (الافتراضي: `63`، بين `1` و`127`) عدد المواضع الفارغة بين كل عنصرين.
+تُبقي هذه الفجوة العبارة ضمن عنصر واحد، كما تشترط [`hasPhrase`](#functions-example-hasphrase)، بحيث يمكن الإجابة عن الدالة عبر القراءات المباشرة من الفهرس.
+وكلما كبرت الفجوة ازداد حجم بيانات المواضع.
+لا تضيف العناصر الخالية من الرموز (السلاسل الفارغة و`NULL`) أي فجوة.
+تتطلب هذه المعلمة `support_phrase_search = 1`، وهي غير مدعومة مع مُقسِّم الرموز `array`: إذ يكون كل عنصر فيه رمزًا واحدًا، وتمتد العبارة عبر عناصر متتالية.
 
 <Warning>
   هذه الوسيطة تجريبية ويجب استخدامها للاختبار فقط.

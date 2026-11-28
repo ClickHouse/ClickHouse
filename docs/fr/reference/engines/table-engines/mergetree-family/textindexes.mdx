@@ -94,6 +94,7 @@ CREATE TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -109,7 +110,7 @@ Les index de texte peuvent être définis sur des colonnes des types suivants :
 
 * [String](/fr/reference/data-types/string) et [FixedString](/fr/reference/data-types/fixedstring),
 * [Array(String)](/fr/reference/data-types/array) et [Array(FixedString)](/fr/reference/data-types/array),
-* [Map](/fr/reference/data-types/map), soit sur la colonne `Map` à l’aide du tokenizer [`keyValuePairs`](#tokenizer-key-value-pairs), soit uniquement sur les clés ou les valeurs de la map à l’aide de la fonction [mapKeys](/fr/reference/functions/regular-functions/tuple-map-functions#mapKeys) ou [mapValues](/fr/reference/functions/regular-functions/tuple-map-functions#mapValues), et
+* [Map](/fr/reference/data-types/map), soit sur la colonne `Map` à l’aide du segmenteur lexical [`keyValuePairs`](#tokenizer-key-value-pairs), soit uniquement sur les clés ou les valeurs de la map à l’aide de la fonction [mapKeys](/fr/reference/functions/regular-functions/tuple-map-functions#mapKeys) ou [mapValues](/fr/reference/functions/regular-functions/tuple-map-functions#mapValues), et
 * [JSON](/fr/reference/data-types/newjson) (à l’aide des fonctions [JSONAllPaths](/fr/reference/functions/regular-functions/json-functions#JSONAllPaths) et [`JSONAllValues`](/fr/reference/functions/regular-functions/json-functions#JSONAllValues)).
 
 Les colonnes de type [Nullable(T)](/fr/reference/data-types/nullable) et [LowCardinality()](/fr/reference/data-types/lowcardinality) sont également prises en charge, y compris `Array(Nullable(String or FixedString))`.
@@ -135,6 +136,7 @@ ALTER TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -156,7 +158,7 @@ Pour supprimer un index de texte, exécutez
 ALTER TABLE table DROP INDEX text_idx;
 ```
 
-**Argument du tokenizer (obligatoire)**. L’argument `tokenizer` précise le tokenizer :
+**Argument du segmenteur lexical (obligatoire)**. L’argument `tokenizer` précise le segmenteur lexical :
 
 * `splitByNonAlpha` divise les chaînes selon les caractères ASCII non alphanumériques (voir la fonction [splitByNonAlpha](/fr/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
 * `splitByString(S)` divise les chaînes à l&#39;aide de certaines chaînes séparatrices `S` définies par l&#39;utilisateur (voir la fonction [splitByString](/fr/reference/functions/regular-functions/splitting-merging-functions#splitByString)).
@@ -606,7 +608,7 @@ Il n’existe aucun repli consistant à utiliser l’index comme indice pour les
 Le préprocesseur, s’il est présent, doit être `lower` ou `upper` ; les postprocesseurs ne sont pas pris en charge.
 Certains needles ne sont en outre pas éligibles ; voir [requêtes LIKE/ILIKE](#like-ilike-queries-perf).
 
-³ `hasPhrase` sur un index textuel `splitByRegexp` ne prend **pas** en charge de postprocesseur : la combinaison est rejetée avec une exception, car la réécriture row-level du postprocesseur suppose des jetons de style `splitByNonAlpha` découpés sur les espaces. Sans postprocesseur, `splitByRegexp` est entièrement pris en charge par `hasPhrase`.
+³ `hasPhrase` sur un index de texte `splitByRegexp` ne prend **pas** en charge de postprocesseur : la combinaison est rejetée avec une exception, car la réécriture row-level du postprocesseur suppose des jetons de style `splitByNonAlpha` découpés sur les espaces. Sans postprocesseur, `splitByRegexp` est entièrement pris en charge par `hasPhrase`.
 
 ⁴ `startsWith` et `endsWith` recherchent les jetons complets du needle, et le jeton situé à l&#39;extrémité ouverte du needle est incomplet car la valeur s&#39;y poursuit : `startsWith(col, 'ClickHouse is')` recherche le jeton `ClickHouse`, tandis que `startsWith(col, 'ClickHouse')` n&#39;a aucun jeton complet à rechercher.
 Ce dernier est alors évalué par un dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizer `splitByNonAlpha` ou `array`, sans préprocesseur ni postprocesseur), qui est également le chemin emprunté par `col LIKE 'ClickHouse%'`, car la passe de l&#39;analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/fr/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) la réécrit en `startsWith`.
@@ -621,8 +623,14 @@ Lorsqu’il est défini sur `1`, l’index stocke également des données de pos
 Le stockage des positions augmente la taille de l’index sur disque et le coût d’écriture ; il est donc optionnel.
 Le format sur disque n’est pas encore stable ; ce paramètre est donc expérimental et pourrait changer dans une prochaine version.
 La création d’un index avec `support_phrase_search = 1` nécessite donc que le paramètre MergeTree [`allow_experimental_text_index_phrase_search`](/fr/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) soit activé.
-Définissez `support_phrase_search = 0` (la valeur par défaut) pour conserver un stockage reposant uniquement sur des posting lists ; les index textuels créés sans cet argument restent sans positions.
+Définissez `support_phrase_search = 0` (la valeur par défaut) pour conserver un stockage reposant uniquement sur des posting lists ; les index de texte créés sans cet argument restent sans positions.
 Les positions stockées peuvent être consultées dans la colonne `positions` de la fonction de table [mergeTreeTextIndex](/fr/reference/functions/table-functions/mergeTreeTextIndex).
+
+Pour un index sur une colonne `Array`, les jetons de tous les éléments d’une ligne partagent une même séquence de positions, et le paramètre expérimental `position_increment_gap` (par défaut : `63`, entre `1` et `127`) définit le nombre de positions libres entre deux éléments.
+Cette lacune maintient une expression au sein d’un seul élément, comme l’exige [`hasPhrase`](#functions-example-hasphrase), afin que la fonction soit résolue par des lectures directes depuis l’index.
+Une lacune plus grande augmente la taille des positions.
+Les éléments sans jetons (chaînes vides, `NULL`) n’ajoutent aucune lacune.
+Ce paramètre nécessite `support_phrase_search = 1` et n’est pas pris en charge avec le tokenizer `array` : dans ce cas, chaque élément constitue un seul jeton, et une expression s’étend sur des éléments consécutifs.
 
 <Warning>
   Cet argument est expérimental et ne doit être utilisé que pour des tests.
