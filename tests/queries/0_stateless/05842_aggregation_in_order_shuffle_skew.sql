@@ -1,0 +1,85 @@
+-- Shuffled aggregation-in-order on skewed inputs. The per-shard sorted merges consume their inputs selectively,
+-- so the repartitioning relies on progress markers (virtual rows) instead of buffering: it must neither hang nor
+-- read ahead without limit, whatever the distribution of the keys, and must return the same result as the
+-- ordinary aggregation.
+
+SET enable_parallel_replicas = 0;
+SET read_in_order_use_virtual_row = 0;
+-- The shuffle is disabled when `max_rows_to_group_by` is set (see 04514).
+SET max_rows_to_group_by = 0;
+SET merge_tree_min_rows_for_concurrent_read = 0;
+SET merge_tree_min_bytes_for_concurrent_read = 0;
+
+DROP TABLE IF EXISTS t_aio_shuffle_skew;
+CREATE TABLE t_aio_shuffle_skew (k UInt64, v UInt64, s String, lc LowCardinality(String), d Dynamic)
+ENGINE = MergeTree ORDER BY k
+-- The query under `max_memory_usage` below holds up to 16 blocks per stream plus the read buffers, so its memory
+-- depends on the size of a block and of a compressed block, and on the number of read buffers (the packed part
+-- storage on an object storage needs more of them). Do not let the randomized settings enlarge them.
+-- A granule is as small as a block of the query (`max_block_size = 1024`), because compact parts are read by whole
+-- granules whatever the `max_block_size`, and the part type depends on the randomized `min_bytes_for_wide_part`.
+SETTINGS index_granularity = 1024, index_granularity_bytes = '10M', min_compress_block_size = 65536, max_compress_block_size = 1048576,
+    min_bytes_for_full_part_storage = 0;
+
+-- Every part holds a single key, so each input stream sends all of its rows to one shard for a long time, while
+-- every other shard waits for that stream. Without markers this either deadlocks or buffers whole parts.
+-- The rows are few and wide: the test is about the amount of buffered data, and the time it takes is in the number
+-- of rows (it runs under sanitizers with the thread fuzzer as well).
+SYSTEM STOP MERGES t_aio_shuffle_skew;
+INSERT INTO t_aio_shuffle_skew SELECT 1, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 2, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 3, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 4, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 5, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 6, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 7, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 8, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+
+SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') > 0
+FROM (EXPLAIN PIPELINE SELECT k, sum(v) FROM t_aio_shuffle_skew GROUP BY k
+      SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1);
+
+-- The repartitioning holds a few blocks per stream, not whole parts: the query takes 10 to 40 MB with blocks of
+-- 1024 rows, while a part is about 31 MB in memory (250 MB in total), and seven of the eight streams wait for the
+-- first one.
+SELECT k, sum(v), max(s) = repeat('99999', 60), max(lc), count(d) FROM t_aio_shuffle_skew GROUP BY k ORDER BY k
+SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1, max_block_size = 1024,
+    max_memory_usage = '100M';
+
+-- `GROUP BY k, v % 7` reads in the order of `k` alone, so rows with equal sort keys go to different shards.
+SELECT
+    (SELECT groupBitXor(cityHash64(k, m, c, x)) FROM (SELECT k, v % 7 AS m, count() AS c, max(s) AS x FROM t_aio_shuffle_skew GROUP BY k, m)
+        SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1)
+  = (SELECT groupBitXor(cityHash64(k, m, c, x)) FROM (SELECT k, v % 7 AS m, count() AS c, max(s) AS x FROM t_aio_shuffle_skew GROUP BY k, m)
+        SETTINGS max_threads = 8, optimize_aggregation_in_order = 0);
+
+-- Runs of keys that interleave between parts, with many more shards than streams.
+TRUNCATE TABLE t_aio_shuffle_skew;
+INSERT INTO t_aio_shuffle_skew SELECT intDiv(number, 12500) * 3, number, '', '', NULL FROM numbers(150000);
+INSERT INTO t_aio_shuffle_skew SELECT intDiv(number, 17500) * 3 + 1, number, '', '', NULL FROM numbers(150000);
+INSERT INTO t_aio_shuffle_skew SELECT intDiv(number, 7500) * 2, number, '', '', NULL FROM numbers(150000);
+
+SELECT
+    (SELECT groupBitXor(cityHash64(k, s)) FROM (SELECT k, sum(v) AS s FROM t_aio_shuffle_skew GROUP BY k)
+        SETTINGS max_threads = 16, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1)
+  = (SELECT groupBitXor(cityHash64(k, s)) FROM (SELECT k, sum(v) AS s FROM t_aio_shuffle_skew GROUP BY k)
+        SETTINGS max_threads = 16, optimize_aggregation_in_order = 0);
+
+DROP TABLE t_aio_shuffle_skew;
+
+-- Aggregate states that keep their payload outside of arenas are shuffled as well.
+DROP TABLE IF EXISTS t_aio_shuffle_skew_states;
+CREATE TABLE t_aio_shuffle_skew_states (k UInt64, u AggregateFunction(uniqExact, UInt64), a AggregateFunction(groupArray, UInt64))
+ENGINE = AggregatingMergeTree ORDER BY k;
+SYSTEM STOP MERGES t_aio_shuffle_skew_states;
+INSERT INTO t_aio_shuffle_skew_states SELECT number % 4, uniqExactState(number), groupArrayState(number) FROM numbers(10000) GROUP BY number % 4;
+INSERT INTO t_aio_shuffle_skew_states SELECT number % 4, uniqExactState(number), groupArrayState(number) FROM numbers(10000, 10000) GROUP BY number % 4;
+
+SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') > 0
+FROM (EXPLAIN PIPELINE SELECT k, uniqExactMerge(u) FROM t_aio_shuffle_skew_states GROUP BY k
+      SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1);
+
+SELECT k, uniqExactMerge(u), length(groupArrayMerge(a)) FROM t_aio_shuffle_skew_states GROUP BY k ORDER BY k
+SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1;
+
+DROP TABLE t_aio_shuffle_skew_states;
