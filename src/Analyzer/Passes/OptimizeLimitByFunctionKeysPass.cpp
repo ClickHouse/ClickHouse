@@ -3,6 +3,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -33,7 +34,16 @@ public:
         if (!query->hasLimitBy())
             return;
 
-        removeKeysThatAreFunctionsOfOtherKeys(query->getLimitBy().getNodes());
+        /// A `GROUP BY` key is not a function of other ones in subtotals: it can have a default value there.
+        const bool has_subtotals = query->isGroupByWithRollup() || query->isGroupByWithCube() || query->isGroupByWithGroupingSets();
+        auto & keys = query->getLimitBy().getNodes();
+        const QueryTreeNodePtrWithHashSet all_keys(keys.begin(), keys.end());
+        removeKeysThatAreFunctionsOfOtherKeys(keys, has_subtotals ? getGroupByKeys(*query) : QueryTreeNodes{});
+
+        /// A positional argument keeps the aliases that the projection loses, so a remote server can find different definitions of them.
+        for (auto & key : keys)
+            if (has_subtotals && isExpressionFunctionOfKeys(key, all_keys))
+                removeAliasesRecursive(key);
     }
 };
 

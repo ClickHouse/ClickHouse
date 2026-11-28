@@ -57,7 +57,7 @@ public:
             return;
 
         auto & group_by = query->getGroupBy().getNodes();
-        removeKeysThatAreFunctionsOfOtherKeys(group_by);
+        removeKeysThatAreFunctionsOfOtherKeys(group_by, {}, getGroupingFunctionArguments(*query));
     }
 };
 
