@@ -26,10 +26,17 @@ INSERT INTO t_constraint_corr SELECT number AS i, toString(number) AS a, 1 AS b 
 
 -- Case 1: The original AST fuzzer crash query (simplified).
 -- Without the fix, this aborts with LOGICAL_ERROR (Bad cast FunctionNode -> ColumnNode).
--- With the fix, the query executes successfully.
+-- With the fix, the query passes the analyzer, and the planner rejects the correlated columns in `PREWHERE`.
 SELECT count() FROM t_constraint_corr
 WHERE exists(
     (SELECT toUInt8(1) PREWHERE murmurHash3_64(xxHash32(a, intDiv(2, xxHash32(0, toInt256(0) = b))), multiply(10, 10)))
+)
+SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1, optimize_using_constraints = 1; -- { serverError ILLEGAL_PREWHERE }
+
+-- The same in `WHERE` executes successfully.
+SELECT count() FROM t_constraint_corr
+WHERE exists(
+    (SELECT toUInt8(1) WHERE murmurHash3_64(xxHash32(a, intDiv(2, xxHash32(0, toInt256(0) = b))), multiply(10, 10)))
 )
 SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1, optimize_using_constraints = 1;
 
