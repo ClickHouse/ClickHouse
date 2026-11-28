@@ -42,6 +42,7 @@ void removeMisboundDefaultsFromStructureHint(
     ColumnsDescription & structure_hint, const NameToNameSetMap & insertion_columns_by_hint_column, const ColumnsDescription & insertion_columns);
 
 /// Names and types of `columns`, plus each `DEFAULT` without secret arguments that the nodes can evaluate from them.
+/// A column whose `DEFAULT` is not sent is read from the files as is, which is the value stored for it, so a `DEFAULT` reading it is sent.
 String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns);
 
 }
