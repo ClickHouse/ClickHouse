@@ -38,11 +38,15 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Whether `State` reads the bytes of a row's key from the block's column without building the key.
+    template <typename State>
+    constexpr bool adaptive_state_has_key_bytes = requires(const State & state) { state.getKeyBytes(size_t{}); };
+
     /// Whether `State` reads the bytes of its keys in place, from the block's padded column buffers, which
     /// hold them for the whole block: the bytes of a string key by `getKeyBytes`, and the packed values and
     /// the string of a key of fixed-width values and a string by `getKeyParts`.
     template <typename State>
-    constexpr bool adaptive_state_reads_key_bytes_in_place = requires(const State & state) { state.getKeyBytes(size_t{}); }
+    constexpr bool adaptive_state_reads_key_bytes_in_place = adaptive_state_has_key_bytes<State>
         || requires(const State & state) { state.getKeyParts(size_t{}); };
 
     /// Whether the kernel of `State` may keep the bytes of its missed string-like keys in the batch (see
@@ -52,6 +56,20 @@ namespace
     template <typename RecordKey, typename State>
     constexpr bool adaptive_misses_may_keep_key_bytes
         = adaptive_key_stages_bytes<RecordKey> && !adaptive_state_reads_key_bytes_in_place<State>;
+
+    /// What the previous row of the frozen count kernel added to.
+    enum class AdaptivePreviousRow : UInt8
+    {
+        None,
+        Hit,
+        Miss,
+    };
+
+    /// Whether the frozen count kernel compares a row's key with the previous row's before hashing it: a fixed-width key,
+    /// or a string key whose bytes the state reads from the block's column. Serialized keys are not compared.
+    template <typename RecordKey, typename State>
+    constexpr bool adaptive_compare_with_previous_row
+        = adaptive_state_has_key_bytes<State> || !std::is_same_v<RecordKey, std::string_view>;
 
     /// Whether the kernel of `state` keeps the bytes of its missed string-like keys in the batch. A state whose key
     /// views are block-stable, which the batch serialization of the serialized methods guarantees, returns the bytes
@@ -84,7 +102,7 @@ namespace
     {
         if (!size)
             return;
-        if constexpr (requires { state.getKeyBytes(row); })
+        if constexpr (adaptive_state_has_key_bytes<State>)
         {
             const char * data = state.getKeyBytes(row).data();
             copyPaddedKeyBytes(data, size, staged);
@@ -284,6 +302,9 @@ AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectCombinedMisses(
     const auto keep_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(find_state);
     constexpr bool can_combine_partition_misses = adaptive_key_stages_bytes<RecordKey>
         && adaptive_state_reads_key_bytes_in_place<State>;
+    constexpr bool compare_with_previous = with_count && adaptive_compare_with_previous_row<RecordKey, State>;
+    constexpr bool compare_key_bytes = compare_with_previous && adaptive_state_has_key_bytes<State>;
+    constexpr bool compare_key_value = compare_with_previous && !adaptive_state_has_key_bytes<State>;
     [[maybe_unused]] const bool stable_key_views = find_state.keyViewsAreBlockStable();
     struct PartitionMissEntry
     {
@@ -318,6 +339,35 @@ AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectCombinedMisses(
         size_t combined_records = 0;
         bool stop_combining = false;
         RecordKey last_staged_key{};
+        /// A row with the previous row's key adds to what the previous row added to: a count of the table or a record.
+        [[maybe_unused]] AdaptivePreviousRow previous = AdaptivePreviousRow::None;
+        [[maybe_unused]] UInt64 * previous_count = nullptr;
+        [[maybe_unused]] std::string_view previous_bytes;
+        [[maybe_unused]] RecordKey previous_key{};
+        [[maybe_unused]] const auto add_to_previous = [&]() ALWAYS_INLINE
+        {
+            if (previous == AdaptivePreviousRow::Hit)
+            {
+                ++hits;
+                ++*previous_count;
+            }
+            else
+            {
+                if constexpr (combine_partition_misses)
+                    misses.incrementCount(last_record);
+                else
+                    misses.incrementLastCount();
+            }
+        };
+        [[maybe_unused]] const auto set_previous
+            = [&](AdaptivePreviousRow row, std::string_view bytes, const RecordKey & key) ALWAYS_INLINE
+        {
+            previous = row;
+            if constexpr (compare_key_bytes)
+                previous_bytes = bytes;
+            else
+                previous_key = key;
+        };
         for (size_t i = begin; i < row_end; ++i)
         {
             /// A NULL key goes to its slot without a lookup (see `AdaptiveAggregationProducer::FrozenState`),
@@ -331,8 +381,28 @@ AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectCombinedMisses(
                 }
             }
 
+            [[maybe_unused]] std::string_view row_bytes;
+            if constexpr (compare_key_bytes)
+            {
+                row_bytes = find_state.getKeyBytes(i);
+                if (previous != AdaptivePreviousRow::None && row_bytes == previous_bytes)
+                {
+                    add_to_previous();
+                    continue;
+                }
+            }
+
             auto && key_holder = find_state.getKeyHolder(i, scratch_pool);
             const auto & key = keyHolderGetKey(key_holder);
+            if constexpr (compare_key_value)
+            {
+                if (previous != AdaptivePreviousRow::None && RecordKey(key) == previous_key)
+                {
+                    add_to_previous();
+                    keyHolderDiscardKey(key_holder);
+                    continue;
+                }
+            }
 
             if constexpr (is_keys_and_packed_string<RecordKey>)
             {
@@ -364,12 +434,19 @@ AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectCombinedMisses(
                     ++hits;
                     if constexpr (with_count)
                         ++getInlineCountState(it->getMapped());
+                    if constexpr (compare_with_previous)
+                    {
+                        previous_count = &getInlineCountState(it->getMapped());
+                        set_previous(AdaptivePreviousRow::Hit, row_bytes, key);
+                    }
                     keyHolderDiscardKey(key_holder);
                     continue;
                 }
             }
 
             const RecordKey staged_key = key;
+            if constexpr (compare_with_previous)
+                set_previous(AdaptivePreviousRow::Miss, row_bytes, staged_key);
 
             /// Without combining, the previous record is always the last descriptor. Spelling it so keeps
             /// `first_record` and `last_record` out of the loop of the keys that never combine.
@@ -457,8 +534,10 @@ AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectCombinedMisses(
             {
                 /// The key views of a state whose batch keeps the key bytes do not outlive their row, so no record
                 /// takes more rows, and staging the batch in the middle of the block splits none. Combining needs the
-                /// key bytes of `getKeyBytes`, which such a state lacks.
+                /// key bytes of `getKeyBytes`, which such a state lacks, and the previous row's record does not
+                /// survive the staging.
                 static_assert(!combine_partition_misses);
+                static_assert(!compare_with_previous);
                 if (missBatchKeyBytesFull(misses, keep_key_bytes))
                 {
                     chassert(!stable_key_views);
