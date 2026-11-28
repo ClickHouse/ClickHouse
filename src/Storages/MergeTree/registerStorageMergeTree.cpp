@@ -2059,7 +2059,7 @@ TTL date_time + INTERVAL 15 HOUR
 
 When the values in the column expire, ClickHouse replaces them with the default values for the column data type. If all the column values in the data part expire, ClickHouse deletes this column from the data part in a filesystem.
 
-The `TTL` clause can't be used for key columns, or for columns whose subcolumns are used in the sorting or partition key.
+The `TTL` clause can't be used for key columns, or for columns whose subcolumns are used in the sorting or partition key. It can't be used for `ALIAS` or `EPHEMERAL` columns either: they are not stored.
 
 **Examples**
 
