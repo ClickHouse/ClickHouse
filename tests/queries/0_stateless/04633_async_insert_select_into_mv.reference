@@ -1,0 +1,16 @@
+view with an inner table
+INSERT ... SELECT is eligible for the asynchronous insert queue route
+[0,1,2]
+TO view, the target fills defaults and feeds its own view
+INSERT ... SELECT is eligible for the asynchronous insert queue route
+[(0,42),(1,42),(2,42)]
+[0,10,20]
+SELECT reads the view target
+INSERT ... SELECT is eligible for the asynchronous insert queue route
+6
+Memory target
+INSERT ... SELECT will be executed synchronously (reason: destination table is not a MergeTree-family table)
+3
+refreshable view
+INSERT ... SELECT is eligible for the asynchronous insert queue route
+3

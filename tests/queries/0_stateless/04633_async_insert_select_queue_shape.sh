@@ -46,8 +46,8 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_04633_bulk_dst"
 
-# Case 2: a destination with a dependent materialized view never reaches the queue, regardless of
-# result shape, since a view target can be any engine. parallel_view_processing still applies.
+# Case 2: a destination with a dependent materialized view over a MergeTree target reaches the queue,
+# and the flush feeds the view.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_04633_mv_dst"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_04633_mv_target"
 ${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS test_04633_mv"
@@ -89,16 +89,16 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_04633_single"
 # assert an absent row, which nothing can wait for, so they flush once.
 reached_queue=0
 for _ in $(seq 1 60); do
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
-    reached_queue=$(${CLICKHOUSE_CLIENT} -q "
+	${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
+	reached_queue=$(${CLICKHOUSE_CLIENT} -q "
         SELECT count() >= 1
         FROM system.asynchronous_insert_log
         WHERE event_date >= yesterday() AND event_time >= now() - 600
           AND database = currentDatabase()
           AND table = 'test_04633_single'
     ")
-    [ "$reached_queue" = 1 ] && break
-    sleep 0.5
+	[ "$reached_queue" = 1 ] && break
+	sleep 0.5
 done
 echo "$reached_queue"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_04633_single"

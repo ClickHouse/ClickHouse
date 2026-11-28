@@ -13,6 +13,7 @@
 #include <exception>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class InsertDependenciesSnapshot_TargetSharedByTwoViewsKeepsFirstSnapshot_Test;
@@ -117,6 +118,9 @@ public:
     Chain createChainWithDependencies(InputPort * returning_input = nullptr) const;
     Chain createChainForDeduplicationRetry(const DeduplicationInfo & info, const std::string & partition_id) const;
     bool isViewsInvolved() const;
+
+    /// True if every view below the destination is materialized and every target is a `MergeTree`-family table.
+    bool viewTargetsArePlainMergeTree() const;
 
     void logQueryView(StorageID view_id, std::exception_ptr exception, bool before_start = false) const;
     StorageIDMaybeEmpty getRootViewID() const { return root_view; }

@@ -1,0 +1,10 @@
+self queued: 1
+4000
+view_target queued: 1
+2000
+4000
+subquery queued: 1
+4000
+view_reads queued: 1
+2000
+2000
