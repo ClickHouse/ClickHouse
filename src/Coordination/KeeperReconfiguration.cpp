@@ -84,7 +84,9 @@ String serializeClusterConfig(const ClusterConfigPtr & cfg, const ClusterUpdateA
         else if (const auto * priority = std::get_if<UpdateRaftServerPriority>(&update))
         {
             remove_update_ids.insert(priority->id);
-            new_config.emplace_back(RaftServerConfig{*cfg->get_server(priority->id)});
+            RaftServerConfig updated{*cfg->get_server(priority->id)};
+            updated.priority = priority->priority;
+            new_config.emplace_back(std::move(updated));
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected update");
