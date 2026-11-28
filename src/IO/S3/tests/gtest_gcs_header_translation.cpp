@@ -641,4 +641,40 @@ TEST(GCSHeaderTranslation, CopyObjectIsNotRetriedAfterTheAdaptiveTimeout)
     EXPECT_GE(watch.elapsedMilliseconds(), 3500u);
 }
 
+/// GCS names the version of an object `generation`. A request for a version, which the SDK builds
+/// with `versionId`, has to leave with `generation`, both unsigned and signed with HMAC keys.
+TEST(GCSHeaderTranslation, VersionIdLeavesAsGeneration)
+{
+    for (const std::string access_key_id : {"", "GOOG1EXAMPLE"})
+    {
+        std::mutex mutex;
+        std::vector<std::string> uris;
+        ScriptedGCSServer server([&](size_t, const Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+        {
+            {
+                std::lock_guard lock(mutex);
+                uris.push_back(request.getURI());
+            }
+            respond(response, Poco::Net::HTTPResponse::HTTP_OK);
+        });
+        DB::RemoteHostFilter remote_host_filter;
+        auto client = makeClientTalkingToMockGCS(
+            server.getPort(), remote_host_filter, {}, access_key_id, access_key_id.empty() ? "" : "secret");
+        ASSERT_TRUE(client);
+
+        DB::S3::HeadObjectRequest request;
+        request.SetBucket("test-bucket");
+        request.SetKey("test.txt");
+        request.SetVersionId("1700000000000000");
+
+        const auto outcome = client->HeadObject(request);
+        ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
+
+        std::lock_guard lock(mutex);
+        ASSERT_EQ(uris.size(), 1u);
+        EXPECT_TRUE(uris[0].contains("generation=1700000000000000")) << uris[0];
+        EXPECT_FALSE(uris[0].contains("versionId")) << uris[0];
+    }
+}
+
 #endif
