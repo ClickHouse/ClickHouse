@@ -1,5 +1,6 @@
 import pytest
 
+from helpers.ci_logs_export import without_sender_user
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -456,8 +457,16 @@ def test_changeable_in_readonly():
 
 def test_show_profiles():
     instance.query("CREATE SETTINGS PROFILE xyz")
-    assert instance.query("SHOW SETTINGS PROFILES") == "default\nreadonly\nxyz\n"
-    assert instance.query("SHOW PROFILES") == "default\nreadonly\nxyz\n"
+    # The CI logs export adds the `ci_logs_sender` profile to every instance, see
+    # helpers/ci_logs_export.py
+    assert (
+        without_sender_user(instance.query("SHOW SETTINGS PROFILES"))
+        == "default\nreadonly\nxyz\n"
+    )
+    assert (
+        without_sender_user(instance.query("SHOW PROFILES"))
+        == "default\nreadonly\nxyz\n"
+    )
 
     assert (
         instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE `xyz`\n"
@@ -476,7 +485,10 @@ def test_show_profiles():
         "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE `xyz`\n",
     ]
-    assert instance.query("SHOW CREATE PROFILES") in query_expected_response
+    assert (
+        without_sender_user(instance.query("SHOW CREATE PROFILES"))
+        in query_expected_response
+    )
 
     expected_access = (
         "CREATE SETTINGS PROFILE `default`\n"

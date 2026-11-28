@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS tdm;
 DROP TABLE IF EXISTS tdm2;
 CREATE TABLE tdm (x DateTime('Asia/Istanbul')) ENGINE = MergeTree ORDER BY x SETTINGS write_final_mark = 0;

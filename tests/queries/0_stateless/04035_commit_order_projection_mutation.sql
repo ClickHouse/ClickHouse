@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
 
+-- Commit order projection tracks physical insertion order via _block_number/_block_offset which changes under reversed key.
+SET force_primary_key_reverse_order = 0;
 DROP TABLE IF EXISTS mt_mutation_test SYNC;
 
 CREATE TABLE mt_mutation_test(

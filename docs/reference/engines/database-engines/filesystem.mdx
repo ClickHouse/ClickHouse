@@ -34,7 +34,7 @@ The database owns no table definitions: tables are created when their files are 
 
 ## Access control {#access-control}
 
-On ClickHouse server, the database directory and every resolved file must be inside [`user_files_path`](/reference/settings/server-settings/settings#user_files_path); this restriction also applies after following symlinks. `clickhouse-local` is not restricted to `user_files_path`.
+On ClickHouse server, the database directory and every resolved file must be inside [`user_files_path`](/reference/settings/server-settings/settings#user_files_path); this restriction also applies after following symlinks. Every resolved file must also be inside the database directory, so a table name cannot point outside it with `..` or an absolute path. `clickhouse-local` is not restricted to `user_files_path`.
 
 Creating this database requires `READ` and `WRITE` source grants on `FILE`, regardless of [`table_engines_require_grant`](/reference/settings/server-settings/settings/other#table_engines_require_grant). Grant them with, for example:
 

@@ -3,8 +3,23 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", stay_alive=True, main_configs=["configs/config.xml"])
-node2 = cluster.add_instance("node2", stay_alive=True, main_configs=["configs/config.xml"], cpu_limit=6)
+# The tests measure the CPU time of an idle `node1` over the last minute, and
+# the export of the system logs to the CI Logs cluster (see
+# helpers/ci_logs_export.py) materialises every log table from a dozen threads
+# at startup, which is inside that window: keep it off for all nodes.
+node1 = cluster.add_instance(
+    "node1",
+    stay_alive=True,
+    main_configs=["configs/config.xml"],
+    with_ci_logs_export=False,
+)
+node2 = cluster.add_instance(
+    "node2",
+    stay_alive=True,
+    main_configs=["configs/config.xml"],
+    cpu_limit=6,
+    with_ci_logs_export=False,
+)
 # No CPU quota, the limit is only in the cpuset: as for a Kubernetes pod with exclusive CPUs
 # under the `static` CPU manager policy, where `cpu.max` is `max`.
 node3 = cluster.add_instance(
@@ -13,6 +28,7 @@ node3 = cluster.add_instance(
     main_configs=["configs/config.xml"],
     cpu_limit=False,
     cpuset="0-1",
+    with_ci_logs_export=False,
 )
 # A quota larger than the cpuset: the cpuset is the limit.
 node4 = cluster.add_instance(
@@ -21,6 +37,7 @@ node4 = cluster.add_instance(
     main_configs=["configs/config.xml"],
     cpu_limit=4,
     cpuset="0-1",
+    with_ci_logs_export=False,
 )
 
 

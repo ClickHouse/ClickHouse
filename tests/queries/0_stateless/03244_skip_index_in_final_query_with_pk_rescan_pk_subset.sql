@@ -1,4 +1,6 @@
 -- add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
+-- Disable force_primary_key_reverse_order: tests FINAL with skip index on ReplacingMergeTree, behavior depends on key direction
+SET force_primary_key_reverse_order = 0;
 SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS rmt1;
 

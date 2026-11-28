@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the test relies on the layout of granules of an ascending key (the first granule has fewer rows than the next ones)
+SET force_primary_key_reverse_order = 0;
+
 -- The size of the next read is estimated from the position of the readers chain.
 -- The last PREWHERE step here reads no columns (`a + b > 11` needs only columns read by earlier steps),
 -- so its stream never moves from mark 0. The estimate took the mark from that step and the offset in the granule

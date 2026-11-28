@@ -1,0 +1,12 @@
+t_grouped_function	tuple(a DESC, b DESC)
+t_grouped_pk	tuple(a DESC, b DESC)
+t_grouped_tuple	tuple(a DESC, b DESC)
+t_grouped_function	tuple(a DESC, b DESC)
+t_grouped_pk	tuple(a DESC, b DESC)
+t_grouped_tuple	tuple(a DESC, b DESC)
+1	2
+3	4
+1	2
+3	4
+1	2
+3	4

@@ -593,6 +593,20 @@ Refreshable materialized views always receive the defaults, regardless of this s
 Changing this setting affects only views created afterwards; the stored definitions of existing views stay unchanged.
 </Note>
 
+## implicit_default_workload {#implicit_default_workload}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />
+When enabled, a `default` workload is created implicitly if one is not defined explicitly, so that queries using the default `workload` setting are scheduled. The implicit `default` workload cannot be a parent of other workloads; create `default` explicitly for that. Enable it together with `workloads_respect_server_cpu_limit` and `workloads_respect_server_memory_limit`: it brings those queries under the server-wide budgets, and the background merges and mutations that use the default workload under the CPU budget. Changeable at runtime. Disabled by default.
+
+**Example**
+
+```xml
+<implicit_default_workload>true</implicit_default_workload>
+```
+
+**See Also**
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+
 ## include_from {#include_from}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />

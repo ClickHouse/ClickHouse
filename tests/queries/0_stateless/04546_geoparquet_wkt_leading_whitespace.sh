@@ -89,7 +89,7 @@ for i, wkt in enumerate(bad_values):
     write_geoparquet(out + f"/wkt_bad_{i}.parquet", ids=[1], wkts=[wkt], geometry_types=[])
 PYEOF
 
-GEO_SETTINGS="--input_format_parquet_use_native_reader_v3=1 --input_format_parquet_allow_geoparquet_parser=1"
+GEO_SETTINGS="--input_format_parquet_allow_geoparquet_parser=1"
 
 $CLICKHOUSE_LOCAL $GEO_SETTINGS -q \
     "SELECT id, variantType(geom), geom FROM file('$TMP_DIR/wkt_ws.parquet', Parquet) ORDER BY id"

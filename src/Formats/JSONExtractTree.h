@@ -42,6 +42,9 @@ struct JSONExtractInsertSettings
     /// Used inside `VariantNode` so that `Variant(IntT, FloatT)` picks the float member
     /// for fractional values instead of silently dropping the fractional part.
     bool no_int_truncation_from_double = false;
+    /// If true, `Bool` accepts only JSON booleans, not numbers or numeric strings.
+    /// Used inside `VariantNode` so that `Variant(Bool, IntT)` keeps `2` as `IntT` instead of `true`.
+    bool no_number_to_bool_conversion = false;
 };
 
 template <typename JSONParser>

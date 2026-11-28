@@ -55,6 +55,7 @@
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ComplexTypeSchemaProcessorFunctions.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -713,6 +714,37 @@ static std::shared_ptr<const ActionsDAG> getFilterOverFileColumns(const ActionsD
     auto composed = ActionsDAG::merge(std::move(file_to_current), std::move(filter_copy));
     ActionsDAG::NodeRawConstPtrs outputs(composed.getOutputs().begin(), composed.getOutputs().begin() + num_filter_outputs);
     return std::make_shared<const ActionsDAG>(ActionsDAG::cloneSubDAG(outputs, /*remove_aliases=*/ true));
+}
+
+/// The bytes per row of the constant columns that `dag` materializes, e.g. the `initial-default` of a field that a
+/// data file written under an older schema does not have, including the fields added to a struct. The reader of the
+/// file does not form these columns, but every chunk that it returns gets them.
+static size_t bytesPerRowOfMaterializedConstants(const ActionsDAG & dag)
+{
+    size_t bytes = 0;
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+            continue;
+        if (const auto * evolution = dynamic_cast<const Iceberg::EvolutionFunctionStruct *>(node.function_base.get()))
+            bytes += evolution->getBytesPerRowOfAddedFields();
+    }
+    for (const auto * node : dag.getOutputs())
+    {
+        bool materialized = false;
+        while (node->children.size() == 1
+               && (node->type == ActionsDAG::ActionType::ALIAS
+                   || (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "materialize")))
+        {
+            materialized = materialized || node->type == ActionsDAG::ActionType::FUNCTION;
+            node = node->children.front();
+        }
+        if (!materialized || node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+            continue;
+        if (const auto * constant = typeid_cast<const ColumnConst *>(node->column.get()))
+            bytes += constant->getDataColumn().byteSize();
+    }
+    return bytes;
 }
 
 static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
@@ -2556,9 +2588,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (need_only_count)
             input_format->needOnlyCount();
 
-        if (prefetch_input_format)
-            input_format->prefetch();
-
         builder.init(Pipe(input_format));
 
         if (!identity_partition_columns.empty())
@@ -2633,6 +2662,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             if (transform)
                 schema_transform = transform->clone();
         }
+
+        /// The schema transform materializes the fields that the file does not have: count them in the chunk-size estimate
+        /// of the format. Both calls precede the first read of the format.
+        if (schema_transform)
+            input_format->setBytesPerRowAddedAfterReading(bytesPerRowOfMaterializedConstants(*schema_transform));
+
+        if (prefetch_input_format)
+            input_format->prefetch();
 
         if (schema_transform.has_value())
         {

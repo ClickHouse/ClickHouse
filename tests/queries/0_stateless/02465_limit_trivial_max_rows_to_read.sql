@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_max_rows_to_read;
 
 CREATE TABLE t_max_rows_to_read (a UInt64)

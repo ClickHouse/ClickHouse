@@ -172,7 +172,7 @@ def test_delta_lake_follows_the_session(started_cluster):
         pytest.skip("DeltaLakeAzure engine is not available")
 
     allow = {"s3_allow_server_credentials_in_user_queries": 1}
-    kernel = {"allow_experimental_delta_kernel_rs": 1, "azure_sdk_max_retries": 0}
+    kernel = {"azure_sdk_max_retries": 0}
     delta_node.query("DROP TABLE IF EXISTS t_delta SYNC")
     # `ATTACH` loads the table lazily, so nothing is read before the first query and no Delta log is needed.
     # An Atomic database takes a full-definition `ATTACH` only with a UUID.
@@ -211,7 +211,6 @@ def test_delta_lake_cached_stats_follow_the_session(started_cluster):
 
     allow = {"s3_allow_server_credentials_in_user_queries": 1}
     pinned = {
-        "allow_experimental_delta_kernel_rs": 1,
         "azure_sdk_max_retries": 0,
         "delta_lake_snapshot_version": 0,
         "optimize_trivial_count_query": 1,
@@ -243,7 +242,7 @@ def test_delta_lake_restricted_after_restart(started_cluster):
         pytest.skip("DeltaLakeAzure engine is not available")
 
     allow = {"s3_allow_server_credentials_in_user_queries": 1}
-    kernel = {"allow_experimental_delta_kernel_rs": 1, "azure_sdk_max_retries": 0}
+    kernel = {"azure_sdk_max_retries": 0}
     delta_node.query("DROP TABLE IF EXISTS t_delta_restart SYNC")
     delta_node.query(
         f"ATTACH TABLE t_delta_restart UUID '{uuid.uuid4()}' (c Int64) ENGINE = DeltaLakeAzure('http://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'stats_table/')",

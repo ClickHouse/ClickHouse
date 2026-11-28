@@ -518,6 +518,8 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
+    /// Pauses a commit after the covering parts are durable and before the covered parts get their removal TID.
+    extern const char merge_tree_commit_pause_before_removing_covered_parts[];
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
     extern const char merge_tree_load_outdated_parts_retryable_error[];
@@ -3392,6 +3394,40 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
     }
 }
 
+/// A part covered by an `Active` part has been removed even when its removal TID is not on disk: a commit makes
+/// the covering part durable before `MergeTreeTransaction::addNewPartAndRemoveCovered` stores the TID.
+static void completeRemovalOfCoveredPart(
+    const MergeTreeMutableDataPartPtr & part,
+    bool covering_part_is_non_transactional,
+    const String & covering_part_name,
+    const LoggerPtr & log)
+{
+    auto current_version_info = part->version->getInfo();
+
+    /// `Tx::NonTransactionalTID` marks a removal visible from the beginning of time: truthful only for an unremoved part
+    /// created by a committed transaction and covered by a non-transactional part. Other states keep failing the check above.
+    if (current_version_info.isRemoved())
+        return;
+
+    if (!current_version_info.isCreated() || current_version_info.creation_tid.isNonTransactional()
+        || current_version_info.creation_tid.local_tid <= Tx::MaxReservedLocalTID)
+        return;
+
+    if (!covering_part_is_non_transactional)
+        return;
+
+    LOG_WARNING(
+        log,
+        "Part {} is covered by {}, which was created without a transaction, but its removal TID was not stored: {}. "
+        "Completing the interrupted removal",
+        part->name,
+        covering_part_name,
+        current_version_info.toString(/*one_line=*/true));
+
+    TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
+    part->version->setAndStoreNonTransactionalRemovalTID(LockKind::REMOVAL, transaction_context);
+}
+
 static constexpr size_t loading_parts_initial_backoff_ms = 100;
 static constexpr size_t loading_parts_max_backoff_ms = 5000;
 static constexpr size_t loading_parts_max_tries = 3;
@@ -3443,6 +3479,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     const MergeTreePartInfo & part_info,
     const String & part_name,
     const DiskPtr & part_disk_ptr,
+    const PartLoadingTree::NodePtr & part_loading_node,
     MergeTreeDataPartState to_state,
     DB::SharedMutex & part_loading_mutex,
     bool is_last_attempt)
@@ -3566,6 +3603,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         return res;
     }
 
+    /// Before the part is in `data_parts_indexes`, where a merge started by `startup` also stamps removal TIDs.
+    if (part_loading_node)
+        completeRemovalOfCoveredPart(
+            res.part, part_loading_node->covering_part_is_non_transactional, part_loading_node->covering_part_name,
+            log.load());
+
     res.part->setState(to_state);
 
     DataPartIteratorByInfo it;
@@ -3609,6 +3652,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     const MergeTreePartInfo & part_info,
     const String & part_name,
     const DiskPtr & part_disk_ptr,
+    const PartLoadingTree::NodePtr & part_loading_node,
     MergeTreeDataPartState to_state,
     DB::SharedMutex & part_loading_mutex,
     size_t initial_backoff_ms,
@@ -3632,7 +3676,9 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     {
         try
         {
-            return loadDataPart(part_info, part_name, part_disk_ptr, to_state, part_loading_mutex, /*is_last_attempt=*/ try_no + 1 == max_tries);
+            return loadDataPart(
+                part_info, part_name, part_disk_ptr, part_loading_node, to_state, part_loading_mutex,
+                /*is_last_attempt=*/ try_no + 1 == max_tries);
         }
         catch (...)
         {
@@ -3697,12 +3743,32 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
                 /// Pass a separate mutex to guard the set of parts, because this lambda
                 /// is called concurrently but with already locked @data_parts_mutex.
                 auto res = loadDataPartWithRetries(
-                    part->info, part->name, part->disk,
+                    part->info, part->name, part->disk, /*part_loading_node=*/nullptr,
                     DataPartState::Active, part_loading_mutex, loading_parts_initial_backoff_ms,
                     loading_parts_max_backoff_ms, loading_parts_max_tries);
 
                 part->is_loaded = true;
                 bool is_active_part = res.part->getState() == DataPartState::Active;
+
+                /// An `Active` part covers its whole subtree; a part that is not `Active` requeues its children below.
+                if (is_active_part && !part->children.empty())
+                {
+                    auto covering_info = res.part->version->getInfo();
+                    bool non_transactional = covering_info.creation_tid == Tx::NonTransactionalTID
+                        && covering_info.creation_csn == Tx::NonTransactionalCSN;
+
+                    std::function<void(const PartLoadingTree::NodePtr &)> mark_subtree
+                        = [&](const PartLoadingTree::NodePtr & node)
+                    {
+                        node->covering_part_is_non_transactional = non_transactional;
+                        node->covering_part_name = res.part->name;
+                        for (const auto & [_, child] : node->children)
+                            mark_subtree(child);
+                    };
+
+                    for (const auto & [_, node] : part->children)
+                        mark_subtree(node);
+                }
 
                 /// If part is broken or duplicate or should be removed according to transaction
                 /// and it has any covered parts then try to load them to replace this part.
@@ -4224,7 +4290,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
         /// NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
         auto my_part = parts_to_add[i];
         auto res = loadDataPartWithRetries(
-            my_part->info, my_part->name, my_part->disk,
+            my_part->info, my_part->name, my_part->disk, /*part_loading_node=*/nullptr,
             DataPartState::PreActive, data_parts_mutex, loading_parts_initial_backoff_ms,
             loading_parts_max_backoff_ms, loading_parts_max_tries);
 
@@ -4435,6 +4501,7 @@ try
         {
             outdated_data_parts_loading_finished = true;
             outdated_data_parts_cv.notify_all();
+            triggerBackgroundOperations();
             return;
         }
 
@@ -4568,7 +4635,7 @@ try
                 });
 
                 res = loadDataPartWithRetries(
-                    my_part->info, my_part->name, my_part->disk,
+                    my_part->info, my_part->name, my_part->disk, my_part,
                     DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
                     loading_parts_max_backoff_ms, loading_parts_max_tries);
             }
@@ -4674,6 +4741,8 @@ try
 
     outdated_data_parts_loading_finished = true;
     outdated_data_parts_cv.notify_all();
+    /// Transactional merges and mutations wait for the outdated parts to be loaded.
+    triggerBackgroundOperations();
 }
 catch (...)
 {
@@ -9691,13 +9760,15 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             if (use_active_parts_threshold)
             {
                 parts_over_threshold = active_parts_over_threshold;
-                allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
+                allowed_parts_over_threshold = active_parts_over_threshold; /// if throw threshold is not above delay threshold, will use max delay
+                if (active_parts_to_throw_insert > active_parts_to_delay_insert)
+                    allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
             }
             else
             {
                 parts_over_threshold = outdated_parts_over_threshold;
-                allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not set, will use max delay
-                if ((*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] > 0)
+                allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not above delay threshold, will use max delay
+                if ((*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] > (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert])
                     allowed_parts_over_threshold = (*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] - (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert];
             }
         }
@@ -11388,6 +11459,22 @@ static std::string_view getDatePartOfDateText(std::string_view text)
     return text;
 }
 
+/// Whether the field is or contains a `Decimal` (also a `DateTime64` or `Time64`) value.
+static bool containsDecimalField(const Field & value)
+{
+    switch (value.getType())
+    {
+        case Field::Types::Array:
+            return std::ranges::any_of(value.safeGet<Array>(), containsDecimalField);
+        case Field::Types::Tuple:
+            return std::ranges::any_of(value.safeGet<Tuple>(), containsDecimalField);
+        case Field::Types::Map:
+            return std::ranges::any_of(value.safeGet<Map>(), containsDecimalField);
+        default:
+            return Field::isDecimal(value.getType());
+    }
+}
+
 /// Converts one field of a partition value to the type of the partition key column.
 ///
 /// Text parsing of the date and time types is lenient: a day or a time of day that does not exist rolls over
@@ -11397,12 +11484,26 @@ static std::string_view getDatePartOfDateText(std::string_view text)
 /// `date_time_overflow_behavior = 'throw'`, and the date and time it spells must be the ones of the parsed value.
 /// This also rejects a local time that does not exist in the time zone of a `DateTime` key because of a daylight
 /// saving time shift (`'2024-03-31 02:30:00'` in `Europe/Berlin` is read as `01:30:00`): no row can have that value.
-static Field convertPartitionFieldToType(const Field & value, const DataTypePtr & type)
+static Field convertPartitionFieldToType(const Field & value, const DataTypePtr & value_type, const DataTypePtr & type)
 {
     const DataTypePtr nested_type = removeLowCardinalityAndNullable(type);
     const WhichDataType which(nested_type);
     if (value.getType() != Field::Types::String || !which.isDateOrDate32OrDateTimeOrDateTime64())
-        return convertFieldToTypeOrThrow(value, *type);
+    {
+        Field converted = convertFieldToTypeOrThrow(value, *type);
+
+        /// A `Decimal`, `DateTime64` or `Time64` value is truncated to the scale of the key, so `.5009` of a
+        /// `DateTime64(4)` value would name the `.500` partition of a `DateTime64(3)` key. The fields are checked,
+        /// not the type, to also catch such a value in an `Array`, a `Tuple` or a `Dynamic`. Inside an `Array` or
+        /// a `Tuple` only the strict conversion is used: the round trip cannot compare an element parsed from a string.
+        if (containsDecimalField(value)
+            && tryConvertFieldToTypeExact(value, *type, Field::isDecimal(value.getType()) ? value_type.get() : nullptr).isNull())
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                            "Partition value {} of type {} is not a valid value of type {}: it is read as {}",
+                            value, value_type ? value_type->getName() : value.getTypeName(), type->getName(), converted);
+
+        return converted;
+    }
 
     /// A time of day after a date is ignored the same way as by `toDate`.
     const String & text = value.safeGet<String>();
@@ -11516,6 +11617,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                             ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
                     }
                     auto first_arg = tuple_ast->arguments->as<ASTExpressionList>()->children.at(0);
+                    const auto * inner_cast = first_arg->as<ASTFunction>();
+                    while (isFunctionCast(inner_cast) && inner_cast->arguments && !inner_cast->arguments->children.empty())
+                    {
+                        first_arg = inner_cast->arguments->children.at(0);
+                        inner_cast = first_arg->as<ASTFunction>();
+                    }
                     if (const auto * inner_tuple = first_arg->as<ASTFunction>(); inner_tuple && inner_tuple->name == "tuple")
                     {
                         const auto * arguments_ast = inner_tuple->arguments->as<ASTExpressionList>();
@@ -11631,7 +11738,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             }
         }
         /// Simple partition key, need to evaluate and cast
-        Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+        auto [partition_key_value, partition_key_type] = evaluateConstantExpression(partition_value_ast, local_context);
 
         /// A cast of a one-element tuple (e.g. a substituted query parameter of type `Tuple(T)`)
         /// evaluates to a tuple; unwrap it, unless the partition key column itself is a tuple.
@@ -11642,14 +11749,16 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                 throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                                 "Wrong number of fields in the partition expression: {}, must be: 1", tuple_value.size());
             partition_key_value = std::move(tuple_value[0]);
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(partition_key_type.get());
+            partition_key_type = tuple_type ? tuple_type->getElement(0) : nullptr;
         }
 
-        partition_row[0] = convertPartitionFieldToType(partition_key_value, key_sample_block.getByPosition(0).type);
+        partition_row[0] = convertPartitionFieldToType(partition_key_value, partition_key_type, key_sample_block.getByPosition(0).type);
     }
     else
     {
         /// Complex key, need to evaluate, untuple and cast
-        Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+        const auto [partition_key_value, partition_key_type] = evaluateConstantExpression(partition_value_ast, local_context);
         if (partition_key_value.getType() != Field::Types::Tuple)
             throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                             "Expected tuple for complex partition key, got {}", partition_key_value.getTypeName());
@@ -11659,8 +11768,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Wrong number of fields in the partition expression: {}, must be: {}", tuple.size(), fields_count);
 
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(partition_key_type.get());
         for (size_t i = 0; i < fields_count; ++i)
-            partition_row[i] = convertPartitionFieldToType(tuple[i], key_sample_block.getByPosition(i).type);
+            partition_row[i] = convertPartitionFieldToType(
+                tuple[i], tuple_type ? tuple_type->getElement(i) : nullptr, key_sample_block.getByPosition(i).type);
     }
 
     MergeTreePartition partition(std::move(partition_row));
@@ -13540,6 +13651,13 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             covering_parts.push_back(std::move(covering_part));
             covered_parts_for_commit.push_back(std::move(covered_parts));
         }
+
+        bool removes_covered_parts = false;
+        for (size_t idx = 0; idx < covering_parts.size(); ++idx)
+            removes_covered_parts |= !covering_parts[idx] && !covered_parts_for_commit[idx].empty();
+
+        if (removes_covered_parts)
+            FailPointInjection::pauseFailPoint(FailPoints::merge_tree_commit_pause_before_removing_covered_parts);
 
         /// Remove the covered parts. Skip when a covering part exists -- NOEXCEPT_SCOPE below
         /// marks the precommitted part obsolete instead.

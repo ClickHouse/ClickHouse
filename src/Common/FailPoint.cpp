@@ -285,6 +285,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
     REGULAR(keeper_fault_on_watch_request) \
     REGULAR(keeper_shutdown_delay_before_queue_check) \
+    REGULAR(keeper_http_four_letter_command_delay) \
     REGULAR(keeper_shutdown_throw_after_flag) \
     REGULAR(lazy_pipe_fds_fail_close) \
     REGULAR(claim_inject_stale_part_dir) \
@@ -296,6 +297,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(completed_pipeline_pause_before_teardown) \
     PAUSEABLE(system_replicas_schedule_requests_pause) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
+    PAUSEABLE(merge_tree_commit_pause_before_removing_covered_parts) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
     REGULAR(zero_copy_lock_zk_fail_after_op) \

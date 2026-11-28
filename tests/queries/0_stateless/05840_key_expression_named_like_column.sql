@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: `ALTER TABLE ... MODIFY ORDER BY` cannot express `DESC`, so it would change the direction of a forced descending key
+SET force_primary_key_reverse_order = 0;
+
 -- A key, skip index or projection sorting key expression that has the name of a stored column was used in place of that
 -- column when the table was written or queried:
 -- https://github.com/ClickHouse/ClickHouse/issues/133178

@@ -758,7 +758,16 @@ public:
     [[nodiscard]] String getName() const override { return name; }
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        return arguments.size() > 1 && !arguments[1].is_const;
+    }
+    /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a scale that
+    /// is out of range, and `executeImpl` would throw for it
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return arguments.size() < 2 || isColumnConst(*arguments[1].column);
+    }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     [[nodiscard]] String getSignatureString() const override
