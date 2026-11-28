@@ -1,0 +1,29 @@
+parts	3	1	1
+plan s	1
+plan sn	1
+plan memory	1
+plan group by	1
+s asc	64	1	30
+s asc	1000	1	30
+s desc	64	1	30
+s desc	1000	1	30
+s where	64	1	30
+s where	1000	1	30
+sn nulls first, NULL threshold	64	1	30	30
+sn nulls first, NULL threshold	1000	1	30	30
+sn desc nulls last	64	1	30	0
+sn desc nulls last	1000	1	30	0
+s collate	64	1	30
+s collate	1000	1	30
+s collate desc	64	1	30
+s collate desc	1000	1	30
+t ties	64	1	1000
+t ties	1000	1	1000
+d	64	1	20
+d	1000	1	20
+fs	64	1	20
+fs	1000	1	20
+tup	64	1	20
+memory	1	30
+memory desc	1	30
+group by	1	5
