@@ -1,0 +1,36 @@
+<test iceberg="0">
+    <!-- SummingMergeTree FINAL, merges and INSERT where most rows have no other row with the same key: one large part
+         without duplicate keys and ten small parts with new rows for existing keys, ten parts of consecutive key ranges, and an
+         INSERT of new keys.
+         Column statistics are off, so that the merges and the INSERT measure the summing itself.
+         Not on Iceberg tables: they do not support FINAL and named parts. -->
+    <create_query>CREATE TABLE sum_k (k UInt64, v1 UInt64, v2 Float64) ENGINE = SummingMergeTree ORDER BY k SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE sum_sd (sid UInt32, d Date, page String, hits UInt64, cost Float64) ENGINE = SummingMergeTree ORDER BY (sid, d) SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE sum_ins (k UInt64, v1 UInt64, v2 Float64) ENGINE = SummingMergeTree ORDER BY k SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE sum_ins_src (k UInt64, v1 UInt64, v2 Float64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE sum_ts (ts DateTime, hits UInt64, cost Float64) ENGINE = SummingMergeTree ORDER BY ts SETTINGS auto_statistics_types = ''</create_query>
+
+    <fill_query>SYSTEM STOP MERGES sum_k</fill_query>
+    <fill_query>SYSTEM STOP MERGES sum_sd</fill_query>
+    <fill_query>SYSTEM STOP MERGES sum_ins</fill_query>
+    <fill_query>SYSTEM STOP MERGES sum_ts</fill_query>
+    <fill_query>INSERT INTO sum_k SELECT intHash64(number), number % 1000 + 1, number / 7 FROM numbers(8000000) SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 8388608, min_insert_block_size_rows = 8388608, max_insert_block_size = 8388608, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO sum_k SELECT intHash64(cityHash64(number) % 8000000), 1, 0.5 FROM numbers(200000) SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 20000, min_insert_block_size_rows = 20000, max_insert_block_size = 20000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO sum_sd SELECT number % 200000, toDate('2026-10-01') + intDiv(number, 200000), concat('/page/', toString(number % 200000)), number % 97 + 1, number / 13 FROM numbers(3000000) SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 4194304, min_insert_block_size_rows = 4194304, max_insert_block_size = 4194304, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO sum_sd SELECT sid, toDate('2026-10-14') + number % 2, concat('/page/', toString(sid)), 1, 0.25 FROM (SELECT number, cityHash64(number) % 200000 AS sid FROM numbers(100000)) SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 10000, min_insert_block_size_rows = 10000, max_insert_block_size = 10000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO sum_ins_src SELECT intHash64(number), number % 1000 + 1, number / 7 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO sum_ts SELECT toDateTime('2026-10-01 00:00:00') + number, number % 97 + 1, number / 13 FROM numbers(3000000) SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 300000, min_insert_block_size_rows = 300000, max_insert_block_size = 300000, min_insert_block_size_bytes = 0</fill_query>
+
+    <query>SELECT * FROM sum_k FINAL FORMAT Null</query>
+    <query>OPTIMIZE TABLE sum_k DRY RUN PARTS 'all_1_1_1', 'all_2_2_1', 'all_3_3_1', 'all_4_4_1', 'all_5_5_1', 'all_6_6_1', 'all_7_7_1', 'all_8_8_1', 'all_9_9_1', 'all_10_10_1', 'all_11_11_1'</query>
+    <query>SELECT * FROM sum_sd FINAL FORMAT Null</query>
+    <query>OPTIMIZE TABLE sum_sd DRY RUN PARTS 'all_1_1_1', 'all_2_2_1', 'all_3_3_1', 'all_4_4_1', 'all_5_5_1', 'all_6_6_1', 'all_7_7_1', 'all_8_8_1', 'all_9_9_1', 'all_10_10_1', 'all_11_11_1'</query>
+    <query>INSERT INTO sum_ins SELECT * FROM sum_ins_src SETTINGS async_insert = 0, max_threads = 1, max_insert_threads = 1, max_block_size = 1048576, min_insert_block_size_rows = 1048576, max_insert_block_size = 1048576, min_insert_block_size_bytes = 0</query>
+    <query>OPTIMIZE TABLE sum_ts DRY RUN PARTS 'all_1_1_1', 'all_2_2_1', 'all_3_3_1', 'all_4_4_1', 'all_5_5_1', 'all_6_6_1', 'all_7_7_1', 'all_8_8_1', 'all_9_9_1', 'all_10_10_1'</query>
+
+    <drop_query>DROP TABLE IF EXISTS sum_k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sum_sd</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sum_ins</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sum_ins_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sum_ts</drop_query>
+</test>
