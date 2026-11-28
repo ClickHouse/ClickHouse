@@ -1,4 +1,14 @@
 <test>
+    <!--
+        The test measures the short-circuit evaluation of `concat` over NULLs, and `if` here only generates the data.
+        With `optimize_if_transform_const_strings_to_lowcardinality`, `if` returns `LowCardinality(Nullable(String))`,
+        and the cast to `Nullable(String)` has to expand it, while without it the column with a NULL branch is made
+        almost for free. Keep the test measuring what it is for.
+    -->
+    <settings>
+        <optimize_if_transform_const_strings_to_lowcardinality>0</optimize_if_transform_const_strings_to_lowcardinality>
+    </settings>
+
     <query>
         with
             null::Nullable(String) as x,

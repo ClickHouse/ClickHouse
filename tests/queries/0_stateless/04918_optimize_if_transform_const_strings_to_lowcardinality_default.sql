@@ -1,5 +1,4 @@
--- The LowCardinality inference is opt-in: constructing a dictionary per block can
--- be slower than returning `String` when no downstream operation reuses it.
+-- The LowCardinality inference is enabled by default, and can be disabled.
 -- Related: https://github.com/ClickHouse/ClickHouse/issues/25272
 
 -- The setting is randomized by the test runner, so the default is asserted through

@@ -2,6 +2,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionIfBase.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/LowCardinalityOfKnownValues.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
@@ -14,6 +16,7 @@
 #include <Columns/IColumn.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <array>
 #include <limits>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -472,6 +475,9 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
+        if (auto res = executeConstBranchesToLowCardinality(instructions, result_type, input_rows_count))
+            return res;
+
         const WhichDataType which(removeNullable(result_type));
         bool execute_multiif_columnar = allow_execute_multiif_columnar && instructions.size() <= std::numeric_limits<UInt8>::max()
             && (which.isInt() || which.isUInt() || which.isFloat() || which.isDecimal() || which.isDateOrDate32OrDateTimeOrDateTime64()
@@ -541,6 +547,57 @@ public:
 #undef EXECUTE_INSTRUCTIONS_COLUMNAR
 
 private:
+
+    /// The `LowCardinality` result for constant branches (see `optimize_if_transform_const_strings_to_lowcardinality`):
+    /// the dictionary holds the branches, and the index of each row is the one of the first branch whose condition holds.
+    /// Building the indexes directly is much cheaper than inserting every row into a new dictionary.
+    static ColumnPtr executeConstBranchesToLowCardinality(
+        const VectorWithMemoryTracking<Instruction> & instructions, const DataTypePtr & result_type, size_t rows)
+    {
+        const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(result_type.get());
+        /// The branch numbers are computed as UInt8, and the dictionary also holds the default value and NULL.
+        if (!low_cardinality_type || instructions.size() > std::numeric_limits<UInt8>::max() - 2)
+            return nullptr;
+
+        for (const auto & instruction : instructions)
+            if (!instruction.source_is_constant)
+                return nullptr;
+
+        /// First, the number of the branch of every row. `calculateInserts` leaves `instructions.size()` in the rows
+        /// where no condition holds, which cannot happen, as the last instruction is the `else` branch.
+        auto indexes = ColumnUInt8::create(rows, static_cast<UInt8>(instructions.size()));
+        auto & indexes_data = indexes->getData();
+        calculateInserts(instructions, rows, indexes_data);
+
+        std::array<UInt8, std::numeric_limits<UInt8>::max() + 1> branch_is_taken{};
+        for (const auto index : indexes_data)
+            branch_is_taken[index] = 1;
+
+        /// The dictionary holds only the branches that some row takes (see `LowCardinalityOfKnownValues`).
+        const auto & dictionary_type = low_cardinality_type->getDictionaryType();
+        auto values = dictionary_type->createColumn();
+        for (size_t i = 0; i < instructions.size(); ++i)
+        {
+            if (!branch_is_taken[i])
+                continue;
+            const auto & value = assert_cast<const ColumnConst &>(*instructions[i].source).getDataColumn();
+            values->insertFrom(*value.convertToFullColumnIfLowCardinality(), 0);
+        }
+        LowCardinalityOfKnownValues known_values(*low_cardinality_type, *values);
+
+        /// The rows where no condition holds get the default value.
+        std::array<UInt8, std::numeric_limits<UInt8>::max() + 1> dictionary_index_of_branch{};
+        dictionary_index_of_branch.fill(static_cast<UInt8>(known_values.dictionary->getDefaultValueIndex()));
+        size_t num_taken = 0;
+        for (size_t i = 0; i < instructions.size(); ++i)
+            if (branch_is_taken[i])
+                dictionary_index_of_branch[i] = static_cast<UInt8>(known_values.positions[num_taken++]);
+
+        for (auto & index : indexes_data)
+            index = dictionary_index_of_branch[index];
+
+        return ColumnLowCardinality::create(MutableColumnPtr(std::move(known_values.dictionary)), MutableColumnPtr(std::move(indexes)), /*is_shared=*/false);
+    }
 
     static void executeInstructions(VectorWithMemoryTracking<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
     {
