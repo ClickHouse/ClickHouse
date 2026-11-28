@@ -49,6 +49,13 @@ public:
     /// with object storage layer.
     [[nodiscard]] virtual ::EngineBuilder * createBuilder() const = 0;
 
+    /// Same as createBuilder(); also returns the fingerprint of the credentials the builder was filled with.
+    [[nodiscard]] virtual ::EngineBuilder * createBuilderWithFingerprint(DB::UInt128 & credentials_fingerprint) const
+    {
+        credentials_fingerprint = getCredentialsFingerprint();
+        return createBuilder();
+    }
+
     /// Make the table location ready for a brand-new table; the local helper creates the root directory, object stores (S3/Azure) default to a no-op.
     virtual void prepareForTableCreation() const {}
 
