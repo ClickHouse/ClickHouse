@@ -35,6 +35,7 @@ public:
     bool supportsPooling() const override { return nested->supportsPooling(); }
 
     KindStack getKindStack() const override;
+    const SerializationPtr & getNested() const { return nested; }
     MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
 
     void enumerateStreams(
