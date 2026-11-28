@@ -1,5 +1,3 @@
--- Index analysis with partition pruning and range conditions depends on key direction
-SET force_primary_key_reverse_order = 0;
 DROP TABLE IF EXISTS mytable_local;
 
 CREATE TABLE mytable_local (

@@ -1,7 +1,4 @@
--- Tags: stateful, long
--- Tag long: scans `test.hits`, which takes more than 180 seconds when the flaky check repeats it under sanitizers
--- Disable force_primary_key_reverse_order: creates MergeTree with ORDER BY, output depends on key direction
-SET force_primary_key_reverse_order = 0;
+-- Tags: stateful
 DROP TABLE IF EXISTS hits_snippet;
 
 set allow_deprecated_syntax_for_merge_tree=1;

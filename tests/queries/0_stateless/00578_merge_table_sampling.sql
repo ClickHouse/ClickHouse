@@ -1,6 +1,3 @@
--- Disable force_primary_key_reverse_order: tests SAMPLE BY which requires specific ORDER BY direction
-SET force_primary_key_reverse_order = 0;
-
 DROP TABLE IF EXISTS numbers1;
 DROP TABLE IF EXISTS numbers2;
 
