@@ -1453,12 +1453,6 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
 
 void AggregatingStep::serialize(Serialization & ctx) const
 {
-    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS
-        && (params.max_bytes_to_group_by != 0 || params.limit_errors != Aggregator::Params::LimitErrors{}))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Aggregation state byte limits and custom limit errors require query plan serialization version {} or newer",
-            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS);
-
     /// Flags encode boolean properties that affect the data format or plan structure.
     /// Bit layout: 1=final, 2=overflow_row, 4=group_by_use_nulls, 8=grouping_sets,
     ///             16=stats_key, 32=in_order_aggregation, 64=explicit_sorting_required,
@@ -1557,13 +1551,14 @@ void AggregatingStep::serialize(Serialization & ctx) const
         }
     }
 
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS)
-    {
-        writeVarUInt(params.max_bytes_to_group_by, ctx.out);
-        writeStringBinary(params.limit_errors.description, ctx.out);
-        writeIntBinary(params.limit_errors.rows, ctx.out);
-        writeIntBinary(params.limit_errors.bytes, ctx.out);
-    }
+    /// Step version 2 appends the byte limit of the aggregation state and the errors of the limits.
+    if (ctx.step_version < 2)
+        return;
+
+    writeVarUInt(params.max_bytes_to_group_by, ctx.out);
+    writeStringBinary(params.limit_errors.description, ctx.out);
+    writeIntBinary(params.limit_errors.rows, ctx.out);
+    writeIntBinary(params.limit_errors.bytes, ctx.out);
 }
 
 QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
@@ -1771,7 +1766,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 
     params.top_k = std::move(top_k);
 
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS)
+    if (ctx.step_version >= 2)
     {
         readVarUInt(params.max_bytes_to_group_by, ctx.in);
         readStringBinary(params.limit_errors.description, ctx.in);
@@ -1858,7 +1853,9 @@ void registerAggregatingStep(QueryPlanStepRegistry & registry)
     registry.registerStep(
         "Aggregating",
         AggregatingStep::deserialize,
-        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K}});
+        {{0, 0},
+         {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K},
+         {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS}});
 }
 
 
