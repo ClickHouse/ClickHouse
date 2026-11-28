@@ -2500,7 +2500,7 @@ void writeColumnChunkBody(
                 writeColumnImpl<Int32Type>(s, options, out, ConverterTime(s.primitive_column));
             }
             break;
-        case TypeIndex::Int64  : N(Int64,  Int64Type); break;
+        case TypeIndex::Int64: N(Int64, Int64Type); break;
 
         case TypeIndex::UInt32:
             if (s.datetime_multiplier == 1)

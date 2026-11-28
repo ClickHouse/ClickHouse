@@ -530,7 +530,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             parq::LogicalType t;
             t.__set_TIME(tt);
             types(converted_scale == 3 ? T::INT32 : T::INT64, converted, t);
-            state.datetime_multiplier = t64.getScaleMultiplier(converted_scale - scale);
+            state.datetime_multiplier = DataTypeTime64::getScaleMultiplier(converted_scale - scale);
             break;
         }
 
