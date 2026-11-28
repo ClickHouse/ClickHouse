@@ -14,6 +14,7 @@
 
 #include <grpcpp/server_context.h>
 
+#include <functional>
 #include <map>
 #include <unordered_map>
 
@@ -57,6 +58,12 @@ public:
     /// Called once the call is handled, whatever its outcome.
     void callCompleted();
 
+    /// Returns false once the client has cancelled the call or has disconnected. It is given to the context of a query
+    /// the call runs (`Context::setConnectionAliveCheck`), so that the query notices it while it waits for admission
+    /// in `ProcessList`. The callback refers to the `grpc::ServerContext` of the call and must not outlive the call.
+    void setConnectionAliveCheck(std::function<bool()> connection_alive_check_) { connection_alive_check = std::move(connection_alive_check_); }
+    [[nodiscard]] std::function<bool()> getConnectionAliveCheck() const { return connection_alive_check; }
+
 private:
     std::shared_ptr<Session> session;
     std::string token;
@@ -65,6 +72,7 @@ private:
     const std::string session_id;
     const bool session_close;
     const std::chrono::steady_clock::duration session_timeout;
+    std::function<bool()> connection_alive_check;
 };
 
 class AuthMiddlewareFactory

@@ -254,6 +254,9 @@ namespace Net
         void setMutex(std::unique_ptr<SecureSocketImpl::RecursiveMutex> mutex);
         /// Replace the lock guarding SSL operations on the underlying impl.
 
+        std::unique_lock<SecureSocketImpl::RecursiveMutex> lockSSL() const;
+        /// Acquires the lock guarding SSL operations on the underlying impl (see `SecureSocketImpl::lockSSL`).
+
 
     protected:
         void acceptSSL();
@@ -314,6 +317,12 @@ namespace Net
     inline void SecureStreamSocketImpl::markFatalError()
     {
         _impl.markFatalError();
+    }
+
+
+    inline std::unique_lock<SecureSocketImpl::RecursiveMutex> SecureStreamSocketImpl::lockSSL() const
+    {
+        return _impl.lockSSL();
     }
 
 

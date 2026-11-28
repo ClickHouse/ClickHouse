@@ -106,6 +106,10 @@ private:
 
     void makeSecureConnectionSSL();
 
+    /// The socket the client currently talks through: the TLS wrapper after the TLS upgrade, the plain socket
+    /// otherwise. A liveness check must use it to recognize a TLS `close_notify` as a disconnect.
+    Poco::Net::StreamSocket & activeSocket();
+
     void sendParameterStatusData(PostgreSQLProtocol::Messaging::StartupMessage & start_up_message);
 
     void cancelRequest();
