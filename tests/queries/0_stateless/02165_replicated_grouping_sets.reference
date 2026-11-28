@@ -223,3 +223,31 @@ SELECT count(), toString(number) AS k FROM remote('127.0.0.{3,2}', numbers(10)) 
 2	9
 2	9
 2	9
+SELECT count(), number % 3 AS a, intDiv(number, 3) AS b FROM remote('127.0.0.{1,2}', numbers(10)) where number > ( queryID() = initialQueryID()) GROUP BY GROUPING SETS ((a, b), (b)) ORDER BY ALL SETTINGS group_by_use_nulls=1, group_by_two_level_threshold=9, group_by_two_level_threshold_bytes=0, optimize_aggregation_in_order=0, max_bytes_before_external_group_by=10000000000, max_bytes_ratio_before_external_group_by=0;
+1	1	0
+2	0	1
+2	0	2
+2	0	3
+2	1	1
+2	1	2
+2	2	0
+2	2	1
+2	2	2
+2	\N	3
+3	\N	0
+6	\N	1
+6	\N	2
+SELECT count(), toString(number % 3) AS a, intDiv(number, 3) AS b FROM remote('127.0.0.{1,2}', numbers(10)) where number > ( queryID() = initialQueryID()) GROUP BY GROUPING SETS ((a, b), (b)) ORDER BY ALL SETTINGS group_by_use_nulls=1, group_by_two_level_threshold=9, group_by_two_level_threshold_bytes=0, optimize_aggregation_in_order=0, max_bytes_before_external_group_by=10000000000, max_bytes_ratio_before_external_group_by=0;
+1	1	0
+2	0	1
+2	0	2
+2	0	3
+2	1	1
+2	1	2
+2	2	0
+2	2	1
+2	2	2
+2	\N	3
+3	\N	0
+6	\N	1
+6	\N	2
