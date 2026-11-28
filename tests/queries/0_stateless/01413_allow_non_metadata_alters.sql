@@ -9,7 +9,9 @@ CREATE TABLE non_metadata_alters (
   value5 Date
 )
 ENGINE = MergeTree()
-ORDER BY tuple();
+ORDER BY tuple()
+-- Lightweight updates need materialized _block_number and _block_offset columns.
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 
 
 SET allow_non_metadata_alters = 0;
@@ -52,9 +54,6 @@ SHOW CREATE TABLE non_metadata_alters;
 -- Both modes decide whether a statement below is a heavyweight mutation at all, so pin them.
 SET alter_update_mode = 'heavy';
 SET lightweight_delete_mode = 'alter_update';
-
--- Lightweight updates need materialized _block_number and _block_offset columns.
-ALTER TABLE non_metadata_alters MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1;
 
 ALTER TABLE non_metadata_alters ADD INDEX idx_value3 value3 TYPE minmax GRANULARITY 1;
 

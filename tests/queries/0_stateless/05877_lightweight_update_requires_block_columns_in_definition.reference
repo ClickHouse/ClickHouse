@@ -1,0 +1,17 @@
+Tables created while the server configuration does not enable the settings
+t_old	[]
+t_old_empty	[]
+The server configuration enables the settings
+t_new	['enable_block_number_column = 1','enable_block_offset_column = 1']
+t_new_explicit	['enable_block_number_column = 0','enable_block_offset_column = 1']
+t_old	[]
+t_old_empty	[]
+t_new	0	a
+t_new	1	updated
+t_new	2	a
+t_old	0	a	0
+t_old	1	a	0
+t_old	2	a	0
+t_old_empty	0	a
+t_old_empty	1	updated
+t_old_empty	2	a
