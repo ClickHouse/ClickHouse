@@ -10,6 +10,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
+#include <Common/ColumnsHashing/Hash128ManyRows.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/formatReadable.h>
@@ -25,7 +26,6 @@
 #include <base/getL2CacheSize.h>
 #include <base/unaligned.h>
 #include <Interpreters/AggregationCommon.h>
-#include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/TemporaryFileFrameReader.h>
@@ -1722,9 +1722,9 @@ void RadixUniqExactState<UInt128>::routeColumn(size_t stream, const IColumn & co
             [chars, n](size_t begin, const UInt32 * positions, size_t count, UInt128 * row_keys) NO_INLINE
             { sipHash128PaddedFixedStringRows(chars + begin * n, n, positions, count, row_keys); });
     }
-    else if (HashedJoinKey key({&column}); key.hashesRowsInBatches())
+    else if (ColumnsHashing::Hash128ManyRows key({&column}); key.hashesRowsInBatches())
     {
-        /// The hashes of `uniqExact` (`ColumnsHashing::hash128`), which `HashedJoinKey` computes for many rows at once for
+        /// The hashes of `uniqExact` (`ColumnsHashing::hash128`), which `Hash128ManyRows` computes for many rows at once for
         /// tuples, `Nullable` values, strings and numbers. The rows that repeat the bytes of the previous routed row are
         /// skipped before they are hashed, as their hash is the same.
         /// Allocated exactly, as `resize` would round it up to a power of two.

@@ -2,6 +2,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/ColumnsHashing/Hash128ManyRows.h>
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -149,9 +150,10 @@ void buildScatterSelector(
     size_t partitions_count = 0;
     size_t throw_on_limit = context->getSettingsRef()[Setting::throw_on_max_partitions_per_insert_block];
 
+    ColumnsHashing::Hash128InOrder hashes(columns, num_rows);
     for (size_t i = 0; i < num_rows; ++i)
     {
-        Data::key_type key = ColumnsHashing::hash128(i, columns.size(), columns);
+        Data::key_type key = hashes.get(i);
         typename Data::LookupResult it = nullptr;
         bool inserted = false;
         partitions_map.emplace(key, it, inserted);
