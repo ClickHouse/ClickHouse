@@ -67,6 +67,9 @@ class IDataType;
   * under `convert_inexact_floats`: such a caller stores the value rather than comparing against it, so it
   * gets what `CAST` gives for the same constant under `format_settings.date_time_overflow_behavior` -
   * an exception for `throw`, the nearest representable tick for `saturate` and the default `ignore`.
+  * An integer constant for `Date`, `Date32`, `DateTime` or `Time` under `convert_inexact_floats` follows the
+  * setting as well, but only for `throw` (an exception) and `saturate` (what `CAST` gives); the default
+  * `ignore` keeps rejecting it, so `values('x Date', toUInt64(65536))` is an `ARGUMENT_OUT_OF_BOUND` error.
   *
   * The strictness checks apply recursively inside composite types (Tuple, Array, Map), so e.g. a
   * Tuple(Decimal64(2)) element inside an Array is also checked for precision loss, and a Float32 element
