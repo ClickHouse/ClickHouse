@@ -12,6 +12,7 @@
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/traverseQueryTree.h>
 
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -66,7 +67,13 @@ void validateStreamingQueryNode(const QueryTreeNodePtr & query_tree, const Plann
         [&](const QueryTreeNodePtr & node) { has_correlated_subquery |= isCorrelatedQueryOrUnionNode(node); });
     reject_if(has_correlated_subquery, "A correlated subquery");
 
-    reject_if(query_node.hasGroupBy() || query_node.isGroupByWithTotals() || query_node.hasHaving() || hasAggregateFunctionNodes(query_tree), "GROUP BY, HAVING or an aggregate function");
+    /// An aggregation is supported only if it emits every group as soon as it is complete, which is the case when
+    /// a key of `GROUP BY` is the current time computed for every block. This is decided by the plan optimization
+    /// (see `applyCurrentTimeOrderToAggregation`) and checked by `AggregatingStep::requireFlushOnOrderKeyChange`.
+    /// Here only the constructs that cannot be aggregated in this way are rejected.
+    reject_if(query_node.isGroupByWithTotals(), "WITH TOTALS");
+    reject_if(query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || query_node.isGroupByWithGroupingSets(), "ROLLUP, CUBE or GROUPING SETS");
+    reject_if(!query_node.hasGroupBy() && (query_node.hasHaving() || hasAggregateFunctionNodes(query_tree)), "HAVING or an aggregate function without GROUP BY");
     reject_if(query_node.hasWindow() || query_node.hasQualify() || hasWindowFunctionNodes(query_tree), "A window function");
     reject_if(query_node.hasOrderBy(), "ORDER BY");
     reject_if(query_node.isShuffle(), "SHUFFLE");
@@ -105,6 +112,19 @@ void buildStreamingPlan(
 
     if (expression_analysis_result.hasWhere())
         addFilterStep(planner_context, query_plan, expression_analysis_result.getWhere(), select_query_options, "WHERE", useful_sets);
+
+    if (expression_analysis_result.hasAggregation())
+    {
+        auto & aggregation = expression_analysis_result.getAggregation();
+        if (aggregation.before_aggregation_actions)
+            addExpressionStep(planner_context, query_plan, aggregation.before_aggregation_actions, {}, select_query_options, "Before GROUP BY", useful_sets);
+
+        addAggregationStep(query_plan, query_node, expression_analysis_result, query_analysis_result, planner_context, planner_context->getQueryContext()->getSettingsRef(), {});
+        typeid_cast<AggregatingStep &>(*query_plan.getRootNode()->step).requireFlushOnOrderKeyChange();
+
+        if (expression_analysis_result.hasHaving())
+            addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
+    }
 
     addExpressionStep(planner_context, query_plan, projection.projection_actions, projection.correlated_subtrees, select_query_options, "Projection", useful_sets);
 

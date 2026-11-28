@@ -1,0 +1,24 @@
+-- plain
+Order: nowInBlock() ASC
+Flush on order key change: 1
+-- monotonic function
+Order: toStartOfMinute(nowInBlock()) ASC
+-- decreasing function
+Order: -toInt64(nowInBlock()) DESC
+-- nowInBlock64
+Order: nowInBlock64(6, \'UTC\') ASC
+-- the time and other keys
+Order: toStartOfSecond(nowInBlock64()) ASC
+-- the time from a subquery
+Order: nowInBlock() ASC
+-- not monotonic
+0
+-- disabled
+0
+-- results
+100	1
+100	1
+-- infinite input
+1
+1
+10

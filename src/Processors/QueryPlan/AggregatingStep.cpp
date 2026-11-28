@@ -94,6 +94,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_STREAM;
 }
 
 static bool memoryBoundMergingWillBeUsed(
@@ -602,6 +603,12 @@ void AggregatingStep::buildRadixUniqExact(
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
+    if (flush_on_order_key_change_required && !flush_on_order_key_change)
+        throw Exception(ErrorCodes::ILLEGAL_STREAM,
+            "GROUP BY, HAVING or an aggregate function is supported over an unbounded STREAM only if a key of GROUP BY "
+            "is the current time computed for every block (nowInBlock, nowInBlock64, or a monotonic function of them) "
+            "and the setting optimize_aggregation_in_order_by_current_time is enabled");
+
     size_t new_merge_threads = merge_threads;
     size_t new_temporary_data_merge_threads = temporary_data_merge_threads;
     updateThreadsValues(new_merge_threads, new_temporary_data_merge_threads, params, settings);
@@ -863,6 +870,18 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 pipeline, SortingStep::Settings(params.max_block_size), sort_description_for_merging, 0 /* limit */);
         }
 
+        /// Both `AggregatingInOrderTransform` and `FinishAggregatingInOrderTransform` check the limit on the number
+        /// of accumulated groups only when the order key changes, so the limit of one group emits every group
+        /// as soon as it is complete.
+        const size_t in_order_max_block_size = flush_on_order_key_change ? 1 : max_block_size;
+
+        /// See `enableFlushOnOrderKeyChange`. The streams are concatenated in the order their blocks arrive, which is
+        /// the order of the time they were computed at, except for the blocks computed by several threads at nearly
+        /// the same moment around the change of the time: a block may come after a block with a later time. Its rows
+        /// are counted in the group of the later time, the same as if it was computed a moment later.
+        if (flush_on_order_key_change_single_stream && pipeline.getNumStreams() > 1)
+            pipeline.resize(1);
+
         if (pipeline.getNumStreams() > 1)
         {
             /** The pipeline is the following:
@@ -884,7 +903,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params,
                     sort_description_for_merging,
                     group_by_sort_description,
-                    max_block_size,
+                    in_order_max_block_size,
                     aggregation_in_order_max_block_bytes / new_merge_threads,
                     many_data,
                     counter++,
@@ -913,7 +932,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 pipeline.getNumStreams(),
                 transform_params,
                 group_by_sort_description,
-                max_block_size,
+                in_order_max_block_size,
                 aggregation_in_order_max_block_bytes,
                 limit_hint);
 
@@ -945,7 +964,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 return std::make_shared<AggregatingInOrderTransform>(
                     header, transform_params,
                     sort_description_for_merging, group_by_sort_description,
-                    max_block_size, aggregation_in_order_max_block_bytes,
+                    in_order_max_block_size, aggregation_in_order_max_block_bytes,
                     limit_hint,
                     limit_hint_prefix_columns,
                     dataflow_cache_updater);
@@ -1054,6 +1073,8 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
         settings.out << prefix << "Order: ";
         dumpSortDescription(sort_description_for_merging, settings);
         settings.out << '\n';
+        if (flush_on_order_key_change)
+            settings.out << prefix << "Flush on order key change: 1" << (flush_on_order_key_change_single_stream ? " (single stream)" : "") << '\n';
     }
     if (!uniq_exact_in_order.empty())
     {
@@ -1078,7 +1099,14 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     params.explain(map);
     if (!sort_description_for_merging.empty())
+    {
         map.add("Order", dumpSortDescription(sort_description_for_merging));
+        if (flush_on_order_key_change)
+        {
+            map.add("Flush on order key change", true);
+            map.add("Flush on order key change in single stream", flush_on_order_key_change_single_stream);
+        }
+    }
     if (!uniq_exact_in_order.empty())
     {
         map.add("Uniq exact in order", dumpSortDescription(uniq_exact_in_order));
@@ -1795,6 +1823,9 @@ QueryPlanStepPtr AggregatingStep::clone() const
     step->uniq_exact_in_order_layer_prefix = uniq_exact_in_order_layer_prefix;
     step->uniq_exact_in_order_disjoint_streams = uniq_exact_in_order_disjoint_streams;
     step->order_decided_before_projections = order_decided_before_projections;
+    step->flush_on_order_key_change = flush_on_order_key_change;
+    step->flush_on_order_key_change_single_stream = flush_on_order_key_change_single_stream;
+    step->flush_on_order_key_change_required = flush_on_order_key_change_required;
     return step;
 }
 
