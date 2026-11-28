@@ -208,6 +208,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char restart_replica_fail_after_detach[];
+    extern const char restart_replica_pause_after_detach[];
 }
 
 namespace ActionLocks
@@ -1641,6 +1642,8 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
                     query_status->throwIfKilled();
             });
         }
+
+        FailPointInjection::pauseFailPoint(FailPoints::restart_replica_pause_after_detach);
 
         size_t non_zk_retries = 0;
         constexpr size_t max_non_zk_retries = 10;
