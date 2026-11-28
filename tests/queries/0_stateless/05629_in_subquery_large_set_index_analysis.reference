@@ -1,0 +1,17 @@
+UInt64
+200000
+1	1
+String
+200000
+1	1
+Nullable(String)
+209999
+1	1
+Tuple
+200000
+1	1
+Constant folding
+200000
+200000
+05629_no_folding	1
+05629_folding	0

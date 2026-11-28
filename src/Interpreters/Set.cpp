@@ -690,7 +690,7 @@ Columns Set::getSetElements() const
     return result;
 }
 
-static Columns sortSetIndexColumns(const Columns & columns)
+static Columns sortSetIndexColumns(const Columns & columns, size_t max_threads)
 {
     Block block_to_sort;
     SortDescription sort_description;
@@ -701,11 +701,11 @@ static Columns sortSetIndexColumns(const Columns & columns)
         sort_description.emplace_back(column_name, 1, 1);
     }
 
-    sortBlock(block_to_sort, sort_description);
+    sortBlockInParallel(block_to_sort, sort_description, max_threads);
     return block_to_sort.getColumns();
 }
 
-std::shared_ptr<const Columns> Set::getSortedSetElements() const
+std::shared_ptr<const Columns> Set::getSortedSetElements(size_t max_threads) const
 {
     checkIsCreated();
 
@@ -713,7 +713,7 @@ std::shared_ptr<const Columns> Set::getSortedSetElements() const
     auto sorted = sorted_set_elements.lock();
     if (!sorted)
     {
-        sorted = std::make_shared<const Columns>(sortSetIndexColumns(getSetElements()));
+        sorted = std::make_shared<const Columns>(sortSetIndexColumns(getSetElements(), max_threads));
         sorted_set_elements = sorted;
     }
     return sorted;
@@ -1055,7 +1055,10 @@ static std::optional<BoolMask> checkInRangeSingleColumn(
 }
 
 MergeTreeSetIndex::MergeTreeSetIndex(
-    const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_, const Set * source_set)
+    const Columns & set_elements,
+    std::vector<KeyTuplePositionMapping> && indexes_mapping_,
+    const Set * source_set,
+    size_t max_threads)
     : has_all_keys(set_elements.size() == indexes_mapping_.size())
     , indexes_mapping(std::move(indexes_mapping_))
     , instance_id(getNextMergeTreeSetIndexId())
@@ -1095,11 +1098,11 @@ MergeTreeSetIndex::MergeTreeSetIndex(
 
     if (use_sorted_set_elements)
     {
-        shared_ordered_set = source_set->getSortedSetElements();
+        shared_ordered_set = source_set->getSortedSetElements(max_threads);
         ordered_set = *shared_ordered_set;
     }
     else
-        ordered_set = sortSetIndexColumns(ordered_set);
+        ordered_set = sortSetIndexColumns(ordered_set, max_threads);
 
     /// Only fixed-width key columns keep the cached ranges buffer small and bounded: their
     /// columns hold at most one value, so reuse cannot grow them. Variable-width columns

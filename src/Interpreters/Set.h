@@ -166,8 +166,8 @@ public:
     std::shared_ptr<const PlainRanges> getPlainRanges() const;
 
     /// The explicit elements sorted by their columns in order (ascending, NULLs last), as `MergeTreeSetIndex` orders them.
-    /// The copy is shared while someone holds it; the set keeps it only weakly.
-    std::shared_ptr<const Columns> getSortedSetElements() const;
+    /// The copy is shared while someone holds it; the set keeps it only weakly. `max_threads` bounds the sort of a new copy.
+    std::shared_ptr<const Columns> getSortedSetElements(size_t max_threads) const;
 
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
@@ -386,8 +386,12 @@ public:
         std::vector<FunctionBasePtr> functions;
     };
 
+    /// `max_threads` bounds the threads that sort a large set.
     MergeTreeSetIndex(
-        const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_, const Set * source_set = nullptr);
+        const Columns & set_elements,
+        std::vector<KeyTuplePositionMapping> && indexes_mapping_,
+        const Set * source_set = nullptr,
+        size_t max_threads = 1);
 
     [[nodiscard]] size_t size() const { return ordered_set.at(0)->size(); }
 
