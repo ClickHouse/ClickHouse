@@ -4,7 +4,8 @@
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;
-SET distributed_plan_workers_num = 4;
+-- Not `distributed_plan_workers_num`: it would conflict with the probe's `make_distributed_plan = 0` below.
+SET param__internal_cascades_cluster_node_count = 4;
 SET enable_parallel_replicas = 0;
 -- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so the functional-test
 -- profile's non-zero limit would leave a single-node local aggregation and no distributed read.

@@ -706,8 +706,8 @@ TEST_F(DistributedQueryTest, StatelessWorkerClusterPlanSizing)
     expect_rejected("", DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG);
     EXPECT_EQ(plan_nodes("stat", 5), 1u);
 
-    /// Client disabled: the default (empty) selection plans locally (0 nodes), but an explicitly named
-    /// cluster is rejected rather than silently planning local.
+    /// Client disabled: every selection is rejected, the default (empty) one included, rather than
+    /// silently planning zero nodes and running on the initiator alone.
     apply_config(R"(
     <stateless_worker_client>
         <enabled>0</enabled>
@@ -716,7 +716,7 @@ TEST_F(DistributedQueryTest, StatelessWorkerClusterPlanSizing)
         </clusters>
     </stateless_worker_client>
 )");
-    EXPECT_EQ(plan_nodes("", 5), 0u);
+    expect_rejected("", DB::ErrorCodes::SUPPORT_IS_DISABLED);
     expect_rejected("stat", DB::ErrorCodes::SUPPORT_IS_DISABLED);
 
     /// A `default_cluster_name` that also names a cluster under `clusters` is an ambiguous collision:
