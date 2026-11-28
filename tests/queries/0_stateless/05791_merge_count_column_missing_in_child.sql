@@ -24,6 +24,9 @@ DROP TABLE IF EXISTS t_ub;
 DROP TABLE IF EXISTS mx;
 DROP TABLE IF EXISTS t_amem;
 DROP TABLE IF EXISTS t_zmt;
+DROP TABLE IF EXISTS v_rf;
+DROP TABLE IF EXISTS t_rf;
+DROP TABLE IF EXISTS t_empty;
 
 CREATE TABLE t_old (k UInt64, s String, f UInt16, kk UInt64 ALIAS k + 1) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_old SELECT number, if(number = 500, 'n/a', toString(number)), 0 FROM numbers(1000);
@@ -117,6 +120,17 @@ INSERT INTO t_amem (s) VALUES ('1');
 INSERT INTO t_zmt (s) VALUES ('n/a');
 CREATE TABLE mx (n UInt8) ENGINE = Merge(currentDatabase(), '^t_(amem|zmt)$');
 SELECT count() FROM mx SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+-- `additional_result_filter` is applied to the result of the view query too.
+CREATE TABLE t_rf (c UInt64) ENGINE = MergeTree ORDER BY c;
+INSERT INTO t_rf VALUES (1), (2);
+CREATE VIEW v_rf AS SELECT c FROM t_rf;
+SELECT count() AS c FROM v_rf SETTINGS additional_result_filter = 'c > 0';
+-- Without its aggregate the constant key is not removed, and the empty input gives no row instead of one.
+CREATE TABLE t_empty (c UInt64) ENGINE = MergeTree ORDER BY c;
+SELECT count() FROM (SELECT count() FROM t_empty GROUP BY tuple()) SETTINGS empty_result_for_aggregation_by_constant_keys_on_empty_set = 0;
+DROP TABLE t_empty;
+DROP TABLE v_rf;
+DROP TABLE t_rf;
 DROP TABLE mx;
 DROP TABLE t_amem;
 DROP TABLE t_zmt;

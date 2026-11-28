@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_positional_arguments;
+    extern const SettingsString additional_result_filter;
 }
 
 namespace ErrorCodes
@@ -820,11 +821,16 @@ void StorageView::readImpl(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
+    const bool sealed = isSealed(*storage_snapshot->metadata, context) && !isReadByDefiner(*storage_snapshot->metadata, context);
+    auto view_context = getViewContext(context, storage_snapshot, this, current_inner_query);
+
     /// The view is read only to count its rows: give the column the default of its type, as `ReadFromMerge` does.
     /// Then nothing reads the column from the view query, and the analyzer drops the projection of the view query
     /// when it does not change the number of rows, so that the tables under the view get a row-count-only read too.
+    /// `additional_result_filter` is applied to the result of the view query, so it needs the real column.
     Names inner_column_names = column_names;
-    if (column_names.size() == 1 && query_info.getRowCountOnlyColumnName(*this, context) == column_names.front())
+    if (column_names.size() == 1 && query_info.getRowCountOnlyColumnName(*this, context) == column_names.front()
+        && view_context->getSettingsRef()[Setting::additional_result_filter].value.empty())
     {
         const auto column_type = storage_snapshot->getSampleBlockForColumns(column_names).getByPosition(0).type;
         auto default_value = makeASTFunction("defaultValueOfTypeName", make_intrusive<ASTLiteral>(column_type->getName()));
@@ -833,8 +839,6 @@ void StorageView::readImpl(
         inner_column_names.clear();
     }
 
-    const bool sealed = isSealed(*storage_snapshot->metadata, context) && !isReadByDefiner(*storage_snapshot->metadata, context);
-    auto view_context = getViewContext(context, storage_snapshot, this, current_inner_query);
     {
         /// The outer filter is used only to analyze the indexes of the inner tables,
         /// but for a sealed view it would skip data by the values of the rows the view hides.

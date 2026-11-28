@@ -245,6 +245,8 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
             {
                 auto * query_node = query_or_union_node->as<QueryNode>();
                 if (query_node && !query_node->hasInterpolate() && query_node->getProjectionAliasesToOverride().empty()
+                    /// The planner removes constant `GROUP BY` keys only while the query has aggregates.
+                    && !(query_node->hasGroupBy() && hasAggregateFunctionNodes(query_node->getProjectionNode()))
                     && rowsDoNotDependOnReadColumns(query_node->getJoinTreeNodeTyped())
                     && !(query_node->getContext()->getSettingsRef()[Setting::analyzer_compatibility_join_using_top_level_identifier]
                          && hasJoinUsing(query_node->getJoinTreeNode())))
