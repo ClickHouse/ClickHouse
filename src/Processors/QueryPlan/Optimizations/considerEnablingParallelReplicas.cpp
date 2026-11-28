@@ -1616,8 +1616,11 @@ static bool decideAtBoundary(
         if (!replicas)
             return true;
 
-        auto statistics_block
-            = std::make_shared<RuntimeDataflowStatisticsBlock>(single_replica_plan_boundary_hash, rows_to_read, undecided_query_key);
+        auto statistics_block = std::make_shared<RuntimeDataflowStatisticsBlock>(
+            single_replica_plan_boundary_hash,
+            rows_to_read,
+            optimization_settings.automatic_parallel_replicas_max_counted_ranges,
+            undecided_query_key);
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block);
 
         /// A replica whose partial aggregation uses memory-bound merging sorts its output by the group

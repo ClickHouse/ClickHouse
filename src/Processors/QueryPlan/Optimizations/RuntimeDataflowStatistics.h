@@ -11,6 +11,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <atomic>
 #include <cstddef>
@@ -152,9 +153,11 @@ struct RuntimeDataflowStatisticsBlock
 
     /// `undecided_query_key`, when not zero, is the key `RuntimeDataflowStatisticsCache::setUndecided` records under when a
     /// step cannot collect, or when the collection measures nothing.
-    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, UInt64 undecided_query_key_ = 0)
+    RuntimeDataflowStatisticsBlock(
+        size_t cache_key_, size_t total_rows_to_read_, size_t max_counted_ranges_, UInt64 undecided_query_key_ = 0)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
+        , max_counted_ranges(max_counted_ranges_)
         , undecided_query_key(undecided_query_key_)
     {
         if (cache_key == 0)
@@ -168,9 +171,20 @@ struct RuntimeDataflowStatisticsBlock
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
+    /// See `ReadRangesRegistry`. 0 is no limit.
+    const size_t max_counted_ranges = 0;
     const UInt64 undecided_query_key = 0;
 
     std::atomic_bool unsupported_case{false};
+
+    std::atomic_size_t read_ranges{0};
+    std::atomic_bool counted_ranges_limit_exceeded{false};
+
+    /// The registries of the reads, whose ranges are all freed when the counting stops, see `ReadRangesRegistry`. Locked
+    /// before the mutex of a registry.
+    std::mutex read_ranges_registries_mutex;
+    VectorWithMemoryTracking<ReadRangesRegistry *> read_ranges_registries TSA_GUARDED_BY(read_ranges_registries_mutex);
+    std::atomic_bool read_ranges_released{false};
 
     /// The compressed bytes the readers loaded, see `ReadRangesRegistry`.
     std::atomic_size_t input_bytes_read{0};

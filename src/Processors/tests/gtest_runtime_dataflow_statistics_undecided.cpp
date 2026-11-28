@@ -44,7 +44,7 @@ TEST(RuntimeDataflowStatisticsUndecided, FailedCollectionIsRememberedUntilOneSuc
     const UInt64 statistics_key = freshKey();
     auto & cache = getRuntimeDataflowStatisticsCache();
     {
-        RuntimeDataflowStatisticsBlock failed(statistics_key, /*total_rows_to_read_=*/100, undecided_query_key);
+        RuntimeDataflowStatisticsBlock failed(statistics_key, /*total_rows_to_read_=*/100, /*max_counted_ranges_=*/0, undecided_query_key);
         failed.unsupported_case = true;
     }
     const auto undecided = cache.getUndecided(undecided_query_key);
@@ -52,7 +52,7 @@ TEST(RuntimeDataflowStatisticsUndecided, FailedCollectionIsRememberedUntilOneSuc
     EXPECT_EQ(undecided->outcome_event, ProfileEvents::AutoParallelReplicasNoStatistics);
 
     {
-        RuntimeDataflowStatisticsBlock succeeded(statistics_key, /*total_rows_to_read_=*/100, undecided_query_key);
+        RuntimeDataflowStatisticsBlock succeeded(statistics_key, /*total_rows_to_read_=*/100, /*max_counted_ranges_=*/0, undecided_query_key);
         measureSomething(succeeded);
     }
     EXPECT_TRUE(cache.getStats(statistics_key));

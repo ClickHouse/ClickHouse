@@ -92,7 +92,7 @@ PLAIN_INTEGRATION_TEST_JOB = [
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
-    base_branches=[BASE_BRANCH],
+    base_branches=[BASE_BRANCH, "fix-stats-for-string-filters", "autopr-count-ranges-cap", "autopr-count-text-index-reads"],
     engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         JobConfigs.style_check,

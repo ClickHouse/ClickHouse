@@ -10177,6 +10177,14 @@ keeps running on one node, however the time comparison turns out.
 Set to 1 to accept any amount of duplicated reading, which restores the behaviour of only comparing times.
 )", 0, \
         {"26.10", 1.0, 0.5, "Automatic parallel replicas now declines a query that would repeat more than half of its reading on every replica. Previously there was no limit, which is what 1 still asks for."}) \
+    DECLARE(UInt64, automatic_parallel_replicas_max_counted_ranges, 1'000'000, R"(
+The maximum number of ranges of compressed blocks automatic parallel replicas keep to measure the bytes a query reads
+while collecting its statistics. When it is reached, the input of the query is not measured, and automatic parallel
+replicas are not used for it: as after any collection that ends without a decision, the next executions with the same
+settings skip building the plan with parallel replicas, see `automatic_parallel_replicas_undecided_retry_after_executions`.
+0 means no limit.
+)", 0, \
+        {"26.12", 0, 1'000'000, "New setting."}) \
     DECLARE(Float, automatic_parallel_replicas_statistics_drift_ratio, 1.5, R"(
 How much the rows a read selects may differ from the rows it selected when automatic parallel replicas collected its
 statistics, as the ratio of the larger to the smaller, before the statistics are considered stale and collected again

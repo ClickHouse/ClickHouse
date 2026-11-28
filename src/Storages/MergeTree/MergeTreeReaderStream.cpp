@@ -7,12 +7,20 @@
 #include <base/range.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <algorithm>
 #include <utility>
 #include <filesystem>
 #include <IO/ByteRangeSet.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
+
+namespace ProfileEvents
+{
+    extern const Event RuntimeDataflowStatisticsInputNanoseconds;
+}
 
 namespace DB
 {
@@ -344,65 +352,192 @@ ReadRangesRegistry::ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatistics
     : block(std::move(block_))
     , duplicated(duplicated_)
 {
+    std::lock_guard lock(block->read_ranges_registries_mutex);
+    block->read_ranges_registries.push_back(this);
 }
 
-ReadRangesRegistry::ReadRanges & ReadRangesRegistry::getReadRanges(const String & path)
+ReadRangesRegistry::~ReadRangesRegistry()
 {
+    ProfileEventTimeIncrement<Time::Nanoseconds> watch(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds);
+    {
+        std::lock_guard lock(block->read_ranges_registries_mutex);
+        std::erase(block->read_ranges_registries, this);
+    }
+
+    /// Freed here rather than with the members, which are destroyed after the timer; after the lock, as in `release`.
+    decltype(read_ranges_by_path) freed;
     std::lock_guard lock(mutex);
-    /// References to the elements of an unordered map stay valid when it grows.
-    return read_ranges_by_path[path];
+    if (!stopped())
+    {
+        size_t bytes = 0;
+        for (auto & [_, read_ranges] : read_ranges_by_path)
+            bytes += read_ranges->mergeAndCount();
+        (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
+    }
+    freed.swap(read_ranges_by_path);
+}
+
+ReadRangesRegistry::ReadRanges * ReadRangesRegistry::getReadRanges(const String & path)
+{
+    /// Also for a file looked up before. `registerRanges` checks again, as the counting can stop after the lookup.
+    if (stopped())
+    {
+        releaseAll();
+        return nullptr;
+    }
+
+    const UInt128 key = sipHash128(path.data(), path.size());
+    {
+        std::lock_guard lock(mutex);
+        if (auto it = read_ranges_by_path.find(key); it != read_ranges_by_path.end())
+            return it->second.get();
+        if (reserve(units_per_file))
+        {
+            auto read_ranges = std::make_unique<ReadRanges>();
+            return read_ranges_by_path.emplace(key, std::move(read_ranges)).first->second.get();
+        }
+    }
+    releaseAll();
+    return nullptr;
 }
 
 size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges)
 {
     std::lock_guard lock(mutex);
-    size_t bytes = 0;
+    const size_t capacity_before = united_ranges.capacity();
     for (const auto & [begin, end] : ranges)
     {
         chassert(begin <= end);
-        /// The first counted range that overlaps or touches the range.
-        auto it = united_ranges.upper_bound(begin);
-        if (it != united_ranges.begin() && std::prev(it)->second >= begin)
-            --it;
-        if (it == united_ranges.end() || it->first > end)
+        /// A reader mostly goes on from where its last range ended. When several threads read the file, their ranges
+        /// interleave and are appended instead, to be coalesced by the next merge.
+        if (!united_ranges.empty())
         {
-            bytes += end - begin;
-            united_ranges.emplace_hint(it, begin, end);
-            continue;
+            auto & [last_begin, last_end] = united_ranges.back();
+            if (last_begin <= begin && begin <= last_end)
+            {
+                last_end = std::max(last_end, end);
+                continue;
+            }
         }
 
-        /// Merge the range and the counted ranges it overlaps or touches into the first of them, which is extended in place,
-        /// as reading goes on from where the previous block ended.
-        const auto first = it;
-        size_t covered = 0;
-        size_t merged_end = end;
-        for (; it != united_ranges.end() && it->first <= end; ++it)
-        {
-            if (it->second > begin && it->first < end)
-                covered += std::min(end, it->second) - std::max(begin, it->first);
-            merged_end = std::max(merged_end, it->second);
-        }
-        bytes += end - begin - covered;
-        first->second = merged_end;
-        united_ranges.erase(std::next(first), it);
-        if (begin < first->first)
-        {
-            auto node = united_ranges.extract(first);
-            node.key() = begin;
-            united_ranges.insert(std::move(node));
-        }
+        united_ranges.emplace_back(begin, end);
+        /// Merged in bulk, once the appended ranges are as many as the merged ones, so that each merge is paid for by
+        /// the ranges appended since the last one. Merged as soon as they are, before the next range grows the memory,
+        /// which is what the limit is charged by.
+        if (united_ranges.size() - merged >= std::max<size_t>(merged, 64))
+            mergeLocked();
     }
     ranges.clear();
+    return united_ranges.capacity() - capacity_before;
+}
+
+size_t ReadRangesRegistry::ReadRanges::mergeAndCount() noexcept
+{
+    std::lock_guard lock(mutex);
+    mergeLocked();
+    size_t bytes = 0;
+    for (const auto & [begin, end] : united_ranges)
+        bytes += end - begin;
     return bytes;
 }
 
-void ReadRangesRegistry::registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges)
+void ReadRangesRegistry::ReadRanges::mergeLocked() noexcept
 {
-    if (ranges.empty())
+    if (merged == united_ranges.size())
         return;
 
-    const size_t bytes = file_ranges.add(ranges);
-    (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
+    const auto appended = united_ranges.begin() + merged;
+    std::sort(appended, united_ranges.end());
+    /// Without the memory for a buffer, it merges without one.
+    std::inplace_merge(united_ranges.begin(), appended, united_ranges.end());
+
+    size_t last = 0;
+    for (size_t i = 1; i < united_ranges.size(); ++i)
+    {
+        if (united_ranges[i].first <= united_ranges[last].second)
+            united_ranges[last].second = std::max(united_ranges[last].second, united_ranges[i].second);
+        else
+            united_ranges[++last] = united_ranges[i];
+    }
+    united_ranges.resize(last + 1);
+    merged = united_ranges.size();
+}
+
+void ReadRangesRegistry::registerRanges(ReadRanges * file_ranges, CompressedBlockRanges & ranges)
+{
+    /// A file looked up once the counting stopped keeps nothing.
+    if (ranges.empty() || !file_ranges)
+    {
+        ranges.clear();
+        return;
+    }
+
+    if (stopped())
+    {
+        ranges.clear();
+        /// Also what was added to the file after the others were freed.
+        file_ranges->release();
+        releaseAll();
+        return;
+    }
+
+    /// Charged by the memory the ranges hold, which merging does not give back.
+    const size_t grown = file_ranges->add(ranges);
+    if (grown && !reserve(grown))
+    {
+        file_ranges->release();
+        releaseAll();
+    }
+}
+
+void ReadRangesRegistry::ReadRanges::release() noexcept
+{
+    /// Freed after the lock.
+    CompressedBlockRanges freed;
+    std::lock_guard lock(mutex);
+    freed.swap(united_ranges);
+    merged = 0;
+}
+
+void ReadRangesRegistry::releaseAll()
+{
+    if (block->read_ranges_released.exchange(true))
+        return;
+    {
+        std::lock_guard lock(block->read_ranges_registries_mutex);
+        for (auto * registry : block->read_ranges_registries)
+            registry->releaseOwn();
+    }
+    LOG_DEBUG(
+        getLogger("RuntimeDataflowStatisticsCacheUpdater"),
+        "Counting the compressed blocks read would take more than {} ranges, the input is not measured",
+        block->max_counted_ranges);
+}
+
+void ReadRangesRegistry::releaseOwn()
+{
+    std::lock_guard lock(mutex);
+    for (auto & [_, read_ranges] : read_ranges_by_path)
+        read_ranges->release();
+}
+
+bool ReadRangesRegistry::stopped() const
+{
+    return block->counted_ranges_limit_exceeded.load(std::memory_order_relaxed);
+}
+
+bool ReadRangesRegistry::reserve(size_t units)
+{
+    if (stopped())
+        return false;
+    if (!block->max_counted_ranges)
+        return true;
+    if (block->read_ranges.fetch_add(units, std::memory_order_relaxed) + units <= block->max_counted_ranges)
+        return true;
+    block->read_ranges.fetch_sub(units, std::memory_order_relaxed);
+    /// Logged by `releaseAll`, which follows, out of the locks.
+    block->counted_ranges_limit_exceeded.store(true, std::memory_order_relaxed);
+    return false;
 }
 
 void MergeTreeReaderStream::setRangesReadSink(CompressedBlockRanges * ranges_read_)

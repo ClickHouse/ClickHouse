@@ -5,9 +5,11 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <base/defines.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/HashTable/Hash.h>
+#include <absl/container/flat_hash_map.h>
 
+#include <atomic>
 #include <mutex>
 
 
@@ -23,38 +25,73 @@ class CachedCompressedReadBuffer;
 struct RuntimeDataflowStatisticsBlock;
 
 /// The ranges of the files the readers of a read load, counted into its statistics, each range once however many readers
-/// load it.
+/// load it. The memory the ranges hold is charged to `automatic_parallel_replicas_max_counted_ranges` as it grows; past
+/// it, the counting stops, the ranges are freed, and the statistics record that the input was not measured. The bytes of
+/// the ranges are counted once, when the registry is destroyed, before the statistics are, since it holds them.
 class ReadRangesRegistry
 {
 public:
     /// `duplicated` is that of the `RuntimeDataflowStatisticsCacheUpdater` of the read.
     ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_);
+    ~ReadRangesRegistry();
 
     /// The counted ranges of a file. The readers of several threads count the same file.
+    /// The ranges are appended and merged in bulk, which is several times faster than keeping them in a tree and takes
+    /// 16 bytes a range.
     class ReadRanges
     {
     public:
-        /// The bytes of the ranges not counted yet, which become counted. Clears the ranges.
+        /// Appends the ranges and clears them. Returns how many ranges the memory kept for them grew by.
         size_t add(CompressedBlockRanges & ranges);
+        /// Merges the appended ranges into the merged ones and returns the bytes of all the ranges.
+        size_t mergeAndCount() noexcept;
+        /// Frees the ranges, once the counting stopped.
+        void release() noexcept;
 
     private:
+        void mergeLocked() noexcept TSA_REQUIRES(mutex);
+
         std::mutex mutex;
-        /// Merged, by their begin.
-        MapWithMemoryTracking<size_t, size_t> united_ranges TSA_GUARDED_BY(mutex);
+        /// Up to `merged`: sorted by their begin, neither overlapping nor touching. After it: appended since the last merge.
+        CompressedBlockRanges united_ranges TSA_GUARDED_BY(mutex);
+        size_t merged TSA_GUARDED_BY(mutex) = 0;
     };
 
-    /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.
-    ReadRanges & getReadRanges(const String & path);
+    /// The counted ranges of the file at the path, valid as long as this object, or nullptr once the counting stopped. A
+    /// reader looks it up once by stream.
+    ReadRanges * getReadRanges(const String & path);
 
-    /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet. Clears `ranges`.
-    void registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges);
+    /// Adds `ranges`, which a reader loaded from the file of `file_ranges`, to the counted ones, and clears them.
+    void registerRanges(ReadRanges * file_ranges, CompressedBlockRanges & ranges);
+
+    /// Past the limit: nothing is counted any more, and the readers stop collecting the ranges.
+    [[nodiscard]] bool stopped() const;
 
 private:
+    /// A file takes about as much memory as 8 ranges: its `ReadRanges`, its slot in the map and the `unique_ptr`.
+    /// Charged against the limit when a new file entry is created.
+    static constexpr size_t units_per_file = 8;
+
+    /// Reserves `units` of the limit; past it, stops the counting instead.
+    bool reserve(size_t units);
+
+    /// Frees the ranges of all the files of every registry of the statistics, once the counting stopped: a registry whose
+    /// reads are done would not register again to free its own. The files stay, as the readers refer to them.
+    void releaseAll();
+    void releaseOwn();
+
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;
 
     std::mutex mutex;
-    UnorderedMapWithMemoryTracking<String, ReadRanges> read_ranges_by_path TSA_GUARDED_BY(mutex);
+    /// By the `sipHash128` of the path, which takes less than the path. The values do not move when the map grows.
+    absl::flat_hash_map<
+        UInt128,
+        std::unique_ptr<ReadRanges>,
+        UInt128TrivialHash,
+        std::equal_to<>,
+        AllocatorWithMemoryTracking<std::pair<const UInt128, std::unique_ptr<ReadRanges>>>>
+        read_ranges_by_path TSA_GUARDED_BY(mutex);
 };
 
 using ReadRangesRegistryPtr = std::shared_ptr<ReadRangesRegistry>;
