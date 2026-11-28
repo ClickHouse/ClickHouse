@@ -164,7 +164,8 @@ static bool foldedLambdasMatch(const IColumn & inner, const IColumn & outer, siz
 static bool constantsMatch(
     const IColumn & inner, const IDataType & inner_type, const IColumn & outer, const IDataType & outer_type, size_t max_set_size)
 {
-    if (!inner_type.equals(outer_type))
+    /// The values are compared without the time zone and the custom type name, such as `Bool`, and `equals` ignores both.
+    if (!inner_type.equals(outer_type) || inner_type.getName() != outer_type.getName())
         return false;
 
     if (const auto * inner_set = typeid_cast<const ColumnSet *>(&inner))
