@@ -1,0 +1,25 @@
+--- a temporary table with an engine other than Memory needs CREATE ARBITRARY TEMPORARY TABLE
+denied: CREATE ARBITRARY TEMPORARY TABLE ON *.*
+--- also when the engine comes from default_temporary_table_engine
+denied: CREATE ARBITRARY TEMPORARY TABLE ON *.*
+--- and when the table is restored
+denied: CREATE ARBITRARY TEMPORARY TABLE ON *.*
+--- a restore of a database together with that table is refused before anything is created
+denied: CREATE ARBITRARY TEMPORARY TABLE ON *.*
+0
+--- with the grant, all three are allowed
+allowed
+allowed
+allowed
+--- a Memory temporary table needs only CREATE TEMPORARY TABLE, to create and to restore
+allowed
+allowed
+--- a temporary view needs CREATE TEMPORARY VIEW, which CREATE ARBITRARY TEMPORARY TABLE does not imply
+denied: CREATE TEMPORARY VIEW ON *.*
+denied: CREATE TEMPORARY VIEW ON *.*
+--- and CREATE TEMPORARY VIEW alone is enough to restore one
+allowed
+allowed
+--- a temporary table cannot be restored ON CLUSTER, and the query is not sent to the hosts
+error: Code: 80
+0

@@ -481,3 +481,65 @@ def test_on_cluster_is_authorized_on_the_initiator(started_cluster):
         f"BACKUP TABLE d67785.secrets ON CLUSTER one_shard TO {s3(ALLOWED + '/b4')} FORMAT Null",
         user=USER,
     )
+
+
+def test_restore_of_an_attach_from_definition_requires_read_write_on_file(started_cluster):
+    # A backup never stores `ATTACH ... FROM '<dir>'` by itself, so the definition is rewritten in the backup.
+    # `RESTORE` executes it as is, so it must ask the `READ, WRITE ON FILE` that the query asks.
+    staged_root = "/var/lib/clickhouse/user_files/staged14"
+    staged_dir = "staged14/data/staging/protected"
+    node.exec_in_container(["bash", "-c", f"rm -rf {staged_root}"])
+    node.exec_in_container(
+        [
+            "clickhouse",
+            "local",
+            "--path",
+            staged_root,
+            "--allow_deprecated_database_ordinary=1",
+            "--query",
+            "CREATE DATABASE staging ENGINE = Ordinary; "
+            "CREATE TABLE staging.protected (id UInt64, secret UInt64) ENGINE = MergeTree ORDER BY id; "
+            "INSERT INTO staging.protected VALUES (1, 424242);",
+        ]
+    )
+    node.query("DROP TABLE IF EXISTS d67785.carrier14 SYNC")
+    node.query("CREATE TABLE d67785.carrier14 (id UInt64, secret UInt64) ENGINE = MergeTree ORDER BY id")
+    node.query(
+        "BACKUP TABLE d67785.carrier14 TO Disk('backup_disk', 'attach14') SETTINGS structure_only = 1 FORMAT Null"
+    )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"printf \"ATTACH TABLE d67785.carrier14 FROM '{staged_dir}/' "
+            "(id UInt64, secret UInt64) ENGINE = MergeTree ORDER BY id\\n\" "
+            "> /var/lib/clickhouse/disks/backup_disk/attach14/metadata/d67785/carrier14.sql",
+        ],
+        user="root",
+    )
+    node.query(f"GRANT READ ON DISK TO {USER}")
+    restore = (
+        "RESTORE TABLE d67785.carrier14 AS d67785.r14 FROM Disk('backup_disk', 'attach14') "
+        "SETTINGS structure_only = 1, allow_different_table_def = 1 FORMAT Null"
+    )
+
+    def assert_denied_and_untouched():
+        error = node.query_and_get_error(restore, user=USER)
+        assert "ACCESS_DENIED" in error, error
+        assert "READ, WRITE ON FILE" in error, error
+        assert (
+            node.query("SELECT count() FROM system.tables WHERE database = 'd67785' AND name = 'r14'")
+            == "0\n"
+        )
+        node.exec_in_container(["test", "-d", f"/var/lib/clickhouse/user_files/{staged_dir}"])
+
+    assert_denied_and_untouched()
+    node.query(f"GRANT READ ON FILE TO {USER}")
+    assert_denied_and_untouched()
+
+    node.query(f"GRANT WRITE ON FILE TO {USER}")
+    node.query(restore, user=USER)
+    assert node.query("SELECT secret FROM d67785.r14", user=USER) == "424242\n"
+    node.query("DROP TABLE d67785.r14 SYNC")
+    node.query("DROP TABLE d67785.carrier14 SYNC")
+    node.exec_in_container(["bash", "-c", f"rm -rf {staged_root}"])
