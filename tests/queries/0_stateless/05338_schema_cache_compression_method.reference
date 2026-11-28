@@ -85,3 +85,14 @@ SNAPPY_UNCOMPRESS_FAILED
 Case X: Ordinary filename with #compression_method= marker
 NOT_1000
 1000
+Case Y: Wildcard URL Snappy wire mode and mixed-extension cache isolation
+10
+SNAPPY_UNCOMPRESS_FAILED
+c1	Nullable(Int64)
+SNAPPY_UNCOMPRESS_FAILED
+10
+SNAPPY_UNCOMPRESS_FAILED
+10
+5
+5
+1

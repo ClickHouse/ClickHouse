@@ -102,7 +102,7 @@ def _has_data(file):
 # compiled TU (an sccache hit does not run the compiler) plus one per linked
 # binary, so their presence is the ground truth for whether this build was
 # expected to produce time-trace rows.
-_RAW_TRACE_RE = re.compile(r"\.(c|cpp|cc|cxx)\.json$|\.time-trace$")
+_RAW_TRACE_RE = re.compile(r"\.(c|cpp|cc|cxx)\.json$|\.time-trace(\.json)?$")
 
 
 def _raw_traces_exist(directory):
@@ -148,8 +148,8 @@ _FINAL_BINARIES = ("programs/clickhouse", "programs/clickhouse-keeper")
 # size row is required.
 _SIZE_ONLY_BINARIES = ("programs/clickhouse-stripped",)
 
-# These builds link the server binary only as the reference of the PR performance
-# comparison, so its link trace and symbols are kept out of their upload.
+# These builds link only for the PR builds (the reference of the PR performance
+# comparison, the ThinLTO cache), so their link traces and symbols are kept out of their upload.
 _OBJECTS_ONLY_BUILDS = ("arm_release_performance_reference",)
 
 
@@ -268,9 +268,11 @@ def check():
     objects_only = build_type in _OBJECTS_ONLY_BUILDS
     try:
         if objects_only:
-            # lld writes the link trace next to its output.
-            for rel in _FINAL_BINARIES:
-                (Path(build_dir) / f"{rel}.time-trace").unlink(missing_ok=True)
+            # lld writes the link trace next to its output: <output>.time-trace
+            # up to LLVM 22, <output>.time-trace.json from LLVM 23 on.
+            for trace in Path(build_dir).rglob("*.time-trace*"):
+                if trace.name.endswith((".time-trace", ".time-trace.json")):
+                    trace.unlink()
         Shell.check(
             "./utils/prepare-time-trace/prepare-time-trace.sh "
             f"{build_dir} {profiles_dir.absolute()}",

@@ -211,14 +211,23 @@ def cancel_paused_task(node, query):
     request.get_answer()
 
 
+def check_objects_restored(cluster, objects_before):
+    for _ in range(30):
+        if list_object_names(cluster) == objects_before:
+            break
+        time.sleep(1)
+    assert list_object_names(cluster) == objects_before
+
+
+@pytest.mark.parametrize("policy", ["s3", "s3_cache"])
 @pytest.mark.parametrize("kind", ["merge", "mutation"])
-def test_task_canceled_after_part_handoff(cluster, kind):
+def test_task_canceled_after_part_handoff(cluster, kind, policy):
     node = cluster.instances["node1"]
     objects_before = list_object_names(cluster)
     node.query(
         f"CREATE TABLE {TABLE_NAME} (id UInt64, data String)"
         f" ENGINE=ReplicatedMergeTree('/clickhouse/tables/{TABLE_NAME}_{random_string(10)}', '1')"
-        " ORDER BY id SETTINGS storage_policy='s3'"
+        f" ORDER BY id SETTINGS storage_policy='{policy}'"
     )
     node.query(f"SYSTEM STOP MERGES {TABLE_NAME}")
     for i in range(2 if kind == "merge" else 1):
@@ -254,8 +263,51 @@ def test_task_canceled_after_part_handoff(cluster, kind):
         )
         node.query(f"DROP TABLE {TABLE_NAME} SYNC")
 
-    for _ in range(30):
-        if list_object_names(cluster) == objects_before:
-            break
-        time.sleep(1)
-    assert list_object_names(cluster) == objects_before
+    check_objects_restored(cluster, objects_before)
+
+
+@pytest.mark.parametrize("policy", ["s3", "s3_cache"])
+@pytest.mark.parametrize("kind", ["merge", "mutation"])
+def test_retry_rejected_after_failed_commit(cluster, kind, policy):
+    """The first attempt fails to commit to Keeper, and its rolled back part stays while the cleanup is stopped,
+    so every retry builds the part again and fails to add it after the task has handed the part over."""
+    node = cluster.instances["node1"]
+    objects_before = list_object_names(cluster)
+    node.query(
+        f"CREATE TABLE {TABLE_NAME} (id UInt64, data String)"
+        f" ENGINE=ReplicatedMergeTree('/clickhouse/tables/{TABLE_NAME}_{random_string(10)}', '1')"
+        f" ORDER BY id SETTINGS storage_policy='{policy}',"
+        " max_postpone_time_for_failed_replicated_merges_ms = 0, max_postpone_time_for_failed_mutations_ms = 0"
+    )
+    node.query(f"SYSTEM STOP MERGES {TABLE_NAME}")
+    for i in range(2 if kind == "merge" else 1):
+        node.query(
+            f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers({i * 10000}, 10000)"
+        )
+
+    rejected = "SELECT sum(value) FROM system.errors WHERE name = 'PART_IS_TEMPORARILY_LOCKED'"
+    rejected_before = int(node.query(rejected))
+    node.query(f"SYSTEM STOP CLEANUP {TABLE_NAME}")
+    node.query(f"ALTER TABLE {TABLE_NAME} MODIFY SETTING fault_probability_before_part_commit = 1")
+    try:
+        node.query(f"SYSTEM START MERGES {TABLE_NAME}")
+        if kind == "merge":
+            node.query(f"OPTIMIZE TABLE {TABLE_NAME} FINAL SETTINGS alter_sync = 0")
+        else:
+            node.query(
+                f"ALTER TABLE {TABLE_NAME} UPDATE data = 'x' WHERE 1 SETTINGS mutations_sync = 0"
+            )
+        node.query_with_retry(
+            rejected, retry_count=120, check_callback=lambda x: int(x) > rejected_before
+        )
+        assert int(node.query(rejected)) > rejected_before
+    finally:
+        node.query(f"ALTER TABLE {TABLE_NAME} MODIFY SETTING fault_probability_before_part_commit = 0")
+        node.query(f"SYSTEM START CLEANUP {TABLE_NAME}")
+
+    node.query(f"SYSTEM SYNC REPLICA {TABLE_NAME}")
+    expected = "20000\t199990000\t0\n" if kind == "merge" else "10000\t49995000\t10000\n"
+    assert node.query(f"SELECT count(), sum(id), countIf(data = 'x') FROM {TABLE_NAME}") == expected
+    assert node.query(f"SELECT count() FROM system.parts WHERE table = '{TABLE_NAME}' AND active") == "1\n"
+    node.query(f"DROP TABLE {TABLE_NAME} SYNC")
+    check_objects_restored(cluster, objects_before)

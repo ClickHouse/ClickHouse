@@ -9,7 +9,10 @@
 #include <Common/Macros.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
+#include <condition_variable>
 #include <limits>
+#include <mutex>
+#include <queue>
 
 namespace DB
 {
@@ -88,6 +91,22 @@ struct ObjectInfo
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
+
+/// An object whose size the table metadata records.
+struct ObjectInfoWithFileSizeHint : public ObjectInfo
+{
+    ObjectInfoWithFileSizeHint(const RelativePathWithMetadata & relative_path_with_metadata_, size_t file_size_hint_)
+        : ObjectInfo(relative_path_with_metadata_)
+        , file_size_hint(file_size_hint_)
+    {
+    }
+
+    [[nodiscard]] std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<ObjectInfoWithFileSizeHint>(*this); }
+
+    [[nodiscard]] std::optional<size_t> getFileSizeHint() const override { return file_size_hint; }
+
+    const size_t file_size_hint;
+};
 using ObjectInfos = std::vector<ObjectInfoPtr>;
 class ExpressionActions;
 
@@ -239,6 +258,8 @@ public:
     [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
 private:
+    [[nodiscard]] ObjectInfos splitToBuckets(const ObjectInfoPtr & object_info) const;
+
     const ObjectIterator iterator;
     StorageObjectStorageConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
@@ -247,7 +268,11 @@ private:
     FormatFilterInfoPtr format_filter_info;
     QueryConditionCachePtr query_condition_cache;
 
+    std::mutex mutex;
+    std::condition_variable objects_split_cv;
     std::queue<ObjectInfoPtr> pending_objects_info;
+    size_t objects_being_split = 0;
+    bool iterator_exhausted = false;
     const LoggerPtr log = getLogger("GlobIterator");
 };
 

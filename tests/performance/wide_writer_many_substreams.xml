@@ -1,0 +1,42 @@
+<test iceberg="0">
+    <!-- The Wide part writer has a fixed cost per granule for every stream of a column: taking the marks and
+         completing the compressed blocks. Columns with many substreams and cheap values, such as a `Tuple` of numbers
+         and arrays like a native histogram, make that cost visible. `index_granularity` is small so the per-granule
+         work dominates the per-row work. The `Nested` columns add a shared offsets stream. -->
+
+    <!-- One writer per run, as a TimeSeries insert has: with several insert threads the insert is split into parts. -->
+    <settings>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_wide_writer_substreams
+        (
+            id UInt64,
+            h Tuple(
+                c0 UInt64, c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, c7 UInt64,
+                c8 Float64, c9 Float64, c10 Float64, c11 Float64, c12 Float64, c13 Float64, c14 Float64, c15 Float64,
+                a0 Array(Float64), a1 Array(Float64), a2 Array(UInt64), a3 Array(UInt64)),
+            n Nested(a UInt64, b UInt64, c Float64, d Float64)
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 128
+    </create_query>
+
+    <!-- Each run adds a part; merges of the earlier parts would run through the same writer while the next run is timed. -->
+    <fill_query>SYSTEM STOP MERGES t_wide_writer_substreams</fill_query>
+
+    <query>
+        INSERT INTO t_wide_writer_substreams
+        SELECT
+            number,
+            (number, number + 1, number + 2, number + 3, number + 4, number + 5, number + 6, number + 7,
+             number / 2, number / 3, number / 4, number / 5, number / 6, number / 7, number / 8, number / 9,
+             arrayMap(x -> x / 2, range(number % 8)), arrayMap(x -> x / 3, range(number % 8)),
+             range(number % 8), range(number % 8)),
+            range(number % 5), range(number % 5), arrayMap(x -> x / 2, range(number % 5)), arrayMap(x -> x / 3, range(number % 5))
+        FROM numbers(500000)
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS t_wide_writer_substreams</drop_query>
+</test>

@@ -54,15 +54,18 @@ ClickHouse のメイン HTTP ポートで、プレフィックスルーティン
 
 `<defaults/>` は、`/ping` などのエンドポイントや SQL リクエスト用の組み込みハンドラーを維持します。上記のプレフィックスにより、これらのエンドポイントを 1 つのハンドラー経由で公開します。
 
-| エンドポイント                           | 用途                  |
-| --------------------------------- | ------------------- |
-| `/prometheus/api/v1/write`        | Prometheus リモート書き込み |
-| `/prometheus/api/v1/read`         | Prometheus リモート読み取り |
-| `/prometheus/api/v1/query`        | インスタント PromQL クエリ   |
-| `/prometheus/api/v1/query_range`  | 範囲 PromQL クエリ       |
-| `/prometheus/api/v1/format_query` | PromQL 式のフォーマット     |
-| `/prometheus/api/v1/series`       | シリーズのメタデータ          |
-| `/prometheus/api/v1/metadata`     | メトリクスファミリーのメタデータ    |
+| エンドポイント                                  | 用途                  |
+| ---------------------------------------- | ------------------- |
+| `/prometheus/api/v1/write`               | Prometheus リモート書き込み |
+| `/prometheus/api/v1/read`                | Prometheus リモート読み取り |
+| `/prometheus/api/v1/query`               | インスタント PromQL クエリ   |
+| `/prometheus/api/v1/query_range`         | 範囲 PromQL クエリ       |
+| `/prometheus/api/v1/format_query`        | PromQL 式のフォーマット     |
+| `/prometheus/api/v1/series`              | 系列のメタデータ          |
+| `/prometheus/api/v1/labels`              | ラベル名                |
+| `/prometheus/api/v1/label/<name>/values` | ラベル値                |
+| `/prometheus/api/v1/metadata`            | メトリクスファミリーのメタデータ    |
+| `/prometheus/api/v1/federate`            | 最新サンプルのフェデレーション     |
 
 この例では、ハンドラーに `database` と `table` を指定していません。各リクエストで `table` クエリパラメータを指定する必要があります (`/format_query` は指定された PromQL 式をパースするだけなので、テーブルは不要です) 。また、`database` を指定する、`prometheus.metrics` のような完全修飾テーブル名を使用する、またはデータベースを省略して `default` を使用することもできます。これにより、1 つのハンドラーで複数の `TimeSeries` テーブルを処理できます。
 
@@ -194,7 +197,7 @@ Grafana は、このベース URL に `/api/v1/query` または `/api/v1/query_r
 `httpMethod: POST` の場合、Grafana はクエリパラメータをリクエストボディで送信します。ClickHouse はリクエストボディと URL のクエリ文字列の両方を読み取るため、`customQueryParameters` は引き続き適用されます。URL には長さの制限があるため、長い PromQL 式には `POST` を使用してください。
 
 <Note>
-  実装されているのは、クエリエンドポイント `/api/v1/query`、`/api/v1/query_range`、`/api/v1/format_query`、およびメタデータエンドポイント `/api/v1/series`、`/api/v1/labels`、`/api/v1/label/<name>/values`、`/api/v1/metadata` のみです。`/api/v1/series` には少なくとも 1 つの `match[]` シリーズセレクターが必要で、任意の `start`、`end`、`limit` パラメータをサポートし、各セレクターに一致するシリーズのユニオンを返します。`/api/v1/labels` は同じパラメータを受け付けますが、`match[]` は任意であり、一致するシリーズのソート済みラベル名を返します (セレクターが指定されていない場合はすべてのシリーズのラベル名を返します) 。`/api/v1/label/<name>/values` は `/api/v1/labels` と同じパラメータを受け付け、1 つのラベルのソート済みの値を返します。`<name>` には、`[a-zA-Z0-9_]` 以外の文字を含むラベル名に対して Prometheus の `U__...` エスケープを任意で使用できます。これらのエンドポイントは、Grafana の Prometheus データソースがラベルの参照、Template 変数、クエリビルダーでの自動補完に使用する機能をカバーします。
+  実装されているのは、クエリエンドポイント `/api/v1/query`、`/api/v1/query_range`、`/api/v1/format_query`、メタデータエンドポイント `/api/v1/series`、`/api/v1/labels`、`/api/v1/label/<name>/values`、`/api/v1/metadata`、および[フェデレーション](#federation)エンドポイント `/api/v1/federate` のみです。`/api/v1/series` には少なくとも 1 つの `match[]` 系列セレクターが必要で、任意の `start`、`end`、`limit` パラメータをサポートし、各セレクターに一致する系列のユニオンを返します。`/api/v1/labels` は同じパラメータを受け付けますが、`match[]` は任意であり、一致する系列のソート済みラベル名を返します (セレクターが指定されていない場合はすべての系列のラベル名を返します) 。`/api/v1/label/<name>/values` は `/api/v1/labels` と同じパラメータを受け付け、1 つのラベルのソート済みの値を返します。`<name>` には、`[a-zA-Z0-9_]` 以外の文字を含むラベル名に対して Prometheus の `U__...` エスケープを任意で使用できます。これらのエンドポイントは、Grafana の Prometheus データソースがラベルの参照、Template 変数、クエリビルダーでの自動補完に使用する機能をカバーします。
 </Note>
 
 ### SQL エントリポイント {#sql-entry-points}
@@ -240,6 +243,23 @@ curl --user default:<password> --get \
   --data-urlencode "metric=http_requests_total" \
   --data-urlencode "database=prometheus" \
   --data-urlencode "table=metrics"
+```
+
+## メトリクスのフェデレーション {#federation}
+
+ClickHouse は、`/prometheus/api/v1/federate`(または、`query` 型のハンドラーが提供する、`/federate` で終わる任意のパス)で [Prometheus フェデレーション](https://prometheus.io/docs/prometheus/latest/federation/) エンドポイントをサポートしています。このエンドポイントは、`match[]` セレクターに一致した各系列について、直近 5 分間の最新のサンプルを Prometheus のテキストフォーマットで返します。これにより、Prometheus サーバーからスクレイプできます。
+
+```yaml
+scrape_configs:
+  - job_name: clickhouse-federate
+    honor_labels: true
+    scheme: https
+    metrics_path: /prometheus/api/v1/federate
+    params:
+      'match[]': ['{job="node"}']
+      table: ['prometheus.metrics']
+    static_configs:
+      - targets: ['clickhouse.example.com:8443']
 ```
 
 ## リモート読み取り でメトリクスを読み取る {#remote-read}

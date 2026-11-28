@@ -1,0 +1,102 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-05-29
+title: 'Demo days - 2026-05-29'
+sidebarTitle: '2026-05-29'
+description: 'ClickStack demo days del 2026-05-29'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Filtrado de esquemas mejorado y dependiente de la versión {#version-aware-improved-schema-filtering}
+
+*Demostración a cargo de [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/bAVaBnfJ82Y" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack ahora aplica la optimización direct&#95;read únicamente en ClickHouse 26.2 y versiones posteriores, en las que el índice de búsqueda de texto completo admite correctamente las columnas alias añadidas a los esquemas de código abierto. Antes, podía intentarse aplicar la optimización en versiones anteriores en las que no funcionaba correctamente. La comprobación de la versión se realiza en el momento de la consulta inspeccionando el esquema, y las columnas alias ahora se incluyen de forma predeterminada en los esquemas de código abierto.
+
+También se mostró el trabajo en curso para sustituir la vista materializada de autocompletado por consultas directas sobre el índice de texto. Actualmente, ambas realizan trabajo redundante, lo que aumenta la carga durante la ingesta. Si las pruebas de rendimiento confirman que las consultas sobre el índice de texto ofrecen un rendimiento adecuado, la vista materializada podrá simplificarse o eliminarse. Aaron también respondió a preguntas del equipo sobre cómo la codificación posicional en futuras versiones del índice de texto de ClickHouse podría hacer que las búsquedas de filtros clave-valor sean aún más precisas.
+
+**PR relacionados:** [#2341](https://github.com/hyperdxio/hyperdx/pull/2341) feat: adds direct&#95;read optimization by default for logs and traces, [#2405](https://github.com/hyperdxio/hyperdx/pull/2405) feat(common-utils): apply direct&#95;read KV items optimization to SQL filters, [#2376](https://github.com/hyperdxio/hyperdx/pull/2376) feat: use text index to power filters and autocomplete
+
+## Mejor análisis de logs {#better-log-parsing}
+
+*Demostración a cargo de [@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vhkMlddahu4" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Un cliente tenía logs en los que el cuerpo del evento era un objeto JSON con un campo `level`. La lógica de inferencia de severidad hacía dos cosas: analizaba el cuerpo como JSON para extraer atributos y, después, recurría a la coincidencia de cadenas como alternativa si no se había establecido ninguna severidad a nivel de OTel. La coincidencia de cadenas detectaba la palabra «alert» en el nombre de un alert manager incluido en el cuerpo, lo que provocaba que el nivel de registro se clasificara de forma errónea.
+
+La corrección añade una condición de salvaguarda: si el cuerpo se puede analizar como JSON y ya contiene un campo de nivel, se omite por completo el paso de inferencia basada en cadenas. Gracias a una suite de pruebas de humo creada hace aproximadamente un año, fue sencillo verificar la corrección y detectar casos límite relacionados con solo añadir nuevos casos de prueba, que es precisamente el propósito para el que se diseñó.
+
+**PRs relacionados:** [#2363](https://github.com/hyperdxio/hyperdx/pull/2363) fix(log-parser): skip string inference when body parses as JSON with a level field
+
+## Mejoras del servidor MCP {#mcp-server-improvements}
+
+*Demostración a cargo de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aIy1zfmlz3Y" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Esta semana se publicaron varias mejoras de MCP: mejor agrupación y puntuación de patrones de eventos, mensajes de error con indicaciones más útiles y limpieza de las funciones auxiliares compartidas. Además, los prefijos de las herramientas se renombraron de `hyperdx_` a `clickstack_` para que coincidan con el nombre del producto.
+
+**PRs relacionados:** [#2337](https://github.com/hyperdxio/hyperdx/pull/2337) feat(mcp): improve MCP tool quality — error hints, shared helpers, better messages, [#2396](https://github.com/hyperdxio/hyperdx/pull/2396) refactor(mcp): rename tool prefixes from hyperdx&#95; to clickstack&#95;, [#2343](https://github.com/hyperdxio/hyperdx/pull/2343) feat(mcp): add patch&#95;dashboard, get&#95;dashboard&#95;tile, search&#95;dashboards tools, [#2418](https://github.com/hyperdxio/hyperdx/pull/2418) fix(mcp): improve alias descriptions and examples for readable chart legends, [#2412](https://github.com/hyperdxio/hyperdx/pull/2412) refactor: simplify MCP ObjectId validation with shared helpers and schema-level checks
+
+## Nueva paleta de colores para series {#new-series-color-palette}
+
+*Demostración a cargo de [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Elizabet trabajó en unificar la paleta de colores de visualización de datos de los temas de HyperDX y ClickStack, como apoyo al trabajo de Alex en el selector de color. Los dos temas tenían paletas independientes, cada una con sus propias reglas de excepción, lo que hacía innecesariamente complicado razonar sobre los colores. El objetivo era contar con una única paleta que sirviera para ambos.
+
+Probó varias paletas estándar del sector (Tableau, Observable, IBM) con una herramienta de simulación de visión del color para comprobar el contraste y la accesibilidad. La paleta de ClickHouse obtuvo malos resultados: el verde no tiene suficiente contraste sobre fondo blanco. Tanto Tableau como Observable no superan al menos una comprobación cada una; la paleta de IBM las supera todas, pero solo tiene cinco colores, lo que resulta insuficiente. En conjunto, la paleta de Observable fue la que más se acercó, con un pequeño ajuste en el azul, y a partir de ahora se compartirá entre ambos temas.
+
+**PRs relacionados:** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) refactor(theme): renombrar los tokens de la paleta de gráficos con nombres de tonos y unificarlos entre temas
+
+## Nuevo diseño de página con encabezado fijo {#new-page-layout-with-sticky-header}
+
+*Demostración a cargo de [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/e7d3ocqi4Ac" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Se ha implantado un nuevo par de componentes, PageHeader y PageLayout, en todas las páginas principales: dashboards, mapa de servicios, Client Sessions, Kubernetes y el panel de control de ClickHouse. Ahora todas las páginas comparten el mismo relleno, la misma línea de borde bajo el encabezado y la misma estructura de título. Antes, las páginas no eran homogéneas: algunas tenían el título a la izquierda y los controles a la derecha, y otras no tenían título.
+
+El comportamiento fijo es opcional y se activa mediante una prop. Todo lo que se pase al cupo fijo permanece anclado bajo el encabezado al desplazarse; el resto del contenido se desplaza con normalidad. Si no se pasa nada, las rutas de navegación o las opciones de página, si las hay, se vuelven fijas automáticamente.
+
+**PR relacionadas:** [#2282](https://github.com/hyperdxio/hyperdx/pull/2282) Add PageHeader/PageLayout and migrate Sessions, [#2345](https://github.com/hyperdxio/hyperdx/pull/2345) Use PageHeader title on list pages, [#2346](https://github.com/hyperdxio/hyperdx/pull/2346) Migrate Service Map to PageLayout, [#2347](https://github.com/hyperdxio/hyperdx/pull/2347) Migrate Kubernetes dashboard to PageLayout, [#2348](https://github.com/hyperdxio/hyperdx/pull/2348) Migrate ClickHouse dashboard to PageLayout, [#2364](https://github.com/hyperdxio/hyperdx/pull/2364) feat(dashboard): migrate to PageLayout with sticky query toolbar, [#2394](https://github.com/hyperdxio/hyperdx/pull/2394) fix(PageHeader): keep sticky header below drawer overlays
+
+## Nuevo selector de orígenes de datos y selección de colores para series {#new-datasource-selector-and-color-picking-for-series}
+
+*Demostración a cargo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/DKfJs9onl50" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Dos mejoras de la interfaz de usuario, obra de Alex. Se ha simplificado el selector de orígenes de datos: al hacer clic en él, ahora solo se muestran los orígenes de datos entre los que elegir. Las acciones de administración, como ver el esquema o crear una nueva fuente, se han trasladado a un menú kebab independiente. Así se separa la selección de la configuración, algo que llevaba tiempo pendiente y que responde a los comentarios del equipo.
+
+Los mosaicos numéricos ahora también incluyen un selector de color estático para asignar un color específico a una métrica. Las reglas de color condicionales (que cambian a rojo, verde o amarillo en función de un valor umbral o de una columna) también están en desarrollo. Cuando se incorpore la paleta unificada de Elizabet, ambas funcionalidades usarán colores con nombres propios en lugar de las etiquetas actuales «color 1, 2, 3», lo que supondrá una mejora notable para los usuarios que vienen de herramientas como Grafana.
+
+**PRs relacionados:** [#2365](https://github.com/hyperdxio/hyperdx/pull/2365) feat(source-picker): chip + kebab menu UX, [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): number tile static color picker
+
+## Indicaciones mejoradas para las acciones del panel de control {#better-hints-for-dashboard-actions}
+
+*Demostración a cargo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yQaKMSXp8YA" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Las filas de los mosaicos de tabla del panel de control ahora muestran un estado de *hover* más útil. Al pasar el ratón por encima, el cursor y el icono cambian para indicar qué ocurrirá al hacer clic: abrir un panel de control vinculado o profundizar en un origen de datos. Antes de este cambio, ni siquiera era evidente que se pudiera hacer clic en las filas, y mucho menos qué harían.
+
+**PRs relacionados:** [#2321](https://github.com/hyperdxio/hyperdx/pull/2321) feat(app): hover hint and native link affordance for dashboard table tile row click

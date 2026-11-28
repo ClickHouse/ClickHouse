@@ -1,4 +1,4 @@
--- Random settings limits: optimize_use_projections=(1, None); optimize_use_implicit_projections=(1, None); parallel_replicas_local_plan=(1, None); automatic_parallel_replicas_mode=(0, 0)
+-- Random settings limits: optimize_use_projections=(1, None); optimize_use_implicit_projections=(1, None); parallel_replicas_local_plan=(1, None)
 
 -- https://github.com/ClickHouse/ClickHouse/issues/123958
 -- With parallel_replicas_prefer_local_replica = 0 the initiator builds no local plan, so the replicas must not
@@ -12,6 +12,10 @@ INSERT INTO t_pr_no_local_plan SELECT number, number % 100 FROM numbers(200000) 
 SET enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_prefer_local_replica = 0;
+-- The test asserts that parallel replicas are used, so it needs the forced mode: under
+-- `automatic_parallel_replicas_mode` 1 the cost model decides, and it does not switch these queries. Pinned here
+-- rather than as a random settings limit, which cannot outvote the server profile of the autopr CI job.
+SET automatic_parallel_replicas_mode = 0;
 
 -- Without projections in the table the replicas analyze the primary key themselves instead of reading the whole part.
 SELECT count() FROM t_pr_no_local_plan WHERE x < 70000 SETTINGS max_parallel_replicas = 3, log_comment = '05401_rows' FORMAT Null;

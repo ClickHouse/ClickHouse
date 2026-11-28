@@ -99,7 +99,7 @@ Cluster::Address::Address(
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         const String & cluster_,
-        const String & cluster_secret_,
+        std::string_view cluster_secret_,
         UInt32 shard_index_,
         UInt32 replica_index_,
         bool treat_local_port_as_remote)

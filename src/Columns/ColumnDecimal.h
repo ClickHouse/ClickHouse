@@ -54,10 +54,15 @@ public:
     void shrinkToFit() final { data.shrink_to_fit(); }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    void insertFrom(const IColumn & src, size_t n) final { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+    void insertFrom(const IColumn & src, size_t n) final
 #else
-    void doInsertFrom(const IColumn & src, size_t n) final { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+    void doInsertFrom(const IColumn & src, size_t n) final
 #endif
+    {
+        /// Snapshot before growing: the source may be this column.
+        const T value = static_cast<const Self &>(src).getData()[n];
+        data.push_back(value);
+    }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) final
@@ -79,6 +84,13 @@ public:
 #else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) final;
 #endif
+
+    void insertFromEither(
+        const IColumn & src_true,
+        bool src_true_is_const,
+        const IColumn & src_false,
+        bool src_false_is_const,
+        const IColumn::Filter & condition) final;
 
     void popBack(size_t n) final
     {
@@ -136,6 +148,7 @@ public:
     [[nodiscard]] bool isDefaultAt(size_t n) const final { return data[n].value == 0; }
 
     [[nodiscard]] bool hasOnlyTypeDefaults() const override;
+    [[nodiscard]] ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const final;
 
     [[nodiscard]] ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const final;
     void filter(const IColumn::Filter & filt) final;

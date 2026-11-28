@@ -1,7 +1,7 @@
 {
-  "expanded": true,
   "group": "Python",
   "icon": "/images/integrations/logos/notext-python.svg",
+  "expanded": true,
   "pages": [
     "ko/integrations/language-clients/python/index",
     "ko/integrations/language-clients/python/driver-api",

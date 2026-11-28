@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
+#include <base/defines.h>
 #include <base/extended_types.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -323,7 +324,11 @@ TruthValue evaluateBoolPredicate(PredicateLeaf::Operator op, const VectorWithMem
         return has_null ? TruthValue::YES_NO_NULL : TruthValue::YES_NO;
 
     UInt64 true_count = stats.bucket_statistics->count[0];
-    UInt64 false_count = stats.number_of_values.value_or(0) - true_count;
+    /// Without the total, or with one below the true count (malformed), nothing is known about the false values: do
+    /// not prune by these statistics.
+    if (!stats.number_of_values || true_count > *stats.number_of_values)
+        return has_null ? TruthValue::YES_NO_NULL : TruthValue::YES_NO;
+    UInt64 false_count = *stats.number_of_values - true_count;
     switch (op)
     {
         case PredicateLeaf::Operator::IS_NULL:
@@ -500,7 +505,13 @@ TruthValue checkInBloomFilter(PredicateDataType type, const Literal & literal, c
         switch (type)
         {
             case PredicateDataType::LONG: found = bf.testLong(literal.getLong()); break;
-            case PredicateDataType::FLOAT: found = bf.testDouble(literal.getFloat()); break;
+            case PredicateDataType::FLOAT:
+            {
+                /// The writers hash the bits, so the equal `0.0` and `-0.0` have different hashes.
+                const double value = literal.getFloat();
+                found = bf.testDouble(value) || (value == 0 && bf.testDouble(-value));
+                break;
+            }
             case PredicateDataType::STRING: found = bf.testBytes(literal.getString().data(), literal.getString().size()); break;
             case PredicateDataType::DECIMAL:
             {
@@ -553,7 +564,8 @@ TruthValue PredicateLeaf::evaluatePredicateBloomFilter(const BloomFilter & bloom
     }
 }
 
-TruthValue PredicateLeaf::evaluate(UInt32 writer_version, const Proto::ColumnStatistics & stats, const BloomFilter * bloom_filter) const
+TruthValue PredicateLeaf::evaluate(
+    UInt32 writer_version, const Proto::ColumnStatistics & stats, const BloomFilter * bloom_filter, bool timestamps_shifted) const
 {
     /// The files written before ORC-135 store the timestamps in the local time zone of the writer.
     if (type == PredicateDataType::TIMESTAMP && writer_version < WRITER_VERSION_ORC_135)
@@ -569,6 +581,8 @@ TruthValue PredicateLeaf::evaluate(UInt32 writer_version, const Proto::ColumnSta
         return all_null ? TruthValue::YES : (has_null ? TruthValue::YES_NO : TruthValue::NO);
     if (all_null)
         return TruthValue::IS_NULL;
+    if (type == PredicateDataType::TIMESTAMP && timestamps_shifted)
+        return has_null ? TruthValue::YES_NO_NULL : TruthValue::YES_NO;
 
     TruthValue result = evaluatePredicateMinMax(stats);
     if (bloom_filter && result != TruthValue::NO_NULL && result != TruthValue::NO
@@ -959,7 +973,8 @@ inline UInt64 rotl64(UInt64 x, int r)
     return (x << r) | (x >> (64 - r));
 }
 
-inline UInt64 fmix64(UInt64 value)
+/// The hash functions below wrap around by design, and the results must match the hashes in the files written by other implementations.
+NO_SANITIZE_UNSIGNED_OVERFLOW inline UInt64 fmix64(UInt64 value)
 {
     value ^= (value >> 33);
     value *= 0xff51afd7ed558ccdULL;
@@ -970,7 +985,7 @@ inline UInt64 fmix64(UInt64 value)
 }
 
 /// The 64-bit variant of Murmur3 used by ORC (the lower half of the 128-bit hash with one state).
-UInt64 murmur3Hash64(const UInt8 * data, size_t size)
+NO_SANITIZE_UNSIGNED_OVERFLOW UInt64 murmur3Hash64(const UInt8 * data, size_t size)
 {
     UInt64 h = MURMUR3_DEFAULT_SEED;
     const UInt64 c1 = 0x87c37b91114253d5ULL;
@@ -1008,7 +1023,7 @@ UInt64 murmur3Hash64(const UInt8 * data, size_t size)
 }
 
 /// Thomas Wang's 64-bit integer hash, as in the reference implementation.
-Int64 getLongHash(Int64 key)
+NO_SANITIZE_UNSIGNED_OVERFLOW Int64 getLongHash(Int64 key)
 {
     UInt64 k = static_cast<UInt64>(key);
     k = (~k) + (k << 21);
@@ -1041,7 +1056,8 @@ BloomFilter::BloomFilter(const Proto::BloomFilter & proto) : num_hash_functions(
             word = std::byteswap(word);
 }
 
-bool BloomFilter::testHash(Int64 hash) const
+/// The combination of the two halves of the hash wraps around by design, as in the reference implementation.
+NO_SANITIZE_UNSIGNED_OVERFLOW bool BloomFilter::testHash(Int64 hash) const
 {
     Int32 hash1 = static_cast<Int32>(hash & 0xffffffff);
     Int32 hash2 = static_cast<Int32>(static_cast<UInt64>(hash) >> 32);

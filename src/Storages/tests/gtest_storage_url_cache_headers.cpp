@@ -324,3 +324,17 @@ TEST(StorageURLCacheHeaders, WildcardURLHeaderPartitioning)
     EXPECT_EQ(hasher(key_v1), hasher(key_v1_case));
     EXPECT_NE(hasher(key_v1), hasher(key_empty));
 }
+
+TEST(StorageURLCacheHeaders, MixedExtensionWildcardPerObjectCompressionKey)
+{
+    auto gz_basic = toContentEncodingName(chooseCompressionMethod("a.csv.gz", "auto"), SnappyMode::Basic);
+    auto gz_framed = toContentEncodingName(chooseCompressionMethod("a.csv.gz", "auto"), SnappyMode::Framed);
+    EXPECT_EQ(gz_basic, "gzip");
+    EXPECT_EQ(gz_basic, gz_framed);
+
+    auto snappy_basic = toContentEncodingName(chooseCompressionMethod("b.snappy", "auto"), SnappyMode::Basic);
+    auto snappy_framed = toContentEncodingName(chooseCompressionMethod("b.snappy", "auto"), SnappyMode::Framed);
+    EXPECT_EQ(snappy_basic, "snappy:basic");
+    EXPECT_EQ(snappy_framed, "snappy:framed");
+    EXPECT_NE(snappy_basic, snappy_framed);
+}

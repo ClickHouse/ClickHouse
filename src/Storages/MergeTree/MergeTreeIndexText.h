@@ -10,6 +10,7 @@
 #include <Common/Logger.h>
 #include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/BitHelpers.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
@@ -21,6 +22,7 @@
 #include <base/types.h>
 #include <base/PackedStringRef.h>
 
+#include <algorithm>
 #include <array>
 #include <functional>
 #include <span>
@@ -31,6 +33,8 @@
 
 namespace DB
 {
+
+class ColumnString;
 
 /**
   * Implementation of inverted index for text search.
@@ -94,6 +98,9 @@ struct MergeTreeIndexTextParams
     size_t posting_list_block_size = 1024 * 1024;
     bool enable_positions = false;
     UInt8 positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
+    /// Free positions between the elements of an `Array` row, so that a phrase cannot span two elements.
+    /// 0 for other columns and with the `array` tokenizer, whose phrases span elements.
+    UInt8 position_increment_gap = 0;
     ASTPtr preprocessor;
     ASTPtr postprocessor;
     MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
@@ -334,9 +341,11 @@ struct TextIndexHeader
 {
     MergeTreeTextIndexSerializationVersion version = MergeTreeTextIndexSerializationVersion::V0_Initial;
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
-    /// has_positions and positions_codec are persisted for version >= V2_WithPositions.
+    /// has_positions, positions_codec, position_increment_gap and positions_block_size are persisted for version >= V2_WithPositions.
     bool has_positions = false;
     UInt8 positions_codec = 0;
+    UInt8 position_increment_gap = 0;
+    UInt64 positions_block_size = TextIndexBlockedPositionsCodec::BLOCK_SIZE;
     DictionarySparseIndex sparse_index;
 };
 
@@ -368,6 +377,8 @@ struct TextIndexSerialization
     /// Reads only the version and posting list codec from the start of the header, without the
     /// (potentially large) sparse index. The returned header has an empty `sparse_index`.
     static TextIndexHeader deserializeHeaderPrefix(ReadBuffer & istr);
+    /// Throws if the positions of a part were built with another gap than the index definition sets.
+    static void checkPositionIncrementGap(const TextIndexHeader & header, const MergeTreeIndexTextParams & params);
     /// If `with_postings` is false, embedded postings are skipped.
     static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, bool with_postings);
     /// Skips a token info without full deserialization and filling the fields.
@@ -488,6 +499,53 @@ using TokenizerPtr = const ITokenizer *;
 class MergeTreeIndexTextPostprocessor;
 struct MergeTreeIndexTextInlineFilter;
 
+namespace detail
+{
+
+/// Bloom filter keeping all bits of a key in one 64-bit word, remixes the hash to not correlate with hash tables using it.
+template <size_t bits_per_key, size_t num_hashes>
+class RegisterBlockedBloomFilter
+{
+    static_assert(bits_per_key > 0);
+    static_assert(num_hashes > 0 && num_hashes * 6 <= 32);
+
+public:
+    void init(size_t num_keys)
+    {
+        words.resize_fill(roundUpToPowerOfTwoOrZero(std::max<size_t>(1, num_keys * bits_per_key / 64)), 0);
+        mask = words.size() - 1;
+    }
+
+    [[nodiscard]] bool empty() const { return words.empty(); }
+
+    ALWAYS_INLINE void add(UInt64 hash)
+    {
+        const UInt64 mixed_hash = intHash64(hash);
+        words[mixed_hash & mask] |= bitsOf(mixed_hash);
+    }
+
+    [[nodiscard]] ALWAYS_INLINE bool mayContain(UInt64 hash) const
+    {
+        const UInt64 mixed_hash = intHash64(hash);
+        const UInt64 bits = bitsOf(mixed_hash);
+        return (words[mixed_hash & mask] & bits) == bits;
+    }
+
+private:
+    static ALWAYS_INLINE UInt64 bitsOf(UInt64 mixed_hash)
+    {
+        UInt64 bits = 0;
+        for (size_t i = 0; i < num_hashes; ++i)
+            bits |= 1ULL << ((mixed_hash >> (32 + 6 * i)) & 63);
+        return bits;
+    }
+
+    PaddedPODArray<UInt64> words;
+    UInt64 mask = 0;
+};
+
+}
+
 struct MergeTreeIndexTextGranuleBuilder
 {
     MergeTreeIndexTextGranuleBuilder(
@@ -500,12 +558,17 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document, const PostingListBuildContext & context);
     // Adds a document to the granule. The document is inserted directly as a single token.
-    void addToken(std::string_view token, UInt32 token_position, const PostingListBuildContext & context);
+    void addToken(std::string_view token, const PostingListBuildContext & context);
+    /// Starts the next element of an `Array` row: its first token follows the previous token after `position_increment_gap` free positions.
+    void startElement();
     /// Adds the rows from a column or array of `LowCardinality`, tokenizing each dictionary value once.
     void addDocumentsFromLowCardinality(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
     void incrementCurrentRow();
-    void setCurrentRow(size_t row) { current_row = row; }
+    void setCurrentRow(size_t row);
+
+    /// Takes `count` consecutive positions of the current row after the pending gap, and returns the first one.
+    UInt32 takeTokenPositions(UInt32 count);
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     [[nodiscard]] bool empty() const { return is_empty; }
@@ -519,6 +582,10 @@ struct MergeTreeIndexTextGranuleBuilder
 
     bool is_empty = true;
     UInt64 current_row = 0;
+    /// Position of the next token within the current row. Every token of a row shares one sequence.
+    UInt32 current_token_position = 0;
+    /// Free positions to skip before the next token, set by `startElement`.
+    UInt32 pending_position_gap = 0;
     UInt64 num_processed_tokens = 0;
     /// Posting list builders for each token. When positions are enabled,
     /// the builders also accumulate the positions of the tokens.
@@ -528,6 +595,9 @@ struct MergeTreeIndexTextGranuleBuilder
     /// IN/NOT IN filter-only postprocessor fast path: `IN` marks dropped tokens in the map on first
     /// insertion, `NOT IN` collects postings only for the pre-seeded keep-set tokens. Non-owning.
     const MergeTreeIndexTextInlineFilter * postprocessor_drop_filter = nullptr;
+
+    /// Skips `tokens_map` probes for tokens outside the keep set; empty for a small keep set.
+    detail::RegisterBlockedBloomFilter</*bits_per_key=*/ 16, /*num_hashes=*/ 4> keep_set_bloom;
 };
 
 class MergeTreeIndexTextPreprocessor;
@@ -556,8 +626,15 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 
 private:
     /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
+    /// When the rows of `column` are the flattened tokens of the elements of an `Array` column, `element_token_offsets` are
+    /// the offsets in the data of `column` where those elements end, and the gap is placed at them.
     template <bool tokenize>
-    void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
+    void addDocumentsFromArray(
+        ColumnPtr column,
+        size_t start_row,
+        size_t rows_read,
+        const PostingListBuildContext & context,
+        const IColumn::Offsets * element_token_offsets = nullptr);
 
     /// One token per `(key, value)` pair of a ColumnMap slice. `keyValuePairs` only.
     void addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);

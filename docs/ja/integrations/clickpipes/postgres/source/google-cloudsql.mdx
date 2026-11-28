@@ -17,7 +17,7 @@ import { CloudSQLIAMAuthentication } from "/snippets/ja/clickpipes/_cloudsql_iam
 </Info>
 
 <div id="supported-postgres-versions">
-  ## サポート対象の Postgres バージョン
+  ## サポート対象の Postgres バージョン {#supported-postgres-versions}
 </div>
 
 Postgres 12 以降
@@ -29,35 +29,23 @@ Postgres 12 以降
 1. **概要** ページで **Edit** ボタンをクリックします。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Cloud SQL Postgres の Edit ボタン](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
-
-</Frame>
-
+  <Frame>
+    ![Cloud SQL Postgres の Edit ボタン](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
+  </Frame>
 </div>
 
 2. Flags に移動し、`cloudsql.logical_decoding` を on に変更します。この変更を反映するには、Postgres サーバーの再起動が必要です。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![`cloudsql.logical_decoding` を on に変更する](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
-
-</Frame>
-
+  <Frame>
+    ![cloudsql.logical_decoding を on に変更](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![サーバーを再起動する](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
-
-</Frame>
-
+  <Frame>
+    ![サーバーを再起動](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
+  </Frame>
 </div>
 
 ## ClickPipes ユーザーの作成と権限の付与 {#creating-clickpipes-user-and-granting-permissions}
@@ -121,51 +109,35 @@ Postgres 12 以降
 1. **Connections** セクションに移動します
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Cloud SQL の Connections セクション](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
-
-</Frame>
-
+  <Frame>
+    ![Cloud SQL の Connections セクション](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
+  </Frame>
 </div>
 
 2. Networking サブセクションに移動します
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Cloud SQL の Networking サブセクション](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
-
-</Frame>
-
+  <Frame>
+    ![Cloud SQL の Networking サブセクション](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
+  </Frame>
 </div>
 
 3. [ClickPipes のパブリック IP アドレス](/ja/integrations/clickpipes/networking/static-ips) を追加します
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickPipes のネットワークをファイアウォールに追加](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickPipes のネットワークをファイアウォールに追加](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickPipes のネットワークがファイアウォールに追加された状態](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
-
-</Frame>
-
+  <Frame>
+    ![ファイアウォールに追加された ClickPipes のネットワーク](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
+  </Frame>
 </div>
 
 <div id="whats-next">
-  ## 次のステップ
+  ## 次のステップ {#whats-next}
 </div>
 
 これで、[ClickPipe を作成](/ja/integrations/clickpipes/postgres/index)して、Postgres インスタンスから ClickHouse Cloud へのデータ取り込みを開始できます。

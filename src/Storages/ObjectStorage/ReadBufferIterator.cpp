@@ -47,19 +47,31 @@ ReadBufferIterator::ReadBufferIterator(
 SchemaCache::Key ReadBufferIterator::getKeyForSchemaCache(const ObjectInfo & object_info, const String & format_name) const
 {
     auto source = StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, object_info);
-    return DB::getKeyForSchemaCache(source, format_name, format_settings, getContext(), "", configuration->getHeadersForSchemaCache());
+    auto compression_name = toContentEncodingName(
+        chooseCompressionMethod(object_info.getFileName(), configuration->compression_method),
+        getContext()->getSettingsRef()[Setting::snappy_mode]);
+    return DB::getKeyForSchemaCache(source, format_name, format_settings, getContext(), compression_name, configuration->getHeadersForSchemaCache());
 }
 
 SchemaCache::Keys ReadBufferIterator::getKeysForSchemaCache() const
 {
-    Strings sources;
-    sources.reserve(read_keys.size());
+    SchemaCache::Keys keys;
+    keys.reserve(read_keys.size());
+    const auto headers = configuration->getHeadersForSchemaCache();
+    const auto snappy_mode = getContext()->getSettingsRef()[Setting::snappy_mode];
     std::transform(
         read_keys.begin(),
         read_keys.end(),
-        std::back_inserter(sources),
-        [&](const auto & elem) { return StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, *elem); });
-    return DB::getKeysForSchemaCache(sources, *format, format_settings, getContext(), "", configuration->getHeadersForSchemaCache());
+        std::back_inserter(keys),
+        [&](const auto & elem)
+        {
+            auto source = StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, *elem);
+            auto compression_name = toContentEncodingName(
+                chooseCompressionMethod(elem->getFileName(), configuration->compression_method),
+                snappy_mode);
+            return DB::getKeyForSchemaCache(source, *format, format_settings, getContext(), compression_name, headers);
+        });
+    return keys;
 }
 
 std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(

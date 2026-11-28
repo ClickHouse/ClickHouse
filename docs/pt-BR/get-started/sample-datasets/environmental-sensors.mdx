@@ -18,7 +18,7 @@ keywords: ['sensores ambientais', 'Sensor.Community', 'dados de qualidade do ar'
   Para testar esses comandos por conta própria, você pode se inscrever em um [teste gratuito do ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-environmental-sensors) ou configurar um [ClickHouse auto-hospedado](/pt-BR/get-started/setup/install).
 </Tip>
 
-1. Os dados estão no S3, então podemos usar a table function `s3` para criar uma tabela a partir dos arquivos. Também podemos consultar os dados no local. Vamos ver algumas linhas antes de tentar inseri-los no ClickHouse:
+1. Os dados estão no S3, então podemos usar a função de tabela `s3` para criar uma tabela a partir dos arquivos. Também podemos consultar os dados no local. Vamos ver algumas linhas antes de tentar inseri-los no ClickHouse:
 
 ```sql
 SELECT *
@@ -161,16 +161,12 @@ ORDER BY date ASC;
 Podemos criar um gráfico no SQL Console para visualizar os resultados:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Número de eventos por dia](/images/getting-started/example-datasets/sensors_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![Número de eventos por dia](/images/getting-started/example-datasets/sensors_01.webp)
+  </Frame>
 </div>
 
-6. Esta consulta conta o número de dias quentes e úmidos em excesso:
+6. Esta consulta conta o número de dias excessivamente quentes e úmidos:
 
 ```sql
 WITH
@@ -184,11 +180,7 @@ ORDER BY day ASC;
 Veja a visualização do resultado:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Dias quentes e úmidos](/images/getting-started/example-datasets/sensors_02.webp)
-
-</Frame>
-
+  <Frame>
+    ![Dias quentes e úmidos](/images/getting-started/example-datasets/sensors_02.webp)
+  </Frame>
 </div>

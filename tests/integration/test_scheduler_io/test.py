@@ -981,6 +981,77 @@ def test_resource_any_disk():
     )
 
 
+def test_replaced_resource_releases_disk_operations():
+    node.query(
+        """
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
+        insert into data select * from numbers(1e6);
+    """
+    )
+
+    node.query(
+        """
+        create resource io (read disk s3_no_resource);
+        create workload all settings max_bytes_inflight = 1000000;
+    """
+    )
+
+    def dequeued():
+        return int(
+            node.query(
+                "select sum(dequeued_requests) from system.scheduler where resource='io' and type='request_queue'"
+            )
+        )
+
+    node.query("select sum(key*key) from data settings workload='all'")
+    read_requests = dequeued()
+    assert read_requests > 0
+
+    # After the replacement `io` serves writes only, so the reads of the same query are no longer scheduled through
+    # it (the query may still schedule a request that is not a read)
+    node.query("create or replace resource io (write disk s3_no_resource)")
+    before = dequeued()
+    node.query("select sum(key*key) from data settings workload='all'")
+    assert dequeued() - before < read_requests
+
+    before = dequeued()
+    node.query("insert into data select * from numbers(1e5) settings workload='all'")
+    assert dequeued() > before
+
+
+def test_replaced_resource_keeps_other_disk_resource():
+    node.query(
+        """
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
+        insert into data select * from numbers(1e6);
+    """
+    )
+
+    # `io_read` is selected for reads of the disk, `io_write` is the other resource that also reads it
+    node.query(
+        """
+        create resource io_read (read disk s3_no_resource);
+        create resource io_write (read disk s3_no_resource);
+        create workload all settings max_bytes_inflight = 1000000;
+    """
+    )
+
+    def dequeued(resource):
+        return int(
+            node.query(
+                f"select sum(dequeued_requests) from system.scheduler where resource='{resource}' and type='request_queue'"
+            )
+        )
+
+    # After the selected resource stops reading the disk, the other one is used
+    node.query("create or replace resource io_read (write disk s3_no_resource)")
+    before = dequeued("io_write")
+    node.query("select sum(key*key) from data settings workload='all'")
+    assert dequeued("io_write") > before
+
+
 def test_workload_entity_keeper_storage():
     node.query("create resource io_write (write disk s3_no_resource);")
     node.query("create resource io_read (read disk s3_no_resource);")
@@ -1088,6 +1159,74 @@ def test_workload_entity_keeper_storage():
         check_consistency()
 
 
+def test_drop_does_not_remove_entity_of_other_kind():
+    node.query(
+        """
+        create resource io_read (read disk s3_no_resource);
+        create workload all;
+        create workload development in all;
+        create user drop_workload_user not identified;
+        grant drop workload on *.* to drop_workload_user;
+        create user drop_resource_user not identified;
+        grant drop resource on *.* to drop_resource_user;
+    """
+    )
+    try:
+        assert "doesn't exist" in node.query_and_get_error("drop workload io_read", user="drop_workload_user")
+        node.query("drop workload if exists io_read", user="drop_workload_user")
+        assert "doesn't exist" in node.query_and_get_error("drop resource development", user="drop_resource_user")
+        node.query("drop resource if exists development", user="drop_resource_user")
+
+        definitions = node.query(
+            "select value from system.zookeeper where path = '/clickhouse/workload' and name = 'definitions.sql'"
+        )
+        assert "CREATE RESOURCE io_read" in definitions
+        assert "CREATE WORKLOAD development" in definitions
+        assert node.query("select count() from system.resources where name = 'io_read'") == "1\n"
+        assert node.query("select count() from system.workloads where name in ('all', 'development')") == "2\n"
+
+        node.query("drop workload development", user="drop_workload_user")
+        node.query("drop resource io_read", user="drop_resource_user")
+    finally:
+        node.query("drop user if exists drop_workload_user; drop user if exists drop_resource_user")
+
+
+def test_workload_and_resource_with_same_name():
+    node.query(
+        """
+        create resource io (read disk s3_no_resource);
+        create workload io settings max_io_requests = 10 for io;
+    """
+    )
+    try:
+        definitions = node.query(
+            "select value from system.zookeeper where path = '/clickhouse/workload' and name = 'definitions.sql'"
+        )
+        assert "CREATE RESOURCE io" in definitions
+        assert "CREATE WORKLOAD io" in definitions
+
+        def check_both_exist():
+            assert node.query("select count() from system.resources where name = 'io'") == "1\n"
+            assert node.query("select count() from system.workloads where name = 'io'") == "1\n"
+            assert (
+                node.query(
+                    "select count() from system.scheduler where resource = 'io' and path ilike '%/io/%' and type = 'inflight_limit' and max_requests = 10"
+                )
+                == "1\n"
+            )
+
+        check_both_exist()
+        node.restart_clickhouse()  # Both are loaded back from Keeper
+        check_both_exist()
+
+        assert "referenced by" in node.query_and_get_error("drop resource io")
+        node.query("drop workload io")
+        assert node.query("select count() from system.resources where name = 'io'") == "1\n"
+        node.query("drop resource io")
+    finally:
+        node.query("drop workload if exists io; drop resource if exists io")
+
+
 def test_throw_on_unknown_workload():
     node.query(
         """
@@ -1141,11 +1280,12 @@ def test_config_based_workloads_and_resources():
         == "2\n"
     )
 
+    # The root workload (empty name) is always present
     assert (
         node.query(
             "SELECT count() FROM system.workloads"
         )
-        == "2\n"
+        == "3\n"
     )
 
     # Verify scheduler nodes exist for config entities
@@ -1218,11 +1358,12 @@ def test_config_based_workloads_and_resources():
         )
         == "1\n"
     )
+    # The root workload (empty name) is always present
     assert (
         node.query(
             "SELECT count() FROM system.workloads"
         )
-        == "2\n"
+        == "3\n"
     )
 
     # Make sure it's possible to clean the config without "Logical error: 'Removing workload 'all' with children"
@@ -1232,7 +1373,7 @@ def test_config_based_workloads_and_resources():
 def test_config_and_sql_root_workloads_coexist():
     # A root workload defined in the server configuration and a root workload created via SQL must
     # coexist as independent roots of the workload forest. This exercises the configuration carrier
-    # (loaded via setLocalEntities) alongside the SQL carrier (storeEntity) - two different paths.
+    # (loaded via setOwnEntities) alongside the SQL carrier (storeEntity) - two different paths.
     update_workloads_config(node, resources_and_workloads="CREATE WORKLOAD config_root")
     node.query("CREATE WORKLOAD sql_root")
 

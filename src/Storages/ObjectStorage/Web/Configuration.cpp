@@ -5,6 +5,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Core/Settings.h>
 #include <IO/Archives/ArchiveUtils.h>
+#include <IO/parseURI.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
@@ -41,23 +42,17 @@ namespace
 using URLFailoverOptions = std::vector<String>;
 using URLShardsWithFailover = std::vector<URLFailoverOptions>;
 
-URLShardsWithFailover parseURLShardsWithFailover(const String & uri, size_t max_addresses, const String & func_name = "url")
+URLShardsWithFailover parseURLShardsWithFailover(const String & uri, size_t max_addresses, const RemoteDescriptionCaller & caller)
 {
-    auto disclosed_urls = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses, func_name);
+    /// The limit is on the whole first argument: the failover options of all the comma-separated URLs
+    /// are summed up, and the number reported when it is exceeded is the cardinality of the whole
+    /// pattern, not of the URLs disclosed so far.
+    auto url_shards = parseRemoteDescriptionWithFailover(uri, max_addresses, caller);
 
     URLShardsWithFailover result;
-    result.reserve(disclosed_urls.size());
-    size_t url_options_count = 0;
-
-    for (const auto & disclosed_url : disclosed_urls)
-    {
-        auto failover_options = parseRemoteDescription(disclosed_url, 0, disclosed_url.size(), '|', max_addresses, func_name);
-        if (url_options_count + failover_options.size() > max_addresses)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': first argument generates too many result addresses", func_name);
-
-        url_options_count += failover_options.size();
-        result.push_back(std::move(failover_options));
-    }
+    result.reserve(url_shards.size());
+    for (auto & url_shard : url_shards)
+        result.push_back(std::move(url_shard.replicas));
 
     return result;
 }
@@ -109,6 +104,16 @@ void WebStorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wi
     }
 }
 
+StorageWebConfiguration::StorageWebConfiguration()
+    : StorageWebConfiguration(tableFunctionURLCaller())
+{
+}
+
+StorageWebConfiguration::StorageWebConfiguration(RemoteDescriptionCaller glob_caller_)
+    : glob_caller(std::move(glob_caller_))
+{
+}
+
 StorageObjectStorageQuerySettings StorageWebConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
@@ -143,7 +148,7 @@ void StorageWebConfiguration::check(ContextPtr context)
     for (const auto & url_shard : url_shards)
     {
         for (const auto & url_option : url_shard)
-            context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url_option.base_url + url_option.query_fragment, false));
+            context->getGlobalContext()->getRemoteHostFilter().checkURL(parseURI(url_option.base_url + url_option.query_fragment, false));
     }
     context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
 }
@@ -284,7 +289,8 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 
     const auto url_root_for_expansion = has_path ? url.substr(0, path_start + 1) : url.substr(0, path_end) + "/";
     const auto query_fragment_part = query_or_fragment_pos == String::npos ? String{} : url.substr(query_or_fragment_pos);
-    const auto url_shards_with_failover = parseURLShardsWithFailover(url_root_for_expansion + query_fragment_part, max_addresses, "url");
+    const auto url_shards_with_failover = parseURLShardsWithFailover(
+        url_root_for_expansion + query_fragment_part, max_addresses, glob_caller);
 
     path.path = has_path ? url.substr(path_start, path_end - path_start) : String{};
     while (path.path.starts_with('/'))
@@ -310,7 +316,7 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 
         for (const auto & url_option : failover_url_options)
         {
-            Poco::URI uri(url_option, false);
+            auto uri = parseURI(url_option, false);
 
             if (url_shards.empty() && url_shard.empty())
             {
@@ -321,7 +327,7 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 
             String query_fragment;
             if (!uri.getRawQuery().empty())
-                query_fragment = "?" + uri.getRawQuery();
+                query_fragment.append("?").append(uri.getRawQuery());
             if (!uri.getFragment().empty())
                 query_fragment += "#" + uri.getFragment();
 

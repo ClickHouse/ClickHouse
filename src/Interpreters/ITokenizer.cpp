@@ -262,6 +262,16 @@ SplitByStringTokenizer::SplitByStringTokenizer(const std::vector<String> & separ
     }
 
     all_separators_single_byte = std::ranges::all_of(separators, [](const auto & separator) { return separator.size() == 1; });
+
+    if (!all_separators_single_byte && std::ranges::all_of(separators, [](const auto & separator) { return separator.size() <= sizeof(UInt64); }))
+    {
+        short_separators.reserve(separators.size());
+        for (const auto & separator : separators)
+            short_separators.push_back({
+                .bytes = unalignedLoadLittleEndian<UInt64>(separator.data(), separator.size()),
+                .mask = maskLowBits<UInt64>(static_cast<unsigned char>(8 * separator.size())),
+                .length = separator.size()});
+    }
 }
 
 bool SplitByStringTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
@@ -536,8 +546,11 @@ void encodeTokenImpl(std::string_view key, std::string_view value, bool is_dupli
 
     char buf[10];
     const size_t num_bytes = writeVarUInt(packed, buf) - buf;
-    for (size_t i = num_bytes; i-- > 0;)
+    for (size_t i = num_bytes; i > 0;)
+    {
+        --i;
         appendToToken(out, static_cast<UInt8>(buf[i]));
+    }
 }
 
 }
@@ -770,7 +783,8 @@ void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, 
         });
 }
 
-ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows)
+ColumnPtr tokenizeToArray(
+    const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows, PaddedPODArray<UInt64> * element_token_offsets)
 {
     chassert(from + rows <= input.size());
 
@@ -782,7 +796,7 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
     if (const auto * col_string = typeid_cast<const ColumnString *>(&input))
     {
         const auto & str_offsets = col_string->getOffsets();
-        tokens_data->getChars().reserve(str_offsets[from + rows - 1] - str_offsets[from - 1]);
+        tokens_data->getChars().reserve(str_offsets[static_cast<ssize_t>(from + rows) - 1] - str_offsets[static_cast<ssize_t>(from) - 1]);
     }
 
     auto tokenize = [&](std::string_view doc)
@@ -803,11 +817,15 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
 
         for (size_t i = from; i < from + rows; ++i)
         {
-            for (size_t j = src_offsets[i - 1]; j < src_offsets[i]; ++j)
+            for (size_t j = src_offsets[static_cast<ssize_t>(i) - 1]; j < src_offsets[i]; ++j)
             {
                 if (data_is_nullable && data.isNullAt(j))
                     continue;
+
                 tokenize(data.getDataAt(j));
+
+                if (element_token_offsets)
+                    element_token_offsets->push_back(tokens_data->size());
             }
             tokens_offsets->getData().push_back(tokens_data->size());
         }

@@ -10,6 +10,7 @@
 #include <Functions/castTypeToEither.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <base/arithmeticOverflow.h>
 
 #include <algorithm>
 #include <limits>
@@ -45,7 +46,7 @@ std::optional<typename NumberTraits::ResultOfIntegerDivision<A, B>::Type> tryDiv
     {
         /// Unsigned subtraction also represents the magnitude of the minimum signed value.
         const auto unsigned_value = static_cast<Unsigned>(value);
-        return negative ? Unsigned(0) - unsigned_value : unsigned_value;
+        return negative ? common::negateIgnoreOverflow(unsigned_value) : unsigned_value;
     };
 
     const Unsigned quotient = magnitude(a, negative_a) / magnitude(b, negative_b);

@@ -12,7 +12,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
     bool require_checksums,
     bool & is_broken_projection,
     std::function<bool()> is_cancelled = []{ return false; },
-    bool throw_on_broken_projection = false);
+    bool throw_on_broken_projection = false,
+    bool allow_direct_io = true);
 
 bool isNotEnoughMemoryErrorCode(int code);
 bool isRetryableException(std::exception_ptr exception_ptr);
