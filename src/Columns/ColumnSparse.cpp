@@ -968,19 +968,8 @@ void ColumnSparse::getExtremes(Field & min, Field & max, size_t start, size_t en
 
     if (getNumberOfDefaultRows() == 0)
     {
-        size_t min_idx = 1;
-        size_t max_idx = 1;
-
-        for (size_t i = 2; i < values->size(); ++i)
-        {
-            if (values->compareAt(i, min_idx, *values, 1) < 0)
-                min_idx = i;
-            else if (values->compareAt(i, max_idx, *values, 1) > 0)
-                max_idx = i;
-        }
-
-        values->get(min_idx, min);
-        values->get(max_idx, max);
+        /// `values[0]` is the default value, which is not a row here.
+        values->getExtremes(min, max, 1, values->size());
         return;
     }
 

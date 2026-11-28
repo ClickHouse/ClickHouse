@@ -27,8 +27,9 @@ public:
 
     /// The statistics read from a file have to be dropped when their bounds are not exact (`V1` stored them as
     /// `Float64`), or have a type other than the one of the values of the column (e.g. the `Float64` bounds of
-    /// `V1`, which older versions rewrote unchanged in `V4`), or when they were built for another column type.
-    [[nodiscard]] bool isUnusable() const override { return is_unusable; }
+    /// `V1`, which older versions rewrote unchanged in `V4`), or when they were built for another column type, or when
+    /// only one bound is `NaN`.
+    [[nodiscard]] bool isUnusable() const override { return is_unusable || StatisticsUtils::hasNaNInOneBoundOnly(min, max); }
 
     [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
     [[nodiscard]] String getNameForLogs() const override;

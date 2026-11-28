@@ -80,6 +80,11 @@ void StatisticsUtils::updateMax(Field & accumulator, const Field & value)
         accumulator = value;
 }
 
+bool StatisticsUtils::hasNaNInOneBoundOnly(const Field & min, const Field & max)
+{
+    return isNaNField(min) != isNaNField(max);
+}
+
 namespace
 {
 

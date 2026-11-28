@@ -57,7 +57,7 @@ public:
     void copyStructureFrom(const IStatistics & other) override;
 
     [[nodiscard]] bool hasNumericMinMax() const { return tracks_numeric; }
-    [[nodiscard]] bool isUnusable() const override { return is_unusable; }
+    [[nodiscard]] bool isUnusable() const override { return is_unusable || StatisticsUtils::hasNaNInOneBoundOnly(min, max); }
     [[nodiscard]] bool hasStringLengthAvg() const { return tracks_string; }
     [[nodiscard]] bool hasNullCount() const { return is_nullable && has_default_count; }
     [[nodiscard]] bool hasDefaultCount() const { return has_default_count; }
