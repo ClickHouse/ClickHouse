@@ -1,0 +1,16 @@
+<test>
+    <create_query>CREATE TABLE sort_radix_narrow (id UInt64, ts DateTime64(3)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>
+        INSERT INTO sort_radix_narrow
+        SELECT intHash64(number) % 10000, toDateTime64('2026-01-01 00:00:00', 3) + toIntervalMillisecond(intHash64(number + 1) % 600000)
+        FROM numbers(10000000)
+    </fill_query>
+
+    <query>SELECT ts FROM sort_radix_narrow ORDER BY ts FORMAT Null</query>
+    <query>SELECT ts FROM sort_radix_narrow ORDER BY ts DESC FORMAT Null</query>
+    <query>SELECT id FROM sort_radix_narrow ORDER BY id FORMAT Null</query>
+    <query>SELECT id, ts FROM sort_radix_narrow ORDER BY id, ts FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS sort_radix_narrow</drop_query>
+</test>
