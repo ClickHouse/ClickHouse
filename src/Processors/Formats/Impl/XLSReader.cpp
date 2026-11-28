@@ -283,14 +283,16 @@ String CompoundFile::readChain(UInt32 start, std::optional<UInt64> size) const
         result.reserve(*size);
     }
 
+    /// A sector that is visited twice means a cycle, even if the stream ends before the cycle repeats.
+    VectorWithMemoryTracking<bool> visited(fat.size());
     UInt32 id = start;
-    size_t num_sectors = 0;
     while (id != END_OF_CHAIN && (!size || result.size() < *size))
     {
         if (id >= fat.size())
             throwCorrupted(fmt::format("invalid sector {} in a chain", id));
-        if (++num_sectors > fat.size())
+        if (visited[id])
             throwCorrupted("a chain of sectors has a cycle");
+        visited[id] = true;
         auto content = sector(id);
         result.append(content.data(), content.size());
         id = fat[id];
@@ -312,14 +314,15 @@ String CompoundFile::readMiniChain(UInt32 start, UInt64 size) const
         throwCorrupted("a stream is larger than the mini stream");
     result.reserve(size);
 
+    VectorWithMemoryTracking<bool> visited(mini_fat.size());
     UInt32 id = start;
-    size_t num_sectors = 0;
     while (result.size() < size)
     {
         if (id >= mini_fat.size())
             throwCorrupted(fmt::format("invalid mini sector {} in a chain", id));
-        if (++num_sectors > mini_fat.size())
+        if (visited[id])
             throwCorrupted("a chain of mini sectors has a cycle");
+        visited[id] = true;
         UInt64 offset = static_cast<UInt64>(id) * MINI_SECTOR_SIZE;
         if (offset >= mini_stream.size())
             throwCorrupted(fmt::format("mini sector {} is outside of the mini stream", id));

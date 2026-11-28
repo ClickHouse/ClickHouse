@@ -447,7 +447,11 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.excel.sheet = settings[Setting::input_format_excel_sheet];
     format_settings.excel.range = settings[Setting::input_format_excel_range];
     if (auto header = settings[Setting::input_format_excel_header].valueOrNullopt())
+    {
+        if (*header > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the setting 'input_format_excel_header' must be 0, 1 or 'auto', got {}", *header);
         format_settings.excel.header = *header != 0;
+    }
     format_settings.excel.skip_empty_rows = settings[Setting::input_format_excel_skip_empty_rows];
     format_settings.excel.output_sheet_name = settings[Setting::output_format_xlsx_sheet_name];
     format_settings.excel.output_write_header = settings[Setting::output_format_xlsx_write_header];
