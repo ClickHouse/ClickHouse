@@ -4,8 +4,6 @@
 -- Requires no-random-merge-tree-settings because the test validates exact bucket counts
 -- in system.parts_columns, which depend on specific serialization version settings.
 
-SET allow_experimental_json_type = 1;
-
 -- ==========================================
 -- Section 1: Wide part with empty shared data - single bucket
 -- When max_dynamic_paths is large enough to hold all paths, shared data is empty.

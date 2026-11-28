@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Formats/FormatSettings.h>
+#include <base/arithmeticOverflow.h>
 
 #include <algorithm>
 #include <array>
@@ -102,15 +103,17 @@ void SerializationInfo::Data::add(const Data & other)
     /// The default value of `exact_num_defaults` is false and would otherwise pin
     /// the merged result to non exact even when every input is exact.
     bool was_empty = (num_rows == 0);
-    num_rows += other.num_rows;
-    num_defaults += other.num_defaults;
+    /// The counts are modular, like in `remove`.
+    num_rows = common::addIgnoreOverflow(num_rows, other.num_rows);
+    num_defaults = common::addIgnoreOverflow(num_defaults, other.num_defaults);
     exact_num_defaults = was_empty ? other.exact_num_defaults : (exact_num_defaults && other.exact_num_defaults);
 }
 
 void SerializationInfo::Data::remove(const Data & other)
 {
-    num_rows -= other.num_rows;
-    num_defaults -= other.num_defaults;
+    /// The counts are modular: the aggregated hints of a table can have less than the removed part had.
+    num_rows = common::subIgnoreOverflow(num_rows, other.num_rows);
+    num_defaults = common::subIgnoreOverflow(num_defaults, other.num_defaults);
     exact_num_defaults = exact_num_defaults && other.exact_num_defaults;
 }
 
@@ -435,23 +438,12 @@ SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settin
 SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings_)
     : SerializationInfoByName(settings_)
 {
-    if (settings.version == MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS
-        && (settings.isAlwaysDefault()
-            || std::ranges::none_of(columns, [&](const auto & column)
-            {
-                return column.type->hasSparseSerializationSubcolumns(settings);
-            })))
-    {
-        /// The writer can still add `missing_columns` after choosing the serialization kinds.
-        settings.version = MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
-    }
-
     if (settings.isAlwaysDefault())
         return;
 
     for (const auto & column : columns)
     {
-        if (settings.shouldCollectSerializationInfo(*column.type))
+        if (settings.canUseSparseSerialization(*column.type))
             emplace(column.name, column.type->createSerializationInfo(settings));
     }
 }

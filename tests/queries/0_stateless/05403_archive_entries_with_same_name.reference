@@ -35,9 +35,9 @@ s3Cluster lines	16	2	['{"y":5}','{"y":6}']
 s3Cluster lines	32	4	['{"x":1}','{"x":2}','{"x":3}','{"x":4}']
 s3Cluster parquet	321	2	0	11
 s3Cluster parquet	338	4	10	0
-s3Cluster whole archive	14	['{"x":7,"y":8}']
-s3Cluster whole archive	16	['{"y":5}','{"y":6}']
-s3Cluster whole archive	32	['{"x":1}','{"x":2}','{"x":3}','{"x":4}']
+s3Cluster whole archive	14	1	['{"x":7,"y":8}']
+s3Cluster whole archive	16	2	['{"y":5}','{"y":6}']
+s3Cluster whole archive	32	4	['{"x":1}','{"x":2}','{"x":3}','{"x":4}']
 cache hits	file_count	1
 cache hits	file_skip_count	1
 cache hits	file_union	1

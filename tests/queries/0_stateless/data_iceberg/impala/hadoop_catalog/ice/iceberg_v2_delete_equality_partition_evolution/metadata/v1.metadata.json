@@ -1,0 +1,56 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "9258fcb2-d821-426d-8a88-304ff9e7364c",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_delete_equality_partition_evolution",
+  "last-sequence-number" : 0,
+  "last-updated-ms" : 1702498563674,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "identifier-field-ids" : [ 2, 3 ],
+    "fields" : [ {
+      "id" : 1,
+      "name" : "i",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "s",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "d",
+      "required" : true,
+      "type" : "date"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "d",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.parquet.compression-codec" : "zstd",
+    "write.upsert.enabled" : "true"
+  },
+  "current-snapshot-id" : -1,
+  "refs" : { },
+  "snapshots" : [ ],
+  "statistics" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

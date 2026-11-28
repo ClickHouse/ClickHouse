@@ -79,23 +79,24 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 ### 기본 타입 {#primitive-types}
 
-| Iceberg 타입         | ClickHouse 타입          | 비고                              |
-| ------------------ | ---------------------- | ------------------------------- |
-| `boolean`          | `Bool`                 |                                 |
-| `int`              | `Int32`                |                                 |
-| `long`, `bigint`   | `Int64`                |                                 |
-| `float`            | `Float32`              |                                 |
-| `double`           | `Float64`              |                                 |
-| `date`             | `Date32`               |                                 |
-| `time`             | `Int64`                | 자정부터 경과한 마이크로초                  |
-| `timestamp`        | `DateTime64(6)`        | 마이크로초, 시간대 없음                   |
-| `timestamptz`      | `DateTime64(6, 'UTC')` | 마이크로초, UTC 시간대                  |
-| `timestamp_ns`     | `DateTime64(9)`        | 나노초, 시간대 없음 (Iceberg v3부터만 지원)  |
-| `timestamptz_ns`   | `DateTime64(9, 'UTC')` | 나노초, UTC 시간대 (Iceberg v3부터만 지원) |
-| `string`, `binary` | `String`               |                                 |
-| `uuid`             | `UUID`                 |                                 |
-| `fixed(N)`         | `FixedString(N)`       |                                 |
-| `decimal(P, S)`    | `Decimal(P, S)`        |                                 |
+| Iceberg 타입         | ClickHouse 타입          | 비고                                                                         |
+| ------------------ | ---------------------- | -------------------------------------------------------------------------- |
+| `boolean`          | `Bool`                 |                                                                            |
+| `int`              | `Int32`                |                                                                            |
+| `long`, `bigint`   | `Int64`                |                                                                            |
+| `float`            | `Float32`              |                                                                            |
+| `double`           | `Float64`              |                                                                            |
+| `date`             | `Date32`               |                                                                            |
+| `time`             | `Int64`                | 자정부터 경과한 마이크로초                                                             |
+| `timestamp`        | `DateTime64(6)`        | 마이크로초, 시간대 없음                                                              |
+| `timestamptz`      | `DateTime64(6, 'UTC')` | 마이크로초, 시간대는 테이블 설정(table setting) `iceberg_timezone_for_timestamptz`로 지정   |
+| `timestamp_ns`     | `DateTime64(9)`        | 나노초, 시간대 없음 (Iceberg v3부터만 지원)                                             |
+| `timestamptz_ns`   | `DateTime64(9, 'UTC')` | 나노초, 시간대는 테이블 설정 `iceberg_timezone_for_timestamptz`로 지정 (Iceberg v3부터만 지원) |
+| `string`, `binary` | `String`               |                                                                            |
+| `uuid`             | `UUID`                 |                                                                            |
+| `fixed(N)`         | `FixedString(N)`       |                                                                            |
+| `decimal(P, S)`    | `Decimal(P, S)`        |                                                                            |
+| `unknown`          | `Nullable(Nothing)`    | 항상 `NULL`, 데이터 파일에 저장되지 않음 (Iceberg v3부터만 지원)                              |
 
 ### 복합 타입 {#complex-types}
 
@@ -109,11 +110,11 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 위의 데이터 타입 매핑은 읽기에 적용됩니다. ClickHouse가 Iceberg 스키마를 생성하거나 변경하고 데이터를 쓸 때는 다음 제한 사항이 적용됩니다.
 
-* ClickHouse는 `Bool`, `FixedString`, `Int8`, `UInt8`, `Int16`, `UInt16`, `Time`, `Time64` 중 하나를 포함하는 Iceberg 스키마를 생성하거나, 컬럼을 이러한 타입 중 하나로 추가 또는 변경할 수 없습니다. 이 작업은 지원되지 않는 타입 예외와 함께 실패합니다. 단, 기존 Iceberg 컬럼에 `Bool` 값을 삽입하는 것은 가능합니다.
+* ClickHouse는 `FixedString`, `Time`, `Time64` 중 하나를 포함하는 Iceberg 스키마를 생성하거나, 컬럼을 이러한 타입 중 하나로 추가 또는 변경할 수 없습니다. 이 작업은 지원되지 않는 타입 예외와 함께 실패합니다. `Bool`은 Iceberg `boolean`으로 저장됩니다. Iceberg에는 8비트 또는 16비트 정수 타입이 없으므로 `Int8`, `UInt8`, `Int16`, `UInt16` 컬럼은 Iceberg `int`로 확장되며, 따라서 읽을 때 `Int32`로 반환됩니다.
 * ClickHouse는 `UInt64`를 포함하는 Iceberg 스키마도 생성할 수 없습니다. Iceberg에서 가장 넓은 정수 타입은 부호 있는 64비트 `long`이며, 이 타입으로는 모든 `UInt64` 값을 표현할 수 없기 때문입니다. 대신 `Int64` 또는 `Decimal(20, 0)`을 사용하십시오. `Array(UInt64)`와 같은 중첩된 컬럼을 포함해 `UInt64` 컬럼이 있는 테이블을 생성하면, 해당 경로에 Iceberg 테이블이 이미 존재하더라도 예외와 함께 실패합니다. 같은 이유로 `UInt32` 컬럼은 Iceberg `long`으로 확장되므로, 읽을 때 `Int64`로 반환됩니다.
 * ClickHouse가 Iceberg 스키마를 생성하거나 변경할 때 모든 `DateTime` 및 `DateTime64` 컬럼을 마이크로초 정밀도를 가지며 시간대 정보가 없는 Iceberg `timestamp`로 매핑합니다. ClickHouse는 `timestamptz`, `timestamp_ns`, `timestamptz_ns` 스키마 타입을 생성할 수 없으므로, 더 높은 정밀도와 시간대 의미 체계는 Iceberg 스키마에 표현되지 않습니다.
 * ClickHouse는 `decimal`, `fixed`, `timestamp_ns`, `timestamptz_ns` 컬럼을 직접 파티션 필드로 사용하는 Iceberg 테이블에 쓸 수 없습니다. 이 작업은 지원되지 않는 타입 예외와 함께 실패합니다.
-* `Bool` 및 `Decimal`을 비롯해 ClickHouse가 경계를 직렬화할 수 없는 타입이 포함된 데이터 파일의 경우, ClickHouse는 Iceberg 매니페스트 항목에서 모든 컬럼의 하한 및 상한을 생략합니다. 컬럼 크기와 null 수는 계속 포함되고 데이터의 정확성도 유지되지만, 리더는 해당 파일에 대해 매니페스트 수준의 min-max 프루닝을 사용할 수 없습니다.
+* `UUID`와 같이 ClickHouse가 경계를 직렬화할 수 없는 타입이 포함된 데이터 파일의 경우, ClickHouse는 Iceberg 매니페스트 항목에서 해당 컬럼의 하한 및 상한을 생략합니다. 컬럼 크기와 null 수는 계속 포함되고 데이터의 정확성도 유지되지만, 리더는 해당 파일에 대해 매니페스트 수준의 min-max 프루닝을 사용할 수 없습니다.
 
 ## 스키마 진화 {#schema-evolution}
 
@@ -122,6 +123,7 @@ ClickHouse는 시간이 지나며 스키마가 변경된 Iceberg 테이블도 �
 * int -&gt; long
 * float -&gt; double
 * decimal(P, S) -&gt; decimal(P&#39;, S) where P&#39; &gt; P.
+* unknown -&gt; 모든 기본형 타입 (Iceberg v3부터만 지원)
 
 현재는 중첩 구조나 배열 및 맵 내부 원소의 타입은 변경할 수 없습니다.
 
@@ -137,7 +139,7 @@ ClickHouse는 Iceberg 테이블에 대한 SELECT 쿼리에서 파티션 프루�
 
 이 작업을 사용하려면 `allow_insert_into_iceberg`를 활성화하십시오.
 
-이 작업은 파티션 spec이 하나뿐이고 변경(evolution)된 적이 없는 Iceberg `format-version` 2 테이블에서만 지원됩니다. 선택한 파티션을 포함하는 각 매니페스트에는 다른 파티션의 파일이 없어야 합니다. 선택한 파티션과 다른 파티션이 하나의 매니페스트를 공유하면 작업은 테이블을 변경하지 않은 채 실패합니다. 또한 영향을 받는 매니페스트에 동등 삭제(equality-delete) 파일이 포함되어 있으면 작업이 거부됩니다.
+이 작업은 파티션 spec이 하나뿐이고 변경(evolution)된 적이 없는 Iceberg `format-version` 2 테이블에서만 지원됩니다. 선택한 파티션을 포함하는 각 매니페스트에는 다른 파티션의 파일이 없어야 합니다. 선택한 파티션과 다른 파티션이 하나의 매니페스트를 공유하면 작업은 테이블을 변경하지 않은 채 실패합니다. `iceberg_insert_single_manifest_for_all_partitions`가 활성화되어 있으면 `INSERT`의 각 삽입 스트림이 수신한 모든 파티션의 파일을 하나의 매니페스트에 기록합니다(`max_insert_threads = 1`이면 `INSERT`당 정확히 하나의 매니페스트). 따라서 다른 파티션과 같은 `INSERT`로 기록된 파티션은 삭제할 수 없습니다. 또한 영향을 받는 매니페스트에 동등 삭제(equality-delete) 파일이 포함되어 있으면 작업이 거부됩니다.
 
 파티션 값은 `MergeTree`와 동일한 규칙을 따릅니다. 단일 컬럼 파티션에는 스칼라 리터럴을, 다중 컬럼 파티션에는 값으로 구성된 튜플을 전달하십시오:
 
@@ -423,7 +425,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 Iceberg 메타데이터에는 저장되지 않고 테이블 정의(table definition)에만 저장되는 설정은 `ALTER TABLE ... MODIFY SETTING` 및 `ALTER TABLE ... RESET SETTING`을 사용하여 기존 테이블에서 변경할 수 있습니다.
 
 * 메타데이터 파일 조회(lookup): `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field`, `iceberg_metadata_async_prefetch_period_ms`
-* 백그라운드 컴팩션 및 컴팩션 후 정리: `allow_experimental_iceberg_compaction`, `allow_experimental_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction`, `iceberg_data_file_size_upper_threshold_compaction`
+* 백그라운드 컴팩션 및 컴팩션 후 정리: `allow_experimental_iceberg_compaction`, `enable_cleanup_old_data_files_compaction`(또는 별칭 `allow_experimental_cleanup_old_data_files_compaction`), `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction`, `iceberg_data_file_size_upper_threshold_compaction`
 
 새로운 값은 이후 실행되는 쿼리부터 적용되며 테이블 정의에 저장됩니다. 설정을 변경하는 동안 해당 테이블의 백그라운드 작업은 중지되었다가 새 설정으로 다시 시작됩니다. 따라서 `allow_experimental_iceberg_compaction`을 끄면 테이블의 백그라운드 컴팩션이 중지되고, 켜면 다시 시작됩니다. 그 외의 설정은 수정할 수 없으며, 설정 변경은 다른 `ALTER` 명령어와 하나의 쿼리에서 함께 사용할 수 없습니다. `DataLakeCatalog` 데이터베이스의 테이블은 설정 수정을 지원하지 않습니다.
 

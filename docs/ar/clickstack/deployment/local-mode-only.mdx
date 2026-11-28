@@ -8,65 +8,55 @@ keywords: ['clickstack', 'النشر', 'الإعداد', 'التهيئة', 'obse
 
 import JSONSupport from '/snippets/ar/_json_support.mdx';
 
-على غرار [الصورة الشاملة](/ar/clickstack/deployment/docker-compose)، تتضمن صورة Docker الشاملة هذه جميع مكونات ClickStack:
+على غرار [الصورة الشاملة](/ar/clickstack/deployment/all-in-one)، تتضمن صورة Docker الشاملة هذه جميع مكونات ClickStack:
 
 * **ClickHouse**
-* **HyperDX**
-* **مجمِّع OpenTelemetry ‏(OTel)** (يعرِض OTLP على المنفذين `4317` و`4318`)
+* **واجهة مستخدم ClickStack**
+* **مجمِّع OpenTelemetry ‏(OTel)** (يعرِض OTLP على المنفذين `4317` و`4318`)
 * **MongoDB** (للحفاظ على حالة التطبيق بشكل دائم)
 
-**ومع ذلك، فإن مصادقة المستخدم معطّلة في هذا الإصدار من HyperDX**
+**ومع ذلك، فإن مصادقة المستخدم معطّلة في هذا الإصدار من واجهة مستخدم ClickStack**
 
 <div id="suitable-for">
-  ### مناسب لـ
+  ### مناسب لـ {#suitable-for}
 </div>
 
 * العروض التوضيحية
 * تصحيح الأخطاء
-* بيئات التطوير التي يُستخدم فيها HyperDX
+* بيئات التطوير التي تُستخدم فيها واجهة مستخدم ClickStack
 
-<div id="deployment-steps">
-  ## خطوات النشر
-</div>
+## خطوات النشر {#deployment-steps}
 
 <br />
 
 <Steps>
   <Step title="النشر باستخدام Docker" id="deploy-with-docker">
-    يؤدي وضع محلي إلى نشر واجهة HyperDX UI على المنفذ 8080.
+    ينشر الوضع المحلي واجهة مستخدم ClickStack على المنفذ 8080.
 
     ```shell
     docker run -p 8080:8080 clickhouse/clickstack-local:latest
     ```
   </Step>
 
-  <Step title="انتقل إلى HyperDX UI" id="navigate-to-hyperdx-ui">
-    زُر [http://localhost:8080](http://localhost:8080) للوصول إلى HyperDX UI.
+  <Step title="الانتقال إلى واجهة مستخدم ClickStack" id="navigate-to-hyperdx-ui">
+    انتقل إلى [http://localhost:8080](http://localhost:8080) للوصول إلى واجهة مستخدم ClickStack.
 
-    **لن يُطلب منك إنشاء مستخدم، لأن المصادقة غير مفعّلة في وضع النشر هذا.**
+    **لن يُطلب منك إنشاء مستخدم، إذ إن المصادقة غير مفعّلة في نمط النشر هذا.**
 
     اتصل بعنقود ClickHouse خارجي خاص بك، مثل ClickHouse Cloud.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![إنشاء تسجيل دخول](/images/use-cases/observability/hyperdx-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![إنشاء اسم تسجيل الدخول](/images/use-cases/observability/hyperdx-2.webp)
+      </Frame>
     </div>
 
-    أنشئ مصدرًا، واحتفِظ بجميع القيم الافتراضية، ثم أكمل الحقل `Table` بالقيمة `otel_logs`. ينبغي اكتشاف جميع الإعدادات الأخرى تلقائيًا، ما يتيح لك النقر على `Save New Source`.
+    أنشئ مصدرًا مع الإبقاء على جميع القيم الافتراضية، واملأ الحقل `Table` بالقيمة `otel_logs`. ستُكتشف جميع الإعدادات الأخرى تلقائيًا عادةً، وبعدها يمكنك النقر على `Save New Source`.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![إنشاء مصدر سجلات](/images/use-cases/observability/hyperdx-logs.webp)
-
-    </Frame>
-
+      <Frame>
+        ![إنشاء مصدر السجلات](/images/use-cases/observability/hyperdx-logs.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>

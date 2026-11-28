@@ -11,6 +11,7 @@
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -152,6 +153,7 @@ public:
     /// distribution between dynamic paths and shared data.
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;
 
@@ -216,16 +218,15 @@ public:
     /// Flat vector of typed path column pointers in the same order as sorted_typed_paths.
     /// Used for cache-friendly iteration in hot loops (e.g., default filling).
     const VectorWithMemoryTracking<IColumn *> & getSortedTypedPathColumns() const { return sorted_typed_path_columns; }
-    /// Rebuild sorted_typed_path_columns from current typed_paths pointers.
-    /// Must be called after any operation that replaces typed path column pointers
-    /// (e.g. forEachMutableSubcolumn or an assignment through getTypedPaths).
-    void rebuildSortedTypedPathColumns();
 
     const PathToColumnMap & getDynamicPaths() const { return dynamic_paths; }
     PathToColumnMap & getDynamicPaths() { return dynamic_paths; }
 
     const PathToDynamicColumnPtrMap & getDynamicPathsPtrs() const { return dynamic_paths_ptrs; }
     PathToDynamicColumnPtrMap & getDynamicPathsPtrs() { return dynamic_paths_ptrs; }
+
+    /// Dynamic path names in sorted order, so that all paths under a prefix form one range.
+    const SetWithMemoryTracking<std::string_view> & getSortedDynamicPaths() const { return sorted_dynamic_paths; }
 
     const StatisticsPtr & getStatistics() const { return statistics; }
     StatisticsPtr getOrCalculateStatistics() const;
@@ -392,6 +393,11 @@ private:
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
     void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
     void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
+    /// Rebuild sorted_typed_path_columns from current typed_paths pointers.
+    /// Must be called after any operation that can replace typed path column pointers
+    /// (e.g. forEachMutableSubcolumn).
+    void rebuildSortedTypedPathColumns();
+
     /// Map path -> column for paths with explicitly specified types.
     /// This set of paths is constant and cannot be changed.
     PathToColumnMap typed_paths;

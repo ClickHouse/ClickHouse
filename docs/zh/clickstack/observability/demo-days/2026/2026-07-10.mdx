@@ -1,0 +1,108 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-07-10
+title: '演示日 - 2026-07-10'
+sidebarTitle: '2026-07-10'
+description: '2026-07-10 的 ClickStack 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## 修复 Map 列析取筛选条件未使用文本索引的问题 {#text-index-fix-for-map-column-disjunction-filters}
+
+*演示者：[@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/i7SOQ5uSfm8" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Aaron 在协助调试一个问题时发现了这一点：有用户反馈，针对 Map 列属性的查询出乎意料地慢。该用户已自行添加了物化列和布隆过滤器来绕过这个问题，但鉴于 Map 属性已有相应的优化，这样做本不应该是必要的。
+
+排查后发现，对 Map 属性按多个可能值进行筛选时，使用的是 `hasAny` 函数，这实际上是一种数组析取检查，例如将用户 ID 等日志属性与一组值进行匹配。在 26.5 以下的 ClickHouse 版本中，这种写法不会触发文本索引。此修复将该析取重写为一组用括号括起、以 OR 连接的相等检查，从而能够正确启用索引。Aaron 通过 `EXPLAIN` 确认，重写后的查询现在已按预期命中跳过索引。
+
+大多数用户已在使用 26.5 或更高版本，而对于尚未升级的用户，此修复可确保这些查询在此期间依然保持高效。
+
+**相关 PR：** [#2643](https://github.com/hyperdxio/hyperdx/pull/2643) feat: rework getAllKeyValues and add filters populated from text indices
+
+## 在 ClickCannon 中生成性能分析数据 {#profiling-data-in-clickcannon}
+
+*演示者：[@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Fo1XCHsA3rU" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+我们[最近发布了一篇介绍 ClickCannon 的博客](https://clickhouse.com/blog/building-clickcannon-a-tool-for-benchmark-clickhouse)。ClickCannon 是一款用于生成合成数据并对 ClickHouse 进行基准测试的工具。在原有的日志、指标和链路追踪之外，Spencer 现又为其新增了性能分析信号。您可以生成调用栈深度可配置的性能分析数据，既可以运行时动态模拟生成，也可以从磁盘读取，摄取方式与其他信号完全相同：只需将 ClickCannon 指向一张 profiles 表，它便会开始生成行。
+
+结果发现，profile 载荷比其他信号大得多，因此如何调整每个样本添加的键数量、如何根据实例规格核查吞吐量，目前仍在持续优化中。能够大规模生成此类数据，意味着团队可以着手优化 schema，并为其建立参考基准；这也是 ClickStack 全面支持性能分析数据及其可视化这项更大工作的一部分。此外，Spencer 还初步探索了在 ClickStack 日志查看器中渲染 profile 栈帧。
+
+## 条形图 {#bar-charts}
+
+*演示者 [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JIQJpGMh5tk" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+条形图现已推出。这一功能源自几个月前提交的一个 PR，该 PR 在 rebase 过程中被搁置而逐渐过时。现在，ClickStack 中所有显示图表的位置均已支持条形图，包括仪表盘、MCP 仪表盘构建器等。由于条形图已能胜任此前由折线图承担的特定时间点对比场景，折线图现已重命名为“时间序列”，以便更清晰地区分两者。
+
+条形图支持设置数据系列数量上限，在按 high-cardinality 字段分组时，可以控制显示的条形数量；同时还支持自定义 order by，可按最关注的指标排序，而无需使用默认排序方式。
+
+**相关 PRs：** [#2606](https://github.com/hyperdxio/hyperdx/pull/2606) feat: Add categorical bar chart display type, [#2618](https://github.com/hyperdxio/hyperdx/pull/2618) feat: Allow custom order by on categorical (pie/bar) charts
+
+## 社区贡献 {#community-contributions}
+
+*演示者：[@vinzee](https://github.com/vinzee) 和 [@zoov-xavier](https://github.com/zoov-xavier)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/f4xNJS6tcmY" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+本周经 PR 审核合并了几项不错的社区贡献。[@vinzee](https://github.com/vinzee) 在搜索栏的 Lucene/SQL 开关旁新增了语法参考按钮，用户无需离开当前页面，即可在应用内快速查看可用查询语法和选项的示例。
+
+[@zoov-xavier](https://github.com/zoov-xavier) 则让过滤器标签支持手动输入值。此前只能从采样值的下拉列表中选择，因此如果某个值尚未加载到样本中，就无法按该值进行过滤。现在只需直接输入所需的值并按 Enter 即可。
+
+**相关 PRs：** [#2381](https://github.com/hyperdxio/hyperdx/pull/2381) 为搜索输入框添加查询语法参考，[#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search)：编辑过滤器标签时允许输入自由文本值
+
+## 图表上的告警标注 {#alert-annotations-on-charts}
+
+*演示者：[@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/NmEYBvtjpAQ" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+这项功能源于一位客户的需求：希望在告警触发时能在图表上看到相应标注。新增的“显示告警标注”开关默认关闭，开启后会直接在图表上精确标出告警的触发时间和解除时间。如果某个告警在当前可见时间范围之前就已处于触发状态，图表左边缘会显示一个标记，提示该告警在时间窗口开始前就已处于活跃状态。此外，标注会随着告警的触发和解除实时更新。
+
+Tom 采用了一种可复用的标注模式来实现此功能，因此今后基于同一方案添加新的标注类型 (例如发行版或 Kubernetes 事件) 应该会很容易。
+
+**相关 PRs：** [#2605](https://github.com/hyperdxio/hyperdx/pull/2605) feat(dashboards): alert firing/recovery annotations on tile charts，[#2616](https://github.com/hyperdxio/hyperdx/pull/2616) fix(dashboards): improve alert annotation visibility on tile charts
+
+## 事件模式、卡片优化与折线数据系列操作 {#event-patterns-tile-polish-and-line-series-actions}
+
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Nwo_nt5VZL4" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+事件模式现已正式成为一等的仪表盘卡片类型。您可以创建模式卡片，并传入 `WHERE` 子句或模式表达式 (例如按服务名称或严重性文本筛选) ，一眼即可看出反复出现的模式。
+
+Brandon 还改进了小尺寸卡片上可视化的文本换行：长标题现在会自动换行并以省略号结尾，不再被生硬截断。卡片操作按钮的呈现也更加简洁：在小尺寸卡片上，这些按钮会借助 CSS 容器查询收进上下文菜单；卡片放大后，又会重新直接显示在卡片上。此外还修复了一个问题：此前未保存就关闭卡片的显示设置时，您的更改可能会被悄无声息地丢弃；现在系统会在编辑内容丢失前正确发出提醒。
+
+最后，根据用户反馈，除原有的搜索操作外，您现在还可以点击某条折线数据系列来复制其值，或只聚焦于该折线。Brandon 目前也在推进 Recharts v3 的升级工作，旨在修复分组较多的表中工具提示被裁剪的问题。
+
+**相关 PR：** [#2604](https://github.com/hyperdxio/hyperdx/pull/2604) feat: add event patterns as a first-class dashboard tile type, [#2596](https://github.com/hyperdxio/hyperdx/pull/2596) fix(charts): use multi-line ellipsis for dashboard tile titles, [#2597](https://github.com/hyperdxio/hyperdx/pull/2597) fix: track display/heatmap settings as dirty for unsaved changes modal, [#2611](https://github.com/hyperdxio/hyperdx/pull/2611) feat(charts): per-series drill-down actions, new-tab drill-in, and search-synced focus
+
+## 仪表盘与服务地图样式 {#dashboard-and-service-map-styling}
+
+*演示者：[@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yzgjzU8RIz0" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+本次进行了一轮聚焦可用性的样式改进，单项改动虽小，累积起来却让整体体验明显更加清爽。在仪表盘中，可编辑卡片在浅色模式下的标题栏颜色此前不统一，有的为灰色，有的为白色；现已统一，并在标题栏下方添加了一条简洁的分隔线。仅在悬停时显示的卡片操作也调整了位置，避免在小尺寸的响应式卡片上遮挡标题。此外，图表现已支持重置缩放。
+
+服务地图也做了类似的优化：控件现在会跟随颜色模式变化，在浅色模式下显示为浅色，在深色模式下显示为深色，不再始终默认显示为黑色；图例对延迟、错误率和吞吐量的标注更加清晰；点击某个服务即可聚焦该服务，再次点击则取消聚焦并返回完整视图。
+
+**相关 PRs：** [#2592](https://github.com/hyperdxio/hyperdx/pull/2592) Polish dashboard tile styling and header layout，[#2601](https://github.com/hyperdxio/hyperdx/pull/2601) feat(service-map): metric color toggle and popover polish

@@ -38,7 +38,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 엔진 인수:
 
 * `path_to_logs` – 구독할 로그 파일의 경로입니다. 로그 파일이 있는 디렉터리 경로일 수도 있고, 단일 로그 파일 경로일 수도 있습니다. 상대 경로는 [file](/ko/reference/functions/table-functions/file) 테이블 함수와 마찬가지로 `user_files_path` 디렉터리를 기준으로 해석됩니다. 다만, 서버의 작업 디렉터리를 기준으로 이미 `user_files_path` 내부를 가리키는 상대 경로(예를 들어, 공식 Docker 이미지처럼 서버가 데이터 디렉터리에서 실행될 때의 `user_files/my_app/app.log`)는 그대로 해석됩니다. 경로의 파일 이름에 [글롭 패턴](/ko/reference/functions/table-functions/file#globs-in-path)(`*`, `?`, `{abc,def}`, `{N..M}`)을 사용하면 디렉터리에서 패턴과 일치하는 파일만 읽을 수 있습니다. 자세한 내용은 [글롭 패턴으로 파일 선택하기](#selecting-files-with-globs)를 참조하십시오. ClickHouse는 `user_files` 디렉터리 내부의 경로만 허용합니다.
-* `format_name` - 레코드 포맷입니다. FileLog는 파일의 각 줄을 개별 레코드로 처리하므로, 모든 데이터 포맷이 이에 적합한 것은 아닙니다.
+* `format_name` - 레코드 포맷입니다. FileLog는 파일의 각 줄을 개별 레코드로 처리하므로, 모든 데이터 포맷이 이에 적합한 것은 아닙니다. 각 줄은 개행 문자로 끝나야 읽히므로, 아직 기록 중인 마지막 줄은 기록이 완료된 후 이후 폴링에서 읽힙니다.
 
 선택적 매개변수:
 
@@ -46,8 +46,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `poll_max_batch_size` — 한 번의 폴링으로 가져올 수 있는 최대 레코드 수입니다. 기본값: [max&#95;block&#95;size](/ko/reference/settings/session-settings/max#max_block_size).
 * `max_block_size` — 폴링의 최대 배치 크기(레코드 수)입니다. 기본값: [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `max_threads` - 파일을 파싱하기 위한 최대 스레드 수입니다. 기본값은 0이며, 이 경우 스레드 수는 max(1, physical&#95;cpu&#95;cores / 4)입니다.
-* `poll_directory_watch_events_backoff_init` - 디렉터리 감시 스레드의 초기 대기 값입니다. 기본값: `500`.
-* `poll_directory_watch_events_backoff_max` - 디렉터리 감시 스레드의 최대 대기 값입니다. 기본값: `32000`.
+* `poll_directory_watch_events_backoff_init` - 테이블 스트리밍 작업의 초기 대기 값으로, 새 데이터가 없는 동안 이 값부터 백오프합니다. macOS에서는 디렉터리를 감시하는 스레드의 초기 대기 값이기도 합니다. 기본값: `500`.
+* `poll_directory_watch_events_backoff_max` - 테이블 스트리밍 작업의 최대 대기 값입니다. macOS에서는 디렉터리를 감시하는 스레드의 최대 대기 값이기도 합니다. 기본값: `32000`.
 * `poll_directory_watch_events_backoff_factor` - 백오프 속도입니다. 기본적으로 지수적으로 증가합니다. 기본값: `2`.
 * `handle_error_mode` — FileLog 엔진에서 오류를 처리하는 방식입니다. 가능한 값: default(직접 `SELECT`를 실행할 때 레코드 파싱에 실패하면 예외를 발생시킴. 테이블이 materialized view로 데이터를 스트리밍하는 동안에는 해당 레코드를 건너뛰고 오류를 서버 로그에 기록함), stream(예외 메시지와 원시 레코드를 가상 컬럼 `_error` 및 `_raw_record`에 저장함).
 

@@ -87,8 +87,10 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "فصل max_execution_time عن max_estimated_execution_time"}]}]} />
 
-الحد الأقصى للوقت التقديري لتنفيذ الاستعلام، بالثواني. ويُتحقَّق منه عند كل كتلة بيانات
+الحد الأقصى للوقت التقديري لتنفيذ الاستعلام، بالثواني. ويُتحقَّق منه عند كل كتلة بيانات
 عند انتهاء [`timeout_before_checking_execution_speed`](/ar/reference/settings/session-settings/other#timeout_before_checking_execution_speed).
+ويعتمد في عمله على الاستقراء انطلاقًا من السرعة الحالية لتنفيذ الاستعلام.
+إذا ضبطت `timeout_before_checking_execution_speed` على 0، فلن يُتحقَّق من هذا الإعداد.
 
 ## max_expanded_ast_elements {#max_expanded_ast_elements}
 
@@ -145,7 +147,7 @@ Cloud default value: `10`.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000"},{"label": "استخدم ما يصل إلى 1000 نسخة متماثلة متوازية افتراضيًا."}]}]} />
 
-الحد الأقصى لعدد النسخ المتماثلة لكل shard عند تنفيذ استعلام.
+الحد الأقصى لعدد النسخ المتماثلة لكل مقطع عند تنفيذ استعلام.
 
 القيم الممكنة:
 
@@ -154,6 +156,8 @@ Cloud default value: `10`.
 **معلومات إضافية**
 
 قد يؤدي هذا الخيار إلى نتائج مختلفة بحسب الإعدادات المستخدمة.
+
+عند ضبط `parallel_replicas_mode` على `sampling_key`، أو استخدام وضع المفتاح المخصص على عنقود يضم أكثر من مقطع واحد، تُعيد كل نسخة متماثلة جزءها الخاص من نتيجة المقطع. ولا تُستخدم النسخ المتماثلة للمقطع معًا إلا إذا تولّى المُبادِر بنفسه تجميع هذه الأجزاء أو فرزها فرزًا كاملًا (مثل التجميع دون مفاتيح `GROUP BY`). أما في غير ذلك من الحالات، كما في `GROUP BY` مع `distributed_aggregation_memory_efficient` أو في `ORDER BY`، فيُقرأ المقطع من نسخة متماثلة واحدة.
 
 ### المعالجة المتوازية باستخدام مفتاح `SAMPLE` {#parallel-processing-using-sample-key}
 

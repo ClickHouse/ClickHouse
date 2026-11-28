@@ -6,6 +6,11 @@
 #include <Storages/StorageInput.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
@@ -35,6 +40,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/stripQuerySettings.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -124,6 +130,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
 }
 
+namespace FailPoints
+{
+    extern const char insert_pause_before_reading_serialization_hints[];
+}
+
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
@@ -139,6 +150,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_USAGE_OF_INPUT;
     extern const int READONLY;
 }
 
@@ -878,6 +890,29 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
     return false;
 }
 
+/// Whether the analyzed query reads a subquery, including one the analysis folded into a constant or `__getScalar`.
+static bool hasSubqueryAfterAnalysis(const QueryTreeNodePtr & node)
+{
+    if (isQueryOrUnionNode(node))
+        return true;
+    if (const auto * function = node->as<FunctionNode>())
+    {
+        if (function->getFunctionName() == "__getScalar")
+            return true;
+        const auto & arguments = function->getArguments().getNodes();
+        if (isNameOfInFunction(function->getFunctionName()) && arguments.size() >= 2
+            && (arguments[1]->getNodeType() == QueryTreeNodeType::TABLE || arguments[1]->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION))
+            return true;
+    }
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression()
+        && hasSubqueryAfterAnalysis(constant->getSourceExpression()))
+        return true;
+    for (const auto & child : node->getChildren())
+        if (child && hasSubqueryAfterAnalysis(child))
+            return true;
+    return false;
+}
+
 
 std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
 {
@@ -1148,7 +1183,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
-            format->setSerializationHints(table->getSerializationHints());
+        {
+            /// The format parses the columns with the types from `metadata_snapshot`; a concurrent `ALTER` may have changed them since.
+            FailPointInjection::pauseFailPoint(FailPoints::insert_pause_before_reading_serialization_hints);
+            format->setSerializationHints(table->getSerializationHints(*metadata_snapshot));
+        }
 
         auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
         pipeline.complete(std::move(pipe));
@@ -1311,7 +1350,7 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
 }
 
 std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(
-    const ASTInsertQuery & query, ContextPtr local_context)
+    const ASTInsertQuery & query, const ASTPtr & original_select, ContextPtr local_context)
 {
     if (query.table_id.empty())
         return {};
@@ -1356,6 +1395,17 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     if (settings[Setting::max_distributed_depth]
         && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
+
+    /// Each node runs the forwarded SELECT on its share of the files: it must neither read anything else nor need the other shares.
+    /// Analyzed as the ordinary path analyzes it: the rewrite above loses CTE column aliases.
+    InterpreterSelectQueryAnalyzer interpreter(
+        original_select->clone(), local_context, SelectQueryOptions(QueryProcessingStage::Complete).ignoreASTOptimizations());
+    const auto * analyzed_select = interpreter.getQueryTree()->as<QueryNode>();
+    if (!analyzed_select || !canRunQueryOnEachReplicaShare(*analyzed_select))
+        return {};
+    for (const auto & child : analyzed_select->getChildren())
+        if (child && hasSubqueryAfterAnalysis(child))
+            return {};
 
     /// query will be executed on all nodes of the cluster
     auto src_cluster = src_storage_cluster->getCluster(local_context);
@@ -1553,6 +1603,11 @@ BlockIO InterpreterInsertQuery::execute()
         if (no_destination || async_insert)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "RETURNING is not supported for this kind of INSERT");
 
+        ASTPtr returning_input_function;
+        ASTInsertQuery::tryFindInputFunction(query.returning, returning_input_function);
+        if (returning_input_function)
+            throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "The `input` table function is not supported in RETURNING");
+
         if (query.select)
         {
             ASTPtr input_function;
@@ -1615,7 +1670,7 @@ BlockIO InterpreterInsertQuery::execute()
             }
             if (!res.pipeline.initialized())
             {
-                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context); pipeline)
+                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, saved_select, context); pipeline)
                     res.pipeline = std::move(*pipeline);
             }
             if (!res.pipeline.initialized())
