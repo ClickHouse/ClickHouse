@@ -3692,7 +3692,15 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
         && collectionHas<SQLTable>(attached_tables_for_create_hypotheticals);
     SQLGen.setEnabled(SQLMask);
 
-    switch (static_cast<SQLOp>(SQLGen.nextOp())) /// drifts over time
+    /// The distributed shapes go into SELECTs only, and read rows inserted before: keep a share of both statements
+    /// whatever distribution was drawn
+    const bool shapes = !in_parallel && !fc.parallel_replicas_clusters.empty();
+    const uint32_t shapes_pick = shapes ? rg.nextMediumNumber() : 100;
+    const auto next_op = shapes && shapes_pick < 26
+        ? SQLOp::SelectQuery
+        : (shapes && has_tables && shapes_pick < 36 ? SQLOp::Insert : static_cast<SQLOp>(SQLGen.nextOp()));
+
+    switch (next_op) /// drifts over time
     {
         case SQLOp::CreateTable: generateNextCreateTable(rg, in_parallel, sq->mutable_create_table()); break;
         case SQLOp::CreateView: generateNextCreateView(rg, sq->mutable_create_view()); break;
@@ -3888,6 +3896,8 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
 
 void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & sq)
 {
+    /// A request left by a query generated elsewhere, e.g. by an oracle, is not for this statement
+    this->repeat_statement = false;
     const uint32_t nqueries = rg.randomInt<uint32_t>(1, fc.max_parallel_queries);
     const uint32_t start_transaction = 2 * static_cast<uint32_t>(fc.allow_transactions && nqueries == 1 && !this->in_transaction);
     const uint32_t commit = 50 * static_cast<uint32_t>(fc.allow_transactions && nqueries == 1 && this->in_transaction);

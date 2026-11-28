@@ -486,6 +486,20 @@ auto StatementGenerator::getQueryTableLambda()
     };
 }
 
+std::vector<const SQLTable *> StatementGenerator::shapeTables()
+{
+    std::vector<const SQLTable *> res;
+    /// No oracle compares the results of these queries, so the tables need not be deterministic. The replicas do not
+    /// see the temporary tables of the session
+    const auto shape_lambda = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true) && !t.is_temp; };
+
+    for (const auto & entry : filterCollection<SQLTable>(shape_lambda))
+    {
+        res.emplace_back(&entry.get());
+    }
+    return res;
+}
+
 void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::optional<String> rel_name, const uint32_t ncols, Expr * expr)
 {
     if (rg.nextBool())
@@ -692,7 +706,25 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
     queryMask[static_cast<size_t>(QueryOp::ObfuscateUDF)]
         = fc.allow_infinite_tables && this->allow_not_deterministic && this->allow_engine_udf && can_recurse;
 
-    queryGen.setEnabled(queryMask);
+    /// Parallel replicas read only MergeTree tables: keep most sources of a distributed shape on them
+    const bool shape_on_mergetree = this->distributed_shapes && !under_remote && has_mergetree_table && rg.nextMediumNumber() < 81;
+    if (shape_on_mergetree)
+    {
+        /// A copy: some entries of the mask are never reset
+        std::vector<bool> mask = queryMask;
+
+        for (size_t i = 0; i < mask.size(); i++)
+        {
+            const auto op = static_cast<QueryOp>(i);
+
+            mask[i] = mask[i] && (op == QueryOp::Table || op == QueryOp::DerivatedTable || op == QueryOp::CTE);
+        }
+        queryGen.setEnabled(mask);
+    }
+    else
+    {
+        queryGen.setEnabled(queryMask);
+    }
     /// If MV chaining is requested, force the next source to be a view (clears flag after use)
     const bool chain_views_now = this->chain_views;
     this->chain_views = false;
@@ -736,7 +768,23 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
         }
         break;
         case QueryOp::Table:
-            t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
+            /// A table read twice in one query: the reads must be told apart when the plans are paired
+            if (this->distributed_shapes && !this->distributed_shape_tables.empty() && rg.nextBool())
+            {
+                t = rg.pickRandomly(this->distributed_shape_tables);
+            }
+            else if (shape_on_mergetree)
+            {
+                t = &rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda)).get();
+            }
+            else
+            {
+                t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
+            }
+            if (this->distributed_shapes && t->isMergeTreeFamily(true))
+            {
+                this->distributed_shape_tables.emplace_back(t);
+            }
             t->setName(tof->mutable_est(), false);
             addTableRelation(rg, true, rel_name, *t);
             break;
@@ -1551,7 +1599,12 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
                 ein->set_not_(rg.nextBool());
                 ein->set_global(rg.nextBool());
                 expr1 = ein->mutable_expr()->mutable_expr();
-                if (rg.nextBool())
+                if (this->distributed_shapes && this->allow_subqueries && rg.nextBool())
+                {
+                    /// A set from a subquery is built on the initiator and paired between the local and distributed plans
+                    generateSubquery(rg, ein->mutable_in_type()->mutable_sel());
+                }
+                else if (rg.nextBool())
                 {
                     ExprList * elist = rg.nextBool() ? ein->mutable_in_type()->mutable_tuple() : ein->mutable_in_type()->mutable_array();
                     const uint32_t nclauses = rg.nextSmallNumber();
@@ -2526,9 +2579,21 @@ void StatementGenerator::generateTopSelect(
 {
     const uint32_t ncols = std::max(std::min(remainingWidth(), rg.randomInt<uint32_t>(1, 5)), UINT32_C(1));
 
+    /// A nested top query, e.g. of a `CREATE TABLE ... AS SELECT` in a query, is decided by the outer one
+    const bool outer_shapes = this->distributed_shapes;
+
+    this->distributed_shapes = !outer_shapes && !fc.parallel_replicas_clusters.empty() && rg.nextMediumNumber() < 21;
     this->levels[this->current_level] = QueryLevel(this->current_level);
     generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, std::nullopt, ts->mutable_sel());
     this->levels.clear();
+    if (this->distributed_shapes)
+    {
+        injectDistributedShapes(rg, *ts->mutable_sel(), false);
+        /// Appended after the generated settings, so these win
+        addParallelReplicasSettings(rg, ts->mutable_sel()->mutable_setting_values());
+        this->distributed_shape_tables.clear();
+    }
+    this->distributed_shapes = outer_shapes;
     if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
         SelectIntoFile * sif = ts->mutable_intofile();

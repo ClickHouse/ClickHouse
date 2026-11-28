@@ -1267,6 +1267,35 @@ bool Client::buzzHouse()
                          fuzz_config->outf << health_check_cmd << std::endl;
                          fuzz_config->validateClickHouseHealth();
                      }},
+                    /// Queries over `MergeTree` tables in the shapes that run differently on parallel replicas
+                    {50 * static_cast<uint32_t>(!fuzz_config->parallel_replicas_clusters.empty()),
+                     [&]()
+                     {
+                         bool creates = false;
+                         bool setup_success = true;
+
+                         for (const auto & statement : gen.generateShapeSetup(rg, creates))
+                         {
+                             fuzz_config->outf << statement << std::endl;
+                             server_up &= processBuzzHouseQuery(statement);
+                             setup_success &= server_up && !have_error;
+                         }
+                         if (creates)
+                         {
+                             /// Created again on the next shaped query, if any of the tables is missing or empty
+                             gen.setShapeTablesCreated(setup_success);
+                         }
+                         const String query = gen.generateShapedQuery(rg);
+
+                         fuzz_config->outf << query << std::endl;
+                         server_up &= processBuzzHouseQuery(query);
+                         if (gen.takeRepeatStatement() && server_up && !have_error)
+                         {
+                             /// The first run collected the statistics automatic parallel replicas decides on
+                             fuzz_config->outf << query << std::endl;
+                             server_up &= processBuzzHouseQuery(query);
+                         }
+                     }},
                     {910,
                      [&]()
                      {
@@ -1275,6 +1304,15 @@ bool Client::buzzHouse()
                          fuzz_config->outf << full_query << std::endl;
                          server_up &= processBuzzHouseQuery(full_query);
                          gen.updateGenerator(sq1, *external_integrations, !have_error);
+                         const bool is_select = sq1.parallel_queries_size() == 0 && sq1.single_query().has_explain()
+                             && sq1.single_query().explain().inner_query().has_select();
+
+                         if (gen.takeRepeatStatement() && is_select && server_up && !have_error)
+                         {
+                             /// The first run collected the statistics automatic parallel replicas decides on
+                             fuzz_config->outf << full_query << std::endl;
+                             server_up &= processBuzzHouseQuery(full_query);
+                         }
                      }},
                 });
             }
