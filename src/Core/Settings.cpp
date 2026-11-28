@@ -5345,7 +5345,7 @@ This allows `MergingSortedTransform` to reprioritize sources more frequently, wh
 Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
 )", 0, \
         {"26.4", false, false, "Emit virtual row after each block during read-in-order to allow more frequent source reprioritization in MergingSortedTransform."}) \
-    DECLARE(Bool, optimize_final_limit_pushdown, false, R"(
+    DECLARE(Bool, optimize_final_limit_pushdown, true, R"(
 When enabled and the query uses FINAL with ORDER BY + LIMIT on an `AggregatingMergeTree`, `SummingMergeTree`,
 or `CoalescingMergeTree`, the LIMIT is pushed down into the FINAL merge algorithm so it can terminate early
 once enough output rows have been produced, avoiding scanning the entire dataset.
@@ -5363,10 +5363,10 @@ full: such queries stay correct but without early termination.
 
 Possible values:
 
-- 0 — Disabled. FINAL merge always processes all rows (default).
-- 1 — Enabled. FINAL merge stops early once LIMIT rows have been produced.
+- 0 — Disabled. FINAL merge always processes all rows.
+- 1 — Enabled. FINAL merge stops early once LIMIT rows have been produced (default).
 )", 0, \
-        {"26.12", false, false, "New setting to push LIMIT into FINAL merge algorithms for early termination"}) \
+        {"26.12", false, true, "New setting to push LIMIT into FINAL merge algorithms for early termination, enabled by default"}) \
     DECLARE(Bool, optimize_final_sequential_partitions, false, R"(
 When enabled, together with `optimize_final_limit_pushdown`, `do_not_merge_across_partitions_select_final`,
 and `optimize_read_in_order`, FINAL queries with ORDER BY ... LIMIT will process partitions sequentially
