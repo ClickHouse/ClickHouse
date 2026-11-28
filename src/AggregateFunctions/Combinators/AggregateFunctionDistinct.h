@@ -521,6 +521,13 @@ public:
         return true;
     }
 
+    /// The batch paths pass the new distinct values to `addBatchSinglePlace` of the nested function, so they give
+    /// what `add` gives only if the nested function does.
+    [[nodiscard]] bool canOptimizeEqualKeysRanges() const override
+    {
+        return nested_func->canOptimizeEqualKeysRanges();
+    }
+
     [[nodiscard]] bool ignoresRepeatedValues() const override { return true; }
 
     [[nodiscard]] bool isState() const override
