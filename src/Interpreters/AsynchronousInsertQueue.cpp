@@ -1423,7 +1423,7 @@ try
     if (!key.quota_forwarded_address.empty())
         insert_context->setForwardedFor(key.quota_forwarded_address);
 
-    /// Before `setSettings`, so the submitted `database` setting is kept even when it is empty.
+    /// `setCurrentDatabaseUnchecked` also writes the `database` setting, so it must precede `setSettings`.
     if (!key.current_database.empty())
         insert_context->setCurrentDatabaseUnchecked(key.current_database);
     insert_context->setSettings(*key.settings);

@@ -140,8 +140,7 @@ public:
         /// on submission and charged on flush in the same bucket. Unset unless a quota of the inserting user is keyed by it.
         /// Part of the batching key.
         std::optional<UInt64> quota_normalized_query_hash;
-        /// Current database of the originating INSERT query, restored on the flush context (which does not go through
-        /// `executeQuery`). Part of the batching key.
+        /// Current database of the originating INSERT query, restored on the flush. Part of the batching key.
         String current_database;
         std::unique_ptr<Settings> settings;
 
