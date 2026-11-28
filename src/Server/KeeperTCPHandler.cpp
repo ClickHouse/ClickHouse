@@ -100,6 +100,7 @@ struct SocketInterruptablePollWrapper
     int sockfd;
     PipeFDs pipe;
     ReadBufferFromFileDescriptor response_in;
+    bool poll_socket = true;
 
 #if defined(POCO_HAVE_FD_EPOLL)
     int epollfd;
@@ -146,6 +147,15 @@ struct SocketInterruptablePollWrapper
         return pipe.fds_rw[1];
     }
 
+    void stopPollingSocket()
+    {
+#if defined(POCO_HAVE_FD_EPOLL)
+        if (epoll_ctl(epollfd, EPOLL_CTL_DEL, sockfd, nullptr) < 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot remove socket from epoll queue");
+#endif
+        poll_socket = false;
+    }
+
     PollResult poll(Poco::Timespan remaining_time, const ReadBufferFromPocoSocket & in)
     {
 
@@ -190,7 +200,7 @@ struct SocketInterruptablePollWrapper
             }
 #else
             pollfd poll_buf[2];
-            poll_buf[0].fd = sockfd;
+            poll_buf[0].fd = poll_socket ? sockfd : -1;
             poll_buf[0].events = POLLIN;
             poll_buf[1].fd = pipe.fds_rw[0];
             poll_buf[1].events = POLLIN;
@@ -645,6 +655,21 @@ void KeeperTCPHandler::runImpl()
                 /// Each request restarts session stopwatch
                 session_stopwatch.restart();
             }
+            else if (result.has_requests)
+            {
+                /// Requests after `Close` are not processed. Drop them, so that the next poll sees the end of the stream.
+                /// `eof` is called only when nothing is buffered, so it does not block on a socket without new data.
+                if (in->available())
+                    in->ignore(in->available());
+                else if (in->eof())
+                {
+                    LOG_DEBUG(log, "Client closed connection after close request, session id #{}", session_id);
+                    if (operations.empty())
+                        break;
+                    /// Requests sent before `Close` still get their responses, so wait for them without polling the socket.
+                    poll_wrapper->stopPollingSocket();
+                }
+            }
 
             /// Process exact amount of responses from pipe
             /// otherwise state of responses queue and signaling pipe
@@ -1072,6 +1097,11 @@ void KeeperTCPHandler::closeAllConnections()
     {
         conn->closing_for_shutdown.store(true, std::memory_order_release);
         shutdownSocketDescriptor(conn->socket());
+
+        /// A handler that stopped polling its socket after `Close` waits only on the response pipe, so wake it there.
+        /// The drain flag is already set, and the handler checks it right after `poll`, before it reads any response.
+        UInt8 single_byte = 1;
+        [[maybe_unused]] ssize_t result = write(conn->poll_wrapper->getResponseFD(), &single_byte, sizeof(single_byte));
     }
 }
 

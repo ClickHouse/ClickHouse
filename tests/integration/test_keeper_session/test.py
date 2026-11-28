@@ -1,4 +1,5 @@
 import re
+import socket
 import struct
 import threading
 import time
@@ -184,6 +185,127 @@ def test_handshake_to_continue_session_is_expired(started_cluster):
             node1.name, session_timeout=8000, session_id=session_id, full_reply=True
         ) == (0, 0, 0, b"")
     finally:
+        node2.start_clickhouse()
+        node3.start_clickhouse()
+        wait_nodes()
+
+
+def test_close_without_quorum_after_client_shutdown(started_cluster):
+    wait_nodes()
+    client = get_keeper_socket(node1.name)
+    try:
+        req = int_long_int_long_struct.pack(0, 0, 10000, 0)
+        req += write_buffer(b"\x00" * 16) + bytes([0])
+        client.sendall(int_struct.pack(45) + req)
+        session_id = int_int_long_struct.unpack_from(client.recv(1_000), 4)[2]
+        assert session_id > 0
+
+        # Do not wait until node1 sees that the quorum is lost: that takes longer than the session timeout,
+        # and the session would expire first. With the other Keepers killed, the Close cannot be committed anyway.
+        node2.stop_clickhouse(kill=True)
+        node3.stop_clickhouse(kill=True)
+
+        close_xid, close_op = 0x7FFFFFFF, -11
+        # A heartbeat after the Close is not processed, and it must not keep the connection open either.
+        heartbeat_xid, heartbeat_op = -2, 11
+        client.sendall(
+            int_struct.pack(8)
+            + int_int_struct.pack(close_xid, close_op)
+            + int_struct.pack(8)
+            + int_int_struct.pack(heartbeat_xid, heartbeat_op)
+        )
+        client.shutdown(socket.SHUT_WR)
+        client.settimeout(20)
+        start = time.monotonic()
+        assert client.recv(1_000) == b""
+        # Without the fix, the connection stays open until the Close request times out.
+        assert time.monotonic() - start < 3
+        assert node1.contains_in_log(
+            f"Client closed connection after close request, session id #{session_id}"
+        )
+    finally:
+        client.close()
+        node2.start_clickhouse()
+        node3.start_clickhouse()
+        wait_nodes()
+
+
+def test_close_after_client_shutdown_answers_earlier_requests(started_cluster):
+    wait_nodes()
+    client = get_keeper_socket(node1.name)
+    try:
+        req = int_long_int_long_struct.pack(0, 0, 10000, 0)
+        req += write_buffer(b"\x00" * 16) + bytes([0])
+        client.sendall(int_struct.pack(45) + req)
+        assert int_int_long_struct.unpack_from(client.recv(1_000), 4)[2] > 0
+
+        create_xid, create_op = 1, 1
+        create = int_int_struct.pack(create_xid, create_op)
+        create += write_buffer(f"/test_close_{uuid.uuid4().hex}".encode())
+        create += write_buffer(b"")
+        # One ACL: all permissions for world:anyone. Flags 0 is a persistent node.
+        create += int_struct.pack(1) + int_struct.pack(31)
+        create += write_buffer(b"world") + write_buffer(b"anyone") + int_struct.pack(0)
+        close_xid, close_op = 0x7FFFFFFF, -11
+        client.sendall(
+            write_buffer(create)
+            + int_struct.pack(8)
+            + int_int_struct.pack(close_xid, close_op)
+        )
+        client.shutdown(socket.SHUT_WR)
+        client.settimeout(20)
+        data = b""
+        while chunk := client.recv(1_000):
+            data += chunk
+        # The Create was accepted before the Close, so its reply is sent even though the client stopped writing.
+        assert len(data) >= int_struct.size + reply_header_struct.size
+        xid, _, error = reply_header_struct.unpack_from(data, int_struct.size)
+        assert (xid, error) == (create_xid, 0)
+    finally:
+        client.close()
+
+
+def test_shutdown_after_client_shutdown_with_pending_request(started_cluster):
+    wait_nodes()
+    client = get_keeper_socket(node1.name)
+    try:
+        req = int_long_int_long_struct.pack(0, 0, 10000, 0)
+        req += write_buffer(b"\x00" * 16) + bytes([0])
+        client.sendall(int_struct.pack(45) + req)
+        session_id = int_int_long_struct.unpack_from(client.recv(1_000), 4)[2]
+        assert session_id > 0
+
+        # Without the other Keepers the Create is never committed, so the handler keeps waiting for its reply.
+        node2.stop_clickhouse(kill=True)
+        node3.stop_clickhouse(kill=True)
+
+        create_xid, create_op = 1, 1
+        create = int_int_struct.pack(create_xid, create_op)
+        create += write_buffer(f"/test_shutdown_{uuid.uuid4().hex}".encode())
+        create += write_buffer(b"")
+        create += int_struct.pack(1) + int_struct.pack(31)
+        create += write_buffer(b"world") + write_buffer(b"anyone") + int_struct.pack(0)
+        close_xid, close_op = 0x7FFFFFFF, -11
+        client.sendall(
+            write_buffer(create)
+            + int_struct.pack(8)
+            + int_int_struct.pack(close_xid, close_op)
+        )
+        client.shutdown(socket.SHUT_WR)
+        node1.wait_for_log_line(
+            f"Client closed connection after close request, session id #{session_id}",
+            timeout=10,
+        )
+
+        node1.exec_in_container(["bash", "-c", "pkill -15 clickhouse"], user="root")
+        # Without the fix, the handler wakes up only when its poll times out after the session timeout.
+        node1.wait_for_log_line(
+            f"Keeper TCP drain started, closing session #{session_id}", timeout=5
+        )
+    finally:
+        client.close()
+        node1.stop_clickhouse()
+        node1.start_clickhouse()
         node2.start_clickhouse()
         node3.start_clickhouse()
         wait_nodes()
