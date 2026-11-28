@@ -2415,6 +2415,15 @@ MutationCommands getMetadataMutationCommands(const MutationCommands & commands)
     return result;
 }
 
+MutationCommands getCommandsWithoutClear(const MutationCommands & commands)
+{
+    MutationCommands result;
+    for (const auto & command : commands)
+        if (!command.clear)
+            result.push_back(command);
+    return result;
+}
+
 }
 
 MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
@@ -2438,8 +2447,8 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
         return {};
 
     /// Here we return mutation commands for part which has bigger alter version than part metadata version.
-    /// Please note, we don't use getDataVersion(). It's because these alter commands are used for in-fly conversions
-    /// of part's metadata.
+    /// Please note, we don't use getDataVersion() except for CLEAR commands. It's because these alter commands are used
+    /// for in-fly conversions of part's metadata, while a CLEAR changes the data, like a data mutation.
     for (const auto & [mutation_version, entry] : in_partition->second | std::views::reverse)
     {
         if (seen_all_data_mutations && seen_all_metadata_mutations)
@@ -2456,7 +2465,12 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
             if (alter_version > part_metadata_version)
             {
                 if (alter_version > params.min_part_metadata_version)
-                    addSupportedCommands(entry->commands, mutation_version, result);
+                {
+                    if (!part->info.isPatch() && mutation_version <= part_data_version)
+                        addSupportedCommands(getCommandsWithoutClear(entry->commands), mutation_version, result);
+                    else
+                        addSupportedCommands(entry->commands, mutation_version, result);
+                }
                 /// A patch at metadata version 0 may have been written after the ALTER, so for it the data version decides.
                 else if (part->info.isPatch()
                     && (part_metadata_version > 0 || static_cast<Int64>(part->getPatchPartIndex().getMaxDataVersion()) < mutation_version))
