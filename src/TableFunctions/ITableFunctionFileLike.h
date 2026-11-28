@@ -39,6 +39,10 @@ public:
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
+    /// `StorageFile`, `StorageURL` and the storages of the functions that `url` delegates to read subcolumns, and building them
+    /// may read the source.
+    std::optional<bool> storageSupportsSubcolumns() const override { return true; }
+
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
 
     NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
