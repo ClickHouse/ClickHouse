@@ -4,7 +4,7 @@
 #include <Common/FailPoint.h>
 #include <Common/NetException.h>
 #include <Common/thread_local_rng.h>
-#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/logger_useful.h>
 
 #include <mutex>
@@ -84,12 +84,12 @@ HostResolver::~HostResolver()
     records.clear();
 }
 
-void HostResolver::Entry::setFail()
+void HostResolver::Entry::setFail(bool refresh)
 {
     skip_success_callback = true;
 
     if (auto lock = pool.lock())
-        lock->setFail(address);
+        lock->setFail(address, refresh);
 }
 
 void HostResolver::Entry::setUnused()
@@ -108,7 +108,7 @@ HostResolver::Entry::~Entry()
 
 void HostResolver::update()
 {
-    MemoryTrackerSwitcher switcher{&total_memory_tracker};
+    ServerOwnedMemoryScope server_owned;
 
     auto next_gen = resolve_function(host);
     if (next_gen.empty())
@@ -172,7 +172,7 @@ void HostResolver::setSuccess(const Poco::Net::IPAddress & address)
         updateWeights();
 }
 
-void HostResolver::setFail(const Poco::Net::IPAddress & address)
+void HostResolver::setFail(const Poco::Net::IPAddress & address, bool refresh)
 {
     Poco::Timestamp now;
 
@@ -207,6 +207,14 @@ void HostResolver::setFail(const Poco::Net::IPAddress & address)
     }
 
     ProfileEvents::increment(metrics.failed);
+
+    if (!refresh)
+    {
+        /// As after a failed refresh: keep at least one address selectable.
+        std::lock_guard lock(mutex);
+        updateWeights();
+        return;
+    }
 
     try
     {

@@ -1,0 +1,8 @@
+INSERT without SELECT for the destination table
+necessary to have the grant SELECT(id, code)
+necessary to have the grant SELECT for at least one column
+0
+Row policy of the destination table
+2	a	20
+2
+6
