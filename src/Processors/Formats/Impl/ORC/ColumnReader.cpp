@@ -68,11 +68,10 @@ public:
         return num_values;
     }
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool /*encoded*/) override
     {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        auto & data = typeid_cast<BatchType &>(batch).prepareColumn(num_values);
-        rle.next(reinterpret_cast<char *>(data.data()), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
+        auto & data = typeid_cast<BatchType &>(batch).growColumn(offset, num_values);
+        rle.next(reinterpret_cast<char *>(data.data() + offset), num_values, not_null);
     }
 
     void seekToRowGroup(RowGroupPositions & positions) override
@@ -108,11 +107,10 @@ public:
         return num_values;
     }
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool /*encoded*/) override
     {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        auto & data = typeid_cast<BatchType &>(batch).prepareColumn(num_values);
-        rle->next(data.data(), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
+        auto & data = typeid_cast<BatchType &>(batch).growColumn(offset, num_values);
+        rle->next(data.data() + offset, num_values, not_null);
     }
 
     void seekToRowGroup(RowGroupPositions & positions) override
@@ -143,12 +141,10 @@ public:
         return num_values;
     }
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool /*encoded*/) override
     {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() : nullptr;
-        auto & data = typeid_cast<NumericVectorBatch<ItemType> &>(batch).prepareColumn(num_values);
-        ItemType * out = data.data();
+        auto & data = typeid_cast<NumericVectorBatch<ItemType> &>(batch).growColumn(offset, num_values);
+        ItemType * out = data.data() + offset;
 
         /// The stream has only the non-null values: read them at once to the beginning of the column.
         size_t num_present = num_values;
@@ -196,25 +192,26 @@ UInt64 lengthsToEndOffsets(UInt64 * offsets, size_t num_values, UInt64 column_id
     return total;
 }
 
-/// Reads the strings with their lengths in a separate stream into a `ColumnString`.
-ColumnString::MutablePtr readStrings(
-    IntRleDecoder & length_rle, InputByteStream & blob_stream, size_t num_values, const char * not_null, UInt64 column_id)
+/// Appends the strings with their lengths in a separate stream to a `ColumnString`.
+void readStrings(
+    ColumnString & column, IntRleDecoder & length_rle, InputByteStream & blob_stream, size_t num_values, const char * not_null, UInt64 column_id)
 {
     /// The buffers grow as the data is decoded: a malformed count or length must not allocate memory
     /// before the streams prove to contain the data.
     static constexpr size_t MIN_STEP = 64 * 1024;
-    auto column = ColumnString::create();
-    auto & offsets = column->getOffsets();
-    UInt64 total = 0;
-    while (offsets.size() < num_values)
+    auto & offsets = column.getOffsets();
+    const size_t old_size = offsets.size();
+    const size_t end_size = old_size + num_values;
+    UInt64 total = column.getChars().size();
+    while (offsets.size() < end_size)
     {
         size_t done = offsets.size();
-        size_t step = std::min(num_values - done, std::max(MIN_STEP, done));
+        size_t step = std::min(end_size - done, std::max(MIN_STEP, done));
         offsets.resize(done + step);
-        length_rle.next(offsets.data() + done, step, not_null ? not_null + done : nullptr);
+        length_rle.next(offsets.data() + done, step, not_null ? not_null + (done - old_size) : nullptr);
         total = lengthsToEndOffsets(offsets.data() + done, step, column_id, total);
     }
-    auto & chars = column->getChars();
+    auto & chars = column.getChars();
     while (chars.size() < total)
     {
         size_t done = chars.size();
@@ -222,7 +219,6 @@ ColumnString::MutablePtr readStrings(
         chars.resize(done + step);
         blob_stream.readBytes(reinterpret_cast<char *>(chars.data() + done), step);
     }
-    return column;
 }
 
 std::shared_ptr<StringDictionary> loadStringDictionary(UInt64 column_id, StripeStreams & stripe)
@@ -247,7 +243,9 @@ std::shared_ptr<StringDictionary> loadStringDictionary(UInt64 column_id, StripeS
         /// All entries can be empty strings, then the stream is not needed.
         blob_stream = std::make_unique<InputByteStream>(std::string_view{}, CompressionKind::NONE, 0, "empty dictionary");
     }
-    dictionary->column = readStrings(*length_rle, *blob_stream, dictionary_size, nullptr, column_id);
+    auto column = ColumnString::create();
+    readStrings(*column, *length_rle, *blob_stream, dictionary_size, nullptr, column_id);
+    dictionary->column = std::move(column);
     return dictionary;
 }
 
@@ -270,20 +268,28 @@ public:
         return num_values;
     }
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool encoded) override
     {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() : nullptr;
+        if (encoded)
+        {
+            auto & encoded_batch = dynamic_cast<EncodedStringVectorBatch &>(batch);
+            encoded_batch.isEncoded = true;
+            encoded_batch.dictionary = dictionary;
+            encoded_batch.column = nullptr;
+            encoded_batch.index.resize(offset + num_values);
+            rle->next(encoded_batch.index.data() + offset, num_values, not_null);
+            return;
+        }
+
         auto & string_batch = dynamic_cast<StringVectorBatch &>(batch);
         index.resize(num_values);
         rle->next(index.data(), num_values, not_null);
         string_batch.isEncoded = false;
-        string_batch.column = decodeDictionary(assert_cast<const ColumnString &>(*dictionary->column), index.data(), not_null, num_values);
-    }
-
-    void nextEncoded(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
-    {
-        readIndex(dynamic_cast<EncodedStringVectorBatch &>(batch), num_values, incoming_mask);
+        if (offset == 0)
+            string_batch.column = ColumnString::create();
+        appendFromDictionary(
+            assert_cast<ColumnString &>(string_batch.column->assumeMutableRef()),
+            assert_cast<const ColumnString &>(*dictionary->column), index.data(), not_null, num_values);
     }
 
     void seekToRowGroup(RowGroupPositions & positions) override
@@ -293,16 +299,6 @@ public:
     }
 
 private:
-    void readIndex(EncodedStringVectorBatch & batch, size_t num_values, const char * incoming_mask)
-    {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        batch.isEncoded = true;
-        batch.dictionary = dictionary;
-        batch.column = nullptr;
-        batch.index.resize(num_values);
-        rle->next(batch.index.data(), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
-    }
-
     std::shared_ptr<StringDictionary> dictionary;
     std::unique_ptr<IntRleDecoder> rle;
     PaddedPODArray<Int64> index;
@@ -338,12 +334,13 @@ public:
         return num_values;
     }
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool /*encoded*/) override
     {
-        ColumnReader::next(batch, num_values, incoming_mask);
         auto & string_batch = dynamic_cast<StringVectorBatch &>(batch);
         string_batch.isEncoded = false;
-        string_batch.column = readStrings(*length_rle, *blob_stream, num_values, batch.hasNulls ? batch.notNull.data() : nullptr, column_id);
+        if (offset == 0)
+            string_batch.column = ColumnString::create();
+        readStrings(assert_cast<ColumnString &>(string_batch.column->assumeMutableRef()), *length_rle, *blob_stream, num_values, not_null, column_id);
     }
 
     void seekToRowGroup(RowGroupPositions & positions) override
@@ -388,15 +385,13 @@ public:
         return num_values;
     }
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool /*encoded*/) override
     {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() : nullptr;
         auto & timestamp_batch = typeid_cast<TimestampVectorBatch &>(batch);
-        timestamp_batch.data.resize(num_values);
-        timestamp_batch.nanoseconds.resize(num_values);
-        Int64 * seconds = timestamp_batch.data.data();
-        Int64 * nanos = timestamp_batch.nanoseconds.data();
+        timestamp_batch.data.resize(offset + num_values);
+        timestamp_batch.nanoseconds.resize(offset + num_values);
+        Int64 * seconds = timestamp_batch.data.data() + offset;
+        Int64 * nanos = timestamp_batch.nanoseconds.data() + offset;
         seconds_rle->next(seconds, num_values, not_null);
         nanos_rle->next(nanos, num_values, not_null);
 
@@ -585,17 +580,15 @@ class Decimal64ColumnReader final : public DecimalColumnReader
 public:
     using DecimalColumnReader::DecimalColumnReader;
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool /*encoded*/) override
     {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() : nullptr;
         auto & decimal_batch = typeid_cast<Decimal64VectorBatch &>(batch);
         scales.resize(num_values);
         scale_decoder->next(scales.data(), num_values, not_null);
         decimal_batch.precision = precision;
         decimal_batch.scale = scale;
-        decimal_batch.values.resize(num_values);
-        Int64 * values = decimal_batch.values.data();
+        decimal_batch.values.resize(offset + num_values);
+        Int64 * values = decimal_batch.values.data() + offset;
         for (size_t i = 0; i < num_values; ++i)
         {
             if (not_null && !not_null[i])
@@ -624,17 +617,15 @@ class Decimal128ColumnReader final : public DecimalColumnReader
 public:
     using DecimalColumnReader::DecimalColumnReader;
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool /*encoded*/) override
     {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() : nullptr;
         auto & decimal_batch = typeid_cast<Decimal128VectorBatch &>(batch);
         scales.resize(num_values);
         scale_decoder->next(scales.data(), num_values, not_null);
         decimal_batch.precision = precision;
         decimal_batch.scale = scale;
-        decimal_batch.values.resize(num_values);
-        Int128 * values = decimal_batch.values.data();
+        decimal_batch.values.resize(offset + num_values);
+        Int128 * values = decimal_batch.values.data() + offset;
         for (size_t i = 0; i < num_values; ++i)
         {
             if (not_null && !not_null[i])
@@ -671,14 +662,13 @@ public:
         return num_values;
     }
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool /*encoded*/) override
     {
-        ColumnReader::next(batch, num_values, incoming_mask);
         auto & decimal_batch = typeid_cast<Decimal64VectorBatch &>(batch);
         decimal_batch.precision = precision;
         decimal_batch.scale = scale;
-        decimal_batch.values.resize(num_values);
-        value_decoder->next(decimal_batch.values.data(), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
+        decimal_batch.values.resize(offset + num_values);
+        value_decoder->next(decimal_batch.values.data() + offset, num_values, not_null);
     }
 
     void seekToRowGroup(RowGroupPositions & positions) override
@@ -704,17 +694,15 @@ public:
         scale = 6;
     }
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool /*encoded*/) override
     {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() : nullptr;
         auto & decimal_batch = typeid_cast<Decimal128VectorBatch &>(batch);
         scales.resize(num_values);
         scale_decoder->next(scales.data(), num_values, not_null);
         decimal_batch.precision = precision;
         decimal_batch.scale = scale;
-        decimal_batch.values.resize(num_values);
-        Int128 * values = decimal_batch.values.data();
+        decimal_batch.values.resize(offset + num_values);
+        Int128 * values = decimal_batch.values.data() + offset;
 
         static const Int128 max_value = Int128(10000000000000000000ULL) * Int128(10000000000000000000ULL) - 1;
         for (size_t i = 0; i < num_values; ++i)
@@ -775,14 +763,15 @@ public:
         return num_values;
     }
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool encoded) override
     {
-        nextImpl<false>(batch, num_values, incoming_mask);
-    }
-
-    void nextEncoded(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
-    {
-        nextImpl<true>(batch, num_values, incoming_mask);
+        auto & struct_batch = typeid_cast<StructVectorBatch &>(batch);
+        for (size_t i = 0; i < children.size(); ++i)
+        {
+            if (offset == 0)
+                struct_batch.fields[i]->clear();
+            appendChild(*children[i], *struct_batch.fields[i], num_values, not_null, encoded);
+        }
     }
 
     void seekToRowGroup(RowGroupPositions & positions) override
@@ -793,33 +782,21 @@ public:
     }
 
 private:
-    template <bool encoded>
-    void nextImpl(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask)
-    {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() : nullptr;
-        auto & struct_batch = typeid_cast<StructVectorBatch &>(batch);
-        for (size_t i = 0; i < children.size(); ++i)
-        {
-            if constexpr (encoded)
-                children[i]->nextEncoded(*struct_batch.fields[i], num_values, not_null);
-            else
-                children[i]->next(*struct_batch.fields[i], num_values, not_null);
-        }
-    }
-
     VectorWithMemoryTracking<std::unique_ptr<ColumnReader>> children;
 };
 
-/// Reads the lengths of the lists or maps as the end offsets, returns the total number of the children.
-UInt64 readListOffsets(IntRleDecoder & rle, ColumnPtr & result, size_t num_values, const char * not_null, UInt64 column_id)
+/// Appends the lengths of the lists or maps as the end offsets after the first `offset` ones, returns
+/// the number of the children of the appended values.
+UInt64 appendListOffsets(IntRleDecoder & rle, ColumnPtr & result, size_t offset, size_t num_values, const char * not_null, UInt64 column_id)
 {
-    auto column = ColumnUInt64::create(num_values);
-    auto & offsets = column->getData();
-    rle.next(offsets.data(), num_values, not_null);
-    UInt64 total = lengthsToEndOffsets(offsets.data(), num_values, column_id);
-    result = std::move(column);
-    return total;
+    if (offset == 0)
+        result = ColumnUInt64::create();
+    auto & offsets = assert_cast<ColumnUInt64 &>(result->assumeMutableRef()).getData();
+    offsets.resize(offset + num_values);
+    UInt64 * appended = offsets.data() + offset;
+    rle.next(appended, num_values, not_null);
+    UInt64 previous_total = offset ? offsets[offset - 1] : 0;
+    return lengthsToEndOffsets(appended, num_values, column_id, previous_total) - previous_total;
 }
 
 UInt64 sumLengths(IntRleDecoder & rle, size_t num_values, UInt64 column_id)
@@ -867,14 +844,16 @@ public:
         return num_values;
     }
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool encoded) override
     {
-        nextImpl<false>(batch, num_values, incoming_mask);
-    }
-
-    void nextEncoded(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
-    {
-        nextImpl<true>(batch, num_values, incoming_mask);
+        auto & list_batch = typeid_cast<ListVectorBatch &>(batch);
+        UInt64 total = appendListOffsets(*rle, list_batch.offsets, offset, num_values, not_null, column_id);
+        if (child)
+        {
+            if (offset == 0)
+                list_batch.elements->clear();
+            appendChild(*child, *list_batch.elements, total, nullptr, encoded);
+        }
     }
 
     void seekToRowGroup(RowGroupPositions & positions) override
@@ -886,22 +865,6 @@ public:
     }
 
 private:
-    template <bool encoded>
-    void nextImpl(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask)
-    {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        auto & list_batch = typeid_cast<ListVectorBatch &>(batch);
-        const char * not_null = list_batch.hasNulls ? list_batch.notNull.data() : nullptr;
-        UInt64 total = readListOffsets(*rle, list_batch.offsets, num_values, not_null, column_id);
-        if (child)
-        {
-            if constexpr (encoded)
-                child->nextEncoded(*list_batch.elements, total, nullptr);
-            else
-                child->next(*list_batch.elements, total, nullptr);
-        }
-    }
-
     std::unique_ptr<IntRleDecoder> rle;
     std::unique_ptr<ColumnReader> child;
 };
@@ -940,14 +903,22 @@ public:
         return num_values;
     }
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool encoded) override
     {
-        nextImpl<false>(batch, num_values, incoming_mask);
-    }
-
-    void nextEncoded(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
-    {
-        nextImpl<true>(batch, num_values, incoming_mask);
+        auto & map_batch = typeid_cast<MapVectorBatch &>(batch);
+        UInt64 total = appendListOffsets(*rle, map_batch.offsets, offset, num_values, not_null, column_id);
+        if (key_reader)
+        {
+            if (offset == 0)
+                map_batch.keys->clear();
+            appendChild(*key_reader, *map_batch.keys, total, nullptr, encoded);
+        }
+        if (value_reader)
+        {
+            if (offset == 0)
+                map_batch.elements->clear();
+            appendChild(*value_reader, *map_batch.elements, total, nullptr, encoded);
+        }
     }
 
     void seekToRowGroup(RowGroupPositions & positions) override
@@ -961,29 +932,6 @@ public:
     }
 
 private:
-    template <bool encoded>
-    void nextImpl(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask)
-    {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        auto & map_batch = typeid_cast<MapVectorBatch &>(batch);
-        const char * not_null = map_batch.hasNulls ? map_batch.notNull.data() : nullptr;
-        UInt64 total = readListOffsets(*rle, map_batch.offsets, num_values, not_null, column_id);
-        if (key_reader)
-        {
-            if constexpr (encoded)
-                key_reader->nextEncoded(*map_batch.keys, total, nullptr);
-            else
-                key_reader->next(*map_batch.keys, total, nullptr);
-        }
-        if (value_reader)
-        {
-            if constexpr (encoded)
-                value_reader->nextEncoded(*map_batch.elements, total, nullptr);
-            else
-                value_reader->next(*map_batch.elements, total, nullptr);
-        }
-    }
-
     std::unique_ptr<IntRleDecoder> rle;
     std::unique_ptr<ColumnReader> key_reader;
     std::unique_ptr<ColumnReader> value_reader;
@@ -1029,14 +977,34 @@ public:
         return num_values;
     }
 
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool encoded) override
     {
-        nextImpl<false>(batch, num_values, incoming_mask);
-    }
+        auto & union_batch = typeid_cast<UnionVectorBatch &>(batch);
+        union_batch.tags.resize(offset + num_values);
+        union_batch.offsets.resize(offset + num_values);
+        UInt8 * tags = union_batch.tags.data() + offset;
+        UInt64 * offsets = union_batch.offsets.data() + offset;
+        memset(tags, 0, num_values);
+        rle.next(reinterpret_cast<char *>(tags), num_values, not_null);
 
-    void nextEncoded(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
-    {
-        nextImpl<true>(batch, num_values, incoming_mask);
+        /// `counts` are the sizes of the branches in the batch, `appended` are their increments.
+        if (offset == 0)
+            std::fill(counts.begin(), counts.end(), 0);
+        appended.assign(counts.begin(), counts.end());
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            if (not_null && !not_null[i])
+                continue;
+            offsets[i] = counts[checkedTag(tags[i])]++;
+        }
+        for (size_t i = 0; i < num_children; ++i)
+        {
+            if (!children[i])
+                continue;
+            if (offset == 0)
+                union_batch.children[i]->clear();
+            appendChild(*children[i], *union_batch.children[i], counts[i] - appended[i], nullptr, encoded);
+        }
     }
 
     void seekToRowGroup(RowGroupPositions & positions) override
@@ -1056,40 +1024,11 @@ private:
         return tag;
     }
 
-    template <bool encoded>
-    void nextImpl(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask)
-    {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        auto & union_batch = typeid_cast<UnionVectorBatch &>(batch);
-        const char * not_null = union_batch.hasNulls ? union_batch.notNull.data() : nullptr;
-        union_batch.tags.resize(num_values);
-        union_batch.offsets.resize(num_values);
-        UInt8 * tags = union_batch.tags.data();
-        UInt64 * offsets = union_batch.offsets.data();
-        memset(tags, 0, num_values);
-        rle.next(reinterpret_cast<char *>(tags), num_values, not_null);
-        std::fill(counts.begin(), counts.end(), 0);
-        for (size_t i = 0; i < num_values; ++i)
-        {
-            if (not_null && !not_null[i])
-                continue;
-            offsets[i] = counts[checkedTag(tags[i])]++;
-        }
-        for (size_t i = 0; i < num_children; ++i)
-        {
-            if (!children[i])
-                continue;
-            if constexpr (encoded)
-                children[i]->nextEncoded(*union_batch.children[i], counts[i], nullptr);
-            else
-                children[i]->next(*union_batch.children[i], counts[i], nullptr);
-        }
-    }
-
     ByteRleDecoder rle;
     const size_t num_children;
     VectorWithMemoryTracking<std::unique_ptr<ColumnReader>> children;
     VectorWithMemoryTracking<UInt64> counts;
+    VectorWithMemoryTracking<UInt64> appended;
 };
 
 }
@@ -1102,24 +1041,44 @@ ColumnReader::ColumnReader(const Type & type, StripeStreams & stripe)
         not_null_decoder = std::make_unique<BooleanRleDecoder>(std::move(stream));
 }
 
-void ColumnReader::next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask)
+void ColumnReader::append(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask, bool encoded)
 {
-    batch.reset(num_values);
+    size_t done = 0;
+    /// At least one chunk, so that an empty batch gets the empty columns.
+    do
+    {
+        const size_t offset = batch.numElements;
+        const size_t step = std::min(num_values - done, std::max(MIN_CHUNK_SIZE, offset));
+        const char * chunk_mask = incoming_mask ? incoming_mask + done : nullptr;
 
-    if (not_null_decoder)
-    {
-        char * not_null = batch.notNull.data();
-        not_null_decoder->next(not_null, num_values, incoming_mask);
-        batch.hasNulls = memchr(not_null, 0, num_values) != nullptr;
-        return;
-    }
-    if (incoming_mask)
-    {
-        batch.hasNulls = true;
-        memcpy(batch.notNull.data(), incoming_mask, num_values);
-        return;
-    }
-    batch.hasNulls = false;
+        batch.notNull.resize(offset + step);
+        batch.numElements = offset + step;
+        char * not_null = batch.notNull.data() + offset;
+
+        bool chunk_has_nulls = false;
+        if (not_null_decoder)
+        {
+            not_null_decoder->next(not_null, step, chunk_mask);
+            chunk_has_nulls = memchr(not_null, 0, step) != nullptr;
+        }
+        else if (chunk_mask)
+        {
+            memcpy(not_null, chunk_mask, step);
+            chunk_has_nulls = true;
+        }
+
+        /// The null mask is filled only if the batch has nulls.
+        if (chunk_has_nulls && !batch.hasNulls)
+        {
+            memset(batch.notNull.data(), 1, offset);
+            batch.hasNulls = true;
+        }
+        else if (!chunk_has_nulls && batch.hasNulls && !not_null_decoder)
+            memset(not_null, 1, step);
+
+        appendValues(batch, offset, step, batch.hasNulls ? not_null : nullptr, encoded);
+        done += step;
+    } while (done < num_values);
 }
 
 size_t ColumnReader::skip(size_t num_values)
