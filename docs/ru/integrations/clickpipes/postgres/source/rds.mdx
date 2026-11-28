@@ -13,14 +13,12 @@ integration:
 import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
-  ## Поддерживаемые версии Postgres
+  ## Поддерживаемые версии Postgres {#supported-postgres-versions}
 </div>
 
 ClickPipes поддерживает Postgres версии 12 и новее.
 
-<div id="enable-logical-replication">
-  ## Включите логическую репликацию
-</div>
+## Включите логическую репликацию {#enable-logical-replication}
 
 Вы можете пропустить этот раздел, если для вашего экземпляра RDS уже задан следующий параметр:
 
@@ -42,52 +40,34 @@ postgres=> SHOW rds.logical_replication ;
    * Установите `rds.logical_replication` в значение 1
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Где в RDS находятся группы параметров?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
-
-</Frame>
-
+  <Frame>
+    ![Где в RDS находятся группы параметров?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Изменение значения rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
-
-</Frame>
-
+  <Frame>
+    ![Изменение значения rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
+  </Frame>
 </div>
 
 2. Примените новую группу параметров к вашей базе данных RDS Postgres
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Изменение RDS Postgres с использованием новой группы параметров](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
-
-</Frame>
-
+  <Frame>
+    ![Изменение RDS Postgres с использованием новой группы параметров](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
+  </Frame>
 </div>
 
 3. Перезагрузите экземпляр RDS, чтобы изменения вступили в силу
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Перезагрузка RDS Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
-
-</Frame>
-
+  <Frame>
+    ![Перезагрузка RDS Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
+  </Frame>
 </div>
 
-<div id="configure-database-user">
-  ## Настройка пользователя базы данных
-</div>
+## Настройка пользователя базы данных {#configure-database-user}
 
 Подключитесь к своему экземпляру RDS Postgres от имени администратора и выполните следующие команды:
 
@@ -123,16 +103,16 @@ postgres=> SHOW rds.logical_replication ;
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * Чтобы создать публикацию для всех таблиц в определённой схеме:
+* Чтобы создать публикацию для всех таблиц в определённой схеме:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 Публикация `clickpipes` определяет набор таблиц, события изменений в которых будут передаваться в ClickPipes. Мы не рекомендуем использовать `FOR ALL TABLES`, если только вы не собираетесь реплицировать все таблицы, поскольку включение лишних таблиц увеличивает объём WAL-трафика из Postgres в ClickPipes и снижает общую эффективность репликации.
 
 <div id="iam-authentication">
-  ### Использование IAM-аутентификации (необязательно)
+  ### Использование IAM-аутентификации (необязательно) {#iam-authentication}
 </div>
 
 <IAMAuthentication engine="postgres" service="rds">
@@ -142,43 +122,33 @@ postgres=> SHOW rds.logical_replication ;
 </IAMAuthentication>
 
 <div id="configure-network-access">
-  ## Настройка сетевого доступа
+  ## Настройка сетевого доступа {#configure-network-access}
 </div>
 
-<div id="ip-based-access-control">
-  ### Управление доступом по IP-адресам
-</div>
+### Управление доступом по IP-адресам {#ip-based-access-control}
 
 Если вы хотите ограничить трафик к своему экземпляру RDS, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в раздел `Inbound rules` группы безопасности RDS.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Где найти группу безопасности в RDS Postgres?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
-
-</Frame>
-
+  <Frame>
+    ![Где найти группу безопасности в RDS Postgres?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Изменение inbound rules для указанной выше группы безопасности](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
-
-</Frame>
-
+  <Frame>
+    ![Изменение правил входящего трафика для указанной выше группы безопасности](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+  </Frame>
 </div>
 
 <div id="private-access-via-aws-privatelink">
-  ### Частный доступ через AWS PrivateLink
+  ### Частный доступ через AWS PrivateLink {#private-access-via-aws-privatelink}
 </div>
 
 Чтобы подключиться к экземпляру RDS через частную сеть, можно использовать AWS PrivateLink. Для настройки подключения следуйте нашему [руководству по настройке AWS PrivateLink для ClickPipes](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes).
 
 <div id="workarounds-for-rds-proxy">
-  ### Варианты обхода для RDS Proxy
+  ### Варианты обхода для RDS Proxy {#workarounds-for-rds-proxy}
 </div>
 
 RDS Proxy не поддерживает подключения для логической репликации. Если в RDS у вас используются динамические IP-адреса и вы не можете использовать DNS-имя или Lambda, вот несколько альтернатив:
@@ -189,7 +159,7 @@ RDS Proxy не поддерживает подключения для логич
 4. Автоматизируйте управление IP-адресами с помощью таких инструментов, как Terraform или CloudFormation.
 
 <div id="whats-next">
-  ## Что дальше?
+  ## Что дальше? {#whats-next}
 </div>
 
 Теперь вы можете [создать свой ClickPipe](/ru/integrations/clickpipes/postgres/index) и начать ингестию данных из вашего экземпляра Postgres в ClickHouse Cloud.

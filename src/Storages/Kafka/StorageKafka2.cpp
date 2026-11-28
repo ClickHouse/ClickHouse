@@ -1070,7 +1070,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                     result_columns[i]->rollback(*checkpoints[i]);
 
                     // all data columns will get default value in case of error
-                    result_columns[i]->insertDefault();
+                    non_virtual_header.getByPosition(i).type->insertDefaultInto(*result_columns[i]);
                 }
                 return 1;
             }

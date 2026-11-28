@@ -4,11 +4,11 @@ slug: /guides/separation-storage-compute
 title: 'ストレージとコンピュートの分離'
 description: 'このガイドでは、ClickHouse と S3 を使用して、ストレージとコンピュートを分離するアーキテクチャを実装する方法を解説します。'
 doc_type: 'guide'
-keywords: ['ストレージ', 'コンピュート', 'アーキテクチャ', '拡張性', 'クラウド']
+keywords: ['ストレージ', 'コンピュート', 'アーキテクチャ', 'スケーラビリティ', 'クラウド']
 ---
 
 <div id="overview">
-  ## 概要
+  ## 概要 {#overview}
 </div>
 
 このガイドでは、ClickHouse と S3 を使用して、ストレージとコンピュートを分離したアーキテクチャを実装する方法を説明します。
@@ -27,7 +27,7 @@ S3 をバックエンドストレージとして利用する ClickHouse は、�
 
 <Steps>
   <Step title="S3 を ClickHouse のディスクとして使用する" id="1-use-s3-as-a-clickhouse-disk">
-    ### ディスクの作成
+### ディスクの作成 {#creating-a-disk}
 
     ストレージ構成を保存するため、ClickHouse の `config.d` ディレクトリに新しいファイルを作成します。
 
@@ -155,13 +155,9 @@ S3 をバックエンドストレージとして利用する ClickHouse は、�
     すべて正常に動作していれば、これでストレージとコンピュートを分離した ClickHouse を利用できています！
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![コンピュートとストレージの分離を使用した S3 バケットの例](/images/guides/s3_bucket_example.webp)
-
-    </Frame>
-
+      <Frame>
+        ![コンピュートとストレージの分離を使用した S3 バケットの例](/images/guides/s3_bucket_example.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -179,7 +175,7 @@ S3 をバックエンドストレージとして利用する ClickHouse は、�
 </Steps>
 
 <div id="further-reading">
-  ## 参考資料
+  ## 参考資料 {#further-reading}
 </div>
 
 * [SharedMergeTree テーブルエンジン](/ja/products/cloud/features/infrastructure/shared-merge-tree)

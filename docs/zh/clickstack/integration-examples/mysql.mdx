@@ -16,7 +16,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-mysql">
-  ## 与现有 MySQL 集成
+  ## 与现有 MySQL 集成 {#existing-mysql}
 </div>
 
 本节介绍如何通过修改 ClickStack OTel collector 配置，将现有的 MySQL 实例配置为把日志发送到 ClickStack。
@@ -24,7 +24,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 如果您想先测试 MySQL 日志集成，再配置自己现有的环境，可以在[&quot;演示数据集&quot;](/zh/clickstack/integration-examples/mysql#demo-dataset)部分使用我们预先配置的环境和示例数据进行测试。
 
 <div id="prerequisites">
-  ##### 前置条件
+  ##### 前置条件 {#prerequisites}
 </div>
 
 * 正在运行的 ClickStack 实例
@@ -86,7 +86,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="创建自定义 OTel collector 配置" id="custom-otel">
-    ClickStack 支持通过挂载自定义配置文件并设置环境变量，来扩展基础 OpenTelemetry Collector 配置。自定义配置会与由 HyperDX 通过 OpAMP 管理的基础配置合并。
+    ClickStack 支持通过挂载自定义配置文件并设置环境变量，来扩展基础 OpenTelemetry Collector 配置。自定义配置会与由 ClickStack 用户界面通过 OpAMP 管理的基础配置合并。
 
     创建一个名为 `mysql-logs-monitoring.yaml` 的文件，内容如下：
 
@@ -162,7 +162,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     * 处理多行日志条目 (慢查询会跨多行)
     * 解析这两种日志格式，提取结构化字段 (level、error&#95;code、query&#95;time、rows&#95;examined)
     * 保留原始日志时间戳
-    * 添加 `source: mysql-error` 和 `source: mysql-slow` 属性，便于在 HyperDX 中过滤
+    * 添加 `source: mysql-error` 和 `source: mysql-slow` 属性，便于在 ClickStack 用户界面中过滤
     * 通过专用管道将日志发送到 ClickHouse exporter
 
     <Note>
@@ -193,8 +193,8 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="在 HyperDX 中验证日志" id="verifying-logs">
-    配置完成后，登录 HyperDX 并确认日志已正常流入：
+  <Step title="在 ClickStack 用户界面中验证日志" id="verifying-logs">
+    配置完成后，登录 ClickStack 用户界面并确认日志已正常流入：
 
     1. 进入搜索视图
     2. 将 source 设为 Logs
@@ -202,29 +202,21 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     4. 你应该会看到结构化的日志记录，其中包含 `level`、`error_code`、`message` (错误日志) 以及 `query_time`、`rows_examined`、`query` (慢查询日志) 等字段
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![搜索视图](/images/clickstack/mysql/search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![搜索视图](/images/clickstack/mysql/search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![日志视图](/images/clickstack/mysql/log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![日志视图](/images/clickstack/mysql/log-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## 演示数据集
+  ## 演示数据集 {#demo-dataset}
 </div>
 
 对于希望在配置生产系统之前先测试 MySQL 日志集成的用户，我们提供了一份预先生成的 MySQL 日志演示数据集，其中包含逼真的日志模式。
@@ -329,11 +321,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="在 HyperDX 中验证日志" id="verify-demo-logs">
+  <Step title="在 ClickStack 用户界面中验证日志" id="verify-demo-logs">
     ClickStack 运行后：
 
     1. 稍等片刻，让 ClickStack 完成初始化 (通常需要 30–60 秒)
-    2. 打开 [HyperDX](http://localhost:8080/) 并登录账户 (你可能需要先创建账户)
+    2. 打开 [ClickStack 用户界面](http://localhost:8080/) 并登录账户 (你可能需要先创建账户)
     3. 进入搜索视图，将数据源设为 `Logs`
     4. 将时间范围设置为 **2025-11-13 00:00:00 - 2025-11-16 00:00:00**
     5. 你应会看到总共 40 条日志 (30 条带有 `source:mysql-demo-error` 的错误日志 + 10 条带有 `source:mysql-demo-slow` 的慢查询日志)
@@ -343,36 +335,26 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![搜索视图](/images/clickstack/mysql/search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![搜索视图](/images/clickstack/mysql/search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![日志视图](/images/clickstack/mysql/log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![日志视图](/images/clickstack/mysql/log-view.webp)
+      </Frame>
     </div>
 
     <Info>
       **时区显示**
 
-      HyperDX 会按浏览器的本地时区显示时间戳。演示数据的时间范围为 **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**。较宽的时间范围可确保你无论身在何处都能看到演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
+      ClickStack 用户界面会按浏览器的本地时区显示时间戳。演示数据的时间范围为 **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**。较宽的时间范围可确保你无论身在何处都能看到演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## 仪表盘与可视化
-</div>
+## 仪表盘与可视化 {#dashboards}
 
 为帮助你快速开始使用 ClickStack 监控 MySQL，我们提供了 MySQL 日志所需的关键可视化。
 
@@ -382,29 +364,21 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="导入预构建仪表盘" id="import-dashboard">
-    1. 打开 HyperDX 并进入“仪表盘”部分
-    2. 点击右上角省略号菜单中的 **Import Dashboard**
+    1. 打开 ClickStack 用户界面并进入“仪表盘”部分
+    2. 点击右上角省略号菜单中的 **导入仪表盘**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![导入仪表盘按钮](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![导入仪表盘按钮](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
-    3. 上传 `mysql-logs-dashboard.json` 文件，然后点击 **Finish Import**
+    3. 上传 `mysql-logs-dashboard.json` 文件，然后点击 **完成导入**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![完成导入](/images/clickstack/mysql/finish-import.webp)
-
-    </Frame>
-
+      <Frame>
+        ![完成导入](/images/clickstack/mysql/finish-import.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -412,13 +386,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     仪表盘创建后，所有可视化都将预先配置完成。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![示例仪表盘](/images/clickstack/mysql/example-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![示例仪表盘](/images/clickstack/mysql/example-dashboard.webp)
+      </Frame>
     </div>
 
     <Note>
@@ -428,11 +398,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### 自定义配置未加载
+  ### 自定义配置未加载 {#troubleshooting-not-loading}
 </div>
 
 确认已设置环境变量：
@@ -447,9 +417,7 @@ docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
 ```
 
-<div id="no-logs">
-  ### HyperDX 中未显示日志
-</div>
+### ClickStack 用户界面中未显示日志 {#no-logs}
 
 检查当前生效的配置中是否包含 接收器：
 
@@ -471,7 +439,7 @@ docker exec <container> cat /tmp/mysql-demo/mysql-slow.log | wc -l
 ```
 
 <div id="no-slow-queries">
-  ### 慢查询日志未出现
+  ### 慢查询日志未出现 {#no-slow-queries}
 </div>
 
 确认 MySQL 中已启用慢查询日志：
@@ -494,7 +462,7 @@ SELECT SLEEP(2);
 ```
 
 <div id="logs-not-parsing">
-  ### 日志解析不正确
+  ### 日志解析不正确 {#logs-not-parsing}
 </div>
 
 请确认你的 MySQL 日志格式与预期格式一致。本指南中的正则表达式模式是针对 MySQL 5.7+ 和 8.0+ 的默认格式设计的。
@@ -514,15 +482,13 @@ head -5 /var/log/mysql/error.log
 如果你的格式与此有较大差异，请调整配置中的正则表达式模式。
 
 <div id="next-steps">
-  ## 后续步骤
+  ## 后续步骤 {#next-steps}
 </div>
 
 * 为关键事件设置[告警](/zh/clickstack/features/alerts) (如连接失败、超过阈值的慢查询、错误激增)
 * 按查询模式创建用于分析慢查询的自定义仪表盘
 * 根据观察到的查询性能表现调优 `long_query_time`
 
-<div id="going-to-production">
-  ## 进入生产环境
-</div>
+## 进入生产环境 {#going-to-production}
 
 本指南基于 ClickStack 内置的 OpenTelemetry Collector，可帮助您快速完成设置。对于生产部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

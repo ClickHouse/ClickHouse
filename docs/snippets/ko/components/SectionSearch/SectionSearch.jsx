@@ -16,7 +16,9 @@ export const SectionSearch = ({ section = "/reference/statements", label = "Stat
     const KEY_STAGING = "d3e2792740610240ff7bcf2c2a78a33012812eb4f3e34d54"
     const KEY_LOCAL = "b25e5cf856ec9da60d250578b59dace8417359feeedcbc6b"
     const apiKey = /\.mintlify\.(?:app|site)$/.test(window.location.hostname) ? KEY_STAGING : KEY_LOCAL
-    const EMBED = "https://cdn.jsdelivr.net/npm/@inkeep/cxkit-js@0.5/dist/embed.js"
+    // 하위 리소스 무결성(SRI) 해시와 함께 고정되어 있습니다(업데이트 방법은 inkeep-init.js를 참조하세요).
+    const EMBED = "https://cdn.jsdelivr.net/npm/@inkeep/cxkit-js@0.5.119/dist/embed.js"
+    const EMBED_INTEGRITY = "sha384-+Gf6Mr27hHCxYbuIDvsYAH5kgS5v8WYmSCrsokwyFn0SDpTn0sdeq88sHj3nphi0"
     // 레거시 *.mintlify.app 소스는 호스트 루트에서 페이지를 노출했지만,
     // *.mintlify.site 소스는 /docs 접두사를 포함합니다.
     const PREVIEW_RE = /^https?:\/\/private-7c7dfe99\.mintlify\.(?:app|site)\/(?:docs(?:\/|(?=[?#]|$)))?/
@@ -161,6 +163,8 @@ export const SectionSearch = ({ section = "/reference/statements", label = "Stat
         s.id = "inkeep-embed-js-script"
         s.type = "module"
         s.src = EMBED
+        s.integrity = EMBED_INTEGRITY
+        s.crossOrigin = "anonymous"
         s.onload = () => {
           // 이 컴포넌트가 리마운트되기 전에 모달 번들이 공유 window.Inkeep 전역을
           // 교체하더라도 embed API를 유지합니다.

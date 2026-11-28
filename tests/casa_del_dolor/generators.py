@@ -209,9 +209,8 @@ class BuzzHouseGenerator(Generator):
         # Set SMT disk only when property.py doesn't do it
         buzz_config["set_smt_disk"] = root.find("shared_merge_tree") is None
         buzz_config["has_distributed_cache"] = args.with_distributed_cache
-        # Dolor stops the servers itself and requires a graceful shutdown. A failpoint left enabled
-        # can park a background task in a sleep, and shutdown waits on that task's mutex forever
-        buzz_config["enable_failpoints"] = False
+        # BuzzHouse arms only an allowlist of fail points that throw, none sleeps, so a graceful shutdown still works
+        buzz_config["enable_failpoints"] = random.randint(1, 3) == 1
         # Without Spark the dolor connection serves only the streaming tables, e.g. in CI
         buzz_config["dolor_spark_tables"] = args.with_spark
         if args.with_spark or args.with_kafka or args.with_nats or args.with_rabbitmq:
