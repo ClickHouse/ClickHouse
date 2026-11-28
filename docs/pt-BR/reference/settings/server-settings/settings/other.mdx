@@ -608,6 +608,22 @@ Views materializadas atualizáveis sempre recebem os valores padrão, independen
   Alterar essa configuração afeta apenas as views criadas posteriormente; as definições armazenadas das views existentes permanecem inalteradas.
 </Note>
 
+## implicit_default_workload {#implicit_default_workload}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />
+
+Quando habilitada, uma carga de trabalho `default` é criada implicitamente caso nenhuma tenha sido definida explicitamente, para que as consultas que usam o valor padrão da configuração `workload` sejam agendadas. A carga de trabalho `default` implícita não pode ser pai de outras cargas de trabalho; para isso, crie `default` explicitamente. Habilite-a em conjunto com `workloads_respect_server_cpu_limit` e `workloads_respect_server_memory_limit`: assim, essas consultas passam a respeitar os orçamentos globais do servidor, e as mesclagens e mutações em segundo plano que usam a carga de trabalho padrão passam a respeitar o orçamento de CPU. Pode ser alterada em tempo de execução. Desabilitada por padrão.
+
+**Exemplo**
+
+```xml
+<implicit_default_workload>true</implicit_default_workload>
+```
+
+**Veja Também**
+
+* [escalonamento de cargas de trabalho](/pt-BR/concepts/features/configuration/server-config/workload-scheduling)
+
 ## include_from {#include_from}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />

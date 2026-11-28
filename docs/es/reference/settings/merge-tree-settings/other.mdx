@@ -272,8 +272,10 @@ Posibles valores:
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
-Cuántos registros sobre mutaciones finalizadas se deben conservar. Si es cero, se conservan
-todos.
+Cuántos registros sobre mutaciones finalizadas se deben conservar. Si es cero, no se conserva
+ninguna entrada de mutación finalizada: el proceso de limpieza en segundo plano elimina la
+entrada de una mutación en cuanto esta finaliza. Para conservar todas las entradas, establezca
+un valor alto (en versiones anteriores, cero significaba conservarlas todas).
 
 ## force_read_through_cache_for_merges {#force_read_through_cache_for_merges}
 

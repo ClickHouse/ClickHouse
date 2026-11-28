@@ -32,7 +32,7 @@ ClickHouse Cloud でのみ利用可能です。有効にすると、システム
 
 ログが flush されるたびに、`s3`(または `azureBlobStorage`)テーブル関数によって `Native` ファイルが、そのログの世代(カラムとキーのハッシュ)に対応するフォルダーに書き込まれます。
 パイプラインは世代ごとに、そのフォルダーを読み取るキュー `system._<log>_s3queue_<hash>`、materialized view `system._<log>_mv_<hash>`、および `SharedMergeTree` テーブル `system.<log>_<hash>` を保持します。
-`system.<log>` は全世代を対象とする `Merge` テーブルです。スキーマが変わると新しい世代が作成されます。一方、設定、有効期限 (TTL)、インデックスは
+`system.all_<log>` は全世代を対象とし、すべてのレプリカの行を含む `Merge` テーブルです。`system.<log>` はそのビューで、クエリを実行したレプリカの行のみを含みます。スキーマが変わると新しい世代が作成されます。一方、設定、有効期限 (TTL)、インデックスは
 ログの設定にある `smt_settings`、`smt_ttl`、`smt_indices` キーから取得され、既存のテーブルに対してその場で変更されます。
 これらのオブジェクトは、ログの最初の flush 時、または `prepare_system_log_tables_on_startup` を使用した場合は起動時に作成されます。
 テーブルの sorting key は、ログのキーの先頭に `hostname` を加えたものです。これにより、各レプリカの行をキーで読み取れます。

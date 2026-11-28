@@ -4863,7 +4863,7 @@ consistent hash에 의해 할당된 예정된 마크 수를 모든 레플리카�
 
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
-객체 스토리지 또는 URL에 있는 파일의 Parquet 리더가 max&#95;download&#95;threads 중 자신에게 할당된 몫 안에서, 디코딩이 예약되기 전에 미리 컬럼 데이터(Column Data) 읽기를 시작한 행 그룹(row groups)의 수입니다.
+객체 스토리지 또는 URL에 있는 파일의 Parquet 리더가 max&#95;download&#95;threads 중 자신에게 할당된 몫 안에서(또는 디코딩이 해당 몫을 모두 사용하고 있고 읽기가 작으며 별도로 수행되는 경우에는 하나 더), 디코딩이 예약되기 전에 미리 컬럼 데이터(Column Data) 읽기를 시작한 행 그룹(row groups)의 수입니다.
 
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 

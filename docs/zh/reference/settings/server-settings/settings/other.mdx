@@ -608,6 +608,22 @@ HSTS 的过期时间，单位为秒。
   更改此设置仅影响之后创建的视图；现有视图已存储的定义保持不变。
 </Note>
 
+## implicit_default_workload {#implicit_default_workload}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />
+
+启用后，如果未显式定义 `default` 工作负载，系统会隐式创建该工作负载，使采用默认 `workload` 设置的查询能够得到调度。隐式创建的 `default` 工作负载不能作为其他工作负载的父级；如有此需求，请显式创建 `default`。建议将其与 `workloads_respect_server_cpu_limit` 和 `workloads_respect_server_memory_limit` 一同启用：这样，上述查询将受服务器级资源预算约束，而使用默认工作负载的后台合并与变更也将受 CPU 预算约束。可在运行时修改。默认禁用。
+
+**示例**
+
+```xml
+<implicit_default_workload>true</implicit_default_workload>
+```
+
+**另请参见**
+
+* [工作负载调度](/zh/concepts/features/configuration/server-config/workload-scheduling)
+
 ## include_from {#include_from}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />

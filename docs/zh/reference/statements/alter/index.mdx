@@ -81,7 +81,7 @@ ALTER TABLE visits DROP COLUMN page_id, MODIFY COLUMN duration UInt64, ADD COLUM
 
 ## 变更 {#mutations}
 
-用于修改表数据的 `ALTER` 查询，是通过一种称为“变更”的机制实现的，最典型的就是 [ALTER TABLE ... DELETE](/zh/reference/statements/alter/delete) 和 [ALTER TABLE ... UPDATE](/zh/reference/statements/alter/update)。它们是异步后台进程，类似于 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/index) 表中的合并，用于生成新的“mutated”版本的 parts。
+用于修改表数据的 `ALTER` 查询，是通过一种称为“变更”的机制实现的，最典型的就是 [ALTER TABLE ... DELETE](/zh/reference/statements/alter/delete) 和 [ALTER TABLE ... UPDATE](/zh/reference/statements/alter/update)。它们是异步后台进程，类似于 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/index) 表中的合并，用于生成新的“已变更”版本的 parts。
 
 对于 `*MergeTree` 表，变更是通过**重写整个数据分区片段**来执行的。
 它不具备原子性——变更后的 parts 一旦准备就绪，就会立即替换原来的 parts；而在变更执行期间开始的 `SELECT` 查询，既会看到已经变更过的 parts 中的数据，也会看到尚未变更的 parts 中的数据。
@@ -90,7 +90,7 @@ ALTER TABLE visits DROP COLUMN page_id, MODIFY COLUMN duration UInt64, ADD COLUM
 
 变更查询在变更条目添加完成后会立即返回 (对于复制表，会添加到 ZooKeeper；对于非复制表，则会添加到文件系统) 。变更本身会使用系统 profile 设置异步执行。要跟踪变更的进度，可以使用 [`system.mutations`](/zh/reference/system-tables/mutations) 表。成功提交的变更即使在 ClickHouse 服务器重启后也会继续执行。变更一旦提交，就无法回滚；但如果由于某种原因卡住了，可以使用 [`KILL MUTATION`](/zh/reference/statements/kill#kill-mutation) 查询将其取消。
 
-已完成变更的条目不会立即删除 (保留条目的数量由存储引擎参数 `finished_mutations_to_keep` 决定) 。较早的变更条目会被删除。
+已完成变更的条目不会立即删除 (保留条目的数量由存储引擎参数 `finished_mutations_to_keep` 决定；如果将其设置为零，则不会保留任何已完成变更的条目) 。较早的变更条目会被删除。
 
 ## 执行开销与完成 {#execution-cost-and-completion}
 

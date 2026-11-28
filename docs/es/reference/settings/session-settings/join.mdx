@@ -26,7 +26,7 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
       { label: "direct,parallel_hash,hash,ie_join" },
       {
         label:
-          "Se añadió `ie_join` (ahora llamado `inequality`) a la lista predeterminada, por lo que una unión cuya sección `ON` solo tiene condiciones de desigualdad se ejecuta con el algoritmo de unión de desigualdad en lugar de un `CROSS JOIN` con un filtro. Al estar al final, solo se utiliza cuando no se aplican los demás algoritmos."
+          "Se añadió `ie_join` (ahora llamado `inequality`) a la lista predeterminada, por lo que una unión cuya sección `ON` solo tiene condiciones de desigualdad se ejecuta con el algoritmo de unión por desigualdad en lugar de un `CROSS JOIN` con un filtro. Al estar al final, solo se utiliza cuando no se aplican los demás algoritmos."
       }
     ]
   },
@@ -47,7 +47,10 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
     items: [
       { label: "24.12" },
       { label: "direct,parallel_hash,hash" },
-      { label: "'default' quedó obsoleto en favor de algoritmos de unión especificados explícitamente; además, ahora se prefiere parallel_hash a hash" }
+      {
+        label:
+          "'default' quedó obsoleto en favor de algoritmos de join especificados explícitamente; además, ahora se prefiere parallel_hash a hash. `compatibility` no restaura 'default': con una versión anterior a 24.12 proporciona 'direct,parallel_hash,hash'."
+      }
     ]
   }
   ]}

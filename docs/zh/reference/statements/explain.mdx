@@ -1141,7 +1141,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 
 #### 何时需要 `matches = 1` 才能获取数值 {#explain-analyze-matches}
 
-这些数值大多来自 JOIN 本身就会生成的数据，普通的 `EXPLAIN ANALYZE` 即会报告。其余数值需要执行 JOIN 原本不会进行的额外记录操作，因此只有在使用 `EXPLAIN ANALYZE matches = 1` 时才会报告。具体哪些数值属于这种情况取决于算法；对于哈希家族，有以下两种情况：
+这些数值大多来自连接本身就会生成的数据，普通的 `EXPLAIN ANALYZE` 即会报告。其余数值需要执行连接原本不会进行的额外记录操作，因此只有在使用 `EXPLAIN ANALYZE matches = 1` 时才会报告。具体哪些数值属于这种情况取决于算法；对于哈希家族，有以下两种情况：
 
 * `ALL INNER` 和 `ALL LEFT` 的**右**侧，因为需要标记每个匹配的右侧行；
 * `ALL LEFT` 和 `ALL FULL` 的**左**侧，但仅限于查询未从
@@ -1157,11 +1157,11 @@ fanout              = <matched output rows> / <matched_rows of that side>
   该选项默认关闭，因为额外的记录操作并非没有成本，代价是测量保真度。相关工作在探测循环中完成，且会随输出行数增加而增长。需要准确了解左侧行和右侧行各自在另一侧找到多少匹配项时，请使用 `matches = 1`。
 </Note>
 
-`matches = 1` 并不能让所有组合都可收集。JOIN 能报告哪一侧，取决于该 JOIN 本身必须执行哪些操作，因此既取决于算法，也取决于类型和严格性。
+`matches = 1` 并不能让所有组合都可收集。连接能报告哪一侧，取决于该连接本身必须执行哪些操作，因此既取决于算法，也取决于类型和严格性。
 
 **哈希家族。** `hash`、`parallel_hash` 和 `grace_hash` 的行为始终一致：
 
-| Join                                             | 匹配的左侧 | 匹配的右侧 |
+| 连接                                             | 匹配的左侧 | 匹配的右侧 |
 | ------------------------------------------------ | ----- | ----- |
 | `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL` | 是     | 是     |
 | `SEMI LEFT`, `ANTI LEFT`                         | 是     | 否     |
@@ -1170,7 +1170,9 @@ fanout              = <matched output rows> / <matched_rows of that side>
 | `SEMI RIGHT`                                     | 否     | 否     |
 | `ANY INNER`, `ANY LEFT`, `ASOF LEFT`             | 否     | 否     |
 
-当 JOIN 在哈希表中每个键只保留一行时，右侧便不可收集；`ANY`、`SEMI` 和 `ANTI` JOIN 正是如此：重复的右侧行从不存储，因此无法计数。当 JOIN 会抑制输出其匹配行已被另一个左侧行占用的左侧行时，左侧便不可收集，因为输出的行数会少于实际匹配的行数。
+当连接在哈希表中每个键只保留一行时，右侧便不可收集；`ANY`、`SEMI` 和 `ANTI` 连接正是如此：重复的右侧行从不存储，因此无法计数。当连接会抑制输出其匹配行已被另一个左侧行占用的左侧行时，左侧便不可收集，因为输出的行数会少于实际匹配的行数。
+
+对于 `RIGHT` 和 `FULL` 类型，右侧计数为全部探测完成后，右侧行总数减去连接输出的无匹配右侧行数。如果查询在连接输出全部这些行之前就已停止 (例如遇到 `LIMIT` 时) ，该计数会报告为 `not collected`。
 
 启用 [`any_join_distinct_right_table_keys`](/zh/reference/settings/session-settings/other#any_join_distinct_right_table_keys) 会将 `ANY` 切换为旧版 `RightAny` 语义，即每个左侧行输出一行，因此可保留两个计数。此时，`ANY RIGHT` 和 `ANY FULL` 会报告**两**侧，而 `ANY INNER` 会被重写为 `SEMI LEFT`。
 
@@ -1180,9 +1182,9 @@ fanout              = <matched output rows> / <matched_rows of that side>
 
 `partial_merge` 支持 `ALL INNER`、`ALL LEFT`、`ALL RIGHT`、`ALL FULL`、`ANY INNER`、`ANY LEFT` 和 `SEMI LEFT`。它会为四种 `ALL` 类型报告两侧，其中右侧需要 `matches = 1`；对于 `ANY INNER`、`ANY LEFT` 和 `SEMI LEFT`，右侧为 `not collected`。
 
-**`direct`。** 仅报告左侧。右侧是从不物化为行的键值存储，因此根本没有 `Right:` 行。
+**`direct`。** 仅报告左侧。右侧是一个从不物化为行的键值存储，因此完全没有 `Right:` 这一行。
 
-**`CROSS`、`COMMA` 和常量 `ON`。** 两侧均不报告，如[上文](#explain-analyze-join-algorithm-lines)所述。
+**`CROSS`、`COMMA` 以及常量 `ON`。** 两侧均不报告，详见[上文](#explain-analyze-join-algorithm-lines)。
 
 **块嵌套循环连接 (Block nested loop join) 。** 当 `ON` 子句无法确定连接键时，由该操作员处理，除非在它之前的某条路径已认领该条件 (参见 [`allow_block_nested_loop_join`](/zh/reference/settings/session-settings/allow)) 。它支持除 `ASOF`、`PASTE` 和 `ANY FULL` 之外的所有连接类型和严格性：
 

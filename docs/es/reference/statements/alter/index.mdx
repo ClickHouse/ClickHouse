@@ -90,7 +90,7 @@ Las mutaciones están totalmente ordenadas según su orden de creación y se apl
 
 Una consulta de mutación devuelve el resultado inmediatamente después de que se añade la entrada de mutación (en el caso de las tablas replicadas, en ZooKeeper; en las tablas no replicadas, en el sistema de archivos). La mutación en sí se ejecuta de forma asíncrona usando la configuración del perfil del sistema. Para seguir el progreso de las mutaciones, puede usar la tabla [`system.mutations`](/es/reference/system-tables/mutations). Una mutación enviada correctamente seguirá ejecutándose incluso si se reinician los servidores de ClickHouse. No hay forma de revertir la mutación una vez enviada, pero si la mutación se queda atascada por algún motivo, puede cancelarse con la consulta [`KILL MUTATION`](/es/reference/statements/kill#kill-mutation).
 
-Las entradas de las mutaciones finalizadas no se eliminan de inmediato (el número de entradas conservadas lo determina el parámetro del motor de almacenamiento `finished_mutations_to_keep`). Las entradas de mutación más antiguas se eliminan.
+Las entradas de las mutaciones finalizadas no se eliminan de inmediato (el número de entradas conservadas lo determina el parámetro del motor de almacenamiento `finished_mutations_to_keep`; si se establece en cero, no se conserva ninguna entrada de mutaciones finalizadas). Las entradas de mutación más antiguas se eliminan.
 
 ## Coste de ejecución y finalización {#execution-cost-and-completion}
 

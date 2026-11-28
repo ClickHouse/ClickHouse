@@ -274,8 +274,10 @@ Valores possíveis:
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
-Quantos registros sobre mutações concluídas devem ser mantidos. Se for zero, mantenha
-todos eles.
+Quantos registros sobre mutações concluídas devem ser mantidos. Se for zero, nenhuma
+entrada de mutação concluída é mantida: a entrada de uma mutação é removida pela
+limpeza em segundo plano assim que a mutação é concluída. Para manter todas as entradas, defina
+um valor alto (em versões anteriores, zero significava manter todas elas).
 
 ## force_read_through_cache_for_merges {#force_read_through_cache_for_merges}
 

@@ -20,6 +20,8 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `file_name` y `type` son literales de cadena. Los tipos de compresión admitidos son: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`. Para `snappy`, el formato de transmisión se selecciona mediante la configuración [snappy&#95;mode](/es/reference/settings/session-settings/other#snappy_mode) (de forma predeterminada, `basic`).
 
+La compresión `'gzip'` puede ejecutarse en varios threads si se establece `max_generic_compression_threads` en un valor superior a `1`. La salida sigue siendo un stream gzip estándar que cualquier descompresor puede leer; solo se paraleliza la escritura.
+
 `level` es un literal numérico. Se admiten enteros positivos dentro de los siguientes rangos: `1-12` para los tipos `gzip`, `deflate` y `lz4`, `1-22` para el tipo `zstd` y `1-9` para los demás tipos de compresión. Para `gzip` y `deflate`, los niveles superiores a `9` requieren la compilación predeterminada con `libdeflate`; una compilación sin `libdeflate` admite los niveles `1-9`.
 
 ## Detalles de implementación {#implementation-details}

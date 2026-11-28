@@ -83,14 +83,14 @@ ALTER TABLE visits DROP COLUMN page_id, MODIFY COLUMN duration UInt64, ADD COLUM
 
 테이블 데이터를 변경하기 위한 `ALTER` 쿼리는 &quot;뮤테이션&quot;이라는 메커니즘으로 구현되며, 대표적인 예로 [ALTER TABLE ... DELETE](/ko/reference/statements/alter/delete) 및 [ALTER TABLE ... UPDATE](/ko/reference/statements/alter/update)가 있습니다. 이는 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/index) 테이블의 머지와 유사한 비동기 백그라운드 프로세스로, 파트의 새로운 &quot;뮤테이션된&quot; 버전을 생성합니다.
 
-`*MergeTree` 테이블에서 뮤테이션은 **전체 데이터 파트를 다시 써서** 실행됩니다.
+`*MergeTree` 테이블에서 뮤테이션은 **전체 데이터 파트를 재작성(Rewrite)하여** 실행됩니다.
 원자성은 보장되지 않습니다. 준비가 완료되는 즉시 기존 파트가 뮤테이션된 파트로 대체되므로, 뮤테이션 도중 실행을 시작한 `SELECT` 쿼리에서는 이미 뮤테이션된 파트의 데이터와 아직 뮤테이션되지 않은 파트의 데이터를 함께 보게 됩니다.
 
 뮤테이션은 생성 순서에 따라 완전히 정렬되며, 각 파트에 그 순서대로 적용됩니다. 또한 뮤테이션은 `INSERT INTO` 쿼리와 부분적인 순서 관계를 가집니다. 즉, 뮤테이션이 제출되기 전에 테이블에 삽입된 데이터는 뮤테이션되지만, 그 이후에 삽입된 데이터는 뮤테이션되지 않습니다. 참고로 뮤테이션은 어떤 방식으로도 삽입을 차단하지 않습니다.
 
 뮤테이션 쿼리는 뮤테이션 항목이 추가된 직후 즉시 반환됩니다(복제된 테이블의 경우 ZooKeeper에, 복제되지 않은 테이블의 경우 파일 시스템에 추가됩니다). 뮤테이션 자체는 시스템 프로필 설정을 사용해 비동기적으로 실행됩니다. 뮤테이션의 진행 상황은 [`system.mutations`](/ko/reference/system-tables/mutations) 테이블을 사용해 추적할 수 있습니다. 성공적으로 제출된 뮤테이션은 ClickHouse 서버가 재시작되더라도 계속 실행됩니다. 제출된 뮤테이션은 롤백할 수 없지만, 어떤 이유로 뮤테이션이 멈춘 경우 [`KILL MUTATION`](/ko/reference/statements/kill#kill-mutation) 쿼리로 취소할 수 있습니다.
 
-완료된 뮤테이션 항목은 즉시 삭제되지 않습니다(보존되는 항목 수는 `finished_mutations_to_keep` 스토리지 엔진 매개변수로 결정됩니다). 오래된 뮤테이션 항목은 삭제됩니다.
+완료된 뮤테이션 항목은 즉시 삭제되지 않습니다(보존되는 항목 수는 `finished_mutations_to_keep` 스토리지 엔진 매개변수로 결정되며, 이 값을 0으로 설정하면 완료된 뮤테이션 항목을 보존하지 않습니다). 오래된 뮤테이션 항목은 삭제됩니다.
 
 ## 실행 비용 및 완료 {#execution-cost-and-completion}
 

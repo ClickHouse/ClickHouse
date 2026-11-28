@@ -47,7 +47,10 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
     items: [
       { label: "24.12" },
       { label: "direct,parallel_hash,hash" },
-      { label: "'default' は、JOIN アルゴリズムを明示的に指定する方式が導入されたため非推奨になりました。また、現在は hash より parallel_hash が優先されます" }
+      {
+        label:
+          "'default' は、JOIN アルゴリズムを明示的に指定する方式が導入されたため非推奨になりました。また、現在は hash より parallel_hash が優先されます。`compatibility` を使用しても 'default' は復元されません。24.12 より前のバージョンを指定した場合は 'direct,parallel_hash,hash' になります。"
+      }
     ]
   }
   ]}

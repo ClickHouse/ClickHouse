@@ -47,7 +47,10 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
     items: [
       { label: "24.12" },
       { label: "direct,parallel_hash,hash" },
-      { label: "已弃用 'default'，改为显式指定 JOIN 算法，同时现在优先使用 parallel_hash 而不是 hash" }
+      {
+        label:
+          "已弃用 'default'，改为显式指定 JOIN 算法，同时现在优先使用 parallel_hash 而不是 hash。`compatibility` 不会恢复 'default'：当指定 24.12 之前的版本时，其值为 'direct,parallel_hash,hash'。"
+      }
     ]
   }
   ]}

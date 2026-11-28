@@ -1158,7 +1158,9 @@ tipos `ALL` não precisam de nada.
   A opção fica desativada por padrão porque a contabilização adicional tem custo, e não usá-la reduz a fidelidade da medição. O trabalho é realizado dentro do loop de sondagem e aumenta com o número de linhas de saída. Use `matches = 1` quando precisar saber as correspondências exatas encontradas pelas linhas dos lados esquerdo e direito.
 </Note>
 
-`matches = 1` não torna todas as combinações passíveis de coleta. Os lados que uma junção pode informar decorrem do que ela já precisa fazer de qualquer forma; portanto, isso depende tanto do algoritmo quanto do tipo e da strictness.
+`matches = 1` não torna todas as combinações passíveis de coleta. Os lados que uma junção pode informar decorrem
+do que ela já precisa fazer de qualquer forma; portanto, isso depende tanto do algoritmo quanto do tipo e da
+strictness.
 
 **Família hash.** `hash`, `parallel_hash` e `grace_hash` sempre se comportam da mesma forma:
 
@@ -1173,15 +1175,17 @@ tipos `ALL` não precisam de nada.
 
 O lado direito não está disponível sempre que a junção mantém apenas uma linha por chave em sua tabela hash, como fazem as junções `ANY`, `SEMI` e `ANTI`: as linhas duplicadas do lado direito nunca são armazenadas e, portanto, não podem ser contadas. O lado esquerdo não está disponível quando a junção suprime a saída de uma linha do lado esquerdo cuja correspondente já foi reivindicada por outra linha desse lado, fazendo com que as linhas emitidas sejam uma subcontagem das linhas com correspondência.
 
+Para os tipos `RIGHT` e `FULL`, o lado direito corresponde às linhas do lado direito menos aquelas que a junção emite sem correspondente, após toda a sondagem. Uma consulta que é interrompida antes de a junção emitir todas elas, por exemplo devido a um `LIMIT`, informa esse lado como `not collected`.
+
 Ativar [`any_join_distinct_right_table_keys`](/pt-BR/reference/settings/session-settings/other#any_join_distinct_right_table_keys) muda `ANY` para a semântica mais antiga `RightAny`, que emite uma linha por linha do lado esquerdo e, portanto, mantém ambas as contagens. `ANY RIGHT` e `ANY FULL` passam a informar **ambos** os lados, e `ANY INNER` é reescrito como `SEMI LEFT`.
 
-O motor de tabela [`Join`](/pt-BR/reference/engines/table-engines/special/join) segue a mesma tabela, usando o tipo e a strictness declarados no mecanismo: `Join(ALL, INNER, …)` informa ambos os lados, enquanto `Join(ANY, LEFT, …)` não informa nenhum deles.
+O motor de tabela [`Join`](/pt-BR/reference/engines/table-engines/special/join) segue a mesma tabela, usando o tipo e a strictness declarados no motor: `Join(ALL, INNER, …)` informa ambos os lados, enquanto `Join(ANY, LEFT, …)` não informa nenhum deles.
 
-**Algoritmos de merge.** `full_sorting_merge` e `parallel_full_sorting_merge` aceitam os quatro tipos `ALL`, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` e `ASOF LEFT`. Eles informam **ambos** os lados para todos os tipos, exceto `ASOF` e `ASOF LEFT`, nos quais o lado direito é `not collected`, mesmo sem `matches = 1` — eles percorrem as duas entradas ordenadas e veem todas as linhas de uma faixa de valores iguais à medida que as consomem, portanto nada precisa ser reconstruído posteriormente.
+**Algoritmos de mesclagem.** `full_sorting_merge` e `parallel_full_sorting_merge` aceitam os quatro tipos `ALL`, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` e `ASOF LEFT`. Eles informam **ambos** os lados para todos os tipos, exceto `ASOF` e `ASOF LEFT`, nos quais o lado direito é `not collected`, mesmo sem `matches = 1` — eles percorrem as duas entradas ordenadas e veem todas as linhas de uma faixa de valores iguais à medida que as consomem, portanto nada precisa ser reconstruído posteriormente.
 
 `partial_merge` aceita `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL`, `ANY INNER`, `ANY LEFT` e `SEMI LEFT`. Ele informa ambos os lados para os quatro tipos `ALL`, sendo o direito com `matches = 1`; para `ANY INNER`, `ANY LEFT` e `SEMI LEFT`, o lado direito é `not collected`.
 
-**`direct`.** Somente o lado esquerdo. O lado direito é um armazenamento de chave-valor que nunca é materializado em linhas e, portanto, não possui nenhuma linha `Right:`.
+**`direct`.** Apenas o lado esquerdo. O lado direito é um armazenamento de chave-valor que nunca é materializado em linhas, portanto não há nenhuma linha `Right:`.
 
 **`CROSS`, `COMMA` e um `ON` constante.** Nenhum dos lados, conforme descrito [acima](#explain-analyze-join-algorithm-lines).
 

@@ -608,6 +608,22 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   لا يؤثر تغيير هذا الإعداد إلا في العروض التي تُنشأ لاحقًا؛ أما التعريفات المخزنة للعروض الحالية فتبقى دون تغيير.
 </Note>
 
+## implicit_default_workload {#implicit_default_workload}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />
+
+عند تفعيل هذا الإعداد، يُنشأ عبء العمل `default` ضمنيًا إذا لم يُعرَّف صراحةً، لكي تُجدوَل الاستعلامات التي تستخدم القيمة الافتراضية للإعداد `workload`. لا يمكن لعبء العمل `default` الضمني أن يكون أصلًا لأحمال عمل أخرى؛ ولهذا الغرض أنشئ `default` صراحةً. فعّل هذا الإعداد مع `workloads_respect_server_cpu_limit` و`workloads_respect_server_memory_limit`: إذ يُخضع ذلك تلك الاستعلامات للميزانيات المحددة على مستوى الخادم، كما يُخضع عمليات الدمج والتعديل في الخلفية التي تستخدم عبء العمل الافتراضي لميزانية CPU. يمكن تغييره أثناء التشغيل. معطّل افتراضيًا.
+
+**مثال**
+
+```xml
+<implicit_default_workload>true</implicit_default_workload>
+```
+
+**انظر أيضًا**
+
+* [جدولة أحمال العمل](/ar/concepts/features/configuration/server-config/workload-scheduling)
+
 ## include_from {#include_from}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />

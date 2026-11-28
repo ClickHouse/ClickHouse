@@ -20,6 +20,8 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `file_name` と `type` は文字列リテラルです。サポートされている圧縮タイプは、`'none'`、`'gzip'`、`'deflate'`、`'br'`、`'xz'`、`'zstd'`、`'lz4'`、`'bz2'`、`'snappy'` です。`snappy` の場合、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定によって選択されます (既定では `basic`) 。
 
+`max_generic_compression_threads` を `1` より大きい値に設定すると、`'gzip'` 圧縮を複数のスレッドで実行できます。出力は引き続き標準の gzip ストリームであり、任意の伸長ツールで読み取れます。並列化されるのは書き込み側のみです。
+
 `level` は数値リテラルです。次の範囲の正の整数がサポートされます: `gzip`、`deflate`、`lz4` タイプでは `1-12`、`zstd` タイプでは `1-22`、その他の圧縮タイプでは `1-9` です。`gzip` と `deflate` では、`9` を超えるレベルを使用するには `libdeflate` を含む既定のビルドが必要です。`libdeflate` を含まないビルドでは、`1-9` のレベルがサポートされます。
 
 ## 実装の詳細 {#implementation-details}

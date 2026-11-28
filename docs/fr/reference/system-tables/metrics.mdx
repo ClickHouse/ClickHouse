@@ -779,6 +779,18 @@ Taille cumulée des piles de fibres actuellement allouées.
 
 Nombre de piles de fibres actuellement allouées (les fibres sont utilisées pour la communication asynchrone avec les répliques distantes).
 
+### FilesystemCacheCleanupHelperThreads {#filesystemcachecleanuphelperthreads}
+
+Nombre de fils d’exécution auxiliaires affectés au nettoyage en arrière-plan du cache du système de fichiers, qui supprime des métadonnées du cache et du disque les clés dépourvues de segments de fichier, ainsi que les répertoires de clés vides détectés au démarrage
+
+### FilesystemCacheCleanupHelperThreadsActive {#filesystemcachecleanuphelperthreadsactive}
+
+Nombre de fils d’exécution auxiliaires du nettoyage en arrière-plan du cache du système de fichiers qui exécutent une task
+
+### FilesystemCacheCleanupHelperThreadsScheduled {#filesystemcachecleanuphelperthreadsscheduled}
+
+Nombre de jobs en file d’attente ou actifs des fils d’exécution auxiliaires chargés du nettoyage en arrière-plan du cache du système de fichiers
+
 ### FilesystemCacheDelayedCleanupElements {#filesystemcachedelayedcleanupelements}
 
 Éléments de la file d’attente de nettoyage en arrière-plan du cache du système de fichiers

@@ -1,6 +1,6 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
   // Mintlify の本番レンダラーは、モジュールスコープのバインディングを保持せずに
-  // エクスポートされたコンポーネントを評価します。遅延初期化された state により、生成データを
+  // エクスポートされたコンポーネントを評価します。遅延 state により、生成データを
   // その評価スコープ内に保持しつつ、マウントごとに一度だけ構築します。
   const [entries] = useState(() => [
     {
@@ -1516,7 +1516,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_*",
-      count: 28,
+      count: 29,
       settings: [
         { name: "max_analyze_depth", path: "/max#max_analyze_depth", default: "5000" },
         { name: "max_autoincrement_series", path: "/max#max_autoincrement_series", default: "1000" },
@@ -1529,6 +1529,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_expanded_ast_elements", path: "/max#max_expanded_ast_elements", default: "500000" },
         { name: "max_fetch_partition_retries_count", path: "/max#max_fetch_partition_retries_count", default: "5" },
         { name: "max_final_threads", path: "/max#max_final_threads", default: "auto(N)" },
+        { name: "max_generic_compression_threads", path: "/max#max_generic_compression_threads", default: "1" },
         { name: "max_http_get_redirects", path: "/max#max_http_get_redirects", default: "0" },
         { name: "max_limit_for_vector_search_queries", path: "/max#max_limit_for_vector_search_queries", default: "1000" },
         { name: "max_os_cpu_wait_time_ratio_to_throw", path: "/max#max_os_cpu_wait_time_ratio_to_throw", default: "0" },
@@ -3589,7 +3590,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            一致する設定: {matchingCount}{matchingCount === 1 ? " 件" : " 件"}
+            一致する設定: {matchingCount}{matchingCount === 1 ? "件" : "件"}
           </span>
         </div>
       )}
@@ -3598,7 +3599,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
           <div className="min-w-max font-semibold">/session-settings</div>
           <button
             type="button"
-            aria-label={allGroupsExpanded ? "すべて折りたたむ" : "すべて展開する"}
+            aria-label={allGroupsExpanded ? "すべて折りたたむ" : "すべて展開"}
             aria-pressed={allGroupsExpanded}
             disabled={isSearching}
             onClick={toggleAllGroups}
@@ -3607,13 +3608,13 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
               {allGroupsExpanded ? <path d="m6 9 6 6 6-6" /> : <path d="m9 18 6-6-6-6" />}
             </svg>
-            <span>{allGroupsExpanded ? "すべて折りたたむ" : "すべて展開する"}</span>
+            <span>{allGroupsExpanded ? "すべて折りたたむ" : "すべて展開"}</span>
           </button>
         </div>
         {filteredEntries.length > 0 ? (
           filteredEntries.map((entry, index) => renderGroup(entry, [], index === filteredEntries.length - 1))
         ) : (
-          <div className="py-2 text-gray-500 dark:text-gray-400">一致する設定はありません</div>
+          <div className="py-2 text-gray-500 dark:text-gray-400">一致する設定がありません</div>
         )}
       </div>
     </div>

@@ -609,6 +609,22 @@ Refreshable materialized views всегда получают значения п
   Изменение этой настройки влияет только на представления, созданные после этого; сохранённые определения существующих представлений остаются без изменений.
 </Note>
 
+## implicit_default_workload {#implicit_default_workload}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />
+
+Если настройка включена, рабочая нагрузка `default` создаётся неявно, когда она не определена явно, — благодаря этому запросы со значением настройки `workload` по умолчанию тоже планируются. Неявная рабочая нагрузка `default` не может быть родительской для других рабочих нагрузок; для этого создайте `default` явно. Включайте эту настройку вместе с `workloads_respect_server_cpu_limit` и `workloads_respect_server_memory_limit`: тогда такие запросы будут подчиняться общесерверным бюджетам, а фоновые слияния и мутации, использующие рабочую нагрузку по умолчанию, — бюджету CPU. Можно изменять во время работы сервера. По умолчанию отключено.
+
+**Пример**
+
+```xml
+<implicit_default_workload>true</implicit_default_workload>
+```
+
+**См. также**
+
+* [Планирование рабочих нагрузок](/ru/concepts/features/configuration/server-config/workload-scheduling)
+
 ## include_from {#include_from}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />

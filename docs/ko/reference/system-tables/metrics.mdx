@@ -778,6 +778,18 @@ ZooKeeper에 유지되고 있는 임시 노드의 수입니다.
 
 현재 할당된 파이버 스택의 수입니다(파이버는 원격 레플리카와의 비동기 통신에 사용됩니다).
 
+### FilesystemCacheCleanupHelperThreads {#filesystemcachecleanuphelperthreads}
+
+파일 시스템 캐시 백그라운드 정리 작업에 사용되는 보조 스레드 수입니다. 이 정리 작업은 파일 세그먼트가 없는 키를 캐시 메타데이터와 디스크에서 제거하고, 시작 시 발견된 빈 키 디렉터리도 제거합니다.
+
+### FilesystemCacheCleanupHelperThreadsActive {#filesystemcachecleanuphelperthreadsactive}
+
+파일 시스템 캐시 백그라운드 정리에서 작업을 실행 중인 보조 스레드 수
+
+### FilesystemCacheCleanupHelperThreadsScheduled {#filesystemcachecleanuphelperthreadsscheduled}
+
+파일 시스템 캐시 백그라운드 정리 보조 스레드에서 큐에 대기 중이거나 활성 상태인 작업 수
+
 ### FilesystemCacheDelayedCleanupElements {#filesystemcachedelayedcleanupelements}
 
 백그라운드 정리 큐의 파일 시스템 캐시 항목

@@ -1431,6 +1431,15 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     },
     {
+      label: "workloads_respect_*",
+      count: 2,
+      settings: [
+        { name: "workloads_respect_server_cpu_limit", path: "/workloads-respect#workloads_respect_server_cpu_limit", default: "0" },
+        { name: "workloads_respect_server_memory_limit", path: "/workloads-respect#workloads_respect_server_memory_limit", default: "0" }
+      ],
+      children: []
+    },
+    {
       label: "zookeeper_*",
       count: 2,
       settings: [
@@ -1441,7 +1450,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "其他",
-      count: 131,
+      count: 132,
       settings: [
         { name: "abort_on_logical_error", path: "/other#abort_on_logical_error", default: "0" },
         { name: "ai_function_allow_sql_named_collections", path: "/other#ai_function_allow_sql_named_collections", default: "1" },
@@ -1483,6 +1492,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "iceberg_background_schedule_pool_size", path: "/other#iceberg_background_schedule_pool_size", default: "10" },
         { name: "iceberg_manifest_decode_thread_pool_queue_size", path: "/other#iceberg_manifest_decode_thread_pool_queue_size", default: "10000" },
         { name: "ignore_empty_sql_security_in_create_view_query", path: "/other#ignore_empty_sql_security_in_create_view_query", default: "1" },
+        { name: "implicit_default_workload", path: "/other#implicit_default_workload", default: "0" },
         { name: "include_from", path: "/other#include_from", default: '""' },
         { name: "insert_deduplication_version", path: "/other#insert_deduplication_version", default: "new_unified_hash" },
         { name: "io_thread_pool_queue_size", path: "/other#io_thread_pool_queue_size", default: "10000" },

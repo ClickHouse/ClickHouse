@@ -778,6 +778,18 @@ ZooKeeper 中持有的临时节点数。
 
 当前已分配的 纤程栈数量 (fiber 用于与远程副本进行异步通信) 。
 
+### FilesystemCacheCleanupHelperThreads {#filesystemcachecleanuphelperthreads}
+
+文件系统缓存后台清理所用的辅助线程数。后台清理会从缓存元数据和磁盘中删除不含 File 段的键，并删除启动时发现的空键目录
+
+### FilesystemCacheCleanupHelperThreadsActive {#filesystemcachecleanuphelperthreadsactive}
+
+文件系统缓存后台清理中正在执行任务的辅助线程数
+
+### FilesystemCacheCleanupHelperThreadsScheduled {#filesystemcachecleanuphelperthreadsscheduled}
+
+文件系统缓存后台清理中辅助线程上已排队或活跃的作业数量
+
 ### FilesystemCacheDelayedCleanupElements {#filesystemcachedelayedcleanupelements}
 
 后台清理队列中的文件系统缓存项

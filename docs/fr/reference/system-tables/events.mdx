@@ -4864,7 +4864,7 @@ Nombre de blocs de colonne Parquet dépourvus d&#39;index d&#39;offsets dont les
 
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
-Groupes de lignes dont le lecteur Parquet d’un fichier situé dans un stockage d’objet ou à une URL a commencé à lire les données de colonne avant que leur décodage ne soit planifié, dans la limite de sa part de max&#95;download&#95;threads
+Groupes de lignes dont le lecteur Parquet d’un fichier situé dans un stockage d’objet ou à une URL a commencé à lire les données de colonne avant que leur décodage ne soit planifié, dans la limite de sa part de max&#95;download&#95;threads, ou d’un groupe supplémentaire si le décodage épuise cette part et que la lecture est de petite taille et distincte
 
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 

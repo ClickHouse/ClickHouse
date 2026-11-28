@@ -610,6 +610,22 @@ false の場合、作成時に [`default_normal_view_sql_security`](/ja/referenc
   この設定を変更しても、その後に作成されるビューにのみ影響し、既存のビューの保存済み定義は変更されません。
 </Note>
 
+## implicit_default_workload {#implicit_default_workload}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />
+
+有効にすると、`default` ワークロードが明示的に定義されていない場合に暗黙的に作成され、デフォルトの `workload` 設定を使用するクエリもスケジューリングの対象になります。暗黙的に作成された `default` ワークロードは、他のワークロードの親にはなれません。親にする場合は、`default` を明示的に作成してください。この設定は `workloads_respect_server_cpu_limit` および `workloads_respect_server_memory_limit` と併せて有効化してください。これにより、それらのクエリにはサーバー全体のバジェットが適用され、デフォルトのワークロードを使用するバックグラウンドマージおよびミューテーションには CPU バジェットが適用されます。実行時に変更可能です。デフォルトでは無効です。
+
+**例**
+
+```xml
+<implicit_default_workload>true</implicit_default_workload>
+```
+
+**関連項目**
+
+* [ワークロードスケジューリング](/ja/concepts/features/configuration/server-config/workload-scheduling)
+
 ## include_from {#include_from}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />

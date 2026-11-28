@@ -48,6 +48,7 @@ doc_type: 'reference'
 
 * その他の型はサポートされていません。
 * ORC の `Union` カラムはユニオンのブランチ型に対する [Variant](/ja/reference/data-types/variant) として読み取られ、`Variant` カラムはそのブランチ型に対する ORC の `Union` として書き込まれます。`Variant` はブランチ型をソートするため、ブランチの順序が ORC ファイルと異なる場合があることに注意してください。重複するブランチ型を含むユニオン (例: `uniontype<int,int>`) はサポートされていません。
+* `metadata` と `value` という名前の 2 つの `Binary` フィールドからなる ORC の `Struct` (Iceberg v3 が `variant` を保存する形式) は、`Parquet` フォーマットの variant カラムと同様に、[variant バイナリエンコーディング](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md) を用いて [Dynamic](/ja/reference/data-types/dynamic) カラムまたは [JSON](/ja/reference/data-types/newjson) カラムに読み込まれます。
 * Array はネスト可能で、引数として `Nullable` 型の値を取ることもできます。`Tuple` 型と `Map` 型もネストできます。
 * ClickHouse テーブルのカラムのデータ型は、対応する ORC のデータフィールドと一致している必要はありません。データを挿入する際、ClickHouse はまず上記の表に従ってデータ型を解釈し、その後、ClickHouse テーブルのカラムに設定されたデータ型へデータを [CAST](/ja/reference/functions/regular-functions/type-conversion-functions#CAST) します。
 * `1969-12-31 23:59:59.001` から `1969-12-31 23:59:59.999999999` (UTC) までの `DateTime64` の値は、`1970-01-01 00:00:00` として書き込まれます。これは [ORC 仕様](https://orc.apache.org/specification/ORCv1/#timestamp-columns) の不備によるものです。ORC 仕様ではタイムスタンプを秒とナノ秒に分けて保存し、ナノ秒は負の値を取りません。リファレンス実装では、999999 ナノ秒を超える負のタイムスタンプに 1 秒を加算し、リーダー側でそれを減算しますが、この方式では -1 秒から 0 秒の間のタイムスタンプが 0 秒として保存され、エポック以降の値として読み戻されてしまいます。このようなタイムスタンプの書き込み方は実装によって異なります。Apache ORC の Java および C++ のライターは 1 秒後の値として読み戻されるように書き込みます。一方、Arrow ORC アダプター (PyArrow) は負のナノ秒を書き込みますが、これは仕様で許可されておらず、Java のリーダーでは拒否されます。ClickHouse は代わりにエポックを書き込むため、どのリーダーでも同じ値として読み戻されます。

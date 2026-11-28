@@ -120,6 +120,25 @@ ClickHouse에서는 데이터를 블록 단위로 처리하며, 블록은 컬럼
 * 양의 정수
 * 0 또는 1 — 비활성화됩니다. `SELECT` 쿼리는 단일 스레드로 실행됩니다.
 
+## max_generic_compression_threads {#max_generic_compression_threads}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "출력 스트림의 병렬 gzip 압축에 사용되는 스레드 수를 제어하는 새로운 설정입니다."}]}]} />
+
+출력 형식, 파일 또는 스토리지에 데이터를 쓸 때와 HTTP 쿼리 응답을 압축할 때 범용 스트림 압축 출력(현재는 `gzip`)을 압축하는 데 사용하는 최대 스레드 수입니다. HTTP 쿼리 응답은 `Content-Encoding: gzip`을 사용하는 경우와 `compression` 설정으로 선택한 응답 본문 코덱을 사용하는 경우 모두에 적용됩니다.
+
+출력은 표준 `gzip` 포맷을 그대로 유지하므로 어떤 압축 해제 도구로도 읽을 수 있으며, 쓰기 측만 병렬화됩니다. 서로 독립적인 블록은 공유 입출력 스레드 풀(IO Thread Pool)에서 병렬로 압축됩니다. 이 설정은 향후 다른 스트림 압축 방식에서도 사용할 수 있도록 범용적인 이름을 붙였습니다.
+
+가능한 값:
+
+* 0 또는 1 — single-threaded 압축(기본값).
+* 1보다 큰 양의 정수 — 최대 해당 개수의 스레드에서 압축합니다.
+
+값이 클수록 메모리 사용량(memory usage)이 증가합니다.
+
+HTTP 쿼리 응답의 경우 압축 버퍼는 다른 HTTP 응답 형태 지정 설정(`enable_http_compression`, `http_zlib_compression_level`, `compression`)과 마찬가지로 쿼리 실행 전에 구성됩니다. 따라서 이 설정은 HTTP URL 매개변수 또는 사용자 프로필을 통해 지정해야 합니다. 쿼리 내 `SETTINGS` 절은 HTTP 응답 자체의 압축에는 영향을 주지 않습니다. 단, 쿼리가 기록하는 파일 및 스토리지에는 계속 적용됩니다(예: `INSERT INTO FUNCTION file(...)` 또는 `SELECT ... INTO OUTFILE`).
+
 ## max_http_get_redirects {#max_http_get_redirects}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

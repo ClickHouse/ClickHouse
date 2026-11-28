@@ -33,7 +33,8 @@ et la base de données `system` devient une base de données Shared : toutes les
 Chaque vidage d’un journal écrit un fichier `Native` à l’aide de la fonction de table `s3` (ou `azureBlobStorage`) dans le dossier correspondant à la
 génération du journal et au hachage de ses colonnes et de ses clés. Pour chaque génération, le pipeline maintient la file d’attente `system._<log>_s3queue_<hash>`
 qui lit ce dossier, la vue matérialisée `system._<log>_mv_<hash>` et la table `SharedMergeTree` `system.<log>_<hash>`.
-`system.<log>` est une table `Merge` regroupant les générations. Un nouveau schéma crée une nouvelle génération ; les paramètres, le TTL et les index
+`system.all_<log>` est une table `Merge` regroupant les générations, avec les lignes de toutes les répliques, et `system.<log>` en est une vue
+qui ne contient que les lignes de la réplique interrogée. Un nouveau schéma crée une nouvelle génération ; les paramètres, le TTL et les index
 proviennent des clés `smt_settings`, `smt_ttl` et `smt_indices` de la configuration du journal et sont modifiés en place.
 Les objets sont créés lors du premier vidage d’un journal, ou au démarrage avec `prepare_system_log_tables_on_startup`.
 La clé de tri d’une table est la clé du journal précédée de `hostname`, afin que les lignes d’une réplique soient lues selon cette clé.

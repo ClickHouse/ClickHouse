@@ -4863,7 +4863,7 @@ paimon メタデータcacheから追い出されたおおよそのバイト数�
 
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
-オブジェクトストレージ内または URL 上のファイルを読み取る Parquet リーダーが、max&#95;download&#95;threads のうち自身に割り当てられた分の範囲内で、デコードがスケジュールされる前にカラムデータの読み取りを開始した行グループの数
+オブジェクトストレージ内または URL 上のファイルを読み取る Parquet リーダーが、max&#95;download&#95;threads のうち自身に割り当てられた分の範囲内で (デコードがその割り当て分を使い切っており、かつ読み取りが小規模で個別のものである場合はさらに 1 つまで) 、デコードがスケジュールされる前にカラムデータの読み取りを開始した行グループの数
 
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 

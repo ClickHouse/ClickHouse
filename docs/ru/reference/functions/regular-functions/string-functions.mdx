@@ -851,6 +851,41 @@ GROUP BY concatWithSeparatorAssumeInjective('-', first_name, last_name);
 └─────────────┴─────────────┘
 ```
 
+## concatWithSeparatorIgnoreNulls {#concatWithSeparatorIgnoreNulls}
+
+Добавлено в: v26.12.0
+
+Объединяет значения по порядку через константный разделитель, пропуская значения `NULL` верхнего уровня.
+Пустые строки сохраняются. Если значения не переданы или все они равны `NULL`, то при разделителе, отличном от `NULL`, возвращается `''`.
+Значения типов, отличных от `String` и `FixedString`, преобразуются в строки с помощью стандартной текстовой сериализации.
+
+**Синтаксис**
+
+```sql
+concatWithSeparatorIgnoreNulls(separator[, value1, value2, ...])
+```
+
+**Аргументы**
+
+* `separator` — константа типа `String` или `FixedString`, в том числе в вариантах Nullable и LowCardinality, либо литерал `NULL`. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Nullable(String)`](/ru/reference/data-types/nullable) или [`Nullable(FixedString)`](/ru/reference/data-types/nullable) или [`LowCardinality`](/ru/reference/data-types/lowcardinality) или [`NULL`](/ru/reference/syntax#null)
+* `value1, value2, ...` — значения для конкатенации. [`Any`](/ru/reference/data-types/index)
+
+**Возвращаемое значение**
+
+Возвращает конкатенированную строку. Результат имеет тип `Nullable(String)`, если тип разделителя допускает NULL (включая литерал `NULL`), и `String` в противном случае. Если разделитель равен `NULL`, возвращается `NULL`. [`String`](/ru/reference/data-types/string) или [`Nullable(String)`](/ru/reference/data-types/nullable)
+
+**Примеры**
+
+**Пропуск значений NULL**
+
+```sql title=Query
+SELECT concatWithSeparatorIgnoreNulls(',', 'x', NULL, 'y') AS result
+```
+
+```response title=Response
+x,y
+```
+
 ## conv {#conv}
 
 Добавленный в: v25.10.0

@@ -778,6 +778,18 @@ distributed exchange server のハンドシェイク用スレッドプールで�
 
 現在割り当てられているファイバースタックの数 (ファイバーはリモートレプリカとの非同期通信に使用されます) 。
 
+### FilesystemCacheCleanupHelperThreads {#filesystemcachecleanuphelperthreads}
+
+ファイルシステムキャッシュのバックグラウンドクリーンアップで使用されるヘルパースレッドの数。このクリーンアップでは、ファイルセグメントを持たないキーをキャッシュのメタデータおよびディスクから削除し、起動時に検出された空のキーディレクトリも削除します
+
+### FilesystemCacheCleanupHelperThreadsActive {#filesystemcachecleanuphelperthreadsactive}
+
+ファイルシステムキャッシュのバックグラウンドクリーンアップにおいて、タスクを実行中のヘルパースレッドの数
+
+### FilesystemCacheCleanupHelperThreadsScheduled {#filesystemcachecleanuphelperthreadsscheduled}
+
+ファイルシステムキャッシュのバックグラウンドクリーンアップを行うヘルパースレッドにおける、キュー内または実行中のジョブの数
+
 ### FilesystemCacheDelayedCleanupElements {#filesystemcachedelayedcleanupelements}
 
 バックグラウンドのクリーンアップキュー内にあるファイルシステムキャッシュ要素

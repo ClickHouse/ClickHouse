@@ -139,6 +139,7 @@
     "pt-BR/reference/settings/server-settings/settings/users",
     "pt-BR/reference/settings/server-settings/settings/vector-similarity",
     "pt-BR/reference/settings/server-settings/settings/workload",
+    "pt-BR/reference/settings/server-settings/settings/workloads-respect",
     "pt-BR/reference/settings/server-settings/settings/zookeeper",
     "pt-BR/reference/settings/server-settings/settings/other"
   ]

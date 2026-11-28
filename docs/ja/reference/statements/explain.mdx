@@ -1145,7 +1145,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 
 * 一致したすべての右行に印を付ける必要がある、`ALL INNER` と `ALL LEFT` の**右**側。
 * `ALL LEFT` と `ALL FULL` の**左**側。ただし、クエリが右テーブルから何も選択せず、
-  `ON` セクションが単純なキーの等価条件である場合に限ります。それ以外の場合、プローブはすでに
+  `ON` 部分が単純なキーの等価条件である場合に限ります。それ以外の場合、プローブはすでに
   一致した左行を記録します。これは右カラムをマテリアライズするため、または残余条件を評価するためです。
   そのため、このオプションがなくてもカウントは正確です。
 
@@ -1172,6 +1172,8 @@ fanout              = <matched output rows> / <matched_rows of that side>
 
 結合がハッシュテーブル内でキーごとに 1 行だけを保持する場合、右側は収集できません。これは `ANY`、`SEMI`、`ANTI` 結合で行われます。重複する右行は保存されないため、カウントできません。別の左行によってすでに相手が確保されている左行の出力を結合が抑制する場合、左側は収集できません。この場合、出力される行数は一致した行数より少なくなります。
 
+`RIGHT` および `FULL` 種類では、右側の値は、すべてのプローブが完了した後の右行の数から、結合が相手なしで出力した行を差し引いたものです。`LIMIT` などにより、結合がそれらをすべて出力する前に停止したクエリでは、`not collected` と報告されます。
+
 [`any_join_distinct_right_table_keys`](/ja/reference/settings/session-settings/other#any_join_distinct_right_table_keys) を有効にすると、`ANY` は以前の `RightAny` セマンティクスに切り替わります。このセマンティクスでは左行ごとに 1 行が出力されるため、両方のカウントが保持されます。その場合、`ANY RIGHT` と `ANY FULL` は**両方**の側を報告し、`ANY INNER` は `SEMI LEFT` に書き換えられます。
 
 [`Join`](/ja/reference/engines/table-engines/special/join) テーブルエンジンも同じ表に従い、エンジンで宣言された種類と厳密性を使用します。`Join(ALL, INNER, …)` は両方の側を報告し、`Join(ANY, LEFT, …)` はどちらも報告しません。
@@ -1180,11 +1182,11 @@ fanout              = <matched output rows> / <matched_rows of that side>
 
 `partial_merge` は `ALL INNER`、`ALL LEFT`、`ALL RIGHT`、`ALL FULL`、`ANY INNER`、`ANY LEFT`、`SEMI LEFT` を受け入れます。4 種類の `ALL` では両方の側を報告しますが、右側には `matches = 1` が必要です。`ANY INNER`、`ANY LEFT`、`SEMI LEFT` では右側が `not collected` になります。
 
-**`direct`。** 左側のみです。右側は行としてマテリアライズされないキー・バリューストアであるため、`Right:` 行自体がありません。
+**`direct`。** 左側のみです。右側は行として実体化されることのないキーバリューストアであるため、`Right:` 行自体が存在しません。
 
-**`CROSS`、`COMMA`、定数の `ON`。** [前述](#explain-analyze-join-algorithm-lines)のとおり、どちらの側も報告されません。
+**`CROSS`、`COMMA`、および定数の `ON`。** [上記](#explain-analyze-join-algorithm-lines)で説明したとおり、どちらの側も報告されません。
 
-**ブロックネステッドループ結合。** 結合キーを定めない `ON` セクションを受け取るオペレーターです。ただし、それより前のいずれかのパスがその条件を引き受ける場合は除きます ([`allow_block_nested_loop_join`](/ja/reference/settings/session-settings/allow) を参照) 。`ASOF`、`PASTE`、`ANY FULL` を除く、すべての種類と厳密性を受け付けます。
+**ブロックネステッドループ結合。** 結合キーを定めない `ON` 部分を受け取るオペレーターです。ただし、それより前のいずれかのパスがその条件を引き受ける場合は除きます ([`allow_block_nested_loop_join`](/ja/reference/settings/session-settings/allow) を参照) 。`ASOF`、`PASTE`、`ANY FULL` を除く、すべての種類と厳密性を受け付けます。
 
 | Join                                                          | `matched` 左       | `matched` 右 |
 | ------------------------------------------------------------- | ----------------- | ----------- |

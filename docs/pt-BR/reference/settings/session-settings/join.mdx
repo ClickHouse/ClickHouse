@@ -47,7 +47,10 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
     items: [
       { label: "24.12" },
       { label: "direct,parallel_hash,hash" },
-      { label: "'default' ficou obsoleto em favor de algoritmos de junção especificados explicitamente; além disso, agora parallel_hash é preferido em vez de hash" }
+      {
+        label:
+          "'default' ficou obsoleto em favor de algoritmos de junção especificados explicitamente; além disso, agora parallel_hash é preferido em vez de hash. `compatibility` não restaura 'default': com uma versão anterior à 24.12, ele resulta em 'direct,parallel_hash,hash'."
+      }
     ]
   }
   ]}

@@ -47,7 +47,10 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
     items: [
       { label: "24.12" },
       { label: "direct,parallel_hash,hash" },
-      { label: "'default'는 조인 알고리즘을 명시적으로 지정하는 방식으로 대체되어 Deprecated 상태가 되었으며, 이제 hash보다 parallel_hash가 우선 사용됩니다" }
+      {
+        label:
+          "'default'는 조인 알고리즘을 명시적으로 지정하는 방식으로 대체되어 Deprecated 상태가 되었으며, 이제 hash보다 parallel_hash가 우선 사용됩니다. `compatibility`로는 'default'가 복원되지 않습니다. 24.12 이전 버전을 지정하면 'direct,parallel_hash,hash'가 적용됩니다."
+      }
     ]
   }
   ]}

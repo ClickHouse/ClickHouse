@@ -19,12 +19,10 @@ column_name QBit(element_type, dimension[, stride])
 ```
 
 * `element_type` – 每个向量元素的数据类型。允许的类型包括 `Int8`、`BFloat16`、`Float32` 和 `Float64`
-* `dimension` – 每个向量中的元素个数
+* `dimension` – 每个向量中的元素个数，最多为 1048576
 * `stride` – 可选。一起存储在同一组流中的维度数量。省略时，默认值为 `dimension` (单组) 。提供该参数时，`dimension` 必须是 `stride` 的倍数；并且当 `stride` 小于 `dimension` 时，`stride` 必须是 8 的倍数。`dimension` 个维度会被拆分为 `dimension / stride` 个连续分组，每个分组的位平面存储在单独的流中。这样一来，对前 `D` 个维度进行搜索时 (其中 `D` 是 `stride` 的倍数) ，只需读取覆盖这些维度的各分组对应的流，这对 Matryoshka 嵌入向量很有用。
 
-<div id="creating-qbit">
-  ## 创建 QBit
-</div>
+## 创建 QBit {#creating-qbit}
 
 在表的列定义中使用 `QBit` 类型：
 
@@ -41,9 +39,7 @@ SELECT vec FROM test ORDER BY id;
 └──────────────────────────┘
 ```
 
-<div id="converting-arrays-to-qbit">
-  ## 将数组转换为 QBit
-</div>
+## 将数组转换为 QBit {#converting-arrays-to-qbit}
 
 当数组长度与 `QBit` 的维度一致时，数组会转换为 `QBit`。数组的元素类型不必与 `QBit` 的元素类型一致。任何数值类型的元素都会自动转换为 `QBit` 的元素类型。因此，你可以将现有的嵌入向量列直接迁移到 `QBit` 列中：
 
@@ -66,9 +62,7 @@ SELECT * FROM vectors ORDER BY id;
 
 这种转换也可以显式地通过 `CAST` 实现，例如 `CAST(embedding AS QBit(Float32, 8))`。
 
-<div id="converting-qbit-to-arrays">
-  ## 将 QBit 转换为数组
-</div>
+## 将 QBit 转换为数组 {#converting-qbit-to-arrays}
 
 反向转换会根据按比特转置后的表示重建原始向量，因此将 `QBit` 转换为 `Array` 时会返回存储的值。这一过程与[将数组转换为 `QBit`](#converting-arrays-to-qbit)相反：
 
@@ -88,9 +82,7 @@ SELECT [1, 2, 3, 4]::QBit(Float32, 4)::Array(Float32) AS vec;
 
 当 `dimension` 不是 8 的倍数时，内部表示中的尾部 padding 元素会被丢弃，因此结果始终恰好包含 `dimension` 个元素。
 
-<div id="converting-between-qbit-types">
-  ## QBit 类型之间的转换
-</div>
+## QBit 类型之间的转换 {#converting-between-qbit-types}
 
 只要 `dimension` (向量元素的数量) 保持不变，`QBit` 就可以转换为另一种 `QBit`。`element_type` 和 `stride` 都可以改变；如果转换为 `dimension` 不同的 `QBit`，则会引发异常，因为这会改变向量本身。
 
@@ -119,9 +111,7 @@ SELECT range(16)::Array(Float32)::QBit(Float32, 16)::QBit(Float32, 16, 8)::Array
 └─────────────┘
 ```
 
-<div id="qbit-subcolumns">
-  ## QBit 子列
-</div>
+## QBit 子列 {#qbit-subcolumns}
 
 `QBit` 实现了一种子列访问模式，使您可以访问已存储向量中的各个位平面。每个比特位都可以通过 `.N` 语法访问，其中 `N` 表示该比特位的位置：
 
@@ -148,9 +138,7 @@ SELECT bin(vec.1) FROM test;
 
 这些子列遵循按组优先的顺序：一般来说，`vec.N` 读取 stride 组 `(N-1) / element_size` 中的比特平面 `(N-1) % element_size`。例如，对于 `QBit(BFloat16, 4096, 1024)`，4096 个维度被拆分为 4 个 1024 维的组，因此共有 64 个子列：`vec.1` … `vec.16` 是第一个 stride 组 (维度 1–1024) 的比特平面，`vec.17` … `vec.32` 属于第二个组 (维度 1025–2048) ，依此类推。
 
-<div id="strides">
-  ## Stride
-</div>
+## Stride {#strides}
 
 默认情况下，`QBit` 会将每个位平面存储为一个跨越全部 `dimension` 维度的单个流，因此搜索时总是需要读取整个向量的完整位平面。可选的 `stride` 参数会将 `dimension` 维度划分为 `dimension / stride` 个连续分组，并将每个分组的位平面分别存储到独立的流中。这样，如果搜索只涉及前 `D` 个维度 (其中 `D` 是 `stride` 的倍数) ，就只需读取覆盖这些维度的那些分组对应的流。这对于 [Matryoshka 嵌入向量](https://arxiv.org/abs/2205.13147) 很有用，因为靠前的维度可以形成一个可用的低维嵌入向量。
 
@@ -162,9 +150,7 @@ CREATE TABLE test (id UInt32, vec QBit(BFloat16, 4096, 1024)) ENGINE = MergeTree
 
 要执行 reduced-dimension 搜索，请将要读取的维度数作为转置距离函数的第四个参数传入 (见下文) 。参考向量必须至少包含这么多个元素 (任何额外的尾部元素都会被忽略) ，并且该值必须是 `stride` 的倍数。
 
-<div id="qbit-element-access">
-  ## 元素访问与切片
-</div>
+## 元素访问与切片 {#qbit-element-access}
 
 [`arrayElement`](/zh/reference/functions/regular-functions/array-functions#arrayElement) (以及 `vec[n]` 运算符) 返回第 `n` 个向量元素，并以元素类型的全精度重建。仅读取包含该元素的 stride 组中的位平面。[`arraySlice`](/zh/reference/functions/regular-functions/array-functions#arraySlice) 返回所选维度上的 `QBit` (即投影到部分维度) ；偏移量和长度必须为常量，因为 `QBit` 的维度是其类型的一部分。与 stride 组边界对齐的切片会保留步长，并复用已存储的位平面流，无需复制：
 
@@ -180,9 +166,7 @@ SELECT vec[3], arraySlice(vec, 2, 3) FROM test;
 └──────────────────────┴───────────────────────┘
 ```
 
-<div id="vector-search-functions">
-  ## 向量搜索函数
-</div>
+## 向量搜索函数 {#vector-search-functions}
 
 以下是用于向量相似搜索、且使用 `QBit` 数据类型的距离函数：
 

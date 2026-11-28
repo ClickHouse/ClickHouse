@@ -33,7 +33,8 @@ y la base de datos `system` se convierte en una Base de datos Shared, de modo qu
 Cada vaciado de un log escribe un archivo `Native` mediante la función de tabla `s3` (o `azureBlobStorage`) en la carpeta de la
 generación del log, es decir, el hash de sus columnas y claves. Para cada generación, la canalización mantiene la cola `system._<log>_s3queue_<hash>`
 que lee esa carpeta, la vista materializada `system._<log>_mv_<hash>` y la tabla `SharedMergeTree` `system.<log>_<hash>`.
-`system.<log>` es una tabla `Merge` sobre todas las generaciones. Un esquema nuevo crea una generación nueva; los ajustes, el TTL y los índices
+`system.all_<log>` es una tabla `Merge` sobre todas las generaciones con las filas de todas las réplicas, y `system.<log>` es una vista de esta
+con las filas de la réplica consultada. Un esquema nuevo crea una generación nueva; los ajustes, el TTL y los índices
 se toman de las claves `smt_settings`, `smt_ttl` y `smt_indices` de la configuración del log y se modifican in situ.
 Los objetos se crean en el primer vaciado de un log, o durante el inicio con `prepare_system_log_tables_on_startup`.
 La clave de ordenación de una tabla es la clave del log precedida por `hostname`, de modo que las filas de una réplica se leen por clave.

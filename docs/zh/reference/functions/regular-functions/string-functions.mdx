@@ -850,6 +850,41 @@ GROUP BY concatWithSeparatorAssumeInjective('-', first_name, last_name);
 └─────────────┴─────────────┘
 ```
 
+## concatWithSeparatorIgnoreNulls {#concatWithSeparatorIgnoreNulls}
+
+引入版本：v26.12.0
+
+使用常量分隔符按顺序拼接各值，并跳过顶层的 `NULL` 值。
+空字符串会被保留。如果未提供任何值，或所有值均为 `NULL`，则当分隔符不为 `NULL` 时返回 `''`。
+类型不是 `String` 或 `FixedString` 的值会按其默认文本序列化格式转换为字符串。
+
+**语法**
+
+```sql
+concatWithSeparatorIgnoreNulls(separator[, value1, value2, ...])
+```
+
+**参数**
+
+* `separator` — 常量 `String` 或 `FixedString` (包括可为空和低基数形式) ，或 `NULL` 字面量。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`Nullable(String)`](/zh/reference/data-types/nullable) 或 [`Nullable(FixedString)`](/zh/reference/data-types/nullable) 或 [`LowCardinality`](/zh/reference/data-types/lowcardinality) 或 [`NULL`](/zh/reference/syntax#null)
+* `value1, value2, ...` — 要拼接的值。[`Any`](/zh/reference/data-types/index)
+
+**返回值**
+
+返回拼接字符串。如果分隔符类型可为空 (包括 `NULL` 字面量) ，则结果为 `Nullable(String)`，否则为 `String`。分隔符为 `NULL` 时返回 `NULL`。[`String`](/zh/reference/data-types/string) 或 [`Nullable(String)`](/zh/reference/data-types/nullable)
+
+**示例**
+
+**跳过 NULL 值**
+
+```sql title=Query
+SELECT concatWithSeparatorIgnoreNulls(',', 'x', NULL, 'y') AS result
+```
+
+```response title=Response
+x,y
+```
+
 ## conv {#conv}
 
 引入版本：v25.10.0

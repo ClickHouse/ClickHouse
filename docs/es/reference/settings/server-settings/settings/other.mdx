@@ -608,6 +608,22 @@ Las vistas materializadas actualizables siempre reciben los valores predetermina
   Cambiar esta configuración solo afecta a las vistas creadas posteriormente; las definiciones almacenadas de las vistas existentes no cambian.
 </Note>
 
+## implicit_default_workload {#implicit_default_workload}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />
+
+Cuando está habilitado, se crea implícitamente un workload `default` si no se ha definido uno de forma explícita, de modo que las consultas que usan el valor predeterminado del parámetro de configuración `workload` se programen. El workload `default` implícito no puede ser padre de otros workloads; para ello, cree `default` explícitamente. Habilítelo junto con `workloads_respect_server_cpu_limit` y `workloads_respect_server_memory_limit`: así, esas consultas quedan sujetas a los presupuestos globales del Servidor, y las fusiones y mutaciones en segundo plano que usan el workload predeterminado quedan sujetas al presupuesto de CPU. Se puede cambiar en tiempo de ejecución. Deshabilitado de forma predeterminada.
+
+**Ejemplo**
+
+```xml
+<implicit_default_workload>true</implicit_default_workload>
+```
+
+**Véase También**
+
+* [Planificación de cargas de trabajo](/es/concepts/features/configuration/server-config/workload-scheduling)
+
 ## include_from {#include_from}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />

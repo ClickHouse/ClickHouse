@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify 的生产环境渲染器在对导出组件求值时，不会
-  // 保留模块作用域内的绑定。使用惰性初始化的 state，可将生成的数据保留在
-  // 该求值作用域中，并确保每次挂载时只构建一次。
+  // Mintlify 的生产环境渲染器在求值导出的组件时，
+  // 不会保留模块作用域内的绑定。使用惰性状态可将生成的数据保留在
+  // 该求值作用域中，同时确保每次挂载只构建一次。
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -1516,7 +1516,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_*",
-      count: 28,
+      count: 29,
       settings: [
         { name: "max_analyze_depth", path: "/max#max_analyze_depth", default: "5000" },
         { name: "max_autoincrement_series", path: "/max#max_autoincrement_series", default: "1000" },
@@ -1529,6 +1529,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_expanded_ast_elements", path: "/max#max_expanded_ast_elements", default: "500000" },
         { name: "max_fetch_partition_retries_count", path: "/max#max_fetch_partition_retries_count", default: "5" },
         { name: "max_final_threads", path: "/max#max_final_threads", default: "auto(N)" },
+        { name: "max_generic_compression_threads", path: "/max#max_generic_compression_threads", default: "1" },
         { name: "max_http_get_redirects", path: "/max#max_http_get_redirects", default: "0" },
         { name: "max_limit_for_vector_search_queries", path: "/max#max_limit_for_vector_search_queries", default: "1000" },
         { name: "max_os_cpu_wait_time_ratio_to_throw", path: "/max#max_os_cpu_wait_time_ratio_to_throw", default: "0" },
@@ -3589,7 +3590,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} 个匹配的{matchingCount === 1 ? "设置" : "设置"}
+            {matchingCount} 个匹配的{matchingCount === 1 ? "设置项" : "设置项"}
           </span>
         </div>
       )}

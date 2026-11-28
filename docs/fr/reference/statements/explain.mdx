@@ -1143,9 +1143,9 @@ Une jointure externe produit une ligne de sortie complétée par des `NULL` pour
 
 #### Cas où les nombres nécessitent `matches = 1` {#explain-analyze-matches}
 
-La plupart de ces nombres résultent des données que la jointure produit déjà et sont rapportés par un simple `EXPLAIN ANALYZE`. Les autres nécessitent un suivi que la jointure n’effectuerait pas autrement et ne sont donc rapportés qu’avec `EXPLAIN ANALYZE matches = 1`. Les cas concernés dépendent de l’algorithme ; dans la famille hash, il y en a deux :
+La plupart de ces nombres résultent des données que la jointure produit déjà et sont rapportés par un simple `EXPLAIN ANALYZE`. Les autres nécessitent un suivi que la jointure n’effectuerait pas autrement et ne sont donc rapportés qu’avec `EXPLAIN ANALYZE matches = 1`. Les cas concernés dépendent de l’algorithme ; dans la famille hash, il y en a deux :
 
-* le côté **droit** de `ALL INNER` et `ALL LEFT`, qui nécessite de marquer chaque ligne droite correspondante ;
+* le côté **droit** de `ALL INNER` et `ALL LEFT`, qui nécessite de marquer chaque ligne droite correspondante ;
 * le côté **gauche** de `ALL LEFT` et `ALL FULL`, mais uniquement lorsque la requête ne sélectionne aucune donnée de la
   table de droite et que la section `ON` est une simple égalité de clé. Sinon, la sonde enregistre déjà
   les lignes de gauche qui correspondent — soit pour matérialiser les colonnes de droite, soit pour évaluer la condition
@@ -1156,14 +1156,14 @@ La plupart de ces nombres résultent des données que la jointure produit déjà
 types `ALL` n’en ont pas besoin.
 
 <Note>
-  L’option est désactivée par défaut, car ce suivi supplémentaire a un coût : il réduit la fidélité des mesures. Le travail est effectué dans la boucle de sonde et augmente avec le nombre de lignes de sortie. Utilisez `matches = 1` lorsque vous devez connaître les correspondances exactes que les lignes de gauche et de droite ont trouvées de l’autre côté.
+  L’option est désactivée par défaut, car ce suivi supplémentaire a un coût : il réduit la fidélité des mesures. Le travail est effectué dans la boucle de sonde et augmente avec le nombre de lignes de sortie. Utilisez `matches = 1` lorsque vous devez connaître les correspondances exactes que les lignes de gauche et de droite ont trouvées de l’autre côté.
 </Note>
 
 `matches = 1` ne permet pas de collecter toutes les combinaisons. Le côté qu’une jointure peut rapporter découle
-de ce que cette jointure doit déjà faire ; cela dépend donc de l’algorithme, ainsi que du type et de la
+de ce que cette jointure doit déjà faire ; cela dépend donc de l’algorithme, ainsi que du type et de la
 strictness.
 
-**Famille hash.** `hash`, `parallel_hash` et `grace_hash` donnent toujours les mêmes résultats :
+**Famille hash.** `hash`, `parallel_hash` et `grace_hash` donnent toujours les mêmes résultats :
 
 | Jointure                                         | `matched` à gauche | `matched` à droite |
 | ------------------------------------------------ | ------------------ | ------------------ |
@@ -1174,19 +1174,21 @@ strictness.
 | `SEMI RIGHT`                                     | non                | non                |
 | `ANY INNER`, `ANY LEFT`, `ASOF LEFT`             | non                | non                |
 
-Le côté droit n’est pas disponible lorsque la jointure ne conserve qu’une ligne par clé dans sa table de hachage, comme le font les jointures `ANY`, `SEMI` et `ANTI` : les lignes de droite dupliquées ne sont jamais stockées et ne peuvent donc pas être comptées. Le côté gauche n’est pas disponible lorsque la jointure supprime la sortie d’une ligne de gauche dont le partenaire a déjà été revendiqué par une autre ligne de gauche, de sorte que les lignes émises sous-estiment les lignes correspondantes.
+Le côté droit n’est pas disponible lorsque la jointure ne conserve qu’une ligne par clé dans sa table de hachage, comme le font les jointures `ANY`, `SEMI` et `ANTI` : les lignes de droite dupliquées ne sont jamais stockées et ne peuvent donc pas être comptées. Le côté gauche n’est pas disponible lorsque la jointure supprime la sortie d’une ligne de gauche dont le partenaire a déjà été revendiqué par une autre ligne de gauche, de sorte que les lignes émises sous-estiment les lignes correspondantes.
+
+Pour les types `RIGHT` et `FULL`, le côté droit correspond aux lignes de droite moins celles que la jointure émet sans partenaire, une fois tout le sondage terminé. Une requête qui s’arrête avant que la jointure ait émis toutes ces lignes, par exemple à cause d’un `LIMIT`, rapporte ce côté comme `not collected`.
 
 L’activation de [`any_join_distinct_right_table_keys`](/fr/reference/settings/session-settings/other#any_join_distinct_right_table_keys) fait passer `ANY` à l’ancienne sémantique `RightAny`, qui émet une ligne par ligne de gauche et conserve donc les deux décomptes. `ANY RIGHT` et `ANY FULL` rapportent alors les **deux** côtés, et `ANY INNER` est réécrit en `SEMI LEFT`.
 
-Le moteur de table [`Join`](/fr/reference/engines/table-engines/special/join) suit le même tableau, en utilisant le type et la strictness déclarés dans le moteur : `Join(ALL, INNER, …)` rapporte les deux côtés, `Join(ANY, LEFT, …)` aucun des deux.
+Le moteur de table [`Join`](/fr/reference/engines/table-engines/special/join) suit le même tableau, en utilisant le type et la strictness déclarés dans le moteur : `Join(ALL, INNER, …)` rapporte les deux côtés, `Join(ANY, LEFT, …)` aucun des deux.
 
-**Algorithmes de fusion.** `full_sorting_merge` et `parallel_full_sorting_merge` acceptent les quatre types `ALL`, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` et `ASOF LEFT`. Ils rapportent les **deux** côtés pour tous les types, sauf `ASOF` et `ASOF LEFT`, pour lesquels le côté droit est `not collected`, et ce sans `matches = 1` — ils parcourent les deux entrées triées et voient chaque ligne d’une plage d’égalité au fur et à mesure qu’ils la consomment ; rien n’a donc besoin d’être reconstruit par la suite.
+**Algorithmes de fusion.** `full_sorting_merge` et `parallel_full_sorting_merge` acceptent les quatre types `ALL`, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` et `ASOF LEFT`. Ils rapportent les **deux** côtés pour tous les types, sauf `ASOF` et `ASOF LEFT`, pour lesquels le côté droit est `not collected`, et ce sans `matches = 1` — ils parcourent les deux entrées triées et voient chaque ligne d’une plage d’égalité au fur et à mesure qu’ils la consomment ; rien n’a donc besoin d’être reconstruit par la suite.
 
-`partial_merge` accepte `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL`, `ANY INNER`, `ANY LEFT` et `SEMI LEFT`. Il rapporte les deux côtés pour les quatre types `ALL`, le côté droit avec `matches = 1` ; pour `ANY INNER`, `ANY LEFT` et `SEMI LEFT`, le côté droit est `not collected`.
+`partial_merge` accepte `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL`, `ANY INNER`, `ANY LEFT` et `SEMI LEFT`. Il rapporte les deux côtés pour les quatre types `ALL`, le côté droit avec `matches = 1` ; pour `ANY INNER`, `ANY LEFT` et `SEMI LEFT`, le côté droit est `not collected`.
 
-**`direct`.** Le côté gauche uniquement. Le côté droit est un magasin clé-valeur qui n’est jamais matérialisé sous forme de lignes ; il n’a donc pas de ligne `Right:`.
+**`direct`.** Le côté gauche uniquement. Le côté droit est un magasin clé-valeur qui n&#39;est jamais matérialisé sous forme de lignes ; il n&#39;a donc aucune ligne `Right:`.
 
-**`CROSS`, `COMMA` et un `ON` constant.** Aucun côté, comme décrit [ci-dessus](#explain-analyze-join-algorithm-lines).
+**`CROSS`, `COMMA` et une section `ON` constante.** Aucun des deux côtés, comme décrit [ci-dessus](#explain-analyze-join-algorithm-lines).
 
 **Jointure par boucles imbriquées par blocs (block nested loop join).** Il s&#39;agit de l&#39;opérateur qui prend en charge une section `ON` ne déterminant aucune clé de jointure, à moins que l&#39;un des chemins qui le précèdent ne revendique la condition (voir [`allow_block_nested_loop_join`](/fr/reference/settings/session-settings/allow)). Il accepte tous les types et toutes les strictness, à l&#39;exception de `ASOF`, `PASTE` et `ANY FULL` :
 
@@ -1197,7 +1199,7 @@ Le moteur de table [`Join`](/fr/reference/engines/table-engines/special/join) su
 | `ALL RIGHT`, `ANY RIGHT`, `SEMI RIGHT`, `ANTI RIGHT`          | avec `matches = 1` | oui              |
 | `ALL INNER`                                                   | avec `matches = 1` | non              |
 
-Le côté gauche est rapporté sans l&#39;option partout où l&#39;opérateur enregistre déjà quelles lignes de gauche ont trouvé une correspondance : tout type qui conserve les lignes de gauche sans correspondance a besoin de cet enregistrement, tout comme toute strictness qui retient au plus une paire par ligne de gauche. Le côté droit est rapporté partout où l&#39;opérateur conserve ses indicateurs de correspondance, ce qui est nécessaire pour `RIGHT`, `FULL` et pour un `SEMI`/`ANTI` piloté par la droite. `ANY INNER` les conserve aussi, mais uniquement pour attribuer une ligne de droite à une seule ligne de gauche : il cesse de revendiquer pour une ligne de gauche qui a déjà sa paire. Les indicateurs marquent donc les paires du résultat plutôt que chaque correspondance, et ne sont pas rapportés. `ALL INNER` n&#39;atteint l&#39;opérateur que lorsque `hash` est désactivé ; sinon, la condition devient un `CROSS JOIN` assorti d&#39;un filter.
+Le côté gauche est rapporté sans l&#39;option partout où l&#39;opérateur enregistre déjà quelles lignes de gauche ont trouvé une correspondance : tout type qui conserve les lignes de gauche sans correspondance a besoin de cet enregistrement, tout comme toute strictness qui retient au plus une paire par ligne de gauche. Le côté droit est rapporté partout où l&#39;opérateur conserve ses indicateurs de correspondance, ce qui est nécessaire pour `RIGHT`, `FULL` et pour un `SEMI`/`ANTI` piloté par la droite. `ANY INNER` les conserve aussi, mais uniquement pour attribuer une ligne de droite à une seule ligne de gauche : il cesse de revendiquer pour une ligne de gauche qui a déjà sa paire. Les indicateurs marquent donc les paires de l&#39;ensemble de résultats plutôt que chaque correspondance, et ne sont pas rapportés. `ALL INNER` n&#39;atteint l&#39;opérateur que lorsque `hash` est désactivé ; sinon, la condition devient un `CROSS JOIN` assorti d&#39;un filter.
 
 L&#39;activation de [`any_join_distinct_right_table_keys`](/fr/reference/settings/session-settings/other#any_join_distinct_right_table_keys) fait ici aussi basculer `ANY` vers la sémantique `RightAny`, qui rapporte le côté gauche pour tous les types et le côté droit pour `RIGHT` et `FULL` ; `ANY INNER` est réécrit en `SEMI LEFT`.
 

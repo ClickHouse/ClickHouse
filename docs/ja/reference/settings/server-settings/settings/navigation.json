@@ -139,6 +139,7 @@
     "ja/reference/settings/server-settings/settings/users",
     "ja/reference/settings/server-settings/settings/vector-similarity",
     "ja/reference/settings/server-settings/settings/workload",
+    "ja/reference/settings/server-settings/settings/workloads-respect",
     "ja/reference/settings/server-settings/settings/zookeeper",
     "ja/reference/settings/server-settings/settings/other"
   ]

@@ -273,8 +273,8 @@ number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 
 周期性运行相应的查询，并将其结果存储到表中。
 
-* 如果指定了 `APPEND`，每次刷新都会将行插入表中，而不会删除现有行。该 insert 不是原子的，和普通的 `INSERT INTO ... SELECT` 查询一样。
-* 如果指定了 `APPEND INCREMENTAL`，每次刷新只会对自上次刷新以来已提交到源表的行运行查询，并追加其结果。
+* 如果指定了 `APPEND`，每次刷新都会将行插入表中，而不会删除现有行。该 插入 不是原子的，和普通的 `INSERT INTO ... SELECT` 查询一样。
+* 如果指定了 `APPEND INCREMENTAL`，每次刷新只会对自上次刷新以来已提交到源表的行运行查询，并追加其结果。在该视图存在期间，源表不能被删除、重命名或交换 (包括通过 `CREATE OR REPLACE TABLE`) ，其所在数据库也不能被删除或重命名。
 * 否则，每次刷新都会以原子方式替换表&#39;的现有内容。
 
 与常规不可刷新的 materialized view 的区别：

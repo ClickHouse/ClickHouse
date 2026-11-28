@@ -4864,7 +4864,7 @@ Número de fragmentos de coluna Parquet sem índice de offset cujas páginas com
 
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
-Grupos de linhas cujos dados de coluna começaram a ser lidos por um leitor de Parquet de um arquivo em armazenamento de objetos ou em uma URL antes que sua decodificação fosse agendada, dentro da parcela de max&#95;download&#95;threads atribuída a esse leitor
+Grupos de linhas cujos dados de coluna começaram a ser lidos por um leitor de Parquet de um arquivo em armazenamento de objetos ou em uma URL antes que sua decodificação fosse agendada, dentro da parcela de max&#95;download&#95;threads atribuída a esse leitor, ou com um a mais se a decodificação esgotar essa parcela e a leitura for pequena e independente
 
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 

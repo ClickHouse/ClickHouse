@@ -33,7 +33,8 @@ e o banco de dados `system` passa a ser um Banco de dados Shared, de modo que to
 Cada flush de um log grava um arquivo `Native` com a função de tabela `s3` (ou `azureBlobStorage`) na pasta da
 geração do log, que é o hash de suas colunas e chaves. Para cada geração, o pipeline mantém a fila `system._<log>_s3queue_<hash>`,
 que lê essa pasta, a visão materializada `system._<log>_mv_<hash>` e a tabela `SharedMergeTree` `system.<log>_<hash>`.
-`system.<log>` é uma tabela `Merge` sobre as gerações. Um novo schema cria uma nova geração; configurações, TTL e índices
+`system.all_<log>` é uma tabela `Merge` sobre as gerações com as linhas de todas as réplicas, e `system.<log>` é uma visão dela
+com as linhas da réplica consultada. Um novo schema cria uma nova geração; configurações, TTL e índices
 vêm das chaves `smt_settings`, `smt_ttl` e `smt_indices` da configuração do log e são alterados in-place.
 Os objetos são criados no primeiro flush de um log ou na inicialização, com `prepare_system_log_tables_on_startup`.
 A sorting key de uma tabela é a chave do log precedida de `hostname`, para que as linhas de uma réplica sejam lidas pela chave.

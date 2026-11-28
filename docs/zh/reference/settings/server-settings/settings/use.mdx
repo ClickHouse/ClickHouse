@@ -33,7 +33,8 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 每次刷写日志时，都会使用 `s3` (或 `azureBlobStorage`) 表函数将一个 `Native` 文件写入该
 日志当前生成所对应的文件夹，生成由日志的列和键的哈希决定。对于每个生成，管道会维护读取该文件夹的队列 `system._<log>_s3queue_<hash>`、
 materialized view `system._<log>_mv_<hash>` 以及 `SharedMergeTree` 表 `system.<log>_<hash>`。
-`system.<log>` 是基于所有生成的 `Merge` 表。schema 变化时会创建新的生成；设置、生存时间 (TTL) 和索引
+`system.all_<log>` 是基于所有生成的 `Merge` 表，包含所有副本的行；`system.<log>` 是基于它的视图，
+仅包含被查询副本的行。schema 变化时会创建新的生成；设置、生存时间 (TTL) 和索引
 则取自日志配置中的 `smt_settings`、`smt_ttl` 和 `smt_indices` 键，并在原表上直接修改。
 这些对象会在日志首次刷写时创建，也可以通过 `prepare_system_log_tables_on_startup` 在启动时创建。
 表的 sorting key 由 `hostname` 加上日志的键组成，这样即可按键读取某个副本的行。

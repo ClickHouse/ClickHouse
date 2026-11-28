@@ -121,6 +121,25 @@ Valores possíveis:
 * Inteiro positivo.
 * 0 ou 1 — desativado. As consultas `SELECT` são executadas em uma única thread.
 
+## max_generic_compression_threads {#max_generic_compression_threads}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nova configuração para controlar o número de threads usadas na compressão gzip paralela de fluxos de saída."}]}]} />
+
+O número máximo de threads usadas para comprimir saídas com compressão genérica em fluxo (atualmente `gzip`) ao gravar em formatos de saída, arquivos ou armazenamento, e ao comprimir respostas de consultas HTTP — tanto com `Content-Encoding: gzip` quanto com o codec do corpo da resposta selecionado pela configuração `compression`.
+
+A saída permanece no formato `gzip` padrão e pode ser lida por qualquer descompressor; apenas a gravação é paralelizada. Blocos independentes são comprimidos em paralelo no pool de threads de E/S compartilhado. A configuração tem um nome genérico para que outros métodos de compressão em fluxo possam adotá-la no futuro.
+
+Valores possíveis:
+
+* 0 ou 1 — compressão de thread única (padrão).
+* Inteiro positivo maior que 1 — compressão em até essa quantidade de threads.
+
+Valores mais altos resultam em maior uso de memória.
+
+Para respostas de consultas HTTP, o buffer de compressão é configurado antes da execução da consulta, assim como as demais configurações de modelagem da resposta HTTP (`enable_http_compression`, `http_zlib_compression_level`, `compression`). Nesse caso, a configuração deve ser fornecida pelo parâmetro de URL HTTP ou por um perfil de usuário; uma cláusula `SETTINGS` dentro da consulta não afeta a compressão da própria resposta HTTP (mas continua valendo para arquivos e armazenamento gravados pela consulta, por exemplo, `INSERT INTO FUNCTION file(...)` ou `SELECT ... INTO OUTFILE`).
+
 ## max_http_get_redirects {#max_http_get_redirects}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

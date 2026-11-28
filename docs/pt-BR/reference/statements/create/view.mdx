@@ -247,14 +247,14 @@ Este recurso está obsoleto e será removido no futuro.
 
 Para sua conveniência, a documentação antiga está disponível [aqui](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## visão materializada atualizável {#refreshable-materialized-view}
+## view materializada atualizável {#refreshable-materialized-view}
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 REFRESH [EVERY|AFTER interval [OFFSET interval]]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
-[SETTINGS name = value [, name = value [, ...]]]
+[SETTINGS name = value [, name = value [, ...]]]]
 [APPEND [INCREMENTAL]]
 [TO[db.]name] [(columns)] [ENGINE = engine]
 [EMPTY]
@@ -274,13 +274,13 @@ A cláusula `REFRESH` deve especificar pelo menos um de `EVERY`, `AFTER` ou `DEP
 Executa periodicamente a consulta correspondente e armazena o resultado em uma tabela.
 
 * Se `APPEND` for especificado, cada atualização insere linhas na tabela sem excluir as já existentes. A inserção não é atômica, assim como em uma consulta `INSERT INTO ... SELECT` comum.
-* Se `APPEND INCREMENTAL` for especificado, cada atualização executa a consulta apenas nas linhas confirmadas na tabela de origem desde a atualização anterior e adiciona o resultado.
+* Se `APPEND INCREMENTAL` for especificado, cada atualização executa a consulta apenas nas linhas confirmadas na tabela de origem desde a atualização anterior e adiciona o resultado. Enquanto a visão existir, a tabela de origem não pode ser removida, renomeada ou trocada (inclusive por `CREATE OR REPLACE TABLE`), e seu banco de dados não pode ser removido nem renomeado.
 * Caso contrário, cada atualização substitui atomicamente o conteúdo anterior da tabela.
 
 Diferenças em relação às visões materializadas comuns, não atualizáveis:
 
-* Não há gatilho de inserção. Quando novos dados são inseridos na tabela especificada em `SELECT`, eles *não* são enviados automaticamente para a visão materializada atualizável. Em vez disso, a inserção de dados ocorre apenas durante execuções de atualização periódicas ou manuais.
-* Não há restrições para a consulta `SELECT`. Funções de tabela (por exemplo, `url()`), VIEWs, UNION e JOIN são permitidos. `APPEND INCREMENTAL` é a única exceção: ele requer uma única tabela de origem `MergeTree` simples com `enable_block_number_column = 1` e `enable_block_offset_column = 1` e rejeita `JOIN`, `UNION`, subconsultas, VIEWs e funções de tabela.
+* Não há gatilho de inserção. Quando novos dados são inseridos na tabela especificada em `SELECT`, eles *não* são enviados automaticamente para a view materializada atualizável. Em vez disso, a inserção de dados ocorre apenas durante execuções de atualização periódicas ou manuais.
+* Não há restrições para a consulta `SELECT`. Funções de tabela (por exemplo, `url()`), visões, UNION e JOIN são permitidos. `APPEND INCREMENTAL` é a única exceção: ele requer uma única tabela de origem `MergeTree` simples com `enable_block_number_column = 1` e `enable_block_offset_column = 1` e rejeita `JOIN`, `UNION`, subconsultas, visões e funções de tabela.
 
 <Note>
   As configurações na parte `REFRESH ... SETTINGS` da consulta são configurações de atualização (por exemplo, `refresh_retries`), distintas das configurações comuns (por exemplo, `max_threads`). As configurações comuns podem ser especificadas com `SETTINGS` no final da consulta.

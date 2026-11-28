@@ -608,6 +608,22 @@ Les vues matérialisées actualisables reçoivent toujours les valeurs par défa
   La modification de ce paramètre n&#39;affecte que les vues créées ultérieurement ; les définitions stockées des vues existantes restent inchangées.
 </Note>
 
+## implicit_default_workload {#implicit_default_workload}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />
+
+Lorsque ce paramètre est activé, une charge de travail `default` est créée implicitement si aucune n’est définie explicitement, afin que les requêtes utilisant la valeur par défaut du paramètre `workload` soient planifiées. La charge de travail `default` implicite ne peut pas être le parent d’autres charges de travail ; pour cela, créez `default` explicitement. Activez ce paramètre conjointement avec `workloads_respect_server_cpu_limit` et `workloads_respect_server_memory_limit` : ces requêtes sont alors soumises aux budgets globaux du serveur, et les fusions et mutations en arrière-plan qui utilisent la charge de travail par défaut sont soumises au budget CPU. Modifiable à l’exécution. Désactivé par défaut.
+
+**Exemple**
+
+```xml
+<implicit_default_workload>true</implicit_default_workload>
+```
+
+**Voir Aussi**
+
+* [Planification des charges de travail](/fr/concepts/features/configuration/server-config/workload-scheduling)
+
 ## include_from {#include_from}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />

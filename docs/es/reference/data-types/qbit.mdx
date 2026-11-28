@@ -19,12 +19,10 @@ column_name QBit(element_type, dimension[, stride])
 ```
 
 * `element_type` – el tipo de cada elemento del vector. Los tipos permitidos son `Int8`, `BFloat16`, `Float32` y `Float64`
-* `dimension` – la cantidad de elementos de cada vector
+* `dimension` – la cantidad de elementos de cada vector, como máximo 1048576
 * `stride` – opcional. La cantidad de dimensiones almacenadas juntas en un grupo de streams. Cuando se omite, el valor predeterminado es `dimension` (un solo grupo). Cuando se proporciona, `dimension` debe ser un múltiplo de `stride` y, cuando `stride` es menor que `dimension`, `stride` debe ser un múltiplo de 8. Las `dimension` dimensiones se dividen en `dimension / stride` grupos contiguos, y los planos de bits de cada grupo se almacenan en streams separados. Esto permite que una búsqueda en las primeras `D` dimensiones (donde `D` es un múltiplo de `stride`) lea solo los streams de los grupos que abarcan esas dimensiones, lo que resulta útil para los embeddings Matryoshka.
 
-<div id="creating-qbit">
-  ## Crear QBit
-</div>
+## Crear QBit {#creating-qbit}
 
 Uso del tipo `QBit` en la definición de una columna de tabla:
 
@@ -41,9 +39,7 @@ SELECT vec FROM test ORDER BY id;
 └──────────────────────────┘
 ```
 
-<div id="converting-arrays-to-qbit">
-  ## Conversión de arrays a QBit
-</div>
+## Conversión de arrays a QBit {#converting-arrays-to-qbit}
 
 Los arrays se convierten en `QBit` cuando la longitud del array coincide con la dimensión de `QBit`. El tipo de elemento del array no tiene que coincidir con el tipo de elemento de `QBit`. Cualquier tipo de elemento numérico se convierte automáticamente a este. Esto permite mover una columna existente de embeddings directamente a una columna `QBit`:
 
@@ -66,9 +62,7 @@ SELECT * FROM vectors ORDER BY id;
 
 La conversión también se puede realizar explícitamente con `CAST`, por ejemplo `CAST(embedding AS QBit(Float32, 8))`.
 
-<div id="converting-qbit-to-arrays">
-  ## Conversión de QBit a arrays
-</div>
+## Conversión de QBit a arrays {#converting-qbit-to-arrays}
 
 La conversión inversa reconstruye el vector original a partir de la representación con bits transpuestos, por lo que convertir un `QBit` a un `Array` devuelve los valores almacenados. Esto es lo inverso de [convertir arrays a `QBit`](#converting-arrays-to-qbit):
 
@@ -88,9 +82,7 @@ Un recorrido de ida y vuelta `Array` -&gt; `QBit` -&gt; `Array` no pierde inform
 
 Cuando la `dimension` no es un múltiplo de 8, los elementos de relleno finales presentes en la representación interna se descartan, por lo que el resultado siempre tiene exactamente `dimension` elementos.
 
-<div id="converting-between-qbit-types">
-  ## Conversión entre tipos de `QBit`
-</div>
+## Conversión entre tipos de `QBit` {#converting-between-qbit-types}
 
 Un `QBit` puede convertirse en otro `QBit` siempre que la `dimension` (el número de elementos del vector) siga siendo la misma. Tanto `element_type` como `stride` pueden cambiar; convertirlo a un `QBit` con una `dimension` distinta produce una excepción, porque eso cambiaría el propio vector.
 
@@ -119,9 +111,7 @@ SELECT range(16)::Array(Float32)::QBit(Float32, 16)::QBit(Float32, 16, 8)::Array
 └─────────────┘
 ```
 
-<div id="qbit-subcolumns">
-  ## Subcolumnas de QBit
-</div>
+## Subcolumnas de QBit {#qbit-subcolumns}
 
 `QBit` implementa un patrón de acceso a subcolumnas que permite acceder a planos de bits individuales de los vectores almacenados. Se puede acceder a cada posición de bit mediante la sintaxis `.N`, donde `N` es la posición del bit:
 
@@ -148,9 +138,7 @@ La cantidad de subcolumnas accesibles depende del tipo de elemento (y, cuando se
 
 Las subcolumnas siguen un orden principal por grupo: en general, `vec.N` lee el plano de bits `(N-1) % element_size` del grupo de stride `(N-1) / element_size`. Por ejemplo, con `QBit(BFloat16, 4096, 1024)` las 4096 dimensiones se dividen en 4 grupos de 1024, por lo que hay 64 subcolumnas: `vec.1` … `vec.16` son los planos de bits del primer grupo de stride (dimensiones 1–1024), `vec.17` … `vec.32` pertenecen al segundo grupo (dimensiones 1025–2048), y así sucesivamente.
 
-<div id="strides">
-  ## Strides
-</div>
+## Strides {#strides}
 
 De forma predeterminada, `QBit` almacena cada plano de bits como un único stream que abarca todas las dimensiones `dimension`, por lo que una búsqueda siempre lee planos de bits completos de todo el vector. El parámetro opcional `stride` divide las dimensiones `dimension` en `dimension / stride` grupos contiguos y almacena los planos de bits de cada grupo en streams separados. Esto permite que una búsqueda solo sobre las primeras `D` dimensiones (donde `D` es un múltiplo de `stride`) lea únicamente los streams de los grupos que cubren esas dimensiones, lo que resulta útil para [embeddings Matryoshka](https://arxiv.org/abs/2205.13147), donde las dimensiones iniciales forman un embedding utilizable de menor dimensionalidad.
 
@@ -162,9 +150,7 @@ Aquí, las 4096 dimensiones se dividen en 4 grupos de 1024. Las subcolumnas sigu
 
 Para ejecutar una búsqueda de dimensión reducida, pase el número de dimensiones que se van a leer como cuarto argumento de las funciones de distancia transpuestas (consulte más abajo). El vector de referencia debe tener al menos ese número de elementos (se ignoran los elementos adicionales al final), y el valor debe ser un múltiplo de `stride`.
 
-<div id="qbit-element-access">
-  ## Acceso a elementos y segmentación
-</div>
+## Acceso a elementos y segmentación {#qbit-element-access}
 
 [`arrayElement`](/es/reference/functions/regular-functions/array-functions#arrayElement) (y el operador `vec[n]`) devuelve el `n`-ésimo elemento del vector, reconstruido con la precisión completa del tipo de elemento. Solo se leen los planos de bits del grupo de stride que contiene el elemento. [`arraySlice`](/es/reference/functions/regular-functions/array-functions#arraySlice) devuelve un `QBit` con las dimensiones seleccionadas (una proyección sobre un subconjunto de dimensiones); el desplazamiento y la longitud deben ser constantes, ya que la dimensión de un `QBit` forma parte de su tipo. Una segmentación alineada con los límites de los grupos de stride conserva el stride y reutiliza los streams de planos de bits almacenados sin copiar:
 
@@ -180,9 +166,7 @@ SELECT vec[3], arraySlice(vec, 2, 3) FROM test;
 └──────────────────────┴───────────────────────┘
 ```
 
-<div id="vector-search-functions">
-  ## Funciones de búsqueda vectorial
-</div>
+## Funciones de búsqueda vectorial {#vector-search-functions}
 
 Estas son las funciones de distancia para la búsqueda de similitud vectorial que utilizan el tipo de dato `QBit`:
 

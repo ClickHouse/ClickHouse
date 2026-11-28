@@ -247,7 +247,7 @@ Cette fonctionnalité est obsolète et sera supprimée à l’avenir.
 
 Pour vous faciliter la tâche, l’ancienne documentation est disponible [ici](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## Vue matérialisée rafraîchissable {#refreshable-materialized-view}
+## Vue matérialisée actualisable {#refreshable-materialized-view}
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -269,17 +269,17 @@ où `interval` correspond à une suite d&#39;intervalles simples :
 number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 ```
 
-La clause `REFRESH` doit spécifier au moins l’un des éléments suivants : `EVERY`, `AFTER` ou `DEPENDS ON`. Un `REFRESH` seul (sans aucun d’eux) est rejeté. `REFRESH DEPENDS ON ...` sans `EVERY`/`AFTER` est une forme abrégée de `REFRESH AFTER 0 SECOND DEPENDS ON ...` ; voir [Dépendances de rafraîchissement](#refresh-dependencies) ci-dessous.
+La clause `REFRESH` doit spécifier au moins l’un des éléments suivants : `EVERY`, `AFTER` ou `DEPENDS ON`. Un `REFRESH` seul (sans aucun d’eux) est rejeté. `REFRESH DEPENDS ON ...` sans `EVERY`/`AFTER` est une forme abrégée de `REFRESH AFTER 0 SECOND DEPENDS ON ...` ; voir [Dépendances de Rafraîchissement](#refresh-dependencies) ci-dessous.
 
 Exécute périodiquement la requête correspondante et stocke son résultat dans une table.
 
 * Si `APPEND` est spécifié, chaque rafraîchissement insère des lignes dans la table sans supprimer les lignes existantes. L’insertion n’est pas atomique, comme pour une requête `INSERT INTO ... SELECT` classique.
-* Si `APPEND INCREMENTAL` est spécifié, chaque rafraîchissement exécute la requête uniquement sur les lignes validées dans la table source depuis le rafraîchissement précédent, et ajoute le résultat.
+* Si `APPEND INCREMENTAL` est spécifié, chaque rafraîchissement exécute la requête uniquement sur les lignes validées dans la table source depuis le rafraîchissement précédent, et ajoute le résultat. Tant que la vue existe, la table source ne peut être ni supprimée, ni renommée, ni échangée (y compris via `CREATE OR REPLACE TABLE`), et sa base de données ne peut être ni supprimée ni renommée.
 * Sinon, chaque rafraîchissement remplace atomiquement le contenu précédent de la table.
 
-Différences par rapport aux vues matérialisées classiques non rafraîchissables :
+Différences par rapport aux vues matérialisées classiques non actualisables :
 
-* Pas de déclencheur d’insertion. Lorsque de nouvelles données sont insérées dans la table spécifiée dans `SELECT`, elles ne sont *pas* automatiquement propagées vers la vue matérialisée rafraîchissable. À la place, l’insertion des données n’a lieu que lors des rafraîchissements périodiques ou manuels.
+* Pas de déclencheur d’insertion. Lorsque de nouvelles données sont insérées dans la table spécifiée dans `SELECT`, elles ne sont *pas* automatiquement propagées vers la vue matérialisée actualisable. À la place, l’insertion des données n’a lieu que lors des rafraîchissements périodiques ou manuels.
 * Aucune restriction sur la requête `SELECT`. Les fonctions de table (par ex. `url()`), les vues, UNION et JOIN sont tous autorisés. `APPEND INCREMENTAL` constitue la seule exception : elle requiert une unique table source `MergeTree` simple avec `enable_block_number_column = 1` et `enable_block_offset_column = 1`, et rejette `JOIN`, `UNION`, les sous-requêtes, les vues et les fonctions de table.
 
 <Note>

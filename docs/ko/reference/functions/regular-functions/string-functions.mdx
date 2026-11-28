@@ -850,6 +850,41 @@ GROUP BY concatWithSeparatorAssumeInjective('-', first_name, last_name);
 └─────────────┴─────────────┘
 ```
 
+## concatWithSeparatorIgnoreNulls {#concatWithSeparatorIgnoreNulls}
+
+도입 버전: v26.12.0
+
+상수 구분자를 사용하여 값을 순서대로 이어 붙이며, 최상위 `NULL` 값은 건너뜁니다.
+빈 문자열은 유지됩니다. 값이 하나도 제공되지 않거나 모든 값이 `NULL`인 경우, 구분자가 `NULL`이 아니면 `''`를 반환합니다.
+`String` 및 `FixedString` 이외의 타입 값은 기본 텍스트 직렬화 방식에 따라 문자열로 변환됩니다.
+
+**구문**
+
+```sql
+concatWithSeparatorIgnoreNulls(separator[, value1, value2, ...])
+```
+
+**인수**
+
+* `separator` — 상수 `String` 또는 `FixedString`(NULL 허용 및 LowCardinality 형식 포함), 또는 `NULL` 리터럴(Literal)입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Nullable(String)`](/ko/reference/data-types/nullable) 또는 [`Nullable(FixedString)`](/ko/reference/data-types/nullable) 또는 [`LowCardinality`](/ko/reference/data-types/lowcardinality) 또는 [`NULL`](/ko/reference/syntax#null)
+* `value1, value2, ...` — 이어 붙일 값입니다. [`Any`](/ko/reference/data-types/index)
+
+**반환 값**
+
+이어 붙인 문자열을 반환합니다. 구분자 타입이 NULL 허용이면(`NULL` 리터럴 포함) 결과(result)는 `Nullable(String)`이고, 그렇지 않으면 `String`입니다. 구분자가 `NULL`이면 `NULL`을 반환합니다. [`String`](/ko/reference/data-types/string) 또는 [`Nullable(String)`](/ko/reference/data-types/nullable)
+
+**예시**
+
+**NULL 값 건너뛰기**
+
+```sql title=Query
+SELECT concatWithSeparatorIgnoreNulls(',', 'x', NULL, 'y') AS result
+```
+
+```response title=Response
+x,y
+```
+
 ## conv {#conv}
 
 도입 버전: v25.10.0

@@ -851,6 +851,41 @@ GROUP BY concatWithSeparatorAssumeInjective('-', first_name, last_name);
 └─────────────┴─────────────┘
 ```
 
+## concatWithSeparatorIgnoreNulls {#concatWithSeparatorIgnoreNulls}
+
+أُضيف في: v26.12.0
+
+يدمج القيم بالترتيب مع فاصل ثابت، متخطيًا قيم `NULL` الموجودة في المستوى الأعلى (top-level).
+يُحتفَظ بالسلاسل النصية الفارغة. وإذا لم تُمرَّر أي قيم أو كانت جميعها `NULL`، فإن الفاصل الذي ليس `NULL` يُعيد `''`.
+تُحوَّل القيم من الأنواع الأخرى غير `String` و`FixedString` إلى سلاسل نصية باستخدام التسلسل النصي الافتراضي لكل منها.
+
+**الصيغة**
+
+```sql
+concatWithSeparatorIgnoreNulls(separator[, value1, value2, ...])
+```
+
+**الوسيطات**
+
+* `separator` — قيمة `String` أو `FixedString` ثابتة، بما في ذلك صيغها القابلة لقبول قيم NULL وصيغها من نوع LowCardinality، أو القيمة الحرفية `NULL`. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Nullable(String)`](/ar/reference/data-types/nullable) أو [`Nullable(FixedString)`](/ar/reference/data-types/nullable) أو [`LowCardinality`](/ar/reference/data-types/lowcardinality) أو [`NULL`](/ar/reference/syntax#null)
+* `value1, value2, ...` — القيم المراد دمجها. [`Any`](/ar/reference/data-types/index)
+
+**القيمة المعادة**
+
+تُعيد السلسلة النصية المدمجة. تكون النتيجة من النوع `Nullable(String)` إذا كان نوع الفاصل قابلاً لقبول قيم NULL، بما في ذلك القيمة الحرفية `NULL`، ومن النوع `String` في ما عدا ذلك. وإذا كان الفاصل `NULL`، تُعاد القيمة `NULL`. [`String`](/ar/reference/data-types/string) أو [`Nullable(String)`](/ar/reference/data-types/nullable)
+
+**أمثلة**
+
+**تجاهل قيم NULL**
+
+```sql title=Query
+SELECT concatWithSeparatorIgnoreNulls(',', 'x', NULL, 'y') AS result
+```
+
+```response title=Response
+x,y
+```
+
 ## conv {#conv}
 
 أُضيف في: v25.10.0

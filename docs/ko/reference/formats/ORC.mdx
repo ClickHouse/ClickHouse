@@ -48,6 +48,7 @@ doc_type: 'reference'
 
 * 기타 타입은 지원되지 않습니다.
 * ORC `Union` 컬럼은 Union의 브랜치 타입을 포함하는 [Variant](/ko/reference/data-types/variant)로 읽히며, `Variant` 컬럼은 브랜치 타입을 포함하는 ORC `Union`으로 작성됩니다. `Variant`는 브랜치 타입을 정렬하므로 브랜치 순서가 ORC 파일과 다를 수 있습니다. 중복된 브랜치 타입이 있는 Union(예: `uniontype<int,int>`)은 지원되지 않습니다.
+* `metadata`와 `value`라는 이름의 두 `Binary` 필드로 구성된 ORC `Struct`(Iceberg v3가 `variant`를 저장하는 방식)는 `Parquet` 포맷의 variant 컬럼과 동일한 방식으로 [variant 바이너리 인코딩](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md)을 사용하여 [Dynamic](/ko/reference/data-types/dynamic) 또는 [JSON](/ko/reference/data-types/newjson) 컬럼으로 읽힙니다.
 * 배열은 중첩할 수 있으며, 인수로 `Nullable` 타입 값을 사용할 수 있습니다. `Tuple` 및 `Map` 타입도 중첩할 수 있습니다.
 * ClickHouse 테이블 컬럼의 데이터 타입은 해당 ORC 데이터 필드와 일치할 필요가 없습니다. 데이터를 삽입할 때 ClickHouse는 위 표에 따라 데이터 타입을 해석한 다음, 이를 ClickHouse 테이블 컬럼에 설정된 데이터 타입으로 [형 변환](/ko/reference/functions/regular-functions/type-conversion-functions#CAST)합니다.
 * `1969-12-31 23:59:59.001`과 `1969-12-31 23:59:59.999999999`(UTC) 사이의 `DateTime64` 값은 `1970-01-01 00:00:00`으로 기록됩니다. 이는 [ORC 명세](https://orc.apache.org/specification/ORCv1/#timestamp-columns)의 허점 때문입니다. ORC 명세는 타임스탬프를 초와 나노초로 나누어 저장하며, 나노초는 음수가 될 수 없습니다. 참조 구현에서는 writer가 999999나노초를 초과하는 음수 타임스탬프에 1초를 더하고 리더가 이를 다시 빼지만, 이렇게 하면 -1초와 0초 사이의 타임스탬프는 0초로 저장되어 epoch 이후의 값으로 읽히게 됩니다. 이러한 타임스탬프를 기록하는 방식은 구현마다 다릅니다. Apache ORC의 Java 및 C++ writer는 1초 늦은 값으로 읽히도록 기록하고, Arrow ORC 어댑터(PyArrow)는 음수 나노초를 기록합니다. 그러나 음수 나노초는 명세에서 허용되지 않으며 Java 리더는 이를 거부합니다. ClickHouse는 대신 epoch를 기록하므로 모든 리더가 이 값을 동일하게 읽습니다.

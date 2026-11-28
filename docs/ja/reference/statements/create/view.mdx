@@ -269,17 +269,17 @@ AS SELECT ...
 number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 ```
 
-`REFRESH` clause では、`EVERY`、`AFTER`、`DEPENDS ON` の少なくとも 1 つを指定する必要があります。これらを 1 つも指定しない単独の `REFRESH` は拒否されます。`EVERY`/`AFTER` を伴わない `REFRESH DEPENDS ON ...` は、`REFRESH AFTER 0 SECOND DEPENDS ON ...` の省略形です。詳細は以下の [リフレッシュの依存関係](#refresh-dependencies) を参照してください。
+`REFRESH` 句では、`EVERY`、`AFTER`、`DEPENDS ON` の少なくとも 1 つを指定する必要があります。これらを 1 つも指定しない単独の `REFRESH` は拒否されます。`EVERY`/`AFTER` を伴わない `REFRESH DEPENDS ON ...` は、`REFRESH AFTER 0 SECOND DEPENDS ON ...` の省略形です。詳細は以下の [リフレッシュの依存関係](#refresh-dependencies) を参照してください。
 
 対応するクエリを定期的に実行し、その結果をテーブルに格納します。
 
-* `APPEND` が指定されている場合、各リフレッシュでは既存の行を削除せずにテーブルへ行を挿入します。この insert は、通常の `INSERT INTO ... SELECT` クエリと同様にアトミックではありません。
-* `APPEND INCREMENTAL` が指定されている場合、各リフレッシュでは前回のリフレッシュ以降にソーステーブルへコミットされた行のみを対象にクエリを実行し、その結果を追加します。
+* `APPEND` が指定されている場合、各リフレッシュでは既存の行を削除せずにテーブルへ行を挿入します。この挿入は、通常の `INSERT INTO ... SELECT` クエリと同様にアトミックではありません。
+* `APPEND INCREMENTAL` が指定されている場合、各リフレッシュでは前回のリフレッシュ以降にソーステーブルへコミットされた行のみを対象にクエリを実行し、その結果を追加します。ビューが存在する間は、ソーステーブルの削除、リネーム、`EXCHANGE` による入れ替え (`CREATE OR REPLACE TABLE` によるものを含む) はできず、そのデータベースの削除やリネームもできません。
 * それ以外の場合、各リフレッシュでテーブルの以前の内容はアトミックに置き換えられます。
 
 通常の、リフレッシュ機能のない materialized view との違い:
 
-* insert trigger はありません。`SELECT` で指定したテーブルに新しいデータが挿入されても、そのデータがリフレッシャブルmaterialized view に自動的に反映されることは *ありません*。代わりに、データの挿入は定期実行または手動実行のリフレッシュ時にのみ行われます。
+* 挿入 trigger はありません。`SELECT` で指定したテーブルに新しいデータが挿入されても、そのデータがリフレッシャブルmaterialized view に自動的に反映されることは *ありません*。代わりに、データの挿入は定期実行または手動実行のリフレッシュ時にのみ行われます。
 * `SELECT` クエリには制約がありません。テーブル関数 (例: `url()`) 、ビュー、UNION、JOIN はいずれも使用できます。唯一の例外は `APPEND INCREMENTAL` で、`enable_block_number_column = 1` および `enable_block_offset_column = 1` を設定した単一のプレーンな `MergeTree` ソーステーブルが必要であり、`JOIN`、`UNION`、サブクエリ、ビュー、テーブル関数は使用できません。
 
 <Note>

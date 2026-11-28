@@ -851,6 +851,41 @@ GROUP BY concatWithSeparatorAssumeInjective('-', first_name, last_name);
 └─────────────┴─────────────┘
 ```
 
+## concatWithSeparatorIgnoreNulls {#concatWithSeparatorIgnoreNulls}
+
+導入バージョン: v26.12.0
+
+定数の区切り文字を挟んで値を順番に連結します。その際、top-level の `NULL` 値はスキップします。
+空文字列は保持されます。値が指定されていない場合、またはすべての値が `NULL` の場合、区切り文字が `NULL` でなければ `''` を返します。
+`String` および `FixedString` 以外の型の値は、デフォルトのテキストシリアライゼーションによって文字列に変換されます。
+
+**構文**
+
+```sql
+concatWithSeparatorIgnoreNulls(separator[, value1, value2, ...])
+```
+
+**引数**
+
+* `separator` — 定数の `String` または `FixedString`(NULL許容型および LowCardinality 型を含む)、もしくは `NULL` リテラル。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Nullable(String)`](/ja/reference/data-types/nullable) または [`Nullable(FixedString)`](/ja/reference/data-types/nullable) または [`LowCardinality`](/ja/reference/data-types/lowcardinality) または [`NULL`](/ja/reference/syntax#null)
+* `value1, value2, ...` — 連結する値。[`Any`](/ja/reference/data-types/index)
+
+**戻り値**
+
+連結された文字列を返します。区切り文字の型が NULL許容(`NULL` リテラルを含む)の場合、結果は `Nullable(String)` となり、それ以外の場合は `String` となります。区切り文字が `NULL` の場合は `NULL` を返します。[`String`](/ja/reference/data-types/string) または [`Nullable(String)`](/ja/reference/data-types/nullable)
+
+**例**
+
+**NULL 値をスキップする**
+
+```sql title=Query
+SELECT concatWithSeparatorIgnoreNulls(',', 'x', NULL, 'y') AS result
+```
+
+```response title=Response
+x,y
+```
+
 ## conv {#conv}
 
 導入バージョン: v25.10.0

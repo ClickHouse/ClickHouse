@@ -20,6 +20,8 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `file_name` 및 `type`은 문자열 리터럴입니다. 지원되는 압축 타입은 `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`입니다. `snappy`의 경우 wire 형식은 [snappy&#95;mode](/ko/reference/settings/session-settings/other#snappy_mode) 설정으로 선택합니다(기본값 `basic`).
 
+`max_generic_compression_threads`를 `1`보다 큰 값으로 설정하면 `'gzip'` 압축을 여러 스레드에서 실행할 수 있습니다. 출력은 여전히 모든 압축 해제 도구에서 읽을 수 있는 표준 gzip 스트림이며, 병렬화되는 것은 쓰기 측뿐입니다.
+
 `level`은 숫자 리터럴입니다. 다음 범위의 양의 정수를 지원합니다: `gzip`, `deflate`, `lz4` 타입은 `1-12`, `zstd` 타입은 `1-22`, 기타 압축 타입은 `1-9`입니다. `gzip` 및 `deflate`의 경우 `9`를 초과하는 수준을 사용하려면 `libdeflate`가 포함된 기본 build가 필요하며, `libdeflate`가 없는 build는 `1-9` 수준만 지원합니다.
 
 ## 구현 세부 정보 {#implementation-details}

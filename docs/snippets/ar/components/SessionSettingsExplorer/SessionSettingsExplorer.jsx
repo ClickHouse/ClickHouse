@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // يُقيّم مُصيِّر بيئة الإنتاج في Mintlify المكوّنَ المُصدَّر دون
-  // الاحتفاظ بالارتباطات على مستوى الوحدة. تُبقي الحالة الكسولة (lazy state) البيانات المُولَّدة ضمن
-  // نطاق التقييم هذا، مع إنشائها مرة واحدة فقط عند كل عملية تركيب (mount).
+  // Mintlify's production renderer evaluates the exported component without
+  // preserving module-scope bindings. Lazy state keeps the generated data in
+  // that evaluation scope while constructing it only once per mount.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -1516,7 +1516,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_*",
-      count: 28,
+      count: 29,
       settings: [
         { name: "max_analyze_depth", path: "/max#max_analyze_depth", default: "5000" },
         { name: "max_autoincrement_series", path: "/max#max_autoincrement_series", default: "1000" },
@@ -1529,6 +1529,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_expanded_ast_elements", path: "/max#max_expanded_ast_elements", default: "500000" },
         { name: "max_fetch_partition_retries_count", path: "/max#max_fetch_partition_retries_count", default: "5" },
         { name: "max_final_threads", path: "/max#max_final_threads", default: "auto(N)" },
+        { name: "max_generic_compression_threads", path: "/max#max_generic_compression_threads", default: "1" },
         { name: "max_http_get_redirects", path: "/max#max_http_get_redirects", default: "0" },
         { name: "max_limit_for_vector_search_queries", path: "/max#max_limit_for_vector_search_queries", default: "1000" },
         { name: "max_os_cpu_wait_time_ratio_to_throw", path: "/max#max_os_cpu_wait_time_ratio_to_throw", default: "0" },
@@ -3550,7 +3551,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
                 </span>
                 {item.value.default !== undefined && (
                   <span title="القيمة الافتراضية" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
-                    (الافتراضي: {item.value.default})
+                    (القيمة الافتراضية: {item.value.default})
                   </span>
                 )}
               </div>
@@ -3582,14 +3583,14 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="ابحث في الإعدادات، مثل parallel replicas أو %materialized%"
+          placeholder="ابحث في الإعدادات، مثل: parallel replicas أو %materialized%"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} {matchingCount === 1 ? "إعداد مطابق" : "إعدادات مطابقة"}
+            {matchingCount === 1 ? "إعداد مطابق" : "إعدادات مطابقة"}: {matchingCount}
           </span>
         </div>
       )}

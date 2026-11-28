@@ -120,6 +120,25 @@ Valores posibles:
 * Entero positivo.
 * 0 o 1 — Desactivado. Las consultas `SELECT` se ejecutan en un solo hilo.
 
+## max_generic_compression_threads {#max_generic_compression_threads}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nueva configuración para controlar el número de threads utilizados para la compresión gzip en paralelo de los flujos de salida."}]}]} />
+
+Número máximo de threads utilizados para comprimir la salida con compresión de flujo genérica (actualmente `gzip`) al escribir en formatos de salida, archivos o almacenamiento, y al comprimir las respuestas HTTP de las consultas, tanto con `Content-Encoding: gzip` como con el códec del cuerpo de la respuesta seleccionado mediante el parámetro de configuración `compression`.
+
+La salida se mantiene en el formato estándar `gzip` y puede leerla cualquier descompresor; solo se paraleliza la escritura. Los bloques independientes se comprimen en paralelo en el grupo de hilos de E/S compartido. El parámetro de configuración tiene un nombre genérico para que otros métodos de compresión de flujo puedan adoptarlo en el futuro.
+
+Valores posibles:
+
+* 0 o 1 — compresión single-threaded (predeterminado).
+* Entero positivo mayor que 1 — compresión con hasta ese número de threads.
+
+Cuanto más altos sean los valores, mayor será el uso de memoria.
+
+En las respuestas HTTP de las consultas, el búfer de compresión se configura antes de ejecutar la consulta, al igual que los demás ajustes que determinan la respuesta HTTP (`enable_http_compression`, `http_zlib_compression_level`, `compression`). En ese caso, el parámetro de configuración debe indicarse mediante el parámetro de URL HTTP o en un perfil de usuario; una cláusula `SETTINGS` dentro de la consulta no afecta a la compresión de la propia respuesta HTTP (aunque sí se aplica a los archivos y al almacenamiento en los que escribe la consulta, p. ej., `INSERT INTO FUNCTION file(...)` o `SELECT ... INTO OUTFILE`).
+
 ## max_http_get_redirects {#max_http_get_redirects}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

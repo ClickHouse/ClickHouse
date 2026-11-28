@@ -4863,7 +4863,7 @@ OneLake catalog 通过 Entra ID refresh token 授权发起的访问令牌请求�
 
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
-对于位于对象存储中或 URL 处的文件，其 Parquet 读取器在分配给自身的 max&#95;download&#95;threads 配额内，于解码被调度之前便已开始读取列数据的行组数
+对于位于对象存储中或 URL 处的文件，其 Parquet 读取器在分配给自身的 max&#95;download&#95;threads 配额内，于解码被调度之前便已开始读取列数据的行组数；如果解码已用尽该配额，且该次读取量较小、为单独读取，则可再多一个
 
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 

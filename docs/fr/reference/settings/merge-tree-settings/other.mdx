@@ -272,8 +272,10 @@ Valeurs possibles :
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
-Nombre d’enregistrements sur les mutations terminées à conserver. Si la valeur est zéro, les
-conserver tous.
+Nombre d’enregistrements sur les mutations terminées à conserver. Si la valeur est zéro, aucune
+entrée de mutation terminée n’est conservée : l’entrée d’une mutation est supprimée par le
+nettoyage en arrière-plan une fois la mutation terminée. Pour conserver toutes les entrées, définissez
+plutôt une valeur élevée (dans les versions précédentes, zéro signifiait les conserver toutes).
 
 ## force_read_through_cache_for_merges {#force_read_through_cache_for_merges}
 

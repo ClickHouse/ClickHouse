@@ -608,6 +608,22 @@ false이면 [`default_normal_view_sql_security`](/ko/reference/settings/session-
   이 설정을 변경해도 이후에 생성되는 뷰에만 영향을 미치며, 기존 뷰의 저장된 정의는 변경되지 않습니다.
 </Note>
 
+## implicit_default_workload {#implicit_default_workload}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />
+
+활성화하면 `default` 워크로드가 명시적으로 정의되지 않은 경우 이를 암시적으로 생성하여, 기본 `workload` 설정을 사용하는 쿼리도 스케줄링되도록 합니다. 암시적으로 생성된 `default` 워크로드는 다른 워크로드의 상위 워크로드가 될 수 없으므로, 그렇게 사용하려면 `default`를 명시적으로 생성하십시오. 이 설정은 `workloads_respect_server_cpu_limit` 및 `workloads_respect_server_memory_limit`와 함께 활성화하십시오. 그러면 해당 쿼리에는 서버 전체 예산이 적용되고, default 워크로드를 사용하는 백그라운드 병합 및 뮤테이션(background merges and mutations)에는 CPU 예산이 적용됩니다. 런타임에 변경할 수 있으며, 기본값은 비활성화입니다.
+
+**예시**
+
+```xml
+<implicit_default_workload>true</implicit_default_workload>
+```
+
+**관련 항목**
+
+* [워크로드 스케줄링](/ko/concepts/features/configuration/server-config/workload-scheduling)
+
 ## include_from {#include_from}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />

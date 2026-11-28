@@ -779,6 +779,18 @@ Soma dos tamanhos das pilhas de fibras atualmente alocadas.
 
 Número de pilhas de fibras atualmente alocadas (as fibras são usadas para comunicação assíncrona com réplicas remotas).
 
+### FilesystemCacheCleanupHelperThreads {#filesystemcachecleanuphelperthreads}
+
+Número de threads helper na limpeza em segundo plano do cache do sistema de arquivos, que remove dos metadados do cache e do disco as chaves sem segmentos de arquivo, bem como os diretórios de chaves vazios encontrados durante a inicialização
+
+### FilesystemCacheCleanupHelperThreadsActive {#filesystemcachecleanuphelperthreadsactive}
+
+Número de threads helper da limpeza em segundo plano do cache do sistema de arquivos que estão executando uma tarefa
+
+### FilesystemCacheCleanupHelperThreadsScheduled {#filesystemcachecleanuphelperthreadsscheduled}
+
+Número de jobs enfileirados ou ativos das threads helper na limpeza em segundo plano do cache do sistema de arquivos
+
 ### FilesystemCacheDelayedCleanupElements {#filesystemcachedelayedcleanupelements}
 
 Elementos do cache do sistema de arquivos na fila de limpeza em segundo plano

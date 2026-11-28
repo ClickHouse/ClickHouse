@@ -26,7 +26,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
       { label: "direct,parallel_hash,hash,ie_join" },
       {
         label:
-          "أُضيف `ie_join` (أصبح اسمه الآن `inequality`) إلى القائمة الافتراضية، لذا يُنفَّذ الربط الذي لا يحتوي قسم `ON` فيه إلا على شروط لعدم المساواة باستخدام خوارزمية ربط عدم المساواة بدلًا من `CROSS JOIN` مع عامل تصفية. ولأنه الأخير، لا يُستخدم إلا عندما لا تنطبق الخوارزميات الأخرى."
+          "أُضيف `ie_join` (أصبح اسمه الآن `inequality`) إلى القائمة الافتراضية، لذا يُنفَّذ الربط الذي لا يحتوي قسم `ON` فيه إلا على شروط لعدم المساواة باستخدام خوارزمية الربط بشرط عدم المساواة بدلًا من `CROSS JOIN` مع عامل تصفية. ولأنه الأخير، لا يُستخدم إلا عندما لا تنطبق الخوارزميات الأخرى."
       }
     ]
   },
@@ -47,7 +47,10 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
     items: [
       { label: "24.12" },
       { label: "direct,parallel_hash,hash" },
-      { label: "تم إهمال 'default' لصالح تحديد خوارزميات الربط صراحةً، كما أصبحت parallel_hash الآن مفضلة على التجزئة" }
+      {
+        label:
+          "تم إهمال 'default' لصالح تحديد خوارزميات الربط صراحةً، كما أصبحت parallel_hash الآن مفضلة على التجزئة. ولا يُعيد `compatibility` القيمة 'default'، إذ يُعطي مع أي إصدار سابق للإصدار 24.12 القيمة 'direct,parallel_hash,hash'."
+      }
     ]
   }
   ]}

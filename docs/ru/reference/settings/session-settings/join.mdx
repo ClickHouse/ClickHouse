@@ -47,7 +47,10 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
     items: [
       { label: "24.12" },
       { label: "direct,parallel_hash,hash" },
-      { label: "'default' объявлен устаревшим в пользу явно заданных алгоритмов JOIN; кроме того, теперь parallel_hash предпочтительнее hash" }
+      {
+        label:
+          "'default' объявлен устаревшим в пользу явно заданных алгоритмов JOIN; кроме того, теперь parallel_hash предпочтительнее hash. `compatibility` не восстанавливает 'default': при версии ниже 24.12 используется значение 'direct,parallel_hash,hash'."
+      }
     ]
   }
   ]}

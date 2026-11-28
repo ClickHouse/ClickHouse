@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Рендерер Mintlify в продакшене вычисляет экспортируемый компонент, не
-  // сохраняя привязки на уровне модуля. Ленивое состояние хранит сгенерированные данные
-  // в этой области вычисления и создаёт их лишь один раз при монтировании.
+  // Продакшен-рендерер Mintlify вычисляет экспортируемый компонент, не
+  // сохраняя привязки на уровне модуля. Ленивая инициализация состояния хранит сгенерированные данные в
+  // этой области вычисления и создаёт их только один раз при монтировании.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -1516,7 +1516,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_*",
-      count: 28,
+      count: 29,
       settings: [
         { name: "max_analyze_depth", path: "/max#max_analyze_depth", default: "5000" },
         { name: "max_autoincrement_series", path: "/max#max_autoincrement_series", default: "1000" },
@@ -1529,6 +1529,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_expanded_ast_elements", path: "/max#max_expanded_ast_elements", default: "500000" },
         { name: "max_fetch_partition_retries_count", path: "/max#max_fetch_partition_retries_count", default: "5" },
         { name: "max_final_threads", path: "/max#max_final_threads", default: "auto(N)" },
+        { name: "max_generic_compression_threads", path: "/max#max_generic_compression_threads", default: "1" },
         { name: "max_http_get_redirects", path: "/max#max_http_get_redirects", default: "0" },
         { name: "max_limit_for_vector_search_queries", path: "/max#max_limit_for_vector_search_queries", default: "1000" },
         { name: "max_os_cpu_wait_time_ratio_to_throw", path: "/max#max_os_cpu_wait_time_ratio_to_throw", default: "0" },
@@ -3498,7 +3499,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "настройка" : "настройки"}`
+    const countLabel = `Настроек: ${entry.count}`
 
     return (
       <div key={key} className="min-w-max">

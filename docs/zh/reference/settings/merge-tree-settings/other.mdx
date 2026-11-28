@@ -263,8 +263,10 @@ Dynamic 数据类型的序列化版本。兼容性需要此设置。
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
-要保留多少条已完成的变更记录。如果为零，则保留
-全部记录。
+要保留多少条已完成的变更记录。如果为零，则不保留任何
+已完成的变更条目：变更一旦完成，其条目即由后台清理任务
+删除。如需保留全部条目，请改为设置
+一个较大的值 (在之前的版本中，零表示保留全部记录) 。
 
 ## force_read_through_cache_for_merges {#force_read_through_cache_for_merges}
 

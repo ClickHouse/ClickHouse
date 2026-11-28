@@ -269,7 +269,9 @@ Possible values:
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 완료된 뮤테이션에 대한 레코드를 몇 개까지 유지할지 지정합니다. 0이면
-모두 유지합니다.
+완료된 뮤테이션 엔트리를 하나도 유지하지 않습니다. 즉, 뮤테이션이 완료되면 해당 엔트리는
+백그라운드 정리 작업을 통해 제거됩니다. 모든 엔트리를 유지하려면 큰 값을
+설정하십시오(이전 버전에서는 0으로 설정하면 모든 엔트리가 유지되었습니다).
 
 ## force_read_through_cache_for_merges {#force_read_through_cache_for_merges}
 
