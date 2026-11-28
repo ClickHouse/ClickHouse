@@ -141,8 +141,10 @@ static UInt64 groupByTopKPlanHash(
 {
     SipHash hash;
     hash.update(std::string_view("group_by_top_k"));
+    hash.update(key_name.size());
     hash.update(key_name);
     const String type_name = key_type->getName();
+    hash.update(type_name.size());
     hash.update(type_name);
     hash.update(num_key_columns);
     hash.update(limit);
@@ -152,8 +154,11 @@ static UInt64 groupByTopKPlanHash(
     hash.update(aggregation_keys.size());
     for (const auto & aggregation_key : aggregation_keys)
     {
+        hash.update(aggregation_key.size());
         hash.update(aggregation_key);
-        hash.update(aggregation_input_header.getByName(aggregation_key).type->getName());
+        const String key_type_name = aggregation_input_header.getByName(aggregation_key).type->getName();
+        hash.update(key_type_name.size());
+        hash.update(key_type_name);
     }
 
     hash.update(path_expressions.size());
