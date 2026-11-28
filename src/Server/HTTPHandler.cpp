@@ -91,7 +91,7 @@ namespace Setting
     extern const SettingsInt64 http_zlib_compression_level;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
-    extern const SettingsUInt64 max_generic_compression_threads;
+    extern const SettingsMaxThreads max_generic_compression_threads;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool run_query_in_background;

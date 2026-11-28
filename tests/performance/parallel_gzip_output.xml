@@ -1,0 +1,8 @@
+<test>
+    <!-- gzip output of a file write, compressed on `max_generic_compression_threads` threads (`auto` by default).
+         Writes go to /dev/null so that the page cache of earlier runs does not carry over. -->
+    <query>
+        INSERT INTO FUNCTION file('/dev/null', 'TSV', 'key UInt64, value UInt64', 'gzip')
+        SELECT number, number FROM numbers(10000000)
+    </query>
+</test>

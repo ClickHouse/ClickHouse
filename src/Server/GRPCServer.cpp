@@ -76,7 +76,7 @@ namespace Setting
     extern const SettingsString input_format;
     extern const SettingsString output_format;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsUInt64 max_generic_compression_threads;
+    extern const SettingsMaxThreads max_generic_compression_threads;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsNonZeroUInt64 max_insert_block_size;

@@ -108,7 +108,7 @@ namespace Setting
     extern const SettingsBool enable_url_encoding;
     extern const SettingsBool engine_url_skip_empty_files;
     extern const SettingsUInt64 glob_expansion_max_elements;
-    extern const SettingsUInt64 max_generic_compression_threads;
+    extern const SettingsMaxThreads max_generic_compression_threads;
     extern const SettingsUInt64 max_http_get_redirects;
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsNonZeroUInt64 max_read_buffer_size;

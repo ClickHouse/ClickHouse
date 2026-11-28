@@ -1,0 +1,9 @@
+MaxThreads	1
+1
+1
+1
+1
+http: default and single-threaded responses decompress identically
+http: the default response is compressed in parallel
+100000	4999950000
+1
