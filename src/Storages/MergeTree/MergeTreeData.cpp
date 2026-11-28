@@ -46,10 +46,12 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -11791,6 +11793,28 @@ std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & 
     return partition_ids;
 }
 
+namespace
+{
+
+/// A literal cast to `Decimal` or to an array of it reads its strings as numbers, whatever the date and the server.
+bool isLiteralCastToDecimal(const ASTFunction & cast)
+{
+    const auto & arguments = cast.arguments->children;
+    if (arguments.size() != 2 || !arguments[0]->as<ASTLiteral>())
+        return false;
+
+    const auto * type_name = arguments[1]->as<ASTLiteral>();
+    if (!type_name || type_name->value.getType() != Field::Types::String)
+        return false;
+
+    auto type = DataTypeFactory::instance().tryGet(type_name->value.safeGet<String>());
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        type = array->getNestedType();
+    return type && isDecimal(type);
+}
+
+}
+
 std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     const ASTPtr & predicate,
     ContextPtr query_context,
@@ -11885,6 +11909,9 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                         return true;
 
                     const auto * rhs_function = node->as<ASTFunction>();
+                    if (rhs_function && rhs_function->arguments && (rhs_function->name == "CAST" || rhs_function->name == "_CAST"))
+                        return isLiteralCastToDecimal(*rhs_function);
+
                     if (!rhs_function || !rhs_function->arguments || (rhs_function->name != "tuple" && rhs_function->name != "array"))
                         return false;
 

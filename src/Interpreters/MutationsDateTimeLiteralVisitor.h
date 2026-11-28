@@ -7,6 +7,7 @@ namespace DB
 {
 
 class ASTAlterCommand;
+struct StorageID;
 
 /// When `session_timezone` is set, string literals compared to DateTime/DateTime64
 /// columns in mutation predicates must be interpreted in that timezone.
@@ -22,6 +23,7 @@ class ASTAlterCommand;
 ASTPtr rewriteDateTimeLiteralsWithTimezone(
     const ASTAlterCommand & alter_command,
     const ColumnsDescription & columns,
+    const StorageID & table_id,
     const String & session_timezone);
 
 }
