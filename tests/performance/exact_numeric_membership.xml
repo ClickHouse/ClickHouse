@@ -1,0 +1,17 @@
+<test>
+    <settings>
+        <allow_lossy_numeric_supertype>1</allow_lossy_numeric_supertype>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT sum(d IN (materialize(x))) FROM (SELECT toDecimal64(number % 100, 2) AS d, toFloat64(number % 100) AS x FROM numbers(10000000)) FORMAT Null</query>
+    <query>SELECT sum(ifNull(d = materialize(x), 0)) FROM (SELECT toDecimal64(number % 100, 2) AS d, toFloat64(number % 100) AS x FROM numbers(10000000)) FORMAT Null</query>
+    <query>SELECT sum(d IN (materialize(x))) FROM (SELECT toDecimal64(number % 100, 2) AS d, toFloat64(number % 100) AS x FROM numbers(10000000)) SETTINGS short_circuit_function_evaluation = 'force_enable' FORMAT Null</query>
+    <query>SELECT sum(ifNull(d = materialize(x), 0)) FROM (SELECT toDecimal64(number % 100, 2) AS d, toFloat64(number % 100) AS x FROM numbers(10000000)) SETTINGS short_circuit_function_evaluation = 'force_enable' FORMAT Null</query>
+    <query>SELECT sum(d IN (materialize(x))) FROM (SELECT toDecimal64(number % 100, 2) AS d, toInt64(number % 100) AS x FROM numbers(10000000)) FORMAT Null</query>
+    <query>SELECT sum(ifNull(d = materialize(x), 0)) FROM (SELECT toDecimal64(number % 100, 2) AS d, toInt64(number % 100) AS x FROM numbers(10000000)) FORMAT Null</query>
+    <query>SELECT sum(d IN (materialize(x))) FROM (SELECT toNullable(number) AS d, number AS x FROM numbers(10000000)) SETTINGS allow_lossy_numeric_supertype = 0, transform_null_in = 1 FORMAT Null</query>
+    <query>SELECT sum(isNotDistinctFrom(d, materialize(x))) FROM (SELECT toNullable(number) AS d, number AS x FROM numbers(10000000)) SETTINGS allow_lossy_numeric_supertype = 0, transform_null_in = 1 FORMAT Null</query>
+    <query>SELECT sum(a IN (materialize(b))) FROM (SELECT map('a', toNullable(number)) AS a, map('a', toNullable(toUInt32(number))) AS b FROM numbers(10000000)) SETTINGS allow_lossy_numeric_supertype = 0, transform_null_in = 1 FORMAT Null</query>
+    <query>SELECT sum(isNotDistinctFrom(a, materialize(b))) FROM (SELECT map('a', toNullable(number)) AS a, map('a', toNullable(toUInt32(number))) AS b FROM numbers(10000000)) SETTINGS allow_lossy_numeric_supertype = 0, transform_null_in = 1 FORMAT Null</query>
+</test>
