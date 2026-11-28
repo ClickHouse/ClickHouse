@@ -32,6 +32,8 @@ worker = cluster.add_instance(
 DISTRIBUTED_SETTINGS = ", ".join(
     [
         "make_distributed_plan = 1",
+        # The workers hold the tables, so the reads of `MergeTree` tables distribute.
+        "distributed_plan_workers_have_local_tables = 1",
         "enable_parallel_replicas = 0",
         "automatic_parallel_replicas_mode = 0",
         "distributed_plan_default_reader_bucket_count = 2",

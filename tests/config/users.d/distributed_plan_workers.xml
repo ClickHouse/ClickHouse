@@ -1,0 +1,8 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- The stateless workers of config.d/distributed_query.xml are this server, so they read its local tables. -->
+            <distributed_plan_workers_have_local_tables>1</distributed_plan_workers_have_local_tables>
+        </default>
+    </profiles>
+</clickhouse>
