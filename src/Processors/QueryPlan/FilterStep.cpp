@@ -298,6 +298,15 @@ static bool isTrivialSubtree(const ActionsDAG::Node * node)
     return node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ARRAY_JOIN;
 }
 
+/// Is the node a column of the AND chain itself, not the result of an atom split from the chain before?
+static bool isUnsplitInput(const ActionsDAG::Node * node, const UnorderedSetWithMemoryTracking<String> & split_names)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+
+    return node->type == ActionsDAG::ActionType::INPUT && !split_names.contains(node->result_name);
+}
+
 struct ActionsAndName
 {
     ActionsDAG dag;
@@ -388,7 +397,9 @@ static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * atom)
 
 /// Try to split the left most AND atom to a separate DAG.
 /// With `reorder`, the left most atom that can be moved to the front of the chain is preferred.
-static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, const std::string & filter_name, bool reorder)
+/// A column of the chain that is not split yet (not in `split_names`) is split in its place, like an atom.
+static std::optional<ActionsAndName> trySplitSingleAndFilter(
+    ActionsDAG & dag, const std::string & filter_name, bool reorder, const UnorderedSetWithMemoryTracking<String> & split_names)
 {
     const auto * filter = &dag.findInOutputs(filter_name);
     while (filter->type == ActionsDAG::ActionType::ALIAS)
@@ -399,11 +410,33 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
 
     /// Non-trivial atoms from left to right.
     auto atoms = ActionsDAG::extractConjunctionAtomsInWrittenOrder(filter);
+
+    /// The left most conjunct that is split when no atom is moved: a non-trivial atom or a column that is not split yet.
+    const ActionsDAG::Node * first_conjunct = nullptr;
+    /// The left most nullable column that is not split yet and precedes every non-trivial atom.
+    const ActionsDAG::Node * nullable_column = nullptr;
+    for (const auto * atom : atoms)
+    {
+        const bool is_function = !isTrivialSubtree(atom);
+        const bool is_column = !is_function && isUnsplitInput(atom, split_names);
+        if (!first_conjunct && (is_function || is_column))
+            first_conjunct = atom;
+        if (!nullable_column && is_column && isNullableOrLowCardinalityNullable(atom->result_type))
+            nullable_column = atom;
+        if (is_function)
+            break;
+    }
+
     std::erase_if(atoms, isTrivialSubtree);
 
     /// Do not split subtree if it's the last non-trivial one.
+    /// A nullable column before it is split: `and` evaluates the atom where the column is NULL, which the filter rejects.
     if (atoms.size() < 2)
+    {
+        if (atoms.size() == 1 && nullable_column && !canBeMovedToTheFrontOfAndChain(atoms.front()))
+            return splitSingleAndFilter(dag, nullable_column);
         return {};
+    }
 
     /// A heavy atom is evaluated only on the rows that passed the atoms split before it. If a cheap atom follows it,
     /// split the cheap one first. The atoms that are not moved keep their relative order.
@@ -421,15 +454,19 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
         }
     }
 
-    return splitSingleAndFilter(dag, atoms.front());
+    return splitSingleAndFilter(dag, first_conjunct);
 }
 
 static VectorWithMemoryTracking<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name, bool reorder)
 {
     VectorWithMemoryTracking<ActionsAndName> res;
+    UnorderedSetWithMemoryTracking<String> split_names;
 
-    while (auto condition = trySplitSingleAndFilter(dag, filter_name, reorder))
+    while (auto condition = trySplitSingleAndFilter(dag, filter_name, reorder, split_names))
+    {
+        split_names.insert(condition->name);
         res.push_back(std::move(*condition));
+    }
 
     return res;
 }
