@@ -817,7 +817,7 @@ ColumnPtr nullMapOnlyArgument(const IColumn & column)
     if (!null_map)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Expected an aggregate function argument that can contain NULL, got {}", column.getName());
-    return ColumnNullable::create(ColumnUInt8::create(column.size(), static_cast<UInt8>(0)), std::move(null_map));
+    return ColumnNullable::create(ColumnUInt8::create(column.size(), static_cast<UInt8>(0)), null_map);
 }
 
 }
