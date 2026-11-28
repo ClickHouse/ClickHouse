@@ -107,11 +107,11 @@ public:
     /// With a limit, a full state may have dropped any element of the intersection.
     [[nodiscard]] bool canIntersect() const override { return !limit_num_elems; }
 
-    void intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    bool intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (limit_num_elems)
         {
-            IAggregateFunction::intersect(place, rhs, arena);
+            return IAggregateFunction::intersect(place, rhs, arena);
         }
         else
         {
@@ -125,6 +125,7 @@ public:
 
             /// Copy-assigned, because moving a set with stack memory is not possible.
             cur_set = result;
+            return !cur_set.empty();
         }
     }
 
@@ -258,11 +259,11 @@ public:
     /// With a limit, a full state may have dropped any element of the intersection.
     [[nodiscard]] bool canIntersect() const override { return !limit_num_elems; }
 
-    void intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    bool intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (limit_num_elems)
         {
-            IAggregateFunction::intersect(place, rhs, arena);
+            return IAggregateFunction::intersect(place, rhs, arena);
         }
         else
         {
@@ -270,6 +271,7 @@ public:
             const auto & other = this->data(rhs);
             for (size_t word = 0; word < 4; ++word)
                 cur.bits[word] &= other.bits[word];
+            return cur.size() > 0;
         }
     }
 
@@ -412,11 +414,11 @@ public:
     /// With a limit, a full state may have dropped any element of the intersection.
     [[nodiscard]] bool canIntersect() const override { return !limit_num_elems; }
 
-    void intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    bool intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (limit_num_elems)
         {
-            IAggregateFunction::intersect(place, rhs, arena);
+            return IAggregateFunction::intersect(place, rhs, arena);
         }
         else
         {
@@ -431,6 +433,7 @@ public:
 
             /// Copy-assigned, because moving a set with stack memory is not possible.
             cur_set = result;
+            return !cur_set.empty();
         }
     }
 

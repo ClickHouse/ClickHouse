@@ -104,20 +104,22 @@ public:
             containers[i] = &assert_cast<const ColumnAggregateFunction &>(*column).getData();
         }
 
-        auto result = ColumnAggregateFunction::create(function);
-        result->reserve(input_rows_count);
-        Arena & arena = result->createOrGetArena();
+        /// Created by the type to carry its state version.
+        auto result_column = result_type->createColumn();
+        auto & result = assert_cast<ColumnAggregateFunction &>(*result_column);
+        result.reserve(input_rows_count);
+        Arena & arena = result.createOrGetArena();
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            result->insertFrom((*containers[0])[is_const[0] ? 0 : row]);
-            AggregateDataPtr place = result->getData().back();
+            result.insertFrom((*containers[0])[is_const[0] ? 0 : row]);
+            AggregateDataPtr place = result.getData().back();
 
             for (size_t i = 1; i < num_arguments; ++i)
                 function->intersect(place, (*containers[i])[is_const[i] ? 0 : row], &arena);
         }
 
-        return result;
+        return result_column;
     }
 };
 

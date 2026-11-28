@@ -125,9 +125,9 @@ public:
     /// The state is the state of the nested function.
     [[nodiscard]] bool canIntersect() const override { return nested_function->canIntersect(); }
 
-    void intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    bool intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        nested_function->intersect(place, rhs, arena);
+        return nested_function->intersect(place, rhs, arena);
     }
 
     DataTypePtr getNormalizedStateType() const override { return nested_function->getNormalizedStateType(); }

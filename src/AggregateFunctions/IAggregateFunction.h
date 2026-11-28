@@ -237,8 +237,9 @@ public:
     /// produce a valid state of the intersection, which estimates it with an error of the same kind, but which is not
     /// necessarily identical to a state aggregated from the intersection directly (it may be sampled more coarsely).
     /// The states must belong to the same function or have the same state representation (see `haveSameStateRepresentation`).
+    /// Returns whether the resulting state has aggregated any value (for the `Nullable` adapter, which keeps a flag of that).
     /// Throws `NOT_IMPLEMENTED` if `canIntersect` returns false.
-    virtual void intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const;
+    virtual bool intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const;
 
     /// Return true if it is allowed to replace call of `addBatch`
     /// to `addBatchSinglePlace` for ranges of consecutive equal keys.

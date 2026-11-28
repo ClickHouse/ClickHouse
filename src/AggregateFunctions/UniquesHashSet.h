@@ -860,6 +860,13 @@ public:
 
     [[nodiscard]] size_t size() const
     {
+        /** An empty sample at a positive skip degree comes only from `intersect` (thinning never removes
+          * the last element), and it means the intersection is empty: there is nothing to extrapolate.
+          * The wide set is a subset of the main sample (see `widePrefilterMask`), so it is empty too.
+          */
+        if (m_size == 0)
+            return 0;
+
         /** The wide set gives a reliable estimate once it has enough values;
           * below that the 32-bit main set is more precise. If the wide sample does not cover
           * all the elements (see `wide_incomplete`), it is not there at all and the legacy

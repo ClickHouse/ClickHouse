@@ -80,6 +80,34 @@ FROM numbers(100);
 SELECT arraySort(finalizeAggregation(intersectAggregations(groupUniqArrayStateIf(toDate(number), number < 5), groupUniqArrayStateIf(toDate(number), number >= 3))))
 FROM numbers(10);
 
+SELECT '-- empty intersections';
+-- A sampled `uniq` state intersected down to nothing estimates zero, also after a merge.
+SELECT finalizeAggregation(intersectAggregations(uniqState(number), uniqStateIf(number, 0))) FROM numbers(1000000);
+SELECT uniqMerge(s) FROM (SELECT intersectAggregations(uniqState(number), uniqStateIf(number, 0)) AS s FROM numbers(1000000));
+-- `-State` drops the `Nullable` adapter from the state type: an empty intersection finalizes like an empty state.
+SELECT
+    finalizeAggregation(intersectAggregations(groupBitmapStateIf(toNullable(number), number = 0), groupBitmapStateIf(toNullable(number), number = 1))),
+    finalizeAggregation(groupBitmapStateIf(toNullable(number), 0))
+FROM numbers(2);
+-- A state type with the `Nullable` adapter: disjoint nonempty operands and an already empty operand give `NULL`.
+WITH
+    arrayReduce('groupBitmapState', [toNullable(toUInt64(1))]) AS a,
+    arrayReduce('groupBitmapState', [toNullable(toUInt64(2))]) AS b,
+    arrayReduce('groupBitmapState', [toNullable(toUInt64(1)), 2]) AS c,
+    arrayReduce('groupBitmapState', [CAST(NULL, 'Nullable(UInt64)')]) AS n
+SELECT
+    toTypeName(a),
+    finalizeAggregation(intersectAggregations(a, b)),
+    finalizeAggregation(intersectAggregations(c, n)),
+    finalizeAggregation(intersectAggregations(a, c)),
+    finalizeAggregation(arrayReduce('groupBitmapMergeState', [intersectAggregations(a, b)])),
+    finalizeAggregation(arrayReduce('groupBitmapMergeState', [intersectAggregations(a, b), b]));
+
+SELECT '-- versioned states';
+-- The result keeps the state version of its type, so it survives a round trip through a `Field` or an array.
+SELECT toTypeName(intersectAggregations(uniqState(number))) FROM numbers(10);
+SELECT finalizeAggregation(any(s)), finalizeAggregation(groupArray(s)[1]) FROM (SELECT intersectAggregations(uniqState(number)) AS s FROM numbers(10));
+
 SELECT '-- errors';
 SELECT intersectAggregations(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT intersectAggregations(1, 2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

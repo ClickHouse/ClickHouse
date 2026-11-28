@@ -171,7 +171,7 @@ char * IAggregateFunction::serializeToMemory(ConstAggregateDataPtr __restrict, c
         ErrorCodes::NOT_IMPLEMENTED, "Method serializeToMemory is not implemented for {}, it reported no serialized size bound", getName());
 }
 
-void IAggregateFunction::intersect(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, Arena * /*arena*/) const
+bool IAggregateFunction::intersect(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, Arena * /*arena*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} does not support the intersection of states", getName());
 }

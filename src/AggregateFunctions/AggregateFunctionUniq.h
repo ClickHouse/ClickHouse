@@ -941,12 +941,16 @@ public:
 
     [[nodiscard]] bool canIntersect() const override { return detail::IntersectableSet<typename Data::Set>; }
 
-    void intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    bool intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (detail::IntersectableSet<typename Data::Set>)
-            this->data(place).set.intersect(this->data(rhs).set);
+        {
+            auto & set = this->data(place).set;
+            set.intersect(this->data(rhs).set);
+            return set.size() > 0;
+        }
         else
-            IAggregateFunction::intersect(place, rhs, arena);
+            return IAggregateFunction::intersect(place, rhs, arena);
     }
 
     [[nodiscard]] bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
@@ -1227,12 +1231,16 @@ public:
 
     [[nodiscard]] bool canIntersect() const override { return detail::IntersectableSet<typename Data::Set>; }
 
-    void intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    bool intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (detail::IntersectableSet<typename Data::Set>)
-            this->data(place).set.intersect(this->data(rhs).set);
+        {
+            auto & set = this->data(place).set;
+            set.intersect(this->data(rhs).set);
+            return set.size() > 0;
+        }
         else
-            IAggregateFunction::intersect(place, rhs, arena);
+            return IAggregateFunction::intersect(place, rhs, arena);
     }
 
     [[nodiscard]] bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }

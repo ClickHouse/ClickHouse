@@ -29,4 +29,12 @@
 ['0','12','4','8']
 [[1]]
 ['1970-01-04','1970-01-05']
+-- empty intersections
+0
+0
+0	0
+AggregateFunction(groupBitmap, Nullable(UInt64))	\N	\N	1	\N	1
+-- versioned states
+AggregateFunction(1, uniq, UInt64)
+10	10
 -- errors
