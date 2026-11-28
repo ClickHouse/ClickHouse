@@ -5,7 +5,10 @@
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <IO/ReadSettings.h>
 #include <base/unaligned.h>
+
+#include <limits>
 
 
 namespace DB
@@ -94,7 +97,13 @@ getCompressionCodecForFile(ReadBuffer & read_buffer, UInt32 & size_compressed, U
 
 CompressionCodecPtr getCompressionCodecForFile(const IDataPartStorage & data_part_storage, const String & relative_path)
 {
-    auto read_buffer = data_part_storage.readFile(relative_path, {}, std::nullopt);
+    /// Only the beginning of the first frame is read: the checksum, the header and, for `Multiple`, the number of codecs
+    /// and their method bytes. A buffer of the default size would read 128 KiB of the file or more.
+    constexpr size_t max_frame_beginning_size = sizeof(Checksum) + ICompressionCodec::getHeaderSize() + 1 + std::numeric_limits<UInt8>::max();
+    ReadSettings settings;
+    settings.local_fs_settings.buffer_size = max_frame_beginning_size;
+    settings.remote_fs_settings.buffer_size = max_frame_beginning_size;
+    auto read_buffer = data_part_storage.readFile(relative_path, settings, max_frame_beginning_size);
     UInt32 size_compressed = 0;
     UInt32 size_decompressed = 0;
     return getCompressionCodecForFile(*read_buffer, size_compressed, size_decompressed, false);

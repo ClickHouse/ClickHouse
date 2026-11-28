@@ -159,27 +159,15 @@ UnorderedMapWithMemoryTracking<String, UInt64> estimateDistinctValuesFromMetadat
             return {};
 
         const auto part_sizes = data_part->getColumnSizes();
-        for (auto it = sizes.begin(); it != sizes.end();)
+        for (auto & [column_name, size] : sizes)
         {
-            auto & [column_name, size] = *it;
             /// A part without the column (added by `ALTER` and not materialized) keeps no size for it.
             const auto size_it = part_sizes->find(column_name);
             if (size_it == part_sizes->end() || size_it->second.data_compressed == 0)
-            {
-                ++it;
                 continue;
-            }
-
-            /// A part that stores the column by another codec than the declared one leaves it without an estimate.
-            if (!isStoredWithGeneralPurposeCodecs(*data_part, column_name, *metadata))
-            {
-                it = sizes.erase(it);
-                continue;
-            }
 
             size.rows += data_part->rows_count;
             size.compressed_bytes += size_it->second.data_compressed;
-            ++it;
         }
     }
 
@@ -187,6 +175,28 @@ UnorderedMapWithMemoryTracking<String, UInt64> estimateDistinctValuesFromMetadat
     for (const auto & [column_name, size] : sizes)
         if (auto distinct_values = estimateDistinctValuesFromCompressedSize(size.rows, size.compressed_bytes))
             result.emplace(column_name, *distinct_values);
+
+    /// A part that stores the column by another codec than the declared one leaves it without an estimate. That is
+    /// checked only for the columns with an estimate by their sizes, as on a local disk it reads the beginning of
+    /// each data file of the column in every part.
+    for (const auto & part : parts)
+    {
+        if (result.empty())
+            break;
+
+        const auto & data_part = part.data_part;
+        if (data_part->getType() != MergeTreeDataPartType::Wide)
+            continue;
+
+        const auto part_sizes = data_part->getColumnSizes();
+        std::erase_if(result, [&](const auto & column)
+        {
+            const auto size_it = part_sizes->find(column.first);
+            if (size_it == part_sizes->end() || size_it->second.data_compressed == 0)
+                return false;
+            return !isStoredWithGeneralPurposeCodecs(*data_part, column.first, *metadata);
+        });
+    }
     return result;
 }
 

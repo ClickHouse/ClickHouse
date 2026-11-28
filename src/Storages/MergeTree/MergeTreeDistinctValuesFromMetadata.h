@@ -17,8 +17,9 @@ namespace DB
 /// adaptively (`enable_adaptive_codec_selection`).
 ///
 /// The declared codec of a column is the current one, and a codec-only `ALTER` does not rewrite the parts. So every
-/// wide part with the column also has to store it by general purpose codecs: on a local disk by the first compressed
-/// frame of its data files, read once for a part (`IMergeTreeDataPart::isColumnStoredWithGeneralPurposeCodecs`); on a
+/// wide part with the column also has to store it by general purpose codecs: on a local disk by the header of the first
+/// compressed frame of its data files, read once for a part and only for the columns that get an estimate by their
+/// sizes (`IMergeTreeDataPart::isColumnStoredWithGeneralPurposeCodecs`); on a
 /// remote disk, where that would be a request per file, a part of a replicated table has to be written with the
 /// current metadata version instead, and a part of another table is taken as declared. No other data is read.
 UnorderedMapWithMemoryTracking<String, UInt64> estimateDistinctValuesFromMetadata(
