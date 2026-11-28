@@ -6,6 +6,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTime64.h>
@@ -3714,8 +3715,9 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
     return result;
 }
 
-/// Whether the chain ends by rendering a native integer (or a `Date`) as text that the cast into `element_type` parses back to the
-/// same value, as an element renders. A custom serialization (`Bool`, also in `SimpleAggregateFunction`) breaks that.
+/// Whether the chain ends by rendering a native integer, `Date`, or a supported `DateTime` as text that the cast into
+/// `element_type` parses back to the same value, as an element renders. A custom serialization (`Bool`, also in
+/// `SimpleAggregateFunction`) breaks that.
 static bool isTextOfElementValues(const std::vector<FunctionBasePtr> & chain, const DataTypePtr & element_type)
 {
     if (chain.empty())
@@ -3732,7 +3734,21 @@ static bool isTextOfElementValues(const std::vector<FunctionBasePtr> & chain, co
     if (source_type->getCustomSerialization() || element_type->getCustomSerialization())
         return false;
 
-    return (isNativeInteger(source_type) && isNativeInteger(element_type)) || (isDate(source_type) && isDate(element_type));
+    if ((isNativeInteger(source_type) && isNativeInteger(element_type)) || (isDate(source_type) && isDate(element_type)))
+        return true;
+
+    if (name != "toString")
+        return false;
+
+    /// For a plain `DateTime`, both `toString` and the index-side cast use `writeDateTimeText` regardless of
+    /// `date_time_output_format`. Require matching explicit fixed-offset zones for an unambiguous round trip,
+    /// since `DataTypeDateTime::equals` ignores the time zone.
+    const auto * source_date_time = typeid_cast<const DataTypeDateTime *>(source_type.get());
+    const auto * element_date_time = typeid_cast<const DataTypeDateTime *>(element_type.get());
+    return source_date_time && element_date_time
+        && source_date_time->hasExplicitTimeZone() && element_date_time->hasExplicitTimeZone()
+        && source_date_time->getTimeZone().getTimeZone() == element_date_time->getTimeZone().getTimeZone()
+        && source_date_time->getTimeZone().hasFixedOffset();
 }
 
 bool KeyCondition::tryPrepareSetColumnsForIndex(
@@ -3822,7 +3838,6 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         /// `JSON` accepts only objects, a `Variant` infers an alternative from the spelling (`CAST('42',
         /// 'Variant(Date)')` throws), and a `Dynamic` does so under `cast_string_to_dynamic_use_inference` -
         /// so the full scan may match another spelling or raise a conversion error that pruning would hide.
-        /// A string the key chain computes as the text of an integer (or a `Date`) holds no other spelling, so such a set keeps the index.
         if (membership_compares_carriers)
         {
             const DataTypePtr predicate_column_type
