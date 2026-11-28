@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- Only production-tier settings may be changed: Beta `allow_delta_lake_writes` cannot be turned on. -->
+    <allow_feature_tier>3</allow_feature_tier>
+</clickhouse>

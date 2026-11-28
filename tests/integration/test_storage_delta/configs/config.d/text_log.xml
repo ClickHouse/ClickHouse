@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- `LOG_TEST` lines (kernel snapshot rebuilds) must reach `system.text_log`. -->
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <level>test</level>
+    </text_log>
+</clickhouse>
