@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <algorithm>
 
 
 namespace DB
@@ -100,63 +99,54 @@ ActiveDataPartSet::AddPartOutcome ActiveDataPartSet::addImpl(const MergeTreePart
         return AddPartOutcome::HasCovering;
 
     /// Parts contained in `part` are located contiguously in `part_info_to_name`, overlapping with the place where the part itself would be inserted.
-    auto it = part_info_to_name.lower_bound(part_info);
+    auto it_middle = part_info_to_name.lower_bound(part_info);
 
     if (out_replaced_parts)
         out_replaced_parts->clear();
 
     /// Let's go left.
-    while (it != part_info_to_name.begin())
+    auto begin = it_middle;
+    while (begin != part_info_to_name.begin() && part_info.contains(std::prev(begin)->first))
+        --begin;
+
+    if (begin != part_info_to_name.begin() && !part_info.isDisjoint(std::prev(begin)->first))
     {
-        --it;
-        if (!part_info.contains(it->first))
-        {
-            if (!part_info.isDisjoint(it->first))
-            {
-                if (out_reason != nullptr)
-                    *out_reason = fmt::format(
-                        "Part {} intersects previous part {}. "
-                        "It is a bug or a result of manual intervention in the ZooKeeper data.",
-                        part_info.getPartNameForLogs(),
-                        it->first.getPartNameForLogs());
-                return AddPartOutcome::HasIntersectingPart;
-            }
-            ++it;
-            break;
-        }
-
-        if (out_replaced_parts)
-            out_replaced_parts->push_back(it->second);
-        it = part_info_to_name.erase(it);
+        if (out_reason != nullptr)
+            *out_reason = fmt::format(
+                "Part {} intersects previous part {}. "
+                "It is a bug or a result of manual intervention in the ZooKeeper data.",
+                part_info.getPartNameForLogs(),
+                std::prev(begin)->first.getPartNameForLogs());
+        return AddPartOutcome::HasIntersectingPart;
     }
-
-    if (out_replaced_parts)
-        std::reverse(out_replaced_parts->begin(), out_replaced_parts->end());
 
     /// Let's go to the right.
-    while (it != part_info_to_name.end() && part_info.contains(it->first))
+    auto end = it_middle;
+    while (end != part_info_to_name.end() && part_info.contains(end->first))
     {
-        chassert(part_info != it->first);
-        if (out_replaced_parts)
-            out_replaced_parts->push_back(it->second);
-        it = part_info_to_name.erase(it);
+        chassert(part_info != end->first);
+        ++end;
     }
 
-    if (it != part_info_to_name.end() && !part_info.isDisjoint(it->first))
+    if (end != part_info_to_name.end() && !part_info.isDisjoint(end->first))
     {
         if (out_reason != nullptr)
             *out_reason = fmt::format(
                 "Part {} intersects part {}. It is a bug or a result of manual intervention "
                 "in the ZooKeeper data.",
                 name,
-                it->first.getPartNameForLogs());
+                end->first.getPartNameForLogs());
 
         return AddPartOutcome::HasIntersectingPart;
     }
 
+    if (out_replaced_parts)
+        for (auto it = begin; it != end; ++it)
+            out_replaced_parts->push_back(it->second);
+
+    part_info_to_name.erase(begin, end);
     part_info_to_name.emplace(part_info, name);
     return AddPartOutcome::Added;
-
 }
 
 bool ActiveDataPartSet::add(const MergeTreePartInfo & part_info, Strings * out_replaced_parts)

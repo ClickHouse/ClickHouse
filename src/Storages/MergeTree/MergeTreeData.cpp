@@ -174,6 +174,7 @@
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
@@ -12933,6 +12934,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         }
 
         ActiveDataPartSet active_parts(format_version);
+        /// (disk name, directory name): the same directory name can exist on several disks.
+        SetWithMemoryTracking<std::pair<String, String>> ignored_parts;
 
         auto detached_parts = getDetachedParts();
         std::erase_if(detached_parts, [&partition_id](const DetachedPartInfo & part_info)
@@ -12958,6 +12961,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             if (outcome == ActiveDataPartSet::AddPartOutcome::HasIntersectingPart)
             {
                 LOG_WARNING(log, "Ignoring detached part {} because it intersects another detached part: {}", part_info.dir_name, reason);
+                ignored_parts.emplace(part_info.disk->getName(), part_info.dir_name);
                 part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
                     fs::path(relative_data_path) / source_dir / ("ignored_" + part_info.dir_name));
             }
@@ -12968,6 +12972,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         /// Take care to process parts in the correct order. This is needed for Replacing and other special MergeTree variants.
         std::erase_if(detached_parts, [&](const auto & part_info)
         {
+            if (ignored_parts.contains({part_info.disk->getName(), part_info.dir_name}))
+                return true;
             String containing_part = active_parts.getContainingPart(part_info.dir_name);
             return containing_part.empty();
         });
