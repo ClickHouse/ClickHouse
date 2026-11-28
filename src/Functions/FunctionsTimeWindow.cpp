@@ -228,13 +228,16 @@ bool isHopMonotonic(const ColumnsWithTypeAndName & arguments)
     if (arguments.size() < 3)
         return false;
 
-    /// The arguments may still be wrapped into `Nullable` and `LowCardinality` here.
-    auto nested_arguments = createBlockWithNestedColumns(arguments);
-    for (auto & argument : nested_arguments)
+    /// The arguments may still be wrapped into `LowCardinality` and `Nullable` here. The wrappers are removed in the
+    /// same order as for the execution: `LowCardinality` is the outer one, as in `LowCardinality(Nullable(DateTime))`.
+    /// Otherwise the time zone of the time column would not be found, and the server time zone would be checked.
+    ColumnsWithTypeAndName arguments_without_low_cardinality = arguments;
+    for (auto & argument : arguments_without_low_cardinality)
     {
         argument.type = recursiveRemoveLowCardinality(argument.type);
         argument.column = recursiveRemoveLowCardinality(argument.column);
     }
+    const auto nested_arguments = createBlockWithNestedColumns(arguments_without_low_cardinality);
 
     const auto * hop_interval_type = checkAndGetDataType<DataTypeInterval>(nested_arguments[1].type.get());
     if (!hop_interval_type)
