@@ -1,0 +1,11 @@
+-- before deletes --
+Join: e[4000] ⋈ a[2000]
+Join: e[no_stats~4000] ⋈ a[no_stats~2000]
+-- after deleting three quarters of the rows --
+Join: a[2000] ⋈ e[1000]
+Join: a[no_stats~2000] ⋈ e[no_stats~1000]
+-- after deleting every row --
+Join: a[2000] ⋈ e[0]
+Join: a[no_stats~2000] ⋈ e[no_stats~0]
+0
+0
