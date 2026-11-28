@@ -3,8 +3,9 @@
 
 SET optimize_inverse_dictionary_lookup = 1;
 SET optimize_or_like_chain = 0;
+SET optimize_rewrite_like_perfect_affix = 0;
 
--- Expect no rewrite of dictGet(...) = 'constant'
+-- The `IN (SELECT ... FROM dictionary(...))` rewrite is applied here too.
 SET rewrite_in_to_join = 1;
 
 DROP DICTIONARY IF EXISTS colors;
@@ -64,4 +65,17 @@ SELECT 'Less, LHS';
 SELECT color_id, payload
 FROM t
 WHERE dictGetString('colors', 'name', color_id) < 'red'
+ORDER BY color_id, payload;
+
+SELECT 'Like, LHS - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) LIKE 'r%'
+ORDER BY color_id, payload;
+
+SELECT 'Like, LHS';
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) LIKE 'r%'
 ORDER BY color_id, payload;

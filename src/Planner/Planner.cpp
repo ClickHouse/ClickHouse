@@ -1250,7 +1250,7 @@ void Planner::buildPlanForQueryNode()
     if (query_processing_info.isFirstStage())
     {
         if (expression_analysis_result.hasWhere())
-            addFilterStep(planner_context, query_plan, expression_analysis_result.getWhere(), select_query_options, "WHERE", useful_sets);
+            addFilterStep(planner_context, query_plan, expression_analysis_result.getWhere(), select_query_options, "WHERE", useful_sets, /*allow_in_to_join=*/ true);
 
         if (expression_analysis_result.hasAggregation())
         {
@@ -1263,7 +1263,7 @@ void Planner::buildPlanForQueryNode()
                     /*correlated_subtrees=*/{},
                     select_query_options,
                     "Before GROUP BY",
-                    useful_sets);
+                    useful_sets, /*allow_in_to_join=*/ true);
 
             /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET`
             /// keys. The cap goes only into the parameters of this aggregation. It is not set with
@@ -1340,7 +1340,7 @@ void Planner::buildPlanForQueryNode()
                         /*correlated_subtrees=*/{},
                         select_query_options,
                         "Before WINDOW",
-                        useful_sets);
+                        useful_sets, /*allow_in_to_join=*/ true);
             }
             else
             {
@@ -1356,7 +1356,7 @@ void Planner::buildPlanForQueryNode()
                     projection_analysis_result.correlated_subtrees,
                     select_query_options,
                     "Projection",
-                    useful_sets);
+                    useful_sets, /*allow_in_to_join=*/ true);
 
                 if (query_node.isDistinct())
                 {
@@ -1379,7 +1379,7 @@ void Planner::buildPlanForQueryNode()
                         /*correlated_subtrees=*/{},
                         select_query_options,
                         "Before ORDER BY",
-                        useful_sets);
+                        useful_sets, /*allow_in_to_join=*/ true);
                 }
             }
         }
@@ -1421,7 +1421,7 @@ void Planner::buildPlanForQueryNode()
             addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
-                addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
+                addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets, /*allow_in_to_join=*/ true);
         }
 
         if (query_processing_info.isFromAggregationState())
@@ -1443,13 +1443,13 @@ void Planner::buildPlanForQueryNode()
                         /*correlated_subtrees=*/{},
                         select_query_options,
                         "Before window functions",
-                        useful_sets);
+                        useful_sets, /*allow_in_to_join=*/ true);
 
                 addWindowSteps(query_plan, planner_context, window_analysis_result, select_query_options.max_step_description_length);
             }
 
             if (expression_analysis_result.hasQualify())
-                addFilterStep(planner_context, query_plan, expression_analysis_result.getQualify(), select_query_options, "QUALIFY", useful_sets);
+                addFilterStep(planner_context, query_plan, expression_analysis_result.getQualify(), select_query_options, "QUALIFY", useful_sets, /*allow_in_to_join=*/ true);
 
             auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(
@@ -1459,7 +1459,7 @@ void Planner::buildPlanForQueryNode()
                 projection_analysis_result.correlated_subtrees,
                 select_query_options,
                 "Projection",
-                useful_sets);
+                useful_sets, /*allow_in_to_join=*/ true);
 
             if (query_node.isDistinct())
             {
@@ -1482,7 +1482,7 @@ void Planner::buildPlanForQueryNode()
                     /*correlated_subtrees=*/{},
                     select_query_options,
                     "Before ORDER BY",
-                    useful_sets);
+                    useful_sets, /*allow_in_to_join=*/ true);
             }
         }
         else
@@ -1563,7 +1563,7 @@ void Planner::buildPlanForQueryNode()
                 /*correlated_subtrees=*/{},
                 select_query_options,
                 "Before LIMIT BY",
-                useful_sets);
+                useful_sets, /*allow_in_to_join=*/ !query_node.hasOrderBy() && !query_node.isShuffle());
             addLimitByStep(
                 query_plan,
                 limit_by_analysis_result,
@@ -1613,7 +1613,7 @@ void Planner::buildPlanForQueryNode()
                     /*correlated_subtrees=*/{},
                     select_query_options,
                     "Before LIMIT range (AFTER/UNTIL)",
-                    useful_sets);
+                    useful_sets, /*allow_in_to_join=*/ false);
 
             addLimitRangeStep(
                 query_plan,
@@ -1639,7 +1639,7 @@ void Planner::buildPlanForQueryNode()
                 /*correlated_subtrees=*/{},
                 select_query_options,
                 "Project names",
-                useful_sets);
+                useful_sets, /*allow_in_to_join=*/ false);
         }
 
         // For additional_result_filter setting

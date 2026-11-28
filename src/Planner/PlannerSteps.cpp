@@ -13,6 +13,7 @@
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
 #include <Planner/PlannerSorting.h>
+#include <Planner/PlannerUncorrelatedSubqueries.h>
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/QueryAnalysisResult.h>
 #include <Planner/Utils.h>
@@ -51,6 +52,7 @@
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/RollupStep.h>
@@ -102,6 +104,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_constant_columns_after_filter;
+    extern const SettingsBool rewrite_in_to_join;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsBool distributed_aggregation_memory_efficient;
@@ -686,6 +689,75 @@ void addPreliminaryLimitStep(
     }
 }
 
+void addInToJoinStepsIfPossible(
+    const PlannerContextPtr & planner_context,
+    QueryPlan & query_plan,
+    ActionsDAG & actions,
+    const SelectQueryOptions & select_query_options,
+    UsefulSets & useful_sets)
+{
+    /// A set checks the totals row of the stream against the subquery like any other row, and a join does not.
+    /// Decorrelation does not support a join above a step that reads a correlated column.
+    if (!planner_context->getQueryContext()->getSettingsRef()[Setting::rewrite_in_to_join]
+        || QueryPlanOptimizations::canProduceTotals(*query_plan.getRootNode())
+        || planHasCorrelatedExpressions(query_plan))
+        return;
+
+    auto header_before_joins = query_plan.getCurrentHeader();
+    NameSet kept_sets;
+    while (auto in_subquery = findInnermostUncorrelatedInSubquery(actions, kept_sets))
+    {
+        if (!canRewriteInToJoin(*in_subquery->in_node, in_subquery->subquery))
+        {
+            kept_sets.insert(in_subquery->in_node->result_name);
+            continue;
+        }
+
+        /// A set ignores the totals of its subquery, so the join must too.
+        auto subquery = in_subquery->subquery->clone();
+        for (const auto & table_expression : extractTableExpressions(
+                 std::static_pointer_cast<ITableExpressionNode>(subquery), /*add_array_join=*/ false, /*recursive=*/ true))
+        {
+            if (auto * query_node = table_expression->as<QueryNode>())
+                query_node->setIsGroupByWithTotals(false);
+        }
+
+        auto subquery_options = select_query_options.subquery();
+        subquery_options.forceMaterializeCTE();
+        subquery_options.ignore_limits = false;
+        Planner subquery_planner(subquery, subquery_options, std::make_shared<GlobalPlannerContext>(
+            nullptr, nullptr, nullptr, collectFiltersForAnalysis(subquery, select_query_options, /*post_filter=*/ nullptr)));
+        subquery_planner.buildQueryPlanIfNeeded();
+        auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
+
+        /// A view or a remote table may still produce totals, which a set ignores and a join does not.
+        if (QueryPlanOptimizations::canProduceTotals(*subquery_plan.getRootNode()))
+        {
+            kept_sets.insert(in_subquery->in_node->result_name);
+            continue;
+        }
+
+        /// The part of the actions the `IN` reads is computed below the join, and the rest reads the `IN` as an input.
+        auto [in_actions, rest_actions, split_nodes_mapping] = actions.split(
+            {in_subquery->in_node}, /*create_split_nodes_mapping=*/ true, /*avoid_duplicate_inputs=*/ true);
+        in_subquery->in_node = split_nodes_mapping.at(in_subquery->in_node);
+        in_subquery->actions = std::move(in_actions);
+
+        buildQueryPlanForUncorrelatedInSubquery(planner_context, query_plan, std::move(*in_subquery), std::move(subquery_plan), useful_sets);
+
+        actions = std::move(rest_actions);
+    }
+
+    /// The step consumes the columns the joins added for themselves, so that they do not pass through it.
+    NameSet input_names;
+    for (const auto * input : actions.getInputs())
+        input_names.insert(input->result_name);
+
+    for (const auto & column : *query_plan.getCurrentHeader())
+        if (!header_before_joins->has(column.name) && !input_names.contains(column.name))
+            actions.addInput(column);
+}
+
 }
 
 FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options, const ActionsDAG * post_filter)
@@ -716,7 +788,8 @@ void addExpressionStep(
     const CorrelatedSubtrees & correlated_subtrees,
     const SelectQueryOptions & select_query_options,
     std::string_view step_description,
-    UsefulSets & useful_sets)
+    UsefulSets & useful_sets,
+    bool allow_in_to_join)
 {
     NameSet input_columns_set;
     for (const auto & column : query_plan.getCurrentHeader()->getColumnsWithTypeAndName())
@@ -739,6 +812,9 @@ void addExpressionStep(
     if (expression_actions->project_input)
         actions.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
 
+    if (allow_in_to_join)
+        addInToJoinStepsIfPossible(planner_context, query_plan, actions, select_query_options, useful_sets);
+
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions));
     appendSetsFromActionsDAG(expression_step->getExpression(), useful_sets);
     expression_step->setStepDescription(String(step_description), step_description.size());
@@ -751,7 +827,8 @@ void addFilterStep(
     FilterAnalysisResult & filter_analysis_result,
     const SelectQueryOptions & select_query_options,
     std::string_view step_description,
-    UsefulSets & useful_sets)
+    UsefulSets & useful_sets,
+    bool allow_in_to_join)
 {
     for (const auto & correlated_subquery : filter_analysis_result.correlated_subtrees.subqueries)
     {
@@ -761,6 +838,9 @@ void addFilterStep(
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
     if (filter_analysis_result.filter_actions->project_input)
         actions.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
+
+    if (allow_in_to_join)
+        addInToJoinStepsIfPossible(planner_context, query_plan, actions, select_query_options, useful_sets);
 
     auto where_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
         std::move(actions),
@@ -1336,7 +1416,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     if (query_node.hasInterpolate())
     {
         auto & before_interpolate_actions = sort_analysis_result.before_interpolate_actions;
-        addExpressionStep(planner_context, query_plan, before_interpolate_actions, CorrelatedSubtrees(), select_query_options, "Before INTERPOLATE", useful_sets);
+        addExpressionStep(planner_context, query_plan, before_interpolate_actions, CorrelatedSubtrees(), select_query_options, "Before INTERPOLATE", useful_sets, /*allow_in_to_join=*/ false);
 
         ActionsDAG interpolate_actions_dag;
         auto query_plan_columns = query_plan.getCurrentHeader()->getColumnsWithTypeAndName();
@@ -1684,7 +1764,8 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
             {},
             select_query_options,
             "Before LIMIT BY",
-            useful_sets);
+            useful_sets,
+            /*allow_in_to_join=*/ !query_node.hasOrderBy() && !query_node.isShuffle());
         /// We don't apply LIMIT BY on remote nodes at all in the old infrastructure.
         /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
         /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
