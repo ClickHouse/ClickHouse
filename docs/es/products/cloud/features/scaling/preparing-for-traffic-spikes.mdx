@@ -1,0 +1,58 @@
+---
+title: 'Preparación para picos de tráfico'
+sidebarTitle: 'Preparación para picos de tráfico'
+slug: /cloud/features/scaling/preparing-for-traffic-spikes
+description: 'Prepare los servicios de ClickHouse Cloud para un pico de tráfico previsto aumentando la capacidad con antelación y revisando los ajustes de escalado automático.'
+keywords: ['picos de tráfico', 'tráfico máximo', 'escalado', 'escalado automático', 'capacidad', 'Black Friday']
+doc_type: 'guide'
+---
+
+<Note>
+  **Esta página se aplica a los servicios Scale y Enterprise.**
+
+  * **Nivel básico:** Los servicios Basic tienen un tamaño fijo y no pueden escalar. Si utiliza un servicio Basic y prevé un pico de tráfico, cambie a un [nivel de Cloud](/es/products/cloud/features/cloud-tiers) superior.
+  * **Bring Your Own Cloud (BYOC):** Los pasos siguientes también son aplicables, pero sus servicios se ejecutan en su propia cuenta en la nube, así que asegúrese de que su cuenta disponga de cuotas y capacidad suficientes para el pico previsto.
+</Note>
+
+Muchos workloads tienen períodos de mayor demanda predecibles, como eventos comerciales y de compras, lanzamientos de productos, informes de cierre de trimestre o campañas de marketing. El escalado automático reacciona a la carga a medida que se produce, pero cuando sabe que se avecina un pico, suele ser preferible aumentar la capacidad con antelación.
+
+En los períodos de alta demanda general, la capacidad disponible en los proveedores de nube puede ser más limitada de lo habitual, sobre todo para los tamaños de instancia más grandes y en algunas regiones. Aumentar la capacidad con antelación le permite asegurarse la capacidad que necesita y le da tiempo para comprobar que sus servicios están preparados antes de que llegue el pico.
+
+<Note>
+  **Próximo pico: Black Friday y Cyber Monday 2026**
+
+  Si prevé un aumento del tráfico entre el 27 y el 30 de noviembre de 2026, le recomendamos aumentar la capacidad antes del **20 de noviembre** y mantenerla hasta el **1 de diciembre**. Si tiene previsto escalar por encima del número de réplicas permitido para un servicio, póngase en contacto con nosotros antes del **13 de noviembre** (consulte el paso 3 más abajo).
+
+  ClickHouse no actualizará los servicios durante los períodos de congelación de versiones: del 24 de noviembre al 1 de diciembre de 2026 y del 23 de diciembre de 2026 al 3 de enero de 2027. Consulte el [calendario de lanzamientos](/es/resources/changelogs/cloud/release-status#release-schedule).
+</Note>
+
+## Antes del pico {#before-the-peak}
+
+1. Configure la monitorización y las alertas para detectar rápidamente cualquier cambio durante el pico. Configure [notificaciones](/es/products/cloud/features/monitoring/notifications) por correo electrónico o Slack para eventos de escalado, errores y facturación. Si utiliza una herramienta de monitorización externa, conéctela mediante el [endpoint de Prometheus](/es/products/cloud/features/monitoring/prometheus) y configure alertas sobre la utilización de CPU y memoria.
+2. Estime la carga prevista: analice cómo se comportaron sus servicios durante picos anteriores y calcule cuánto puede aumentar el volumen de consultas e inserciones. Para ver la utilización histórica de CPU y memoria de cada réplica, consulte el panel de control de infraestructura de su servicio (**monitorización &gt; infraestructura**) o la sección [Gestión de picos de workload](/es/products/cloud/features/autoscaling/scheduled-scaling#handling-bursty-workloads).
+3. Avísenos si prevé aumentos de capacidad importantes: si tiene previsto escalar más allá del número de réplicas permitido para un servicio, póngase en contacto con su account team o con el soporte de ClickHouse al menos dos semanas antes del pico. Así podremos planificar la capacidad con nuestros proveedores de nube con antelación. En su solicitud, incluya:
+
+   1. Nombre del servicio y región
+   2. Tamaño objetivo (memoria por réplica y número de réplicas)
+   3. Fechas de inicio y fin
+
+   <Note>
+     La capacidad está sujeta a la disponibilidad de nuestros proveedores de nube, por lo que no podemos garantizar que un tamaño concreto esté disponible en un momento determinado. Si nos avisa con antelación, tendremos más posibilidades de reservarla para usted.
+   </Note>
+4. Aumente la capacidad con antelación: hágalo varios días antes del pico, no el mismo día en que comienza. Así tendrá tiempo de confirmar que su servicio funciona correctamente con el nuevo tamaño y de hacer ajustes si es necesario. Puede cambiar la configuración de escalado de su servicio en la consola de ClickHouse Cloud, en **Settings &gt; Escalado**, o con la [API de ClickHouse Cloud](/es/products/cloud/features/admin-features/api/api-overview).
+5. Revise la configuración de escalado automático: si el escalado automático (vertical u horizontal) está habilitado para su servicio, compruebe los límites antes del pico:
+   1. **Aumente el mínimo** para mantener la capacidad durante todo el pico, en lugar de esperar a que reaccione el escalado automático.
+   2. **Aumente el máximo** para que el escalado automático tenga margen de crecimiento si la carga supera lo estimado.
+   3. **Revise la entrada en estado de inactividad.** En servicios sensibles a la latencia, considere deshabilitarla durante el pico para que el servicio no tenga que reactivarse cuando llegue el tráfico.
+   4. **Revise las programaciones del escalado.** Cuando se activan, las programaciones del escalado tienen precedencia sobre la configuración de escalado automático. Pause o ajuste cualquier programación que reduzca la capacidad de sus servicios durante el pico, como los scale-down de fin de semana o nocturnos.
+6. Realice pruebas con el nuevo tamaño: una vez aumentada la capacidad de sus servicios, ejecute, siempre que sea posible, una prueba de carga que simule el tráfico del pico. Así podrá confirmar que el nuevo tamaño basta para absorber el aumento previsto y tomar medidas correctivas si es necesario.
+
+## Después del pico {#after-the-peak}
+
+Cuando la demanda vuelva a la normalidad, restablezca los ajustes de escalado habituales de su servicio en la consola o mediante la API. Configure un recordatorio para la fecha de finalización, de modo que su servicio no mantenga la capacidad aumentada más tiempo del necesario.
+
+Para workloads con patrones diarios o semanales regulares, como trabajos por lotes nocturnos o el tráfico en horario laboral, utilice el [Escalado programado](/es/products/cloud/features/autoscaling/scheduled-scaling) para aumentar y reducir la capacidad automáticamente.
+
+## Facturación {#billing}
+
+Los servicios se facturan según su tamaño ampliado durante todo el tiempo que se ejecuten con ese tamaño. Aumentar la capacidad para absorber un pico incrementará su factura durante ese período.

@@ -22,9 +22,9 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`adaptive_aggregator_freeze_threshold`개의 키에 도달하면 각 스레드의 로컬 해시 테이블을 고정하는 적응형 `GROUP BY` 집계를 활성화하는 새로운 설정입니다. 이에 따라 빈번한 키는 작은 로컬 테이블에서 계속 집계되고, 드문 키는 해시에 따라 버킷별 백로그로 전달되어 버킷 병렬 머지 내에서 정확히 한 번 집계됩니다. 따라서 드문 키는 스레드마다 한 번씩이 아니라 한 번만 저장하고 처리합니다."}]}]} />
 
-적응형 `GROUP BY` 알고리즘을 활성화합니다. 각 스레드는 `adaptive_aggregator_freeze_threshold`개의 키(또는 `adaptive_aggregator_freeze_threshold_bytes`만큼의 메모리)에 도달할 때까지 로컬 해시 테이블에서 집계한 후 테이블을 고정합니다. 그러면 이미 확인된(빈번한) 키의 행은 해당 테이블에서 계속 갱신되고, 새로운(드문) 키는 해시에 따라 버킷별 백로그로 전달되어 버킷 병렬 머지 내에서 정확히 한 번 집계됩니다. 빈번한 키는 캐시에 상주하는 작은 테이블에 유지되며, 드문 키는 스레드마다 한 번씩이 아니라 한 번만 저장하고 처리합니다.
+적응형 `GROUP BY` 알고리즘을 활성화합니다. 각 스레드는 `adaptive_aggregator_freeze_threshold`개의 키에 도달하거나 해시 테이블 버퍼가 `adaptive_aggregator_freeze_threshold_bytes`에 도달할 때까지 로컬 해시 테이블에서 집계한 후 테이블을 고정합니다. 그러면 이미 확인된(빈번한) 키의 행은 해당 테이블에서 계속 갱신되고, 새로운(드문) 키는 해시에 따라 per-partition 버퍼에 임시 저장된 후 버킷 병렬 머지 내에서 정확히 한 번 집계됩니다. 이 머지는 파티션을 몇 개씩 묶어 캐시 크기의 테이블에서 처리합니다. 빈번한 키는 캐시에 상주하는 작은 테이블에 유지되며, 드문 키는 스레드마다 한 번씩이 아니라 한 번만 저장하고 처리합니다.
 
-외부 집계 설정(`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`)도 적용됩니다. 임계값을 초과하면 백로그를 공유 테이블로 조기에 비우며, 그래도 임계값 아래로 내려가지 않으면 일반 외부 집계를 통해 공유 테이블을 디스크에 spill합니다.
+외부 집계 설정(`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`)도 적용됩니다. 임계값을 초과하면 스레드는 임시 준비된 레코드를 디스크에 기록한 뒤 메모리에서 해제하고, 머지 단계에서 이를 버킷 단위로 다시 읽어 들입니다. 아직 고정되지 않은 테이블은 메모리 사용량이 충분히 커지면 일반 외부 집계와 동일하게 디스크에 기록되고, 고정된 테이블은 `uniqExact`나 `groupArray` 등의 집계 상태(aggregate states)가 충분히 커지면 디스크에 기록됩니다. 그런 다음 스레드는 새 테이블을 채우기 시작합니다.
 
 ## enable_adaptive_memory_spill_scheduler {#enable_adaptive_memory_spill_scheduler}
 
@@ -45,16 +45,6 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 `IN` 서브쿼리에서 `DISTINCT`를 활성화합니다. 이 설정은 절충이 필요한 설정입니다. 활성화하면 고유한 값만 전송되므로, 분산 `IN` 서브쿼리에 대해 전송되는 임시 테이블의 크기를 크게 줄이고 세그먼트 간 데이터 전송 속도도 크게 높일 수 있습니다.
 다만 이 설정을 활성화하면 중복 제거(`DISTINCT`)를 수행해야 하므로 각 노드에서 추가 병합 작업이 발생합니다. 네트워크 전송이 병목이고 추가 병합 비용을 감수할 수 있다면 이 설정을 사용하십시오.
-
-## enable_alp_codec {#enable_alp_codec}
-
-<BetaBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs`를 사용하지 않고 실험적 `ALP` 압축 코덱을 개별적으로 활성화하는 새로운 설정입니다."}]}]} />
-
-`ALP` 압축 코덱을 활성화합니다.
 
 ## enable_automatic_decision_for_merging_across_partitions_for_final {#enable_automatic_decision_for_merging_across_partitions_for_final}
 
@@ -79,6 +69,58 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 분산 쿼리 계획에 Cascades 비용 기반 최적화기를 활성화합니다.
 `make_distributed_plan = 1`과 함께 설정한 경우에만 적용됩니다. 이 설정만으로는 단일 노드 쿼리 계획이 변경되지 않습니다.
 
+## enable_cleanup_old_data_files_compaction {#enable_cleanup_old_data_files_compaction}
+
+<ExperimentalBadge />
+
+**별칭(Aliases)**: `allow_experimental_cleanup_old_data_files_compaction`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "새로운 설정"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "`allow_experimental_cleanup_old_data_files_compaction` 설정 별칭이 추가되었습니다."}]}]} />
+
+Iceberg 압축 병합 중에 오래된 데이터 파일을 정리할 수 있도록 허용합니다.
+
+정리 작업은 컴팩션이 끝난 후 `iceberg_compaction_data_cleanup`을 실행합니다. 이 작업은 `expire_snapshots`와 동일한
+방식으로 컴팩션으로 인해 더 이상 필요 없어진 스냅샷을 만료시킵니다. 즉, 테이블 메타데이터에서 해당 스냅샷을 제거하고 다른 스냅샷이 참조하지 않는 파일을 삭제합니다. 형식 버전 1 테이블
+이거나 트랜잭션 방식의 카탈로그(Catalog)를 사용하는 테이블이면 파일만 삭제하고 스냅샷은 메타데이터에 그대로 남습니다.
+
+## enable_database_hms_catalog {#enable_database_hms_catalog}
+
+<ExperimentalBadge />
+
+**별칭(Aliases)**: `allow_experimental_database_hms_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "`allow_experimental_database_hms_catalog` 설정에 대한 설정 별칭을 추가했습니다."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "catalog_type = 'hive'인 실험적 DataLakeCatalog 데이터베이스 엔진(database engine)을 허용합니다."}]}]} />
+
+`catalog_type = 'hms'`인 `DataLakeCatalog` 데이터베이스 엔진을 허용합니다.
+
+## enable_database_materialized_postgresql {#enable_database_materialized_postgresql}
+
+<ExperimentalBadge />
+
+**별칭(Aliases)**: `allow_experimental_database_materialized_postgresql`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "설정 별칭 `allow_experimental_database_materialized_postgresql`이(가) 추가되었습니다."}]}]} />
+
+`Engine = MaterializedPostgreSQL(...)`을 사용하는 데이터베이스를 생성할 수 있도록 허용합니다.
+
+## enable_database_paimon_rest_catalog {#enable_database_paimon_rest_catalog}
+
+<ExperimentalBadge />
+
+**별칭(Aliases)**: `allow_experimental_database_paimon_rest_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "`allow_experimental_database_paimon_rest_catalog` 설정 별칭이 추가되었습니다."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+`catalog_type = 'paimon_rest'`로 설정된 `DataLakeCatalog` 데이터베이스 엔진의 사용을 허용합니다.
+
 ## enable_early_constant_folding {#enable_early_constant_folding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -94,6 +136,18 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "실험적 Elasticsearch 통합(`Elasticsearch` 테이블 엔진 및 `elasticsearch` 테이블 함수)의 사용 여부를 제어하는 새로운 설정입니다."}]}]} />
 
 실험적 Elasticsearch 통합(`Elasticsearch` 테이블 엔진 및 `elasticsearch` 테이블 함수)을 활성화합니다.
+
+## enable_eval_table_function {#enable_eval_table_function}
+
+<ExperimentalBadge />
+
+**별칭(Aliases)**: `allow_experimental_eval_table_function`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "실험적 테이블 함수 `eval`을 활성화하는 새로운 설정입니다."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "설정 별칭 `allow_experimental_eval_table_function`을 추가했습니다."}]}]} />
+
+테이블 함수 `eval`을 활성화합니다.
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -156,6 +210,16 @@ true로 설정하면 텍스트 인덱스 사용이 허용됩니다.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`allow_experimental_funnel_functions` 설정의 별칭을 추가했습니다."}]}]} />
 
 funnel 분석용 함수를 활성화합니다.
+
+## enable_gdeflate_codec {#enable_gdeflate_codec}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "실험적 `GDeflate` 압축 코덱을 활성화하는 새로운 설정입니다."}]}]} />
+
+`GDeflate` 압축 코덱을 활성화합니다.
 
 ## enable_global_with_statement {#enable_global_with_statement}
 
@@ -296,6 +360,30 @@ SET dialect = 'clickhouse_json';
 메타데이터 전용 작업이 됩니다. 즉, 과거 데이터를 다시 쓰지 않고 기존 파트에는 쿼리 시점에 타입 힌트가 적용되며,
 INSERT 시와 백그라운드 머지 과정에서 구체화됩니다.
 
+## enable_kusto_dialect {#enable_kusto_dialect}
+
+<BetaBadge />
+
+**별칭(Aliases)**: `allow_experimental_kusto_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "`allow_experimental_kusto_dialect` 설정 별칭이 추가되었습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Kusto Query Language (KQL) 방언이 베타로 전환되었습니다."}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+SQL의 대안인 Kusto Query Language (KQL) 방언을 활성화합니다.
+
+## enable_lateral_join {#enable_lateral_join}
+
+<ExperimentalBadge />
+
+**별칭(Aliases)**: `allow_experimental_lateral_join`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "`allow_experimental_lateral_join` 설정 별칭을 추가했습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "`LATERAL JOIN` 구문을 허용하는 새로운 설정입니다."}]}]} />
+
+LATERAL JOIN 구문을 허용합니다. 이 설정을 활성화하면 JOIN의 오른쪽에 있는 서브쿼리가 왼쪽의 컬럼을 참조할 수 있으므로 FROM 절에서 상관 서브쿼리(correlated subqueries)를 사용할 수 있습니다(SQL 표준 LATERAL JOIN).
+
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -395,6 +483,18 @@ WHERE의 더 많은 조건을 PREWHERE로 이동하고, AND로 결합된 여러 
 이 설정은 Dynamic, Variant, JSON 또는 Tuple 컬럼 등에서 추출한 튜플 서브컬럼을 `Nullable`로 만들 수 있는지 여부는 제어하지 않습니다.
 추출한 튜플 서브컬럼을 `Nullable`로 만들 수 있는지 제어하려면 `allow_nullable_tuple_in_extracted_subcolumns`을 사용하십시오.
 
+## enable_object_storage_queue_hive_partitioning {#enable_object_storage_queue_hive_partitioning}
+
+<ExperimentalBadge />
+
+**별칭(Aliases)**: `allow_experimental_object_storage_queue_hive_partitioning`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "`allow_experimental_object_storage_queue_hive_partitioning` 설정의 별칭이 추가되었습니다."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
+
+`S3Queue`/`AzureQueue` 엔진에서 Hive 파티셔닝을 사용할 수 있습니다.
+
 ## enable_order_by_all {#enable_order_by_all}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -442,6 +542,30 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 분산 쿼리에 참여하는 모든 서버는 이 값이 일치해야 합니다. `distributed_aggregation_memory_efficient`를 사용하면 2단계 버킷 번호는 키 해시에 따라 달라지며, 이 해시는 두 메서드에서 서로 다릅니다. 따라서 이 설정이 서로 다른 서버는 동일한 키를 서로 다른 버킷으로 분할해 잘못 머지된 결과를 생성할 수 있습니다. 값의 일치를 보장하기 위해 시작 노드는 서버 또는 프로필 기본값에서만 가져온 경우에도 보조 쿼리와 함께 유효 값을 항상 전송하여 원격 서버의 기본값을 재정의합니다.
 
+## enable_packed_string_keys_in_hash_join {#enable_packed_string_keys_in_hash_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "단일 `String` 키를 사용하는 해시 조인의 속도를 높이고 메모리 사용량을 줄이는 새로운 설정입니다."}]}]} />
+
+단일 `String` 또는 `Nullable(String)` 키를 사용하는 `hash`, `parallel_hash`, `grace_hash` 조인의 속도를 높이고 메모리 사용량을 줄입니다. `OR`이 포함된 조인은 각 조건이 이러한 단일 키를 사용하는 경우 적용 대상이 됩니다.
+
+해시 테이블의 크기가 작아지므로 조인이 `max_bytes_in_join` 및 `max_bytes_before_external_join` 한도에 더 늦게 도달합니다.
+
+이 설정은 `FixedString` 또는 `LowCardinality(Nullable(String))` 키, `Join` 엔진을 사용하는 테이블, `joinGet`에는 적용되지 않습니다. `LowCardinality(String)` 키를 사용하는 조인에서는 이 설정 대신 해당 키의 딕셔너리(dictionary)를 사용할 수 있습니다. 또한 조인의 오른쪽 입력이 `min_rows_for_packed_string_keys_in_hash_join`보다 적은 행(rows)으로 추정되는 경우에도 이 설정은 영향을 주지 않습니다.
+
+## enable_paimon_storage_engine {#enable_paimon_storage_engine}
+
+<ExperimentalBadge />
+
+**별칭(Aliases)**: `allow_experimental_paimon_storage_engine`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "새 설정입니다."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "`allow_experimental_paimon_storage_engine` 설정 별칭이 추가되었습니다."}]}]} />
+
+`Paimon*` 테이블 엔진을 사용하는 테이블을 생성할 수 있도록 허용합니다.
+
 ## enable_parsing_to_custom_serialization {#enable_parsing_to_custom_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -460,6 +584,18 @@ true인 경우, 테이블에서 가져온 직렬화 힌트에 따라 데이터�
 
 `PCO` 압축 코덱을 활성화합니다.
 
+## enable_polyglot_dialect {#enable_polyglot_dialect}
+
+<ExperimentalBadge />
+
+**별칭(Aliases)**: `allow_experimental_polyglot_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "polyglot SQL 트랜스파일러 방언을 활성화하는 새로운 설정입니다."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "설정 별칭 `allow_experimental_polyglot_dialect`가 추가되었습니다."}]}]} />
+
+polyglot SQL 트랜스파일러를 활성화합니다. 이 트랜스파일러는 30개 이상의 방언(MySQL, PostgreSQL, SQLite, Snowflake, DuckDB 등)으로 작성된 SQL을 ClickHouse SQL로 변환합니다.
+
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -469,6 +605,18 @@ true인 경우, 테이블에서 가져온 직렬화 힌트에 따라 데이터�
 메모리 효율적인 집계(`distributed_aggregation_memory_efficient` 참고)에서 버킷이 순서와 다르게 생성되도록 허용합니다.
 이 설정은 집계 버킷 크기가 치우쳐 있을 때, 레플리카가 id가 낮은 무거운 버킷 일부를 아직 처리하는 동안 id가 더 높은 버킷을 initiator로 전송할 수 있게 하여 성능을 향상시킬 수 있습니다.
 단점은 메모리 사용량이 더 늘어날 수 있다는 점입니다.
+
+## enable_prql_dialect {#enable_prql_dialect}
+
+<ExperimentalBadge />
+
+**별칭(Aliases)**: `allow_experimental_prql_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "`allow_experimental_prql_dialect` 설정 별칭이 추가되었습니다."}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+SQL의 대안인 PRQL을 활성화합니다.
 
 ## enable_quantized_codec {#enable_quantized_codec}
 
@@ -513,6 +661,14 @@ true인 경우, 테이블에서 가져온 직렬화 힌트에 따라 데이터�
 
 * 0 - 비활성화
 * 1 - 활성화
+
+## enable_robin_hood_hash_for_joins {#enable_robin_hood_hash_for_joins}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "새 설정입니다. 26.10에서는 `parallel_hash` 조인의 해시 테이블이 커지면 Robin Hood 모드를 사용했습니다. 이 방식은 메모리를 절약하지만 대규모 조인이 느려질 수 있습니다."}]}]} />
+
+해시 테이블을 여러 파트로 분할하는 해시 조인(`hash_join_layout` 참조)에서, 집계의 해시 테이블과 마찬가지로 해시 테이블이 커지면 Robin Hood 모드로 전환할 수 있도록 허용합니다. 이 경우 키가 약 800만 개를 초과하는 오른쪽 테이블(right table)의 해시 테이블은 메모리 사용량이 최대 절반까지 줄어들지만, 키에 따라 조인 조회가 느려질 수 있습니다.
 
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
@@ -745,13 +901,49 @@ Possible values:
 
 실험적 XGBoost 통합 기능인 `XGBOOST` 딕셔너리 레이아웃과 `predictXGBoost` 함수를 활성화합니다.
 
-## enable_zxc_codec {#enable_zxc_codec}
+## enable_ytsaurus_dictionary_source {#enable_ytsaurus_dictionary_source}
 
 <ExperimentalBadge />
 
+**별칭(Aliases)**: `allow_experimental_ytsaurus_dictionary_source`
+
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs` 없이 실험적 `ZXC` 압축 코덱을 개별적으로 활성화할 수 있는 새로운 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "`allow_experimental_ytsaurus_dictionary_source` 설정 별칭이 추가되었습니다."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
+
+YTsaurus 통합을 위한 `ytsaurus` 딕셔너리 소스를 활성화합니다.
+
+## enable_ytsaurus_table_engine {#enable_ytsaurus_table_engine}
+
+<ExperimentalBadge />
+
+**별칭(Aliases)**: `allow_experimental_ytsaurus_table_engine`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "설정 별칭 `allow_experimental_ytsaurus_table_engine`을 추가했습니다."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
+
+YTsaurus 통합을 위한 `YTsaurus` 테이블 엔진을 활성화합니다.
+
+## enable_ytsaurus_table_function {#enable_ytsaurus_table_function}
+
+<ExperimentalBadge />
+
+**별칭(Aliases)**: `allow_experimental_ytsaurus_table_function`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "설정 별칭 `allow_experimental_ytsaurus_table_function`을 추가했습니다."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
+
+YTsaurus 통합용 `ytsaurus` 테이블 함수를 활성화합니다.
+
+## enable_zxc_codec {#enable_zxc_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs` 없이 실험적 `ZXC` 압축 코덱을 개별적으로 활성화할 수 있는 새로운 설정입니다."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "`ZXC` 압축 코덱이 베타로 전환되었습니다."}]}]} />
 
 `ZXC` 압축 코덱을 활성화합니다.
 

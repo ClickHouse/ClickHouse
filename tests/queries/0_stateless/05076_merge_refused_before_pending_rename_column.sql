@@ -18,8 +18,6 @@
 -- `MATERIALIZE COLUMN` is not a metadata alter: `InterpreterAlterQuery` puts it in a segment of its
 -- own that registers first, and the rename then waits for it.
 
-set allow_experimental_dynamic_type = 1;
-
 drop table if exists t_merge_refused_before_pending_rename;
 
 -- Compact parts, as in `05037_rename_column_materialized_by_merge`: there a rename mutation rewrites

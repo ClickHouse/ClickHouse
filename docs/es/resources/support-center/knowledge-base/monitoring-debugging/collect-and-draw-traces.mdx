@@ -52,7 +52,7 @@ description: "Esta guía le muestra cómo recopilar y visualizar trazas de consu
     </Tip>
   </Step>
 
-  <Step title="Habilitar el trazado de OpenTelemetry" id="enable-otel-tracing">
+  <Step title="Habilitar el tracing de OpenTelemetry" id="enable-otel-tracing">
     Con su servidor de ClickHouse en ejecución, abra el cliente de ClickHouse y habilite la recopilación de trazas mediante la siguiente consulta:
 
     ```bash
@@ -131,13 +131,9 @@ description: "Esta guía le muestra cómo recopilar y visualizar trazas de consu
     Carga el archivo `trace.json` del paso anterior para visualizar la traza.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Ejemplo del visualizador de trazas de ClickHouse](/images/knowledgebase/trace-visualizer-example.png)
-
-    </Frame>
-
+      <Frame>
+        ![Ejemplo del visualizador de trazas de ClickHouse](/images/knowledgebase/trace-visualizer-example.png)
+      </Frame>
     </div>
   </Step>
 
@@ -168,25 +164,17 @@ description: "Esta guía le muestra cómo recopilar y visualizar trazas de consu
     Asegúrate de configurar `Query type` como `Traces`:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Visualización de trazas de ClickHouse en Grafana](/images/knowledgebase/trace-visualization-grafana.png)
-
-    </Frame>
-
+      <Frame>
+        ![Visualización de trazas de ClickHouse en Grafana](/images/knowledgebase/trace-visualization-grafana.png)
+      </Frame>
     </div>
 
     Haz clic en &quot;Run Query&quot; e inspecciona el diagrama de trazas:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Visualización de trazas de ClickHouse en Grafana](/images/knowledgebase/trace-visualization-diagram.png)
-
-    </Frame>
-
+      <Frame>
+        ![Visualización de trazas de ClickHouse en Grafana](/images/knowledgebase/trace-visualization-diagram.png)
+      </Frame>
     </div>
   </Step>
 </Steps>

@@ -50,6 +50,8 @@ Utilisation du quota par l’utilisateur actuel : quantité utilisée et quanti
 * `max_failed_sequential_authentications` ([Nullable(UInt64)](/fr/reference/data-types/nullable)) — Nombre maximal autorisé d’échecs d’authentification consécutifs au cours de la période spécifiée.
 * `queries_per_normalized_hash` ([Nullable(UInt64)](/fr/reference/data-types/nullable)) — Nombre maximal actuel d’exécutions d’une même requête normalisée au cours de la période actuelle.
 * `max_queries_per_normalized_hash` ([Nullable(UInt64)](/fr/reference/data-types/nullable)) — Nombre maximal autorisé d’exécutions d’une même requête normalisée au cours de la période spécifiée.
+* `profile_events` ([Map(String, UInt64)](/fr/reference/data-types/map)) — Consommation actuelle de chaque événement de profilage pour lequel le quota définit une limite.
+* `max_profile_events` ([Map(String, UInt64)](/fr/reference/data-types/map)) — Consommation maximale autorisée de chaque événement de profilage pour lequel le quota définit une limite. Une valeur de 0 signifie que l’événement est uniquement suivi, sans limite.
 
 ## Voir aussi {#see-also}
 
