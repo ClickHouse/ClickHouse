@@ -343,13 +343,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0IChhcm1fZGFyd2luKQ==') }}
     name: "Fast test (arm_darwin)"
     outputs:
@@ -1106,13 +1110,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9kYXJ3aW4p') }}
     name: "Build (arm_darwin)"
     outputs:
@@ -1169,13 +1177,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHdhc202NCk=') }}
     name: "Build (wasm64)"
     outputs:
@@ -1232,13 +1244,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9mdXp6ZXJzKQ==') }}
     name: "Build (arm_fuzzers)"
     outputs:
@@ -1473,13 +1489,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIGRpc3RyaWJ1dGVkIHBsYW4sIHRhcmdldGVkKQ==') }}
     name: "Integration tests (arm_binary, distributed plan, targeted)"
     outputs:
@@ -1537,13 +1557,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCB0YXJnZXRlZCk=') }}
     name: "Integration tests (amd_tsan, targeted)"
     outputs:
@@ -1600,13 +1624,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9tc2FuLCB0YXJnZXRlZCk=') }}
     name: "Integration tests (amd_msan, targeted)"
     outputs:
@@ -1664,13 +1692,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAxLzgp') }}
     name: "Integration tests (amd_tsan, 1/8)"
     outputs:
@@ -1728,13 +1760,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAyLzgp') }}
     name: "Integration tests (amd_tsan, 2/8)"
     outputs:
@@ -1792,13 +1828,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAzLzgp') }}
     name: "Integration tests (amd_tsan, 3/8)"
     outputs:
@@ -1856,13 +1896,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA0Lzgp') }}
     name: "Integration tests (amd_tsan, 4/8)"
     outputs:
@@ -1920,13 +1964,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA1Lzgp') }}
     name: "Integration tests (amd_tsan, 5/8)"
     outputs:
@@ -1984,13 +2032,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA2Lzgp') }}
     name: "Integration tests (amd_tsan, 6/8)"
     outputs:
@@ -2048,13 +2100,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA3Lzgp') }}
     name: "Integration tests (amd_tsan, 7/8)"
     outputs:
@@ -2112,13 +2168,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA4Lzgp') }}
     name: "Integration tests (amd_tsan, 8/8)"
     outputs:
@@ -2535,13 +2595,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVnZml4IHZhbGlkYXRpb24gKGZ1bmN0aW9uYWwgdGVzdHMsIGFtZDY0KQ==') }}
     name: "Bugfix validation (functional tests, amd64)"
     outputs:
@@ -2598,13 +2662,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVnZml4IHZhbGlkYXRpb24gKGZ1bmN0aW9uYWwgdGVzdHMsIGFhcmNoNjQp') }}
     name: "Bugfix validation (functional tests, aarch64)"
     outputs:
@@ -2661,13 +2729,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVnZml4IHZhbGlkYXRpb24gKGludGVncmF0aW9uIHRlc3RzLCBhbWQ2NCk=') }}
     name: "Bugfix validation (integration tests, amd64)"
     outputs:
@@ -2724,13 +2796,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVnZml4IHZhbGlkYXRpb24gKGludGVncmF0aW9uIHRlc3RzLCBhYXJjaDY0KQ==') }}
     name: "Bugfix validation (integration tests, aarch64)"
     outputs:
@@ -2787,13 +2863,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVnZml4IHZhbGlkYXRpb24gKHVuaXQgdGVzdHMp') }}
     name: "Bugfix validation (unit tests)"
     outputs:
@@ -2851,13 +2931,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgczMgc3RvcmFnZSwgREJSZXBsaWNhdGVkLCBwYXJhbGxlbCwgMS8zKQ==') }}
     name: "Stateless tests (amd_llvm_coverage, s3 storage, DBReplicated, parallel, 1/3)"
     outputs:
@@ -2915,13 +2999,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgczMgc3RvcmFnZSwgREJSZXBsaWNhdGVkLCBwYXJhbGxlbCwgMi8zKQ==') }}
     name: "Stateless tests (amd_llvm_coverage, s3 storage, DBReplicated, parallel, 2/3)"
     outputs:
@@ -2979,13 +3067,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgczMgc3RvcmFnZSwgREJSZXBsaWNhdGVkLCBwYXJhbGxlbCwgMy8zKQ==') }}
     name: "Stateless tests (amd_llvm_coverage, s3 storage, DBReplicated, parallel, 3/3)"
     outputs:
@@ -3043,13 +3135,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgczMgc3RvcmFnZSwgREJSZXBsaWNhdGVkLCBzZXF1ZW50aWFsLCAxLzIp') }}
     name: "Stateless tests (amd_llvm_coverage, s3 storage, DBReplicated, sequential, 1/2)"
     outputs:
@@ -3107,13 +3203,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgczMgc3RvcmFnZSwgREJSZXBsaWNhdGVkLCBzZXF1ZW50aWFsLCAyLzIp') }}
     name: "Stateless tests (amd_llvm_coverage, s3 storage, DBReplicated, sequential, 2/2)"
     outputs:
@@ -3171,13 +3271,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgUGFyYWxsZWxSZXBsaWNhcywgczMgc3RvcmFnZSwgcGFyYWxsZWwsIDEvMik=') }}
     name: "Stateless tests (amd_llvm_coverage, ParallelReplicas, s3 storage, parallel, 1/2)"
     outputs:
@@ -3235,13 +3339,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgUGFyYWxsZWxSZXBsaWNhcywgczMgc3RvcmFnZSwgcGFyYWxsZWwsIDIvMik=') }}
     name: "Stateless tests (amd_llvm_coverage, ParallelReplicas, s3 storage, parallel, 2/2)"
     outputs:
@@ -3299,13 +3407,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgUGFyYWxsZWxSZXBsaWNhcywgczMgc3RvcmFnZSwgc2VxdWVudGlhbCk=') }}
     name: "Stateless tests (amd_llvm_coverage, ParallelReplicas, s3 storage, sequential)"
     outputs:
@@ -3363,13 +3475,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgQXN5bmNJbnNlcnQsIHMzIHN0b3JhZ2UsIHBhcmFsbGVsLCAxLzIp') }}
     name: "Stateless tests (amd_llvm_coverage, AsyncInsert, s3 storage, parallel, 1/2)"
     outputs:
@@ -3427,13 +3543,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgQXN5bmNJbnNlcnQsIHMzIHN0b3JhZ2UsIHBhcmFsbGVsLCAyLzIp') }}
     name: "Stateless tests (amd_llvm_coverage, AsyncInsert, s3 storage, parallel, 2/2)"
     outputs:
@@ -3491,13 +3611,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgQXN5bmNJbnNlcnQsIHMzIHN0b3JhZ2UsIHNlcXVlbnRpYWwp') }}
     name: "Stateless tests (amd_llvm_coverage, AsyncInsert, s3 storage, sequential)"
     outputs:
@@ -3599,13 +3723,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIHNlcXVlbnRpYWwp') }}
     name: "Stateless tests (amd_debug, sequential)"
     outputs:
@@ -3662,13 +3790,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIGRpc3RyaWJ1dGVkIHBsYW4sIHMzIHN0b3JhZ2UsIHBhcmFsbGVsKQ==') }}
     name: "Stateless tests (amd_debug, distributed plan, s3 storage, parallel)"
     outputs:
@@ -3725,13 +3857,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIGRpc3RyaWJ1dGVkIHBsYW4sIHMzIHN0b3JhZ2UsIHNlcXVlbnRpYWwp') }}
     name: "Stateless tests (amd_debug, distributed plan, s3 storage, sequential)"
     outputs:
@@ -3969,13 +4105,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgdGFyZ2V0ZWQp') }}
     name: "Stateless tests (amd_tsan, s3 storage, targeted)"
     outputs:
@@ -4032,13 +4172,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbl91YnNhbiwgYXp1cmUsIHRhcmdldGVkKQ==') }}
     name: "Stateless tests (arm_asan_ubsan, azure, targeted)"
     outputs:
@@ -4095,13 +4239,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBzMyBzdG9yYWdlLCBEQlJlcGxpY2F0ZWQsIHBhcmFsbGVsLCAxLzIp') }}
     name: "Stateless tests (arm_binary, s3 storage, DBReplicated, parallel, 1/2)"
     outputs:
@@ -4158,13 +4306,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBzMyBzdG9yYWdlLCBEQlJlcGxpY2F0ZWQsIHBhcmFsbGVsLCAyLzIp') }}
     name: "Stateless tests (arm_binary, s3 storage, DBReplicated, parallel, 2/2)"
     outputs:
@@ -4221,13 +4373,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBzMyBzdG9yYWdlLCBEQlJlcGxpY2F0ZWQsIHNlcXVlbnRpYWwp') }}
     name: "Stateless tests (arm_binary, s3 storage, DBReplicated, sequential)"
     outputs:
@@ -4284,13 +4440,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIFBhcmFsbGVsUmVwbGljYXMsIHMzIHN0b3JhZ2UsIHBhcmFsbGVsKQ==') }}
     name: "Stateless tests (amd_debug, ParallelReplicas, s3 storage, parallel)"
     outputs:
@@ -4347,13 +4507,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIFBhcmFsbGVsUmVwbGljYXMsIHMzIHN0b3JhZ2UsIHNlcXVlbnRpYWwp') }}
     name: "Stateless tests (amd_debug, ParallelReplicas, s3 storage, sequential)"
     outputs:
@@ -4410,13 +4574,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBBc3luY0luc2VydCwgczMgc3RvcmFnZSwgcGFyYWxsZWwp') }}
     name: "Stateless tests (arm_binary, AsyncInsert, s3 storage, parallel)"
     outputs:
@@ -4473,13 +4641,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBBc3luY0luc2VydCwgczMgc3RvcmFnZSwgc2VxdWVudGlhbCk=') }}
     name: "Stateless tests (arm_binary, AsyncInsert, s3 storage, sequential)"
     outputs:
@@ -4536,13 +4708,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDEvNSk=') }}
     name: "Integration tests (arm_binary, 1/5)"
     outputs:
@@ -4599,13 +4775,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDIvNSk=') }}
     name: "Integration tests (arm_binary, 2/5)"
     outputs:
@@ -4662,13 +4842,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDMvNSk=') }}
     name: "Integration tests (arm_binary, 3/5)"
     outputs:
@@ -4725,13 +4909,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDQvNSk=') }}
     name: "Integration tests (arm_binary, 4/5)"
     outputs:
@@ -4788,13 +4976,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDUvNSk=') }}
     name: "Integration tests (arm_binary, 5/5)"
     outputs:
@@ -4851,13 +5043,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBwbGFuLWJhc2VkLCBzMyBzdG9yYWdlLCBwYXJhbGxlbCk=') }}
     name: "Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, parallel)"
     outputs:
@@ -4914,13 +5110,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBwbGFuLWJhc2VkLCBzMyBzdG9yYWdlLCBzZXF1ZW50aWFsKQ==') }}
     name: "Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, sequential)"
     outputs:
@@ -4978,13 +5178,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgMS8zKQ==') }}
     name: "Stateless tests (amd_llvm_coverage, 1/3)"
     outputs:
@@ -5042,13 +5246,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgMi8zKQ==') }}
     name: "Stateless tests (amd_llvm_coverage, 2/3)"
     outputs:
@@ -5106,13 +5314,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgMy8zKQ==') }}
     name: "Stateless tests (amd_llvm_coverage, 3/3)"
     outputs:
@@ -5170,13 +5382,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5X2V4Y2x1ZGVkX2Zyb21fbGx2bSk=') }}
     name: "Stateless tests (amd_binary_excluded_from_llvm)"
     outputs:
@@ -5234,13 +5450,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCAxLzgp') }}
     name: "Integration tests (amd_llvm_coverage, 1/8)"
     outputs:
@@ -5298,13 +5518,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCAyLzgp') }}
     name: "Integration tests (amd_llvm_coverage, 2/8)"
     outputs:
@@ -5362,13 +5586,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCAzLzgp') }}
     name: "Integration tests (amd_llvm_coverage, 3/8)"
     outputs:
@@ -5426,13 +5654,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA0Lzgp') }}
     name: "Integration tests (amd_llvm_coverage, 4/8)"
     outputs:
@@ -5490,13 +5722,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA1Lzgp') }}
     name: "Integration tests (amd_llvm_coverage, 5/8)"
     outputs:
@@ -5554,13 +5790,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA2Lzgp') }}
     name: "Integration tests (amd_llvm_coverage, 6/8)"
     outputs:
@@ -5618,13 +5858,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA3Lzgp') }}
     name: "Integration tests (amd_llvm_coverage, 7/8)"
     outputs:
@@ -5682,13 +5926,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA4Lzgp') }}
     name: "Integration tests (amd_llvm_coverage, 8/8)"
     outputs:
@@ -5746,13 +5994,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9iaW5hcnlfZXhjbHVkZWRfZnJvbV9sbHZtKQ==') }}
     name: "Integration tests (amd_binary_excluded_from_llvm)"
     outputs:
@@ -5829,7 +6081,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_debug)' --workflow "PR" --ci --timestamp
 
-  unit_tests_asan_ubsan:
+  unit_tests_arm_asan_ubsan:
     runs-on: [self-hosted, pr-arm-large]
     needs:
     - build_arm_asan_ubsan
@@ -5843,8 +6095,8 @@ jobs:
     - dockers_build_multiplatform_manifest
     - fast_test
     - style_check
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbik=') }}
-    name: "Unit tests (asan_ubsan)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX2FzYW5fdWJzYW4p') }}
+    name: "Unit tests (arm_asan_ubsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -5872,9 +6124,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan)' --workflow "PR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_asan_ubsan)' --workflow "PR" --ci --timestamp
 
-  unit_tests_tsan:
+  unit_tests_arm_tsan:
     runs-on: [self-hosted, pr-arm-large]
     needs:
     - build_arm_tidy_1_4
@@ -5888,8 +6140,8 @@ jobs:
     - dockers_build_multiplatform_manifest
     - fast_test
     - style_check
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbik=') }}
-    name: "Unit tests (tsan)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX3RzYW4p') }}
+    name: "Unit tests (arm_tsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -5917,9 +6169,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan)' --workflow "PR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_tsan)' --workflow "PR" --ci --timestamp
 
-  unit_tests_msan:
+  unit_tests_amd_msan:
     runs-on: [self-hosted, pr-amd-large]
     needs:
     - build_amd_msan
@@ -5933,8 +6185,8 @@ jobs:
     - dockers_build_multiplatform_manifest
     - fast_test
     - style_check
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAobXNhbik=') }}
-    name: "Unit tests (msan)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX21zYW4p') }}
+    name: "Unit tests (amd_msan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -5962,9 +6214,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (msan)' --workflow "PR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (amd_msan)' --workflow "PR" --ci --timestamp
 
-  unit_tests_asan_ubsan_function_prop_fuzzer:
+  unit_tests_arm_asan_ubsan_function_prop_fuzzer:
     runs-on: [self-hosted, pr-arm-large]
     needs:
     - build_arm_asan_ubsan
@@ -5978,8 +6230,8 @@ jobs:
     - dockers_build_multiplatform_manifest
     - fast_test
     - style_check
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
-    name: "Unit tests (asan_ubsan, function_prop_fuzzer)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX2FzYW5fdWJzYW4sIGZ1bmN0aW9uX3Byb3BfZnV6emVyKQ==') }}
+    name: "Unit tests (arm_asan_ubsan, function_prop_fuzzer)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -6007,9 +6259,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan, function_prop_fuzzer)' --workflow "PR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_asan_ubsan, function_prop_fuzzer)' --workflow "PR" --ci --timestamp
 
-  unit_tests_tsan_function_prop_fuzzer:
+  unit_tests_arm_tsan_function_prop_fuzzer:
     runs-on: [self-hosted, pr-arm-large]
     needs:
     - build_arm_tidy_1_4
@@ -6023,8 +6275,8 @@ jobs:
     - dockers_build_multiplatform_manifest
     - fast_test
     - style_check
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
-    name: "Unit tests (tsan, function_prop_fuzzer)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX3RzYW4sIGZ1bmN0aW9uX3Byb3BfZnV6emVyKQ==') }}
+    name: "Unit tests (arm_tsan, function_prop_fuzzer)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -6052,9 +6304,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan, function_prop_fuzzer)' --workflow "PR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_tsan, function_prop_fuzzer)' --workflow "PR" --ci --timestamp
 
-  unit_tests_msan_function_prop_fuzzer:
+  unit_tests_amd_msan_function_prop_fuzzer:
     runs-on: [self-hosted, pr-amd-large]
     needs:
     - build_amd_msan
@@ -6068,8 +6320,8 @@ jobs:
     - dockers_build_multiplatform_manifest
     - fast_test
     - style_check
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAobXNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
-    name: "Unit tests (msan, function_prop_fuzzer)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX21zYW4sIGZ1bmN0aW9uX3Byb3BfZnV6emVyKQ==') }}
+    name: "Unit tests (amd_msan, function_prop_fuzzer)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -6097,7 +6349,187 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (msan, function_prop_fuzzer)' --workflow "PR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (amd_msan, function_prop_fuzzer)' --workflow "PR" --ci --timestamp
+
+  unit_tests_arm_debug_wyrd:
+    runs-on: [self-hosted, pr-arm-large]
+    needs:
+    - build_arm_debug
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - style_check
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX2RlYnVnLCB3eXJkKQ==') }}
+    name: "Unit tests (arm_debug, wyrd)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_debug, wyrd)' --workflow "PR" --ci --timestamp
+
+  unit_tests_arm_asan_ubsan_wyrd:
+    runs-on: [self-hosted, pr-arm-large]
+    needs:
+    - build_arm_asan_ubsan
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - style_check
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX2FzYW5fdWJzYW4sIHd5cmQp') }}
+    name: "Unit tests (arm_asan_ubsan, wyrd)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_asan_ubsan, wyrd)' --workflow "PR" --ci --timestamp
+
+  unit_tests_arm_tsan_wyrd:
+    runs-on: [self-hosted, pr-arm-large]
+    needs:
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - style_check
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX3RzYW4sIHd5cmQp') }}
+    name: "Unit tests (arm_tsan, wyrd)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_tsan, wyrd)' --workflow "PR" --ci --timestamp
+
+  unit_tests_amd_msan_wyrd:
+    runs-on: [self-hosted, pr-amd-large]
+    needs:
+    - build_amd_msan
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - style_check
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX21zYW4sIHd5cmQp') }}
+    name: "Unit tests (amd_msan, wyrd)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (amd_msan, wyrd)' --workflow "PR" --ci --timestamp
 
   unit_tests_amd_llvm_coverage:
     runs-on: [self-hosted, pr-amd-large]
@@ -6125,13 +6557,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX2xsdm1fY292ZXJhZ2Up') }}
     name: "Unit tests (amd_llvm_coverage)"
     outputs:
@@ -6193,13 +6629,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VyIHNlcnZlciBpbWFnZQ==') }}
     name: "Docker server image"
     outputs:
@@ -6261,13 +6701,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VyIGtlZXBlciBpbWFnZQ==') }}
     name: "Docker keeper image"
     outputs:
@@ -6328,13 +6772,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX3JlbGVhc2UsIGRlYik=') }}
     name: "Install packages (amd_release, deb)"
     outputs:
@@ -6395,13 +6843,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX3JlbGVhc2UsIHJwbSk=') }}
     name: "Install packages (amd_release, rpm)"
     outputs:
@@ -6462,13 +6914,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX3JlbGVhc2UsIHRneik=') }}
     name: "Install packages (amd_release, tgz)"
     outputs:
@@ -6529,13 +6985,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2UsIGRlYik=') }}
     name: "Install packages (arm_release, deb)"
     outputs:
@@ -6596,13 +7056,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2UsIHJwbSk=') }}
     name: "Install packages (arm_release, rpm)"
     outputs:
@@ -6663,13 +7127,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2UsIHRneik=') }}
     name: "Install packages (arm_release, tgz)"
     outputs:
@@ -6730,13 +7198,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAoYW1kX3JlbGVhc2Up') }}
     name: "Compatibility check (amd_release)"
     outputs:
@@ -6797,13 +7269,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAoYXJtX3JlbGVhc2Up') }}
     name: "Compatibility check (arm_release)"
     outputs:
@@ -6860,13 +7336,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF9kZWJ1Zyk=') }}
     name: "Stress test (amd_debug)"
     outputs:
@@ -6923,13 +7403,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF9hc2FuX3Vic2FuKQ==') }}
     name: "Stress test (amd_asan_ubsan)"
     outputs:
@@ -6987,13 +7471,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF90c2FuKQ==') }}
     name: "Stress test (amd_tsan)"
     outputs:
@@ -7050,13 +7538,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF9tc2FuKQ==') }}
     name: "Stress test (amd_msan)"
     outputs:
@@ -7117,13 +7609,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RyZXNzIHRlc3QgKGFybV9yZWxlYXNlKQ==') }}
     name: "Stress test (arm_release)"
     outputs:
@@ -7180,13 +7676,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RyZXNzIHRlc3QgKGFybV9kZWJ1Zyk=') }}
     name: "Stress test (arm_debug)"
     outputs:
@@ -7243,13 +7743,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RyZXNzIHRlc3QgKGFybV9hc2FuX3Vic2FuKQ==') }}
     name: "Stress test (arm_asan_ubsan)"
     outputs:
@@ -7306,13 +7810,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RyZXNzIHRlc3QgKGFybV9hc2FuX3Vic2FuLCBzMyk=') }}
     name: "Stress test (arm_asan_ubsan, s3)"
     outputs:
@@ -7369,13 +7877,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RyZXNzIHRlc3QgKGFybV90c2FuKQ==') }}
     name: "Stress test (arm_tsan)"
     outputs:
@@ -7433,13 +7945,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RyZXNzIHRlc3QgKGFybV9tc2FuKQ==') }}
     name: "Stress test (arm_msan)"
     outputs:
@@ -7500,13 +8016,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VXBncmFkZSBjaGVjayAoYW1kX3JlbGVhc2Up') }}
     name: "Upgrade check (amd_release)"
     outputs:
@@ -7563,13 +8083,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QVNUIGZ1enplciAoYW1kX2RlYnVnKQ==') }}
     name: "AST fuzzer (amd_debug)"
     outputs:
@@ -7626,13 +8150,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QVNUIGZ1enplciAoYXJtX2FzYW5fdWJzYW4p') }}
     name: "AST fuzzer (arm_asan_ubsan)"
     outputs:
@@ -7690,13 +8218,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QVNUIGZ1enplciAoYW1kX3RzYW4p') }}
     name: "AST fuzzer (amd_tsan)"
     outputs:
@@ -7753,13 +8285,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QVNUIGZ1enplciAoYW1kX21zYW4p') }}
     name: "AST fuzzer (amd_msan)"
     outputs:
@@ -7820,13 +8356,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QVNUIGZ1enplciAoYW1kX3JlbGVhc2UsIG9yYWNsZSk=') }}
     name: "AST fuzzer (amd_release, oracle)"
     outputs:
@@ -7883,13 +8423,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TGEgQ2FzYSBEZWwgRG9sb3IgKGFtZF9kZWJ1Zyk=') }}
     name: "La Casa Del Dolor (amd_debug)"
     outputs:
@@ -7946,13 +8490,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TGEgQ2FzYSBEZWwgRG9sb3IgKGFybV9hc2FuX3Vic2FuKQ==') }}
     name: "La Casa Del Dolor (arm_asan_ubsan)"
     outputs:
@@ -8010,13 +8558,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TGEgQ2FzYSBEZWwgRG9sb3IgKGFtZF90c2FuKQ==') }}
     name: "La Casa Del Dolor (amd_tsan)"
     outputs:
@@ -8073,13 +8625,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TGEgQ2FzYSBEZWwgRG9sb3IgKGFtZF9tc2FuKQ==') }}
     name: "La Casa Del Dolor (amd_msan)"
     outputs:
@@ -8140,13 +8696,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzYp') }}
     name: "Performance Comparison (amd_release, master_head, 1/6)"
     permissions:
@@ -8213,13 +8773,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzYp') }}
     name: "Performance Comparison (amd_release, master_head, 2/6)"
     permissions:
@@ -8286,13 +8850,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzYp') }}
     name: "Performance Comparison (amd_release, master_head, 3/6)"
     permissions:
@@ -8359,13 +8927,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA0LzYp') }}
     name: "Performance Comparison (amd_release, master_head, 4/6)"
     permissions:
@@ -8432,13 +9004,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA1LzYp') }}
     name: "Performance Comparison (amd_release, master_head, 5/6)"
     permissions:
@@ -8505,13 +9081,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA2LzYp') }}
     name: "Performance Comparison (amd_release, master_head, 6/6)"
     permissions:
@@ -8578,13 +9158,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzgp') }}
     name: "Performance Comparison (amd_release, master_head, 1/8)"
     permissions:
@@ -8651,13 +9235,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzgp') }}
     name: "Performance Comparison (amd_release, master_head, 2/8)"
     permissions:
@@ -8724,13 +9312,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzgp') }}
     name: "Performance Comparison (amd_release, master_head, 3/8)"
     permissions:
@@ -8797,13 +9389,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA0Lzgp') }}
     name: "Performance Comparison (amd_release, master_head, 4/8)"
     permissions:
@@ -8870,13 +9466,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA1Lzgp') }}
     name: "Performance Comparison (amd_release, master_head, 5/8)"
     permissions:
@@ -8943,13 +9543,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA2Lzgp') }}
     name: "Performance Comparison (amd_release, master_head, 6/8)"
     permissions:
@@ -9016,13 +9620,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA3Lzgp') }}
     name: "Performance Comparison (amd_release, master_head, 7/8)"
     permissions:
@@ -9089,13 +9697,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA4Lzgp') }}
     name: "Performance Comparison (amd_release, master_head, 8/8)"
     permissions:
@@ -9162,13 +9774,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzYp') }}
     name: "Performance Comparison (arm_release, master_head, 1/6)"
     permissions:
@@ -9235,13 +9851,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzYp') }}
     name: "Performance Comparison (arm_release, master_head, 2/6)"
     permissions:
@@ -9308,13 +9928,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzYp') }}
     name: "Performance Comparison (arm_release, master_head, 3/6)"
     permissions:
@@ -9381,13 +10005,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA0LzYp') }}
     name: "Performance Comparison (arm_release, master_head, 4/6)"
     permissions:
@@ -9454,13 +10082,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA1LzYp') }}
     name: "Performance Comparison (arm_release, master_head, 5/6)"
     permissions:
@@ -9527,13 +10159,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA2LzYp') }}
     name: "Performance Comparison (arm_release, master_head, 6/6)"
     permissions:
@@ -9600,13 +10236,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzgp') }}
     name: "Performance Comparison (arm_release, master_head, 1/8)"
     permissions:
@@ -9673,13 +10313,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzgp') }}
     name: "Performance Comparison (arm_release, master_head, 2/8)"
     permissions:
@@ -9746,13 +10390,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzgp') }}
     name: "Performance Comparison (arm_release, master_head, 3/8)"
     permissions:
@@ -9819,13 +10467,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA0Lzgp') }}
     name: "Performance Comparison (arm_release, master_head, 4/8)"
     permissions:
@@ -9892,13 +10544,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA1Lzgp') }}
     name: "Performance Comparison (arm_release, master_head, 5/8)"
     permissions:
@@ -9965,13 +10621,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA2Lzgp') }}
     name: "Performance Comparison (arm_release, master_head, 6/8)"
     permissions:
@@ -10038,13 +10698,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA3Lzgp') }}
     name: "Performance Comparison (arm_release, master_head, 7/8)"
     permissions:
@@ -10111,13 +10775,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA4Lzgp') }}
     name: "Performance Comparison (arm_release, master_head, 8/8)"
     permissions:
@@ -10184,13 +10852,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCBpY2ViZXJnX2xvY2FsLCAxLzMp') }}
     name: "Performance Comparison (arm_release, master_head, iceberg_local, 1/3)"
     outputs:
@@ -10251,13 +10923,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCBpY2ViZXJnX2xvY2FsLCAyLzMp') }}
     name: "Performance Comparison (arm_release, master_head, iceberg_local, 2/3)"
     outputs:
@@ -10318,13 +10994,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCBpY2ViZXJnX2xvY2FsLCAzLzMp') }}
     name: "Performance Comparison (arm_release, master_head, iceberg_local, 3/3)"
     outputs:
@@ -10385,13 +11065,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCBpY2ViZXJnX3MzLCAxLzMp') }}
     name: "Performance Comparison (arm_release, master_head, iceberg_s3, 1/3)"
     outputs:
@@ -10452,13 +11136,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCBpY2ViZXJnX3MzLCAyLzMp') }}
     name: "Performance Comparison (arm_release, master_head, iceberg_s3, 2/3)"
     outputs:
@@ -10519,13 +11207,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCBpY2ViZXJnX3MzLCAzLzMp') }}
     name: "Performance Comparison (arm_release, master_head, iceberg_s3, 3/3)"
     outputs:
@@ -10676,13 +11368,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q2xpY2tCZW5jaCAoYW1kX3JlbGVhc2Up') }}
     name: "ClickBench (amd_release)"
     outputs:
@@ -10743,13 +11439,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q2xpY2tCZW5jaCAoYXJtX3JlbGVhc2Up') }}
     name: "ClickBench (arm_release)"
     outputs:
@@ -10830,13 +11530,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_llvm_coverage
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TExWTSBDb3ZlcmFnZQ==') }}
     name: "LLVM Coverage"
     outputs:
@@ -10914,13 +11618,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UHJvbVFMIENvbXBsaWFuY2U=') }}
     name: "PromQL Compliance"
     outputs:
@@ -11036,13 +11744,17 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9jcyBleGFtcGxlcw==') }}
     name: "Docs examples"
     outputs:
@@ -11379,13 +12091,17 @@ jobs:
     - stress_test_arm_tsan
     - style_check
     - unit_tests_amd_llvm_coverage
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
+    - unit_tests_arm_debug_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     - upgrade_check_amd_release
     if: ${{ always() }}
     name: "Finish Workflow"

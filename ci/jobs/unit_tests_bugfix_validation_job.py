@@ -42,11 +42,11 @@ sanitizer, where such a case exists. That costs a third cold build only for thos
 
 Like the functional/integration validators, this job only checks the "before" side.
 The complementary "the touched tests PASS on the PR binary" side is delegated to the
-regular `Unit tests (asan_ubsan)` job, which compiles and runs the full suite —
+regular `Unit tests (arm_asan_ubsan)` job, which compiles and runs the full suite —
 including the new test — on the PR binary; a regression test that is itself broken
 makes that job red and blocks the PR.  That delegation is per build type: the counterpart
-of the build type that reproduced is the `Unit tests (<that build type's sanitizer>)` job, so
-a bug reproduced on the `arm_tsan` build type is complemented by `Unit tests (tsan)`.
+of the build type that reproduced is the `Unit tests (<that build type>)` job, so
+a bug reproduced on the `arm_tsan` build type is complemented by `Unit tests (arm_tsan)`.
 Delegating it also lets this job avoid a direct dependency on the PR's
 `UNITTEST_ARM_ASAN_UBSAN` artifact.
 

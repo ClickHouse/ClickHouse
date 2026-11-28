@@ -8,6 +8,7 @@ from ci.praktika.utils import Shell
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--gtest_filter", default="")
+    parser.add_argument("--binary", default="unit_tests_dbms")
     args = parser.parse_args()
 
     # Our static OpenSSL must ignore the image's system openssl.cnf.
@@ -28,7 +29,7 @@ if __name__ == "__main__":
         command_launcher = ""
 
     R = Result.from_gtest_run(
-        unit_tests_path="./ci/tmp/unit_tests_dbms",
+        unit_tests_path=f"./ci/tmp/{args.binary}",
         command_launcher=command_launcher,
         gtest_filter=args.gtest_filter,
     )
