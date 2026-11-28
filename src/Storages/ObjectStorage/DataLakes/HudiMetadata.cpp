@@ -32,6 +32,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #endif
 
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -385,6 +386,30 @@ void collectReplacedFileGroups(
     LOG_TRACE(log, "Hudi instant {} replaces {} file groups", instant.relative_path, num_replaced);
 }
 
+/// Requested time of a pending instant of a write action, the same names in both layouts:
+/// `<t>.inflight` (a commit), `<t>.<action>.requested`, `<t>.<action>.inflight`.
+std::optional<std::string_view> parsePendingWriteInstantTime(std::string_view file_name)
+{
+    size_t dot = file_name.find('.');
+    if (dot == std::string_view::npos || !isNumber(file_name.substr(0, dot)))
+        return std::nullopt;
+    std::string_view time = file_name.substr(0, dot);
+    std::string_view state = file_name.substr(dot + 1);
+    if (state == "inflight")
+        return time;
+
+    size_t state_dot = state.find('.');
+    if (state_dot == std::string_view::npos)
+        return std::nullopt;
+    std::string_view action = state.substr(0, state_dot);
+    std::string_view suffix = state.substr(state_dot + 1);
+    static constexpr std::string_view write_actions[]
+        = {"commit", "deltacommit", "compaction", "logcompaction", "replacecommit", "clustering"};
+    if ((suffix != "requested" && suffix != "inflight") || std::ranges::find(write_actions, action) == std::end(write_actions))
+        return std::nullopt;
+    return time;
+}
+
 /// The files of the latest snapshot of the timeline history: the manifest named by `_version_`, else the newest one, as
 /// Hudi reads it. The other files in `history_path` are superseded by a compaction of the history or not committed.
 Strings readHistorySnapshot(
@@ -540,6 +565,7 @@ void readArchivedCompletionTimes(
     * [File Id]_[File Write Token]_[Transaction timestamp].[File Extension]
     *
     * To find needed parts we need to find out latest part file for every file group for every partition.
+    * Only base files of completed (or archived) instants are candidates, as Hudi reads only committed file slices.
     * Explanation why:
     *    Hudi reads in and overwrites the entire table/partition with each update.
     *    Hudi controls the number of file groups under a single partition according to the
@@ -556,7 +582,8 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
     std::optional<RelativePathWithMetadata> properties_file;
     std::optional<RelativePathWithMetadata> backup_file;
     std::vector<RelativePathWithMetadata> instants;
-    std::vector<String> timeline_files;
+    /// Files directly in `.hoodie` and `.hoodie/timeline`, as the active timeline directory is known only from the properties.
+    std::unordered_map<String, Strings> timeline_files;
     /// Directory in the table -> its timeline history pointers, as the history directory is known only from the properties.
     std::unordered_map<String, TimelineHistory> histories;
     /// Listed before the data files, so the new files of every instant applied below are listed too.
@@ -571,8 +598,8 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
                 return false;
             std::string_view path_in_table = std::string_view(key).substr(table_path.size());
             std::string_view directory = directoryInTable(key, table_path);
-            if (directory == ".hoodie/timeline")
-                timeline_files.push_back(object.getFileName());
+            if (directory == ".hoodie" || directory == ".hoodie/timeline")
+                timeline_files[String(directory)].push_back(object.getFileName());
             else if (directory.starts_with(".hoodie/timeline/"))
             {
                 const String file_name = object.getFileName();
@@ -615,11 +642,15 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
             collectReplacedFileGroups(instant, object_storage, local_context, log, replaced);
     }
 
+    Strings active_timeline_files;
+    if (timeline)
+        active_timeline_files = std::move(timeline_files[timeline->directory]);
+
     /// Requested time -> completion time of the completed instants of a layout 2 timeline.
     std::unordered_map<UInt64, UInt64> completion_times;
     if (timeline && timeline->layout_2)
     {
-        for (const auto & file_name : timeline_files)
+        for (const auto & file_name : active_timeline_files)
         {
             auto completed = parseCompletedInstantName(file_name, true);
             UInt64 requested = 0;
@@ -627,6 +658,36 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
             if (completed && tryParse(requested, completed->requested) && tryParse(completion, completed->completion))
                 completion_times.emplace(requested, completion);
         }
+    }
+
+    /// Requested times of the completed write instants in the active timeline, nothing without a timeline. A base file of
+    /// another instant belongs to a failed or running write, unless it precedes the first write instant, pending ones included,
+    /// that is not savepointed (else the last one): archival can go beyond a savepoint, which stays active.
+    std::optional<std::set<UInt64>> committed;
+    std::optional<UInt64> first_write_instant;
+    if (timeline)
+    {
+        committed.emplace();
+        std::set<UInt64> write_instants;
+        std::unordered_set<UInt64> savepoints;
+        for (const auto & file_name : active_timeline_files)
+        {
+            auto completed = parseCompletedInstantName(file_name, timeline->layout_2);
+            if (UInt64 requested = 0; completed && completed->action == "savepoint" && tryParse(requested, completed->requested))
+                savepoints.insert(requested);
+            else if (completed
+                && (completed->action == "commit" || completed->action == "deltacommit" || completed->action == "replacecommit")
+                && tryParse(requested, completed->requested))
+            {
+                committed->insert(requested);
+                write_instants.insert(requested);
+            }
+            else if (auto pending = parsePendingWriteInstantTime(file_name); pending && tryParse(requested, *pending))
+                write_instants.insert(requested);
+        }
+        if (!write_instants.empty())
+            first_write_instant = *std::find_if(
+                write_instants.begin(), std::prev(write_instants.end()), [&](UInt64 instant) { return !savepoints.contains(instant); });
     }
 
     FailPointInjection::pauseFailPoint(FailPoints::hudi_pause_after_listing_timeline);
@@ -702,6 +763,8 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
         const auto & file_id = file_parts[0];
         const auto timestamp = parse<UInt64>(file_parts[2]);
         if (auto it = replaced.find(partition); it != replaced.end() && it->second.contains(file_id))
+            continue;
+        if (committed && !committed->contains(timestamp) && (!first_write_instant || timestamp >= *first_write_instant))
             continue;
 
         auto & file_info = files[partition][file_id];
