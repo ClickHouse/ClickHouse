@@ -95,7 +95,7 @@ void FileLogConsumer::readNewRecords(FileLogConsumer::Records & new_records, siz
         const auto & file_name = file_infos.file_names[i];
 
         auto & file_ctx = StorageFileLog::findInMap(file_infos.context_by_name, file_name);
-        if (file_ctx.status == StorageFileLog::FileStatus::NO_CHANGE)
+        if (file_ctx.status == StorageFileLog::FileStatus::NO_CHANGE || file_ctx.status == StorageFileLog::FileStatus::REMOVED)
             continue;
 
         auto & file_meta = StorageFileLog::findInMap(file_infos.meta_by_inode, file_ctx.inode);
