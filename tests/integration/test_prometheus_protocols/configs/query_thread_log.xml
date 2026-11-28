@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- helpers/0_common_instance_config.xml removes query_thread_log; put it back, because test_range_query_split.py reads
+         the per-thread ProfileEvents of the request thread for each chunk. log_query_threads still defaults to 0. -->
+    <query_thread_log replace="replace">
+        <database>system</database>
+        <table>query_thread_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </query_thread_log>
+</clickhouse>

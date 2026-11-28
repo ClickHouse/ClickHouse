@@ -645,21 +645,7 @@ void ThreadStatus::initPerformanceCounters()
     // query_start_time.nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();
 
-    if (auto query_context_ptr = query_context.lock())
-    {
-        const Settings & settings = query_context_ptr->getSettingsRef();
-        if (settings[Setting::metrics_perf_events_enabled])
-        {
-            try
-            {
-                current_thread_counters.initializeProfileEvents(settings[Setting::metrics_perf_events_list]);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-    }
+    initPerfEvents();
 
     if (taskstats)
     {
@@ -740,6 +726,34 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
         {
             tryLogCurrentException(log, "Failed to reset taskstats counters, disabling for this thread", LogsLevel::warning);
             taskstats = nullptr;
+        }
+    }
+}
+
+void ThreadStatus::restartPerformanceCounters()
+{
+    performance_counters_finalized = false;
+    performance_counters.resetCounters();
+    resetPerformanceCountersLastUsage();
+    /// finalizePerformanceCounters() disabled the perf events (and closed them unless they are enabled globally).
+    initPerfEvents();
+}
+
+void ThreadStatus::initPerfEvents()
+{
+    if (auto query_context_ptr = query_context.lock())
+    {
+        const Settings & settings = query_context_ptr->getSettingsRef();
+        if (settings[Setting::metrics_perf_events_enabled])
+        {
+            try
+            {
+                current_thread_counters.initializeProfileEvents(settings[Setting::metrics_perf_events_list]);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
     }
 }
