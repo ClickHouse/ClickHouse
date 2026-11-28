@@ -35,6 +35,7 @@ private:
         DB::KeyDescription partition_key;
         DB::KeyCondition condition;
         std::vector<Int32TruncateWraparound> int32_truncate_wraparounds;
+        std::vector<IntegerTruncateField> integer_truncate_fields;
     };
 
     std::unordered_map<Int32, SpecCondition> conditions_by_spec_id;

@@ -1,0 +1,216 @@
+Objavro.codecnullavro.schema¢†
+{
+    "type": "record",
+    "name": "manifest_entry",
+    "fields": [
+        {"name": "status", "type": "int", "field-id": 0},
+        {"name": "snapshot_id", "type": ["null", "long"], "field-id": 1},
+        {"name": "sequence_number", "type": ["null", "long"], "field-id": 3},
+        {"name": "file_sequence_number", "type": ["null", "long"], "field-id": 4},
+        {
+            "name": "data_file",
+            "type":
+            {
+                "type": "record",
+                "name": "r2",
+                "fields": [
+                    {"name": "content", "type": "int", "doc": "Type of content stored by the data file", "field-id": 134},
+                    {"name": "file_path", "type": "string", "doc": "Location URI with FS scheme", "field-id": 100},
+                    {
+                        "name": "file_format",
+                        "type": "string",
+                        "doc": "File format name: avro, orc, or parquet",
+                        "field-id": 101
+                    },
+                    {
+                        "name": "partition",
+                        "type":
+                        {
+                            "type": "record",
+                            "name": "r102",
+                            "fields": [{"field-id":1001,"name":"i32","type":"long"},{"field-id":1002,"name":"i64","type":"long"}]
+                        },
+                        "field-id": 102
+                    },
+                    {"name": "record_count", "type": "long", "doc": "Number of records in the file", "field-id": 103},
+                    {"name": "file_size_in_bytes", "type": "long", "doc": "Total file size in bytes", "field-id": 104},
+                    {
+                        "name": "column_sizes",
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "items":
+                                {
+                                    "type": "record",
+                                    "name": "k117_v118",
+                                    "fields": [
+                                        {"name": "key", "type": "int", "field-id": 117},
+                                        {"name": "value", "type": "long", "field-id": 118}
+                                    ]
+                                },
+                                "logicalType": "map"
+                            }
+                        ],
+                        "doc": "Map of column id to total size on disk",
+                        "field-id": 108
+                    },
+                    {
+                        "name": "value_counts",
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "items":
+                                {
+                                    "type": "record",
+                                    "name": "k119_v120",
+                                    "fields": [
+                                        {"name": "key", "type": "int", "field-id": 119},
+                                        {"name": "value", "type": "long", "field-id": 120}
+                                    ]
+                                },
+                                "logicalType": "map"
+                            }
+                        ],
+                        "doc": "Map of column id to total count, including null and NaN",
+                        "field-id": 109
+                    },
+                    {
+                        "name": "null_value_counts",
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "items":
+                                {
+                                    "type": "record",
+                                    "name": "k121_v122",
+                                    "fields": [
+                                        {"name": "key", "type": "int", "field-id": 121},
+                                        {"name": "value", "type": "long", "field-id": 122}
+                                    ]
+                                },
+                                "logicalType": "map"
+                            }
+                        ],
+                        "doc": "Map of column id to null value count",
+                        "field-id": 110
+                    },
+                    {
+                        "name": "nan_value_counts",
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "items":
+                                {
+                                    "type": "record",
+                                    "name": "k138_v139",
+                                    "fields": [
+                                        {"name": "key", "type": "int", "field-id": 138},
+                                        {"name": "value", "type": "long", "field-id": 139}
+                                    ]
+                                },
+                                "logicalType": "map"
+                            }
+                        ],
+                        "doc": "Map of column id to number of NaN values in the column",
+                        "field-id": 137
+                    },
+                    {
+                        "name": "lower_bounds",
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "items":
+                                {
+                                    "type": "record",
+                                    "name": "k126_v127",
+                                    "fields": [
+                                        {"name": "key", "type": "int", "field-id": 126},
+                                        {"name": "value", "type": "bytes", "field-id": 127}
+                                    ]
+                                },
+                                "logicalType": "map"
+                            }
+                        ],
+                        "doc": "Map of column id to lower bound",
+                        "field-id": 125
+                    },
+                    {
+                        "name": "upper_bounds",
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "items":
+                                {
+                                    "type": "record",
+                                    "name": "k129_v130",
+                                    "fields": [
+                                        {"name": "key", "type": "int", "field-id": 129},
+                                        {"name": "value", "type": "bytes", "field-id": 130}
+                                    ]
+                                },
+                                "logicalType": "map"
+                            }
+                        ],
+                        "doc": "Map of column id to upper bound",
+                        "field-id": 128
+                    },
+                    {
+                        "name": "key_metadata",
+                        "type": ["null", "bytes"],
+                        "doc": "Encryption key metadata blob",
+                        "field-id": 131
+                    },
+                    {
+                        "name": "split_offsets",
+                        "type": ["null", {"type": "array", "items": "long", "element-id": 133}],
+                        "doc": "Splittable offsets",
+                        "field-id": 132
+                    },
+                    {
+                        "name": "equality_ids",
+                        "type": ["null", {"type": "array", "items": "int", "element-id": 136}],
+                        "doc": "Field ids used to determine row equality for delete files",
+                        "field-id": 135
+                    },
+                    {
+                        "name": "sort_order_id",
+                        "type": ["null", "int"],
+                        "doc": "Sort order ID",
+                        "field-id": 140
+                    }
+                ]
+            },
+            "field-id": 2
+        }
+    ]
+}
+format-version2partition-spec¤[{"field-id":1001,"name":"i32","source-id":1,"transform":"truncate[10]"},{"field-id":1002,"name":"i64","source-id":2,"transform":"truncate[100]"}]"partition-spec-id0schema”{
+    "fields" : [
+        {
+            "id" : 1,
+            "name" : "i32",
+            "required" : true,
+            "type" : "int"
+        },
+        {
+            "id" : 2,
+            "name" : "i64",
+            "required" : true,
+            "type" : "long"
+        },
+        {
+            "id" : 3,
+            "name" : "s",
+            "required" : true,
+            "type" : "string"
+        }
+    ],
+    "schema-id" : 0,
+    "type" : "struct"
+}schema-id0 |.ä¬Ù}6³uqÇÒELüîÒûâÖˆÇ©! °/iceberg_truncate_negative_legacy/data/data-4ee18c7f-8401-459d-98c4-a915f578d97f.parquetParquet ÌÚ‚¶       ÿÿÿÿ       a ÿÿÿÿ       a     |.ä¬Ù}6³uqÇÒEL

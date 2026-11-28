@@ -1,0 +1,66 @@
+{
+    "current-schema-id" : 0,
+    "current-snapshot-id" : -1,
+    "default-sort-order-id" : 0,
+    "default-spec-id" : 0,
+    "format-version" : 2,
+    "last-column-id" : 1,
+    "last-partition-id" : 1001,
+    "last-sequence-number" : 0,
+    "last-updated-ms" : 1794327716737,
+    "location" : "/iceberg_truncate_negative_legacy_compacted/",
+    "metadata-log" : [
+
+    ],
+    "partition-specs" : [
+        {
+            "fields" : [
+                {
+                    "field-id" : 1001,
+                    "name" : "i64",
+                    "source-id" : 1,
+                    "transform" : "truncate[10]"
+                }
+            ],
+            "spec-id" : 0
+        }
+    ],
+    "refs" : {
+        "main" : {
+            "snapshot-id" : -1,
+            "type" : "branch"
+        }
+    },
+    "schemas" : [
+        {
+            "fields" : [
+                {
+                    "id" : 1,
+                    "name" : "i64",
+                    "required" : true,
+                    "type" : "long"
+                }
+            ],
+            "schema-id" : 0,
+            "type" : "struct"
+        }
+    ],
+    "snapshot-log" : [
+
+    ],
+    "snapshots" : [
+
+    ],
+    "sort-orders" : [
+        {
+            "fields" : [
+
+            ],
+            "order-id" : 0
+        }
+    ],
+    "statistics" : [
+
+    ],
+    "table-uuid" : "105cc009-71b6-495b-9f77-eaf6c6f9d634"
+}

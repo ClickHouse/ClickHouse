@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 
+#include <base/arithmeticOverflow.h>
 #include <base/unaligned.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/logger_useful.h>
@@ -100,6 +101,18 @@ std::optional<std::pair<Field, Field>> boundsOfPartitionFieldSummary(
     return std::pair{std::move(*lower), std::move(*upper)};
 }
 
+std::optional<Int64> floorToMultiple(Int64 value, Int64 width)
+{
+    Int64 remainder = value % width;
+    if (remainder < 0)
+        remainder += width;
+
+    Int64 result = 0;
+    if (common::subOverflow(value, remainder, result))
+        return {};
+    return result;
+}
+
 }
 
 ManifestListPruner::ManifestListPruner(
@@ -144,9 +157,15 @@ ManifestListPruner::ManifestListPruner(
             require_ready_sets);
         auto int32_truncate_wraparounds
             = getInt32TruncateWraparounds(partition_key.partition_specification, schema_processor_, partition_schema_id_);
+        auto integer_truncate_fields
+            = getIntegerTruncateFields(partition_key.partition_specification, partition_key.key_description->data_types);
         conditions_by_spec_id.emplace(
             spec->getValue<Int32>(f_spec_id),
-            SpecCondition{*partition_key.key_description, std::move(condition), std::move(int32_truncate_wraparounds)});
+            SpecCondition{
+                *partition_key.key_description,
+                std::move(condition),
+                std::move(int32_truncate_wraparounds),
+                std::move(integer_truncate_fields)});
     }
 }
 
@@ -191,6 +210,33 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
                 || (range.right.getType() == Field::Types::Int64 && wraparound.stored <= range.right.safeGet<Int64>()))
             && wraparound.value < range.left.safeGet<Int64>())
             range.left = Field(wraparound.value);
+    }
+
+    for (const auto & [tuple_index, width] : condition_it->second.integer_truncate_fields)
+    {
+        auto & lower = hyperrectangle[tuple_index].left;
+        auto & upper = hyperrectangle[tuple_index].right;
+        if (isLegacyTruncateValue(lower, width))
+        {
+            if (const auto multiple = floorToMultiple(lower.safeGet<Int64>(), width))
+                lower = FieldRef(*multiple);
+            else
+            {
+                /// No multiple of `W` is below the value, so the spec value of its rows wraps to a large positive one.
+                lower = FieldRef(NEGATIVE_INFINITY);
+                upper = FieldRef(POSITIVE_INFINITY);
+            }
+        }
+
+        if (isLegacyTruncateValue(upper, width))
+        {
+            const auto multiple = floorToMultiple(upper.safeGet<Int64>(), width);
+            Int64 next_multiple = 0;
+            if (multiple && !common::addOverflow(*multiple, width, next_multiple))
+                upper = FieldRef(next_multiple);
+            else
+                upper = FieldRef(POSITIVE_INFINITY);
+        }
     }
 
     return !condition_it->second.condition.checkInHyperrectangle(hyperrectangle, partition_key.data_types).can_be_true;

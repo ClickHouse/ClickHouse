@@ -1,0 +1,139 @@
+{
+    "current-schema-id" : 0,
+    "current-snapshot-id" : 2806721310278579835,
+    "default-sort-order-id" : 0,
+    "default-spec-id" : 0,
+    "format-version" : 2,
+    "last-column-id" : 3,
+    "last-partition-id" : 1002,
+    "last-sequence-number" : 2,
+    "last-updated-ms" : 1791797874042,
+    "location" : "/iceberg_truncate_negative_legacy/",
+    "metadata-log" : [
+        {
+            "metadata-file" : "/iceberg_truncate_negative_legacy/metadata/v2.metadata.json",
+            "timestamp-ms" : 1791797874010
+        },
+        {
+            "metadata-file" : "/iceberg_truncate_negative_legacy/metadata/v3.metadata.json",
+            "timestamp-ms" : 1791797874042
+        }
+    ],
+    "partition-specs" : [
+        {
+            "fields" : [
+                {
+                    "field-id" : 1001,
+                    "name" : "i32",
+                    "source-id" : 1,
+                    "transform" : "truncate[10]"
+                },
+                {
+                    "field-id" : 1002,
+                    "name" : "i64",
+                    "source-id" : 2,
+                    "transform" : "truncate[100]"
+                }
+            ],
+            "spec-id" : 0
+        }
+    ],
+    "refs" : {
+        "main" : {
+            "snapshot-id" : 2806721310278579835,
+            "type" : "branch"
+        }
+    },
+    "schemas" : [
+        {
+            "fields" : [
+                {
+                    "id" : 1,
+                    "name" : "i32",
+                    "required" : true,
+                    "type" : "int"
+                },
+                {
+                    "id" : 2,
+                    "name" : "i64",
+                    "required" : true,
+                    "type" : "long"
+                },
+                {
+                    "id" : 3,
+                    "name" : "s",
+                    "required" : true,
+                    "type" : "string"
+                }
+            ],
+            "schema-id" : 0,
+            "type" : "struct"
+        }
+    ],
+    "snapshot-log" : [
+        {
+            "snapshot-id" : 1200647055407543479,
+            "timestamp-ms" : 1791797874010
+        },
+        {
+            "snapshot-id" : 2806721310278579835,
+            "timestamp-ms" : 1791797874042
+        }
+    ],
+    "snapshots" : [
+        {
+            "manifest-list" : "/iceberg_truncate_negative_legacy/metadata/snap-1200647055407543479-2-a3bba737-04dd-4674-ad50-d267554a076d.avro",
+            "parent-snapshot-id" : -1,
+            "schema-id" : 0,
+            "sequence-number" : 1,
+            "snapshot-id" : 1200647055407543479,
+            "summary" : {
+                "added-data-files" : "4",
+                "added-files-size" : "5016",
+                "added-records" : "4",
+                "changed-partition-count" : "4",
+                "operation" : "append",
+                "total-data-files" : "4",
+                "total-delete-files" : "0",
+                "total-equality-deletes" : "0",
+                "total-files-size" : "5016",
+                "total-position-deletes" : "0",
+                "total-records" : "4"
+            },
+            "timestamp-ms" : 1791797874010
+        },
+        {
+            "manifest-list" : "/iceberg_truncate_negative_legacy/metadata/snap-2806721310278579835-2-9a86d4f2-7aac-47e0-83ad-c7014993366c.avro",
+            "parent-snapshot-id" : 1200647055407543479,
+            "schema-id" : 0,
+            "sequence-number" : 2,
+            "snapshot-id" : 2806721310278579835,
+            "summary" : {
+                "added-data-files" : "1",
+                "added-files-size" : "1255",
+                "added-records" : "1",
+                "changed-partition-count" : "1",
+                "operation" : "append",
+                "total-data-files" : "5",
+                "total-delete-files" : "0",
+                "total-equality-deletes" : "0",
+                "total-files-size" : "6271",
+                "total-position-deletes" : "0",
+                "total-records" : "5"
+            },
+            "timestamp-ms" : 1791797874042
+        }
+    ],
+    "sort-orders" : [
+        {
+            "fields" : [
+
+            ],
+            "order-id" : 0
+        }
+    ],
+    "statistics" : [
+
+    ],
+    "table-uuid" : "defd9e85-850e-45ef-a452-23361175b9d7"
+}
