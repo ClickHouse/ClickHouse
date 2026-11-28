@@ -69,6 +69,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
     extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
+    extern const int ACCESS_DENIED;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -290,6 +291,14 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 
 /// Resolve identifier functions implementation
 
+/// Whether this analysis swaps the view source, the block a materialized view or `INSERT ... RETURNING` reads, in for `storage_id`.
+static bool isViewSource(const StorageID & storage_id, const ContextPtr & context, const StoragePtr & replaced_storage)
+{
+    auto view_source = context->getViewSource();
+    return view_source && view_source == replaced_storage && !context->isViewInnerQuery()
+        && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted();
+}
+
 /// Try resolve table identifier from database catalog
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
     const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
@@ -398,12 +407,10 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
     /// A snapshot from `getStorageSnapshot` can be shared by every read of the table in the query,
     /// so only a copy gets the view source's types.
     StorageSnapshotPtr storage_snapshot;
-    if (auto view_source = context->getViewSource();
-        view_source && view_source == replaced_storage && !context->isViewInnerQuery()
-        && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
+    if (isViewSource(storage_id, context, replaced_storage))
     {
         storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
-        auto view_source_metadata = view_source->getInMemoryMetadataPtr(context, false);
+        auto view_source_metadata = context->getViewSource()->getInMemoryMetadataPtr(context, false);
         storage_snapshot = storage_snapshot->clone(view_source_metadata, storage_snapshot->data);
     }
     else
@@ -417,6 +424,48 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
         result->setTemporaryTableName(table_name);
 
     return result;
+}
+
+/// An `Alias` shows the metadata of the last table of its chain, so a column must also be visible
+/// on every table it points to. The message names only the alias: the user may not know its target.
+static void checkAccessThroughAliasChain(
+    const StorageAlias & alias,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context,
+    const AccessRights & access_rights,
+    const String & alias_name)
+{
+    /// Each table decides a subcolumn by its column unless it has a grant or revoke on the subcolumn itself, as `read` does.
+    const auto & columns = storage_snapshot->metadata->getColumns();
+    const auto is_visible = [&](const String & database, const String & table, const String & column_name)
+    {
+        if (column_name.empty())
+            return access_rights.isGranted(AccessType::SELECT, database, table)
+                || access_rights.isGranted(AccessType::SHOW_COLUMNS, database, table);
+        const auto name = columns.getColumnNamesForSelectAccessCheck({column_name}, context, StorageID(database, table)).front();
+        return access_rights.isGranted(AccessType::SELECT, database, table, name)
+            || access_rights.isGranted(AccessType::SHOW_COLUMNS, database, table, name);
+    };
+
+    /// That column may differ from the one visible on the alias (an `ALIAS` column reads others).
+    Names candidates;
+    for (const auto & column : storage_snapshot->getColumns(
+             GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All)))
+        candidates.push_back(column.name);
+    if (!alias.filterColumnsGrantedThroughChain(candidates, is_visible).empty())
+        return;
+
+    /// Or a subcolumn granted by its exact name.
+    candidates.clear();
+    const auto subcolumns = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    for (const auto & element : access_rights.getElements())
+        for (const auto & name : element.columns)
+            if (!element.is_partial_revoke && storage_snapshot->tryGetColumn(subcolumns, name))
+                candidates.push_back(name);
+    if (!alias.filterColumnsGrantedThroughChain(candidates, is_visible).empty())
+        return;
+
+    throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to access the table that {} points to", alias_name);
 }
 
 /// Resolving a table identifier through the database catalog binds it to a storage and makes the
@@ -435,7 +484,8 @@ void IdentifierResolver::checkAccessToTableMetadata(
     const StoragePtr & storage,
     const StorageID & storage_id,
     const StorageSnapshotPtr & storage_snapshot,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const StoragePtr & replaced_storage)
 {
     if (!storage_id.hasDatabase())
         return;
@@ -472,36 +522,40 @@ void IdentifierResolver::checkAccessToTableMetadata(
     };
     const auto & metadata = *storage_snapshot->metadata;
     const auto & columns = metadata.getColumns();
-    for (const auto & column : columns)
+    const auto is_table_visible = [&]
     {
-        if (is_visible(column.name))
-            return;
-
-        /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its column
-        /// in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so it makes the table
-        /// visible too. Grants are matched by name only, so a granted name counts only if it resolves, by the same
-        /// type-aware resolution as identifiers (including dynamic paths of `JSON` / `Dynamic` / `Map`), to a
-        /// subcolumn of this column: a grant on `secret.no_such_subcolumn` of a scalar column `secret` reveals nothing.
-        for (const auto access_type : {AccessType::SELECT, AccessType::SHOW_COLUMNS})
+        for (const auto & column : columns)
         {
-            if (!columns.getSubcolumnsWithExplicitGrant(
-                     *access_rights, access_type, access_database, access_table_name, column.name).empty())
-                return;
+            if (is_visible(column.name))
+                return true;
+
+            /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its column
+            /// in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so it makes the table
+            /// visible too. Grants are matched by name only, so a granted name counts only if it resolves, by the same
+            /// type-aware resolution as identifiers (including dynamic paths of `JSON` / `Dynamic` / `Map`), to a
+            /// subcolumn of this column: a grant on `secret.no_such_subcolumn` of a scalar column `secret` reveals nothing.
+            for (const auto access_type : {AccessType::SELECT, AccessType::SHOW_COLUMNS})
+            {
+                if (!columns.getSubcolumnsWithExplicitGrant(
+                         *access_rights, access_type, access_database, access_table_name, column.name).empty())
+                    return true;
+            }
         }
-    }
-    /// A grant on a virtual column alone is enough to read it. An `Alias` reports its target's virtual columns, so there
-    /// the grant must also hold through the whole chain.
-    const auto * alias = storage->as<StorageAlias>();
-    for (const auto & column : metadata.virtuals)
-        if (is_visible(column.name)
-            && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)
-                || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name)))
-            return;
+        /// A grant on a virtual column alone is enough to read it.
+        for (const auto & column : metadata.virtuals)
+            if (is_visible(column.name))
+                return true;
+        return false;
+    };
 
     /// Not a single column of the table is visible to the user. Report the denial through the
     /// standard check, so the message and the query log get the table-level requirement without
     /// naming any column.
-    context->checkAccess(AccessType::SELECT, storage_id);
+    if (!is_table_visible())
+        context->checkAccess(AccessType::SELECT, storage_id);
+
+    if (const auto * alias = storage->as<StorageAlias>(); alias && !isViewSource(storage_id, context, replaced_storage))
+        checkAccessThroughAliasChain(*alias, storage_snapshot, context, *access_rights, storage_id.getNameForLogs());
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
@@ -511,7 +565,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
     {
         /// Temporary tables of the current session are always accessible.
         if (result->getTemporaryTableName().empty())
-            checkAccessToTableMetadata(result->getStorage(), result->getStorageID(), result->getStorageSnapshot(), context);
+            checkAccessToTableMetadata(
+                result->getStorage(), result->getStorageID(), result->getStorageSnapshot(), context, replaced_storage);
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
     }
 
