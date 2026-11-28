@@ -517,6 +517,7 @@ void ASTCreateQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     update_string(as_database);
     update_string(as_table);
     update_string(attach_from_path);
+    update_string(insert_format);
     hash_state.update(attach_as_replicated.has_value());
     if (attach_as_replicated.has_value())
         hash_state.update(*attach_as_replicated);
@@ -534,6 +535,8 @@ void ASTCreateQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(replace_table);
     hash_state.update(create_or_replace);
     hash_state.update(has_attach_from_path);
+    hash_state.update(has_and_insert);
+    hash_state.update(has_as_insert);
     ASTQueryWithTableAndOutput::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
