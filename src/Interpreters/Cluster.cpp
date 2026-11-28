@@ -783,12 +783,12 @@ Poco::Timespan Cluster::saturate(Poco::Timespan v, Poco::Timespan limit)
 }
 
 
-void Cluster::initMisc()
+void Cluster::initMisc(bool require_slots)
 {
     /// NOTE: It is possible to have cluster w/o shards for
     /// optimize_skip_unused_shards (i.e. WHERE 0 expression), so check the
     /// slots only if shards is not empty.
-    if (!shards_info.empty() && slot_to_shard.empty())
+    if (require_slots && !shards_info.empty() && slot_to_shard.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cluster with zero weight on all shards is prohibited");
 
     for (const auto & shard_info : shards_info)
@@ -984,7 +984,8 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
     shard_scope_identity = from.shard_scope_identity;
     replicas_as_shards = from.replicas_as_shards;
 
-    initMisc();
+    /// A subcluster is only read from, so it may consist of shards with zero weight only.
+    initMisc(/* require_slots = */ false);
 }
 
 

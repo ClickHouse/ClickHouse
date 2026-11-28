@@ -1,0 +1,9 @@
+-- the buckets of a shard with zero weight take rows
+shard_0	[0,1,4,5]
+shard_1	[2,3,6,7]
+-- the shard with zero weight is read when it is the only shard left
+2	2
+2	2
+2	7
+1	1
+2	2
