@@ -1,0 +1,54 @@
+-- two elements
+c2	2
+c3	3
+arr.a
+arr.c
+arr.d
+-- tupleElement by name and by index
+b1	c1
+b2	c2
+b3	c3
+arr.b
+arr.c
+-- LEFT ARRAY JOIN
+1	1
+1	2
+2	0
+3	3
+arr.a
+-- no alias
+b1
+b2
+b3
+arr.b
+-- only the row count
+3
+arr.a
+-- the query uses the whole tuple
+1	(1,'b1','c1','2026-08-20 00:00:00.000000000')
+2	(2,'b2','c2','2026-08-21 00:00:00.000000000')
+3	(3,'b3','c3','2026-08-22 00:00:00.000000000')
+arr
+-- the query also uses the array
+1	2
+2	2
+3	1
+-- FINAL
+1	b1
+2	b2
+3	b3
+-- join_use_nulls
+3	2
+\N	9
+-- the same results without the rewrite
+c1	1	['c1']
+c2	2	['c2']
+c3	3	['c3']
+c1	1	['c1']
+c2	2	['c2']
+c3	3	['c3']
+-- tupleElement over the array without ARRAY JOIN
+[1,2]
+[]
+[3]
+arr.a

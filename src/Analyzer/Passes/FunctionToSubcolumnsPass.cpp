@@ -626,6 +626,41 @@ void optimizeElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode & function
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
+/// Replace `tupleElement(arr, 'a')` over `Array(Tuple(...))` with a read of the array of the element `arr.a`.
+void optimizeArrayTupleElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    auto & function_arguments_nodes = function_node.getArguments().getNodes();
+    if (function_arguments_nodes.size() != 2)
+        return;
+
+    const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
+    if (!second_argument_constant_node)
+        return;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(assert_cast<const DataTypeArray &>(*ctx.column.type).getNestedType().get());
+    if (!tuple_type)
+        return;
+
+    auto element_name = getElementSubcolumnName(second_argument_constant_node->getValue(), *tuple_type);
+    if (!element_name
+        || tupleElementNameIsAmbiguousWhenFlattened(*tuple_type, *element_name)
+        || tupleElementNameIsOrdinalOnly(ctx.column_source, *tuple_type, ctx.subcolumn_support_cache))
+        return;
+
+    NameAndTypePair column{ctx.column.name + "." + *element_name, function_node.getResultType()};
+    if (sourceHasColumn(ctx.column_source, column.name) || sourceHasColumnCaseInsensitive(ctx.column_source, column.name))
+        return;
+
+    auto is_expected_subcolumn = [&](const ISerialization::SubstreamPath & path)
+    {
+        return path.size() == 2 && path[0].type == ISerialization::Substream::ArrayElements && SerializationTuple::isElementSubcolumn(path, *element_name);
+    };
+
+    if (!canOptimizeToExpectedSubcolumn(ctx, column.name, is_expected_subcolumn, column.type))
+        return;
+    node = std::make_shared<ColumnNode>(column, ctx.column_source);
+}
+
 void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
     /// Replace distinctJSONPaths(json) to arraySort(groupUniqArrayArray(json.__special_subcolumn_name_for_distinct_paths_calculation))
@@ -920,6 +955,9 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
     },
     {
         {TypeIndex::Tuple, "tupleElement"}, optimizeElementToSubcolumn<DataTypeTuple>,
+    },
+    {
+        {TypeIndex::Array, "tupleElement"}, optimizeArrayTupleElementToSubcolumn,
     },
     {
         {TypeIndex::Nullable, "tupleElement"}, [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
