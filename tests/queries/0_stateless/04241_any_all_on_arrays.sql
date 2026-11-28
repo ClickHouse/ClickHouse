@@ -73,6 +73,9 @@ SELECT _a < SOME([0, 100]) FROM (SELECT 4 AS _a);
 SELECT (_a + _a1) < SOME([100]) FROM (SELECT 1 AS _a, 2 AS _a1);
 SELECT (_a + _a1 + _a2) < SOME([100]) FROM (SELECT 1 AS _a, 2 AS _a1, 3 AS _a2);
 
+-- An alias defined on the LHS must not conflict with the lambda parameter either.
+SELECT (1 AS _a) < SOME(array(1, 2, 3));
+
 -- A table-qualified (compound) identifier such as `_a.x` binds its first part
 -- (`_a`) during analysis, so the lambda variable must avoid that part too.
 SELECT _a.x < SOME([2]) FROM (SELECT 1 AS x) AS _a;
