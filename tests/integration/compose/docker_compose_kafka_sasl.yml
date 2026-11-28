@@ -1,6 +1,6 @@
 services:
   kafka_sasl:
-    image: confluentinc/cp-kafka:7.9.0
+    image: confluentinc/cp-kafka:8.0.0
     hostname: kafka_sasl
     ports:
       - ${KAFKA_EXTERNAL_PORT}:${KAFKA_EXTERNAL_PORT}
@@ -21,6 +21,9 @@ services:
       KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/kafka_server_jaas.conf"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
+      # A KIP-848 member that left without unsubscribing keeps its partitions until the session expires (45 s by default)
+      KAFKA_GROUP_CONSUMER_MIN_SESSION_TIMEOUT_MS: 6000
+      KAFKA_GROUP_CONSUMER_SESSION_TIMEOUT_MS: 10000
       CLUSTER_ID: "Ch3OEYBSD34fcwNTASDNDM2Qk"
     volumes:
       - ${KAFKA_DIR:-}/secrets:/etc/kafka/secrets

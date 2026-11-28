@@ -155,7 +155,7 @@ private:
                 column_names,
                 kafka_storage.log,
                 1,
-                (*kafka_storage.kafka_settings)[KafkaSetting::kafka_commit_on_select]));
+                (*kafka_storage.kafka_settings)[KafkaSetting::kafka_commit_on_select] ? KafkaSource::CommitMode::OnSelect : KafkaSource::CommitMode::None));
         }
 
         LOG_DEBUG(kafka_storage.log, "Starting reading {} streams", pipes.size());
@@ -735,7 +735,8 @@ bool StorageKafka::streamToViews(UInt64 cycle_epoch)
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto source = std::make_shared<KafkaSource>(*this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false, cycle_epoch);
+        auto source = std::make_shared<KafkaSource>(
+            *this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, KafkaSource::CommitMode::AfterInsert, cycle_epoch);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 

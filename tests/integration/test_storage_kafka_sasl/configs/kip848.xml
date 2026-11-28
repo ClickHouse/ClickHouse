@@ -1,0 +1,11 @@
+<clickhouse>
+    <named_collections>
+        <kip848>
+            <kafka>
+                <group_protocol>consumer</group_protocol>
+                <auto_offset_reset>latest</auto_offset_reset>
+                <statistics_interval_ms>250</statistics_interval_ms>
+            </kafka>
+        </kip848>
+    </named_collections>
+</clickhouse>
