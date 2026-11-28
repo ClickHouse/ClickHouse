@@ -37,7 +37,9 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
-    StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
+    /// When the result is not null, `tables` (if set) has every `MergeTree` table the view reads appended to it,
+    /// including those of the other `UNION ALL` branches.
+    StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context, std::vector<StoragePtr> * tables = nullptr) const;
 
     /// A view whose query runs with privileges other than the invoker's (`SQL SECURITY DEFINER` or `NONE`)
     /// can hide rows that the invoker must not see. Such a view is sealed: it is read through an opaque step,
