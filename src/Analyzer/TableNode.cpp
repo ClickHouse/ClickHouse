@@ -226,9 +226,15 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         // In case of cross-replication we don't know what database is used for the table.
         // `storage_id.hasDatabase()` can return false only on the initiator node.
         // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-        auto full_name = storage_id.hasDatabase() ? storage_id.getFullNameNotQuoted() : storage_id.getTableName();
-        state.update(full_name.size());
-        state.update(full_name);
+        if (storage_id.hasDatabase())
+        {
+            /// 0 is never the length of an alias or a table name, so an aliased table cannot hash like a qualified one.
+            state.update(size_t{0});
+            state.update(storage_id.database_name.size());
+            state.update(storage_id.database_name);
+        }
+        state.update(storage_id.table_name.size());
+        state.update(storage_id.table_name);
     }
 
     if (table_expression_modifiers)
