@@ -52,6 +52,9 @@ public:
         expressions.pop_back();
     }
 
+    void enterAggregateFunctionArguments() { ++aggregate_or_grouping_functions_counter; }
+    void leaveAggregateFunctionArguments() { --aggregate_or_grouping_functions_counter; }
+
     [[nodiscard]] [[maybe_unused]] const QueryTreeNodePtr & getRoot() const
     {
         return expressions.front();
