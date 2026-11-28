@@ -36,7 +36,6 @@ public:
         , strategy(other_.strategy)
         , description_suffix(other_.description_suffix)
         , inputs(other_.inputs)
-        , is_partial_of_two_stage_aggregation(other_.is_partial_of_two_stage_aggregation)
     {}
 
     [[nodiscard]] String getName() const;
@@ -81,13 +80,6 @@ public:
     /// some properties, so it also satisfies weaker required properties, among them the ones of
     /// its own input in the same group. It is not an answer to those: the plan below it is.
     [[nodiscard]] bool answers(const ExpressionProperties & required_properties) const;
-
-    /// Set on the partial half of a two-stage aggregation split. Its promise of bucket order is kept
-    /// for the merge half of the same plan, which reads the gathered inputs one stream per node, so
-    /// the partial may run on several nodes. Every other non-final aggregation that promises bucket
-    /// order is the root of a shard plan whose consumer receives the shard output as one stream, and
-    /// only a single instance keeps that promise (see `AggregationImplementation`).
-    bool is_partial_of_two_stage_aggregation = false;
 
     UnorderedSetWithMemoryTracking<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;
 

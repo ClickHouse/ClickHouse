@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -163,12 +164,29 @@ static Cost fullReadCost(const CostInputs & inputs)
     return Cost{.work = inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row};
 }
 
+/// The count and the bytes of the distinct values that an aggregation without keys puts into the hash sets
+/// of its `uniqExact` states: each thread fills a set with the values, and the sets are then merged into one.
+/// A single `uniqExact` in a final aggregation takes much less time for a value, so it has none here. With
+/// radix partitioning it builds a small set for each bucket and merges nothing. In the order of its argument,
+/// equal values are adjacent, and it needs no set. Radix partitioning is a setting of the pipeline that is on
+/// by default, and the cost model takes it as on.
+static std::pair<Float64, Float64> distinctValuesInHashSets(const CostInputs & inputs)
+{
+    const auto * aggregating_step = typeid_cast<const AggregatingStep *>(inputs.step);
+    if (!aggregating_step || !aggregating_step->getParams().keys.empty() || aggregating_step->canUseRadixUniqExact())
+        return {0, 0};
+    return estimateDistinctValuesOfStates(*aggregating_step, inputStats(inputs, 0));
+}
+
 /// Hash table build + probe + output materialization, divided when each node handles 1/N.
+/// The distinct values of the `uniqExact` states are entries of hash tables as the output rows are.
 static Cost aggregationCost(const CostInputs & inputs, Float64 divide_by)
 {
+    const auto [distinct_state_values, distinct_state_bytes] = distinctValuesInHashSets(inputs);
     Cost cost;
     cost.work = (inputs.output_stats.estimated_row_count
                  + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
+                 + distinct_state_values + distinct_state_bytes
                  + inputStats(inputs, 0).estimated_row_count) / divide_by;
     return cost;
 }
@@ -256,12 +274,14 @@ Cost WindowStrategy::estimateOperatorCost(const CostInputs & inputs) const
     return windowCost(inputs);
 }
 
+/// The merge inserts each distinct value of the `uniqExact` states of its input into its own states, so a
+/// value has the price of an input row.
 static Cost mergingAggregatedCost(const CostInputs & inputs)
 {
     Cost cost;
     cost.work = (inputs.output_stats.estimated_row_count
         + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
-        + inputStats(inputs, 0).estimated_row_count) / inputs.parallelism;
+        + inputStats(inputs, 0).estimated_row_count + inputStats(inputs, 0).distinct_state_values) / inputs.parallelism;
     /// Sequential ~ output groups (hash table size). Penalizes gather-to-one-node
     /// merge for large outputs; bucket-level merge within a node is parallel.
     cost.sequential = inputs.output_stats.estimated_row_count / inputs.parallelism;
@@ -276,7 +296,8 @@ static Cost broadcastExchangeCost(const CostInputs & inputs)
     /// and the senders each ship their share of the copies in parallel. So one full payload
     /// is the per-node bound. A shuffle moves 1/N per node, so a broadcast still costs N times
     /// a shuffle of the same data.
-    cost.network += inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row;
+    cost.network += inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
+        + inputs.output_stats.distinct_state_bytes;
     cost.sequential += inputs.config.exchange_fixed_overhead;
     return cost;
 }
@@ -291,7 +312,9 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
     /// 1/N of the data per node, all nodes concurrently; without the division one node
     /// scanning the whole table is priced the same as the cluster shuffling it, and the
     /// optimizer keeps big scans on a single node.
-    Float64 network_bytes = rows * inputs.output_stats.estimated_bytes_per_row;
+    /// The distinct values in `uniqExact` states are not in the row width. The exchange sends and reads
+    /// such a state value by value, so a value has the price of a row here and in the funnel below.
+    Float64 network_bytes = rows * inputs.output_stats.estimated_bytes_per_row + inputs.output_stats.distinct_state_bytes;
     if (dynamic_cast<const ShuffleExchangeStep *>(&step))
         network_bytes /= std::max(1.0, inputs.node_count);
     cost.network += network_bytes;
@@ -309,7 +332,7 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
         if (const auto * sorted_gather = dynamic_cast<const GatherExchangeStep *>(&step);
             sorted_gather && sorted_gather->getMaintainSortDescription())
             funnel_rows = std::min(funnel_rows, inputs.output_stats.estimated_row_count);
-        cost.sequential += inputs.config.funnel_sequential_cost_per_row * funnel_rows;
+        cost.sequential += inputs.config.funnel_sequential_cost_per_row * (funnel_rows + inputs.output_stats.distinct_state_values);
     }
     if (const auto * gather = dynamic_cast<const GatherExchangeStep *>(&step);
         gather && gather->getMaintainSortDescription())

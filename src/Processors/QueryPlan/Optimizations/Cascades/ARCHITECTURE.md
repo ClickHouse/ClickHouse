@@ -221,6 +221,67 @@ cost. Given `GROUP BY n_name` with 25 distinct values:
 The optimizer creates all three as alternatives and compares their costs. Two-phase
 wins when the GROUP BY has few distinct values (high aggregation factor).
 
+### Distinct Aggregation Split
+
+`count(DISTINCT x)` without `GROUP BY` is `uniqExact(x)` by default. Its two-phase plan sends
+the hash set of the distinct values of every node as one row to one node, which merges them.
+With many distinct values this serial path takes longer than the scan.
+
+With `cascades_distinct_aggregation_split`, `DistinctAggregationSplit` adds another way to
+compute the aggregation to its group:
+
+```
+Aggregating(no keys, uniqExact(x))   =>   Aggregating(no keys, count(x))
+                                            Aggregating(keys: x)
+```
+
+The aggregation by `x` also computes a state of each other aggregate of the step for each
+value of `x`, and the step above it merges these states:
+
+```
+Aggregating(no keys, uniqExact(x), sum(y))   =>   Aggregating(no keys, count(x), sumMerge(s))
+                                                    Aggregating(keys: x, sumState(y) AS s)
+```
+
+The usual rules plan the two aggregations, as for a query written as a count over
+`GROUP BY x`: usually a partial aggregation by `x`, a shuffle of the distinct values, a merge
+and a count on every node, and a sum of the counts on one node. The plans of the original
+aggregation stay in the group, and the costs select.
+
+- **Types**: the rule applies where `uniqExact` keeps the value itself: integers, `Date`,
+  `Date32`, `DateTime`, enums, `UUID`, `IPv4`, also in `Nullable` and `LowCardinality`. For
+  strings and decimals `uniqExact` keeps a 128-bit hash. Floats are excluded: an aggregation
+  in the order of its key takes `0.` and `-0.` as one value.
+- **NULL**: the count is `count(x)` for a `Nullable` argument, so the NULL group is not counted.
+  The states of the NULL group are merged as those of all other groups.
+- **Other aggregates**: `count`, `sum`, `min`, `max` and `avg`, also with `-If`. The merge of
+  their states is the state of all the rows, however the rows are grouped. The state must have
+  a fixed size and own no other memory (so not the `min` of a `String`), because the estimate
+  of the row width takes this size for a column of states. A sum or an `avg` of floats depends
+  on the order of the additions, and a `min` or `max` of floats can give the other of `0.` and
+  `-0.`: these results can differ, as between any two plans.
+- **`max_rows_to_group_by`**: the rule does not apply, because the limit would apply to the
+  distinct values.
+- **Estimates**: to compare the plans, the costs count the distinct values that the
+  `uniqExact` states of an aggregation without keys hold (bytes from
+  `IAggregateFunction::getStateBytesPerDistinctInput`):
+  - The aggregation puts them into hash sets. Its cost function estimates them from the
+    statistics of its input and prices them as hash table entries.
+  - A non-final aggregation emits the states in one row. Its statistics keep the row count and
+    the row width, and have the values and their bytes beside them
+    (`ExpressionStatistics::distinct_state_values`, `distinct_state_bytes`). The exchange and
+    the merge above it price each value as a row. A step that takes the statistics of its input
+    keeps the values only while its rows have aggregate states: an expression with
+    `finalizeAggregation` has none. `UNION ALL` adds up the values of its inputs. `ROLLUP` and
+    `CUBE` make final values, and their statistics hold no values of states.
+  - A single `uniqExact` in a final aggregation has no such price. With radix partitioning
+    (on by default, and the cost model takes it as on) it keeps the values in a small set for
+    each bucket and merges nothing, and in the order of its argument it needs no set. Both take
+    much less time for each value.
+
+  These estimates do not depend on the setting: they also apply to the plans of an aggregation
+  that the rule does not change.
+
 ## Architecture Details
 
 ### Task-Based Optimization
@@ -336,6 +397,24 @@ tree one group per step:
   `L` rows on each node and needs the re-bounding limit above, so it is a different
   operator from the global top-N — it may be implemented per node, and the split is
   not applied to it again.
+
+### Bucket Order of Aggregation States
+
+With `distributed_aggregation_memory_efficient`, the merge on one node reads the buckets of
+two-level states in ascending order from each input stream. The merge of a two-phase
+aggregation requires this from its input as a property,
+`ExpressionProperties::aggregation_buckets_in_order`:
+
+- The partial aggregation has an implementation that delivers it: each node sends its result
+  from one stream, in bucket order. It is added only for this requirement.
+- A gather keeps it, because its receiver keeps the stream of every sender apart.
+- The merge per bucket over shuffled states does not require it, so its partial aggregation
+  sends its result from all streams.
+
+A non-final aggregation that the query plan has with a promise of bucket order (a shard of a
+distributed query) made the promise to the merge of the initiator, which reads the whole
+shard as one stream. That merge has no requirement in the memo: it relies on the promise.
+Such a step runs on one node, or as a two-phase aggregation whose merge restores the order.
 
 ### Cost Model
 
@@ -457,6 +536,9 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   never `ASOF` or `INNER ANY`, and never `ANY` under `join_any_take_last_row` (the
   kept row comes from the hash-table build side, so a swap changes the result)
 - `TwoStageAggregationTransformation` — splits aggregation into partial + merge
+- `DistinctAggregationSplit` — adds a count over an aggregation by the argument as an
+  alternative to a `uniqExact` without `GROUP BY` (see "Distinct Aggregation Split"), gated by
+  `cascades_distinct_aggregation_split`
 - `TwoStageTopN` — splits a top-N sort into a per-node bounded sort, a sorted-merge
   gather, and a coordinator limit
 

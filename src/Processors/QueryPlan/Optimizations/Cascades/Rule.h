@@ -55,6 +55,7 @@ OptimizationRulePtr createDistinctImplementation();
 OptimizationRulePtr createTwoStageAggregationTransformation();
 OptimizationRulePtr createMergingAggregationImplementation();
 OptimizationRulePtr createAggregationPushdown();
+OptimizationRulePtr createDistinctAggregationSplit();
 OptimizationRulePtr createLocalReadImplementation();
 OptimizationRulePtr createParallelReadImplementation();
 OptimizationRulePtr createReplicatedReadImplementation();

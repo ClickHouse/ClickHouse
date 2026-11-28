@@ -1,8 +1,10 @@
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
@@ -13,6 +15,7 @@
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
@@ -41,6 +44,23 @@ namespace Setting
 {
     extern const SettingsBool allow_statistics_optimize;
 }
+
+/// Whether the rows that the step emits have a column of aggregate states.
+static bool emitsAggregateStates(const IQueryPlanStep & step)
+{
+    if (!step.hasOutputHeader())
+        return false;
+    for (const auto & column : *step.getOutputHeader())
+    {
+        if (typeid_cast<const DataTypeAggregateFunction *>(column.type.get()))
+            return true;
+    }
+    return false;
+}
+
+/// The result of an aggregation by the keys. A merge of aggregation states has the same result.
+static ExpressionStatistics deriveAggregatingStatistics(
+    const Names & keys, const GroupingSetsParamsList & grouping_sets, const Block & output_header, const ExpressionStatistics & input_statistics);
 
 /// The equivalences between the columns that `keeps` accepts.
 template <typename Predicate>
@@ -137,7 +157,22 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     }
     else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(plan_step))
     {
-        group->statistics = deriveAggregatingStatistics(*aggregating_step, input_statistics(0));
+        group->statistics = deriveAggregatingStatistics(
+            aggregating_step->getParams().keys, aggregating_step->getGroupingSetsParamsList(),
+            *aggregating_step->getOutputHeader(), input_statistics(0));
+        /// A non-final aggregation without keys emits one row of states, and its `uniqExact` states hold
+        /// all the distinct values.
+        if (!aggregating_step->getFinal() && aggregating_step->getParams().keys.empty())
+        {
+            std::tie(group->statistics->distinct_state_values, group->statistics->distinct_state_bytes)
+                = estimateDistinctValuesOfStates(*aggregating_step, input_statistics(0));
+        }
+    }
+    else if (const auto * merging_step = typeid_cast<const MergingAggregatedStep *>(plan_step))
+    {
+        group->statistics = deriveAggregatingStatistics(
+            merging_step->getParams().keys, merging_step->getGroupingSetsParamsList(),
+            *merging_step->getOutputHeader(), input_statistics(0));
     }
     else if (const auto * sorting_step = typeid_cast<const SortingStep *>(plan_step))
     {
@@ -228,6 +263,14 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     else
     {
         group->statistics = ExpressionStatistics();
+    }
+
+    /// A step that takes the statistics of its input can finalize the aggregate states, as an expression
+    /// with `finalizeAggregation` does. Its rows then hold no values of states.
+    if (group->statistics->distinct_state_values > 0 && !emitsAggregateStates(*plan_step))
+    {
+        group->statistics->distinct_state_values = 0;
+        group->statistics->distinct_state_bytes = 0;
     }
 
     LOG_TEST(log, "Derived statistics for group #{}:\n{}",
@@ -770,6 +813,21 @@ static std::pair<Float64, Float64> estimateGroupCount(const Names & columns, con
             std::min(ndv_product, input_statistics.max_row_count)};
 }
 
+std::pair<Float64, Float64> estimateDistinctValuesOfStates(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics)
+{
+    Float64 values = 0;
+    Float64 bytes = 0;
+    for (const auto & aggregate : aggregating_step.getParams().aggregates)
+    {
+        if (aggregate.function->getName() != "uniqExact")
+            continue;
+        const Float64 values_of_state = estimateGroupCount(aggregate.argument_names, input_statistics).first;
+        values += values_of_state;
+        bytes += values_of_state * Float64(aggregate.function->getStateBytesPerDistinctInput());
+    }
+    return {values, bytes};
+}
+
 /// The estimated and the maximum row count of a step that emits one set of groups for each of several sets of
 /// keys: `GROUPING SETS`, and `ROLLUP` and `CUBE` as its special forms.
 struct GroupSetsRowCounts
@@ -803,20 +861,20 @@ static void addValueOfSetsWithoutKey(ColumnStats & key_statistics)
     QueryPlanOptimizations::keepOnlyEnclosingValueRange(key_statistics);
 }
 
-ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics)
+static ExpressionStatistics deriveAggregatingStatistics(
+    const Names & keys, const GroupingSetsParamsList & grouping_sets, const Block & output_header, const ExpressionStatistics & input_statistics)
 {
-    const auto & aggregator_params = aggregating_step.getAggregatorParameters();
     ExpressionStatistics aggregation_statistics;
-    for (const auto & key : aggregator_params.keys)
+    for (const auto & key : keys)
         aggregation_statistics.column_statistics[key].num_distinct_values
             = QueryPlanOptimizations::toUInt64Saturating(keyDistinctValues(key, input_statistics));
 
     UnorderedSetWithMemoryTracking<String> keys_missing_in_a_set;
     aggregation_statistics.min_row_count = 0;
-    if (aggregating_step.isGroupingSets())
+    if (!grouping_sets.empty())
     {
         GroupSetsRowCounts row_counts;
-        for (const auto & grouping_set : aggregating_step.getGroupingSetsParamsList())
+        for (const auto & grouping_set : grouping_sets)
         {
             if (grouping_set.used_keys.empty())
             {
@@ -838,7 +896,7 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
     else
     {
         std::tie(aggregation_statistics.estimated_row_count, aggregation_statistics.max_row_count)
-            = estimateGroupCount(aggregator_params.keys, input_statistics);
+            = estimateGroupCount(keys, input_statistics);
     }
     /// Group-by keys pass through with their input value sizes.
     for (auto & [column_name, column_stats] : aggregation_statistics.column_statistics)
@@ -851,12 +909,12 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
         addValueOfSetsWithoutKey(aggregation_statistics.column_statistics[key]);
     /// Aggregation changes the schema (group-by keys + aggregate states), recompute from output
     /// header with the keys' known value sizes.
-    aggregation_statistics.estimated_bytes_per_row = estimateRowWidth(*aggregating_step.getOutputHeader(), aggregation_statistics.column_statistics);
+    aggregation_statistics.estimated_bytes_per_row = estimateRowWidth(output_header, aggregation_statistics.column_statistics);
 
     /// Group keys pass through with their values, so their equivalences survive; the column
     /// statistics at this point hold exactly the group keys. In the rows of a grouping set without a key the
     /// key holds a default value or NULL, so two keys are then not equal on every row.
-    if (!aggregating_step.isGroupingSets())
+    if (grouping_sets.empty())
     {
         aggregation_statistics.equivalences = keepEquivalencesBetween(input_statistics.equivalences,
             [&](const String & column_name) { return aggregation_statistics.column_statistics.contains(column_name); });
@@ -939,6 +997,9 @@ ExpressionStatistics StatisticsDerivation::deriveUnionStatistics(
         statistics.max_row_count += input_statistics->max_row_count;
         statistics.estimated_distinct_bound
             += std::min(input_statistics->estimated_distinct_bound, input_statistics->estimated_row_count);
+        /// The rows of each input keep their `uniqExact` states.
+        statistics.distinct_state_values += input_statistics->distinct_state_values;
+        statistics.distinct_state_bytes += input_statistics->distinct_state_bytes;
     }
 
     /// The inputs have the same columns; a column of the output gets its statistics from the columns at its

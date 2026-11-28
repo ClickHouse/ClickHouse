@@ -79,7 +79,8 @@ private:
         QueryPlanStepPtr step,
         ExpressionProperties input_required,
         SortDescription output_sorting = {},
-        StreamLayout output_layout = StreamLayout::Unknown);
+        StreamLayout output_layout = StreamLayout::Unknown,
+        bool output_buckets_in_order = false);
     /// Input requirement matching the source expression's own distribution: the exchange
     /// consumes the stream where it already is.
     [[nodiscard]] ExpressionProperties inputAtSourceDistribution() const;
@@ -107,12 +108,22 @@ ExpressionProperties DistributionEnforcer::EnforcerEnumerator::inputAtSourceDist
 }
 
 void DistributionEnforcer::EnforcerEnumerator::addEnforcer(
-    QueryPlanStepPtr step, ExpressionProperties input_required, SortDescription output_sorting, StreamLayout output_layout)
+    QueryPlanStepPtr step,
+    ExpressionProperties input_required,
+    SortDescription output_sorting,
+    StreamLayout output_layout,
+    bool output_buckets_in_order)
 {
+    /// An exchange that does not keep a required order of the aggregation buckets cannot answer the
+    /// requirement, and no other enforcer adds this order above it.
+    if (required_properties.aggregation_buckets_in_order && !output_buckets_in_order)
+        return;
+
     ExpressionProperties output_properties;
     output_properties.distribution = required_properties.distribution;
     output_properties.sorting = std::move(output_sorting);
     output_properties.stream_layout = output_layout;
+    output_properties.aggregation_buckets_in_order = output_buckets_in_order;
     auto enforcer_expr = makeEnforcerExpression(
         expression, std::move(step), std::move(input_required), std::move(output_properties), required_properties);
 
@@ -152,11 +163,21 @@ void DistributionEnforcer::EnforcerEnumerator::addRoundRobinScatter()
 }
 
 /// Regular gather: N nodes -> 1 node, sorting NOT preserved.
+/// The receiver keeps the stream of every sender apart, so a required order of the aggregation buckets
+/// stays when the senders have it.
 void DistributionEnforcer::EnforcerEnumerator::addGather()
 {
+    ExpressionProperties input_required = inputAtSourceDistribution();
+    const bool keeps_bucket_order
+        = required_properties.aggregation_buckets_in_order && expression->properties.aggregation_buckets_in_order;
+    input_required.aggregation_buckets_in_order = keeps_bucket_order;
+
     addEnforcer(
         std::make_unique<GatherExchangeStep>(input_header, expression->properties.distribution.node_count),
-        inputAtSourceDistribution());
+        std::move(input_required),
+        /*output_sorting=*/{},
+        StreamLayout::Unknown,
+        keeps_bucket_order);
 }
 
 /// Sorted-merge gather: N nodes -> 1 node, sorting PRESERVED.

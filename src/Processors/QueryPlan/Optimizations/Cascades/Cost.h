@@ -131,7 +131,8 @@ struct ExpressionProperties;
 /// access, so operator costing stays a pure function of statistics and configuration.
 struct CostInputs
 {
-    /// The plan step; used by the type dispatcher, ignored by the strategy cost functions.
+    /// The plan step; used by the type dispatcher. The cost function of an aggregation reads its keys and
+    /// its aggregate functions.
     const IQueryPlanStep * step = nullptr;
     const ExpressionStatistics & output_stats;
     /// Per-input statistics, aligned with the expression inputs; an entry is null when the

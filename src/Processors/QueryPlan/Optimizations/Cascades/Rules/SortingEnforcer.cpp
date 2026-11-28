@@ -104,6 +104,8 @@ GroupExpressions SortingEnforcer::applyImpl(GroupExpressionPtr expression, const
     /// partition columns.
     ExpressionProperties output_properties = expression->properties;
     output_properties.sorting = sort_desc;
+    /// A sort does not keep the order of the aggregation buckets.
+    output_properties.aggregation_buckets_in_order = false;
     /// A sort built for a window differs from a plain sort by the same columns: it must not be dropped as a structural
     /// duplicate of the plain one, and a sorted gather above it must require the window sort again.
     output_properties.sorting_for_window = required_properties.sorting_for_window;
