@@ -1,0 +1,3 @@
+default to zookeeper2	1	2	2
+zookeeper2 to default	3	0	0
+same path	0	2	2
