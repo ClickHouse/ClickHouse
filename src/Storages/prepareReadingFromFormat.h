@@ -57,10 +57,10 @@ namespace DB
         void serialize(QueryPlanStepSerialization & ctx) const;
         static ReadFromFormatInfo deserialize(QueryPlanStepDeserialization & ctx);
 
-        /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
+        /// The list of hive partition columns and their requested subcolumns. It shall be read from the path regardless if it is present in the file
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-        /// True if `format_header` has a hive partition column. Its values in the file are not the values
-        /// of the column, so filters and the top-K threshold must not be pushed into the format.
+        /// True if `format_header` has a hive partition column or a subcolumn of one is requested. The format would take
+        /// their values from the data file, so filters and the top-K threshold must not be pushed into the format.
         bool formatReadsHivePartitionColumns() const;
         /// True if the format returns the column `name` of type `type` as read from the file, so the file's statistics describe it.
         bool formatReturnsColumnUnchanged(const String & name, const DataTypePtr & type) const;
