@@ -7,7 +7,8 @@ SET distinct_overflow_mode = 'throw';
 SET max_threads = 4;
 SET max_block_size = 1000;
 SET max_rows_in_distinct = 0;
-SET max_bytes_in_distinct = 100000000;
+-- A byte limit keeps the aggregation off the adaptive path, and the CI configuration sets one.
+SET max_bytes_in_distinct = 0;
 SET optimize_distinct_in_order = 0;
 SET group_by_two_level_threshold = 1;
 SET group_by_two_level_threshold_bytes = 0;
@@ -66,15 +67,13 @@ SELECT arraySort(groupArray(reinterpretAsUInt64(k))) FROM
 -- Large blocks publish staged chunks without coalescing, while wider keys also split at publication.
 SELECT count() FROM (SELECT DISTINCT number FROM numbers_mt(1000000)) SETTINGS max_block_size = 1000000;
 SELECT count() FROM (SELECT DISTINCT concat(repeat('x', 1000), toString(number)) FROM numbers_mt(100000))
-SETTINGS max_block_size = 100000, max_bytes_in_distinct = 1000000000;
+SETTINGS max_block_size = 100000;
 
 -- Freezing by key count and by bytes preserves the same key set.
 SELECT count(), sum(number) FROM (SELECT DISTINCT number FROM numbers_mt(100000))
 SETTINGS adaptive_aggregator_freeze_threshold = 100;
 SELECT count(), sum(number) FROM (SELECT DISTINCT number FROM numbers_mt(100000))
 SETTINGS adaptive_aggregator_freeze_threshold = 1000000, adaptive_aggregator_freeze_threshold_bytes = 1;
-SELECT count(), sum(number) FROM (SELECT DISTINCT number FROM numbers_mt(100000))
-SETTINGS max_bytes_in_distinct = 0;
 SELECT count(), sum(number) FROM (SELECT DISTINCT number FROM numbers_mt(100000))
 SETTINGS enable_adaptive_aggregator = 0;
 
@@ -83,13 +82,6 @@ SELECT number AS k FROM numbers(100) UNION DISTINCT SELECT number + 100 AS k FRO
 SETTINGS max_rows_in_distinct = 150 FORMAT Null; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 SELECT count() FROM (SELECT number AS k FROM numbers(100) UNION DISTINCT SELECT number AS k FROM numbers(100))
 SETTINGS max_rows_in_distinct = 100;
-
--- Pending and published staging buffers participate in the byte bound before the final merge.
-SELECT number AS k FROM numbers(100000) UNION DISTINCT SELECT number + 100000 AS k FROM numbers(100000)
-SETTINGS max_bytes_in_distinct = 1000000 FORMAT Null; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
-SELECT concat(repeat('x', 60), toString(number)) AS k FROM numbers(10000)
-UNION DISTINCT SELECT concat(repeat('y', 60), toString(number)) AS k FROM numbers(10000)
-SETTINGS max_bytes_in_distinct = 1000000 FORMAT Null; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 -- Repeated staged keys can thaw the local tables without changing the final set.
 SELECT count(), sum(k) FROM

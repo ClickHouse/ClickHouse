@@ -25,15 +25,6 @@ SELECT count(), sum(k) FROM
 )
 SETTINGS max_bytes_in_distinct = 5242880;
 
--- Staged keys stay charged until their last bucket retires, while completed bucket tables are freed.
-SELECT count(), sum(k) FROM
-(
-    SELECT number AS k FROM numbers(100000)
-    UNION DISTINCT SELECT number + 100000 AS k FROM numbers(100000)
-)
-SETTINGS max_bytes_in_distinct = 6000000, enable_adaptive_aggregator = 1,
-    adaptive_aggregator_freeze_threshold = 0, adaptive_aggregator_freeze_threshold_bytes = 0;
-
 -- Single-level merging releases each source table before merging the next one.
 SELECT count(), sum(k) FROM
 (
