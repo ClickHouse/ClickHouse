@@ -1,0 +1,30 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_jieba",
+    srcs = glob(["src/*.cpp"]),
+    hdrs = glob(["include/**/*.h"]),
+    additional_compiler_inputs = glob(["data/*.zst"]),
+    copts = [
+        "-w",
+        "-std=c++23",
+        "--embed-dir=" + package_relative_label(":_jieba").workspace_root + "/data",
+    ],
+    implementation_deps = ["@clickhouse_zstd//:_zstd"],
+    includes = [
+        "include",
+    ],
+    local_includes = [
+        "data",
+    ],
+    private_hdrs = ["data/jieba_hmm_model.dat"],
+    source_header_directories = source_header_directories(["include"]),
+    deps = ["@clickhouse_darts_clone//:darts_clone"],
+)

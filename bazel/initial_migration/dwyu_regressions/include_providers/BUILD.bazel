@@ -1,0 +1,93 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "header_owner",
+    hdrs = [
+        "other/unused.h",
+        "prefix/api.h",
+    ],
+    includes = ["."],
+)
+
+cc_library(
+    name = "include_carrier",
+    includes = ["prefix"],
+    deps = [":header_owner"],
+)
+
+cc_library(
+    name = "unused_carrier",
+    includes = ["other"],
+    deps = [":header_owner"],
+)
+
+cc_library(
+    name = "needed_short",
+    srcs = ["short.cpp"],
+    implementation_deps = [
+        ":header_owner",
+        ":include_carrier",
+    ],
+)
+
+cc_library(
+    name = "unused_long",
+    srcs = ["long.cpp"],
+    implementation_deps = [
+        ":header_owner",
+        ":include_carrier",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "unused_second",
+    srcs = ["short.cpp"],
+    implementation_deps = [
+        ":header_owner",
+        ":include_carrier",
+        ":unused_carrier",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "missing_physical_owner",
+    srcs = ["short.cpp"],
+    implementation_deps = [":include_carrier"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "removed_carrier",
+    srcs = ["short.cpp"],
+    implementation_deps = [":header_owner"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "private_owner",
+    srcs = [
+        "hidden/private.h",
+        "hidden_owner.cpp",
+    ],
+)
+
+cc_library(
+    name = "private_carrier",
+    includes = ["hidden"],
+    deps = [":private_owner"],
+)
+
+cc_library(
+    name = "foreign_private",
+    srcs = ["foreign.cpp"],
+    additional_compiler_inputs = ["hidden/private.h"],
+    implementation_deps = [
+        ":private_carrier",
+        ":private_owner",
+    ],
+    tags = ["manual"],
+)

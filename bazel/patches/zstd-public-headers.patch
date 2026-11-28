@@ -1,0 +1,12 @@
+diff --git a/BUILD.bazel b/BUILD.bazel
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -52,7 +52,7 @@
+         "lib/zstd.h",
+         "lib/zstd_errors.h",
+     ],
+-    includes = ["lib"],
++    strip_include_prefix = "lib",
+     linkopts = select({
+         "@platforms//os:windows": [],
+         "//conditions:default": ["-pthread"],

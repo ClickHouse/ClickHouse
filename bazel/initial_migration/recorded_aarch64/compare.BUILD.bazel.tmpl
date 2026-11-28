@@ -1,0 +1,29 @@
+load("@@//bazel/initial_migration:native_stripped_hash.bzl", "native_stripped_hash")
+
+filegroup(
+    name = "recorded_cmake",
+    srcs = [
+        "clickhouse.cmake",
+        "cmake-reference-summary.json",
+        "status.json",
+    ],
+)
+
+native_stripped_hash(
+    name = "compare_recorded_aarch64",
+    clickhouse = "@@//:clickhouse",
+    exec_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+    features = [
+        "-static_link_cpp_runtimes",
+        "-fortify_source",
+    ],
+    reference = ":recorded_cmake",
+    tags = ["manual"],
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+)

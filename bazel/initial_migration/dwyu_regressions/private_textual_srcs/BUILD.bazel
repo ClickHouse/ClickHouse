@@ -1,0 +1,197 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//bazel/rules:dwyu_textual_srcs_census.bzl", "dwyu_textual_srcs_census")
+load(":fixture_rules.bzl", "source_tree")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "api",
+    hdrs = ["api/value.h"],
+)
+
+cc_library(
+    name = "bridge",
+    deps = [":api"],
+)
+
+cc_library(
+    name = "typed_direct",
+    srcs = ["owner.cpp"],
+    implementation_deps = [":api"],
+    private_textual_srcs = ["fragment.cpp"],
+)
+
+cc_library(
+    name = "typed_c",
+    srcs = ["owner.c"],
+    implementation_deps = [":api"],
+    private_textual_srcs = ["fragment.c"],
+)
+
+cc_library(
+    name = "typed_nested_bridge",
+    srcs = ["owner.cpp"],
+    implementation_deps = [":bridge"],
+    private_textual_srcs = ["fragment.cpp"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "typed_unentered",
+    srcs = ["plain.cpp"],
+    implementation_deps = [":api"],
+    private_textual_srcs = ["fragment.cpp"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "typed_legal_consumer",
+    srcs = ["legal_consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":typed_direct",
+    ],
+)
+
+cc_library(
+    name = "typed_private_consumer",
+    srcs = ["private_consumer.cpp"],
+    additional_compiler_inputs = ["fragment.cpp"],
+    implementation_deps = [
+        ":api",
+        ":typed_direct",
+    ],
+    tags = ["manual"],
+)
+
+# No dependency from raw_foreign_without_dep or typed_wrong_owner to this rule.
+cc_library(
+    name = "detached_compiled_sibling",
+    srcs = ["detached.cpp"],
+)
+
+cc_library(
+    name = "unrelated_compiled",
+    srcs = ["plain.cpp"],
+)
+
+cc_library(
+    name = "raw_foreign_with_dep",
+    srcs = ["detached_reader.cpp"],
+    additional_compiler_inputs = ["detached.cpp"],
+    implementation_deps = [":detached_compiled_sibling"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "raw_foreign_without_dep",
+    srcs = ["detached_reader.cpp"],
+    additional_compiler_inputs = ["detached.cpp"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "typed_wrong_owner",
+    srcs = ["detached_reader.cpp"],
+    private_textual_srcs = ["detached.cpp"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "raw_header",
+    srcs = ["raw_header.cpp"],
+    additional_compiler_inputs = ["loose.h"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "raw_embed",
+    srcs = ["read_payload.cc"],
+    additional_compiler_inputs = ["assets/payload.bin"],
+    copts = ["-Wno-error=c23-extensions"],
+    implementation_deps = [":api"],
+)
+
+cc_library(
+    name = "invalid_header",
+    srcs = ["plain.cpp"],
+    private_textual_srcs = ["loose.h"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "invalid_data",
+    srcs = ["plain.cpp"],
+    private_textual_srcs = ["assets/payload.bin"],
+    tags = ["manual"],
+)
+
+source_tree(
+    name = "source_directory",
+)
+
+cc_library(
+    name = "invalid_tree",
+    srcs = ["plain.cpp"],
+    private_textual_srcs = [":source_directory"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "invalid_overlap_srcs",
+    srcs = [
+        "detached.cpp",
+        "detached_reader.cpp",
+    ],
+    private_textual_srcs = ["detached.cpp"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "invalid_overlap_hdrs",
+    srcs = ["detached_reader.cpp"],
+    hdrs = ["detached.cpp"],
+    private_textual_srcs = ["detached.cpp"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "invalid_overlap_textual_hdrs",
+    srcs = ["detached_reader.cpp"],
+    private_textual_srcs = ["detached.cpp"],
+    tags = ["manual"],
+    textual_hdrs = ["detached.cpp"],
+)
+
+cc_library(
+    name = "invalid_overlap_private_hdrs",
+    srcs = ["detached_reader.cpp"],
+    private_hdrs = ["detached.cpp"],
+    private_textual_srcs = ["detached.cpp"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "invalid_overlap_additional_compiler_inputs",
+    srcs = ["detached_reader.cpp"],
+    additional_compiler_inputs = ["detached.cpp"],
+    private_textual_srcs = ["detached.cpp"],
+    tags = ["manual"],
+)
+
+dwyu_textual_srcs_census(
+    name = "census_good",
+    roots = [
+        ":typed_direct",
+        ":unrelated_compiled",
+    ],
+)
+
+dwyu_textual_srcs_census(
+    name = "census_wrong_owner",
+    roots = [
+        ":detached_compiled_sibling",
+        ":typed_wrong_owner",
+    ],
+    tags = ["manual"],
+)

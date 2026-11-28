@@ -1,0 +1,30 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_lz4__compile_0",
+    srcs = [
+        "lib/lz4.c",
+        "lib/lz4hc.c",
+        "lib/lz4frame.c",
+        "lib/xxhash.c",
+        "lib/lz4.h",
+        "lib/lz4hc.h",
+        "lib/lz4frame.h",
+        "lib/xxhash.h",
+    ],
+    additional_compiler_inputs = ["lib/lz4.c"],
+    language = "C",
+    local_defines = [
+        "LZ4_FAST_DEC_LOOP=1",
+    ] + CXX_RUNTIME_DEFINES,
+    local_includes = [
+        "lib",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+)

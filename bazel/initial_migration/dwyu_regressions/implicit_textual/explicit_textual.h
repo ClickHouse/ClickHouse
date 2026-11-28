@@ -1,0 +1,1 @@
+DWYU_ALIAS_EXPLICIT_FIELD(int, extra)

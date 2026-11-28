@@ -1,0 +1,27 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "COPYING",
+])
+
+ch_cc_library(
+    name = "_stemmer",
+    srcs = glob([
+        "libstemmer/*.c",
+        "runtime/*.c",
+        "src_c/*.c",
+        "libstemmer/**/*.h",
+        "runtime/**/*.h",
+        "src_c/stem_UTF_8_*.h",
+        "src_c/stem_ISO_8859_1_*.h",
+        "src_c/stem_KOI8_R_*.h",
+    ]) + ["src_c/stem_ISO_8859_2_hungarian.h"],
+    hdrs = glob(["include/**/*.h"]),
+    includes = [
+        "include",
+    ],
+    language = "C",
+    local_defines = CXX_RUNTIME_DEFINES,
+)

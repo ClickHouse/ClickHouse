@@ -1,0 +1,16 @@
+diff --git a/llvm/BUILD.bazel b/llvm/BUILD.bazel
+--- a/llvm/BUILD.bazel
++++ b/llvm/BUILD.bazel
+@@ -4678,6 +4678,12 @@
+         "tools/dsymutil/*.h",
+     ]),
+     copts = llvm_copts,
++    linkopts = select({
++        "@platforms//os:macos": [
++            "-framework", "CoreFoundation",
++        ],
++        "//conditions:default": [],
++    }),
+     deps = [
+         ":AllTargetsCodeGens",
+         ":BinaryFormat",

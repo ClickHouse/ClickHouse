@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package dwyu.proto_compile;
+
+import "dwyu_proto/leaf.proto";
+
+message Bridge {
+  Leaf leaf = 1;
+}

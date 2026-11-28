@@ -1,0 +1,3 @@
+#ifndef DWYU_SYSROOT_MARKER_H
+#define DWYU_SYSROOT_MARKER_H
+#endif

@@ -1,0 +1,181 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["LICENSE"])
+
+genrule(
+    name = "orc_proto",
+    srcs = ["proto/orc_proto.proto"],
+    outs = [
+        "c++/include/orc_proto.pb.h",
+        "c++/include/orc_proto.pb.cc",
+    ],
+    cmd = "mkdir -p $(RULEDIR)/c++/include && " +
+          "$(execpath @clickhouse_google_protobuf//:protoc) " +
+          "-I $$(dirname $(execpath :proto/orc_proto.proto)) " +
+          "--cpp_out=$(RULEDIR)/c++/include " +
+          "$(execpath :proto/orc_proto.proto)",
+    tools = ["@clickhouse_google_protobuf//:protoc"],
+)
+
+expand_template(
+    name = "configure_c_include_Adaptor_hh",
+    out = "config/contrib/orc/c++/include/Adaptor.hh",
+    substitutions = {
+        "#cmakedefine HAS_BUILTIN_OVERFLOW_CHECK": "/* #undef HAS_BUILTIN_OVERFLOW_CHECK */",
+        "#cmakedefine HAS_DOUBLE_TO_STRING": "/* #undef HAS_DOUBLE_TO_STRING */",
+        "#cmakedefine HAS_DIAGNOSTIC_PUSH": "#define HAS_DIAGNOSTIC_PUSH",
+        "#cmakedefine HAS_INT64_TO_STRING": "/* #undef HAS_INT64_TO_STRING */",
+        "#cmakedefine NEEDS_Z_PREFIX": "/* #undef NEEDS_Z_PREFIX */",
+        "#cmakedefine HAS_POST_2038": "#define HAS_POST_2038",
+        "#cmakedefine HAS_STD_ISNAN": "#define HAS_STD_ISNAN",
+        "#cmakedefine HAS_PRE_1970": "#define HAS_PRE_1970",
+        "#cmakedefine HAS_STRPTIME": "#define HAS_STRPTIME",
+        "#cmakedefine HAS_PREAD": "#define HAS_PREAD",
+    },
+    template = ":c++/src/Adaptor.hh.in",
+)
+
+ch_cc_library(
+    name = "_orc",
+    srcs = [
+        "c++/include/orc_proto.pb.cc",
+        "c++/include/orc_proto.pb.h",
+        ":config/contrib/orc/c++/include/Adaptor.hh",
+        "c++/src/Adaptor.cc",
+        "c++/src/BlockBuffer.cc",
+        "c++/src/BloomFilter.cc",
+        "c++/src/BpackingDefault.cc",
+        "c++/src/ByteRLE.cc",
+    ] + glob(["c++/src/Column*.cc"]) + [
+        "c++/src/Common.cc",
+        "c++/src/Dictionary.cc",
+        "c++/src/DictionaryLoader.cc",
+        "c++/src/Compression.cc",
+        "c++/src/ConvertColumnReader.cc",
+        "c++/src/CpuInfoUtil.cc",
+        "c++/src/Exceptions.cc",
+        "c++/src/Geospatial.cc",
+        "c++/src/Int128.cc",
+        "c++/src/LzoDecompressor.cc",
+        "c++/src/MemoryPool.cc",
+        "c++/src/Murmur3.cc",
+        "c++/src/OrcFile.cc",
+        "c++/src/RLE.cc",
+        "c++/src/RLEV2Util.cc",
+        "c++/src/RLEv1.cc",
+        "c++/src/Reader.cc",
+        "c++/src/RleDecoderV2.cc",
+        "c++/src/RleEncoderV2.cc",
+        "c++/src/SchemaEvolution.cc",
+        "c++/src/Statistics.cc",
+        "c++/src/StripeStream.cc",
+        "c++/src/Timezone.cc",
+        "c++/src/TypeImpl.cc",
+        "c++/src/Vector.cc",
+        "c++/src/Writer.cc",
+    ] + glob([
+        "c++/src/io/*.cc",
+        "c++/src/sargs/*.cc",
+    ]) + glob(
+        [
+            "c++/src/*.hh",
+            "c++/src/io/*.hh",
+            "c++/src/sargs/*.hh",
+            "c++/src/wrap/*.h",
+            "c++/src/wrap/*.hh",
+        ],
+        exclude = [
+            "c++/src/BitUnpackerAvx512.hh",
+            "c++/src/BpackingAvx512.hh",
+            "c++/src/wrap/gmock.h",
+            "c++/src/wrap/gtest-wrapper.h",
+        ],
+    ),
+    hdrs = glob(["c++/include/orc/**/*.hh"]),
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-include",
+        "google/protobuf/stubs/port.h",
+    ],
+    implementation_deps = [
+        "@lz4//:lz4",
+        "@clickhouse_snappy//:_snappy",
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_zstd//:_zstd",
+    ],
+    includes = [
+        "c++/include",
+    ],
+    local_defines = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "ARM_ACLE",
+            "ARM_ASM_HWCAP",
+            "ARM_AUXV_HAS_CRC32",
+            "ARM_AUXV_HAS_NEON",
+            "ARM_FEATURES",
+            "ARM_NEON",
+            "ARM_NEON_HASLD4",
+        ],
+    }) + [
+        "ARROW_ENABLE_THREADING",
+        "ARROW_WITH_BROTLI",
+        "ARROW_WITH_BZ2",
+        "ARROW_WITH_LZ4",
+        "ARROW_WITH_SNAPPY",
+        "ARROW_WITH_ZLIB",
+        "ARROW_WITH_ZSTD",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "HAVE_ARM_ACLE_H",
+        ],
+    }) + [
+        "HAVE_ATTRIBUTE_ALIGNED",
+        "HAVE_BUILTIN_CTZ",
+        "HAVE_BUILTIN_CTZLL",
+        "HAVE_POSIX_MEMALIGN",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "HAVE_SYS_AUXV_H",
+        ],
+    }) + [
+        "HAVE_VISIBILITY_HIDDEN",
+        "HAVE_VISIBILITY_INTERNAL",
+        "PARQUET_THRIFT_VERSION_MAJOR=0",
+        "PARQUET_THRIFT_VERSION_MINOR=16",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "UNALIGNED_OK",
+        "WITH_GZFILEOP",
+        "X86_64",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "X86_AVX2",
+            "X86_FEATURES",
+            "X86_PCLMULQDQ_CRC",
+            "X86_SSE2",
+            "X86_SSE42",
+            "X86_SSSE3",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "ZLIB_COMPAT",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    local_includes = [
+        "config/contrib/orc/c++/include",
+        "c++/src",
+    ],
+    deps = [
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        "@clickhouse//contrib/lz4-cmake:_lz4",
+        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
+    ],
+)

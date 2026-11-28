@@ -1,0 +1,33 @@
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_COPTS", "AWS_CRT_DEFINES")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "aws_c_auth",
+    srcs = glob([
+        "source/*.c",
+        "include/**/private/**/*.h",
+    ]),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/**/private/**/*.h"],
+    ),
+    copts = AWS_CRT_COPTS,
+    implementation_deps = ["@clickhouse_aws_c_cal//:aws_c_cal"],
+    includes = ["include"],
+    language = "C",
+    local_defines = AWS_CRT_DEFINES,
+    source_header_directories = source_header_directories(["include"]),
+    deps = [
+        "@clickhouse_aws_c_http//:aws_c_http",
+        "@clickhouse_aws_c_sdkutils//:aws_c_sdkutils",
+        "@clickhouse_aws_c_common//:aws_c_common",
+        "@clickhouse_aws_c_io//:aws_c_io",
+    ],
+)

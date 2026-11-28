@@ -1,0 +1,23 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+cc_library(
+    name = "jwt_cpp",
+    hdrs = glob([
+        "include/jwt-cpp/*.h",
+        "include/jwt-cpp/traits/kazuho-picojson/*.h",
+        "include/picojson/**/*.h",
+    ]),
+    includes = [
+        "include",
+    ],
+    deps = [
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_openssl//:ssl",
+    ],
+)

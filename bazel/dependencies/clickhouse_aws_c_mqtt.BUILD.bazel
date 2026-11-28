@@ -1,0 +1,20 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+cc_library(
+    name = "aws_c_mqtt",
+    hdrs = glob(
+        ["include/aws/mqtt/**/*.h"],
+        exclude = ["include/aws/mqtt/private/**/*.h"],
+    ),
+    includes = ["include"],
+    deps = [
+        "@clickhouse_aws_c_io//:aws_c_io",
+        "@clickhouse_aws_c_common//:aws_c_common",
+    ],
+)

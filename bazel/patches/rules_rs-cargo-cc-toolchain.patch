@@ -1,0 +1,110 @@
+diff --git a/rs/extensions.bzl b/rs/extensions.bzl
+--- a/rs/extensions.bzl
++++ b/rs/extensions.bzl
+@@ -424,4 +424,5 @@
+             build_script_tools = annotation.build_script_tools,
+             build_script_tags = annotation.build_script_tags,
++            build_script_use_cc_toolchain = annotation.build_script_use_cc_toolchain,
+             build_script_tools_select = annotation.build_script_tools_select,
+             build_script_env_select = annotation.build_script_env_select,
+@@ -1096,4 +1097,9 @@
+             doc = "A list of labels to set on a crate's `cargo_build_script::toolchains` attribute.",
+         ),
++        "build_script_use_cc_toolchain": attr.string(
++            doc = "Whether the build script uses the C toolchain. Auto preserves the cargo_build_script default.",
++            default = "auto",
++            values = ["auto", "on", "off"],
++        ),
+         "build_script_tags": attr.string_list(
+             doc = "A list of tags to add to a crate's `cargo_build_script` target.",
+diff --git a/rs/private/annotations.bzl b/rs/private/annotations.bzl
+--- a/rs/private/annotations.bzl
++++ b/rs/private/annotations.bzl
+@@ -15,4 +15,5 @@
+         build_script_toolchains = [],
+         build_script_tags = [],
++        build_script_use_cc_toolchain = "auto",
+         data = [],
+         deps = [],
+@@ -50,4 +51,5 @@
+         build_script_toolchains = build_script_toolchains,
+         build_script_tags = build_script_tags,
++        build_script_use_cc_toolchain = build_script_use_cc_toolchain,
+         data = data,
+         deps = deps,
+diff --git a/rs/private/annotations_test.bzl b/rs/private/annotations_test.bzl
+--- a/rs/private/annotations_test.bzl
++++ b/rs/private/annotations_test.bzl
+@@ -31,4 +31,5 @@
+     "gen_binaries": [],
+     "gen_build_script": "auto",
++    "build_script_use_cc_toolchain": "auto",
+     "link_deps": [],
+     "patch_args": [],
+@@ -81,4 +82,5 @@
+                     version = "1.0.0",
+                     link_deps = ["//:exact_link_dep"],
++                    build_script_use_cc_toolchain = "off",
+                     patches = ["//:exact.patch"],
+                     rustc_env = {"RUSTC_ENV": "1"},
+@@ -100,4 +102,5 @@
+     annotation = annotation_for(annotations, "example", "1.0.0", "repo")
+     asserts.equals(env, "auto", annotation.gen_build_script)
++    asserts.equals(env, "off", annotation.build_script_use_cc_toolchain)
+     asserts.equals(env, ["//:exact_link_dep"], annotation.link_deps)
+     asserts.equals(env, ["//:exact.patch"], annotation.patches)
+diff --git a/rs/private/repository_utils.bzl b/rs/private/repository_utils.bzl
+--- a/rs/private/repository_utils.bzl
++++ b/rs/private/repository_utils.bzl
+@@ -209,5 +209,5 @@
+ {indent}    build_script_toolchains = {build_script_toolchains},
+ {indent}    build_script_tools = {build_script_tools}{conditional_build_script_tools},
+-{indent}    build_script_tags = {build_script_tags},
++{build_script_cc_setting}{indent}    build_script_tags = {build_script_tags},
+ {indent}    is_proc_macro = {is_proc_macro},
+ {indent}    has_lib = {has_lib},
+@@ -219,3 +219,6 @@
+ def render_rust_crate_call(attr, values, bazel_metadata = {}, extra_deps = "", indent = "", skip_deps_verification = False):
++    use_cc = attr.build_script_use_cc_toolchain
++    build_script_cc_setting = "" if use_cc == "auto" else indent + "    build_script_use_cc_toolchain = %s,\n" % (use_cc == "on")
++
+     # We keep conditional_crate_features unrendered here because it must be treated specially for build scripts.
+     # See `rs/private/rust_crate.bzl` for details.
+@@ -293,4 +296,5 @@
+         conditional_build_script_tools = " + " + conditional_build_script_tools if conditional_build_script_tools else "",
+         build_script_tags = repr(attr.build_script_tags),
++        build_script_cc_setting = build_script_cc_setting,
+         is_proc_macro = values["is_proc_macro"],
+         has_lib = values["has_lib"],
+@@ -335,4 +339,5 @@
+     "build_script_tools_select": _label_list_dict(),
+     "build_script_tags": attr.string_list(),
++    "build_script_use_cc_toolchain": attr.string(default = "auto", values = ["auto", "on", "off"]),
+     "rustc_env": attr.string_dict(),
+     "rustc_flags": attr.string_list(),
+diff --git a/rs/private/rust_crate.bzl b/rs/private/rust_crate.bzl
+--- a/rs/private/rust_crate.bzl
++++ b/rs/private/rust_crate.bzl
+@@ -49,5 +49,6 @@
+         rustc_env = {},
+         skip_deps_verification = False,
+-        crate_visibility = ["//visibility:public"]):
++        crate_visibility = ["//visibility:public"],
++        build_script_use_cc_toolchain = None):
+     package_metadata(
+         name = name + "_package_metadata",
+@@ -89,4 +90,5 @@
+         build_script_kwargs = dict(
+             emit_warnings = False,
++            use_cc_toolchain = build_script_use_cc_toolchain,
+             deps = build_deps,
+             aliases = aliases,
+diff --git a/rs/private/rustc_src_repository.bzl b/rs/private/rustc_src_repository.bzl
+--- a/rs/private/rustc_src_repository.bzl
++++ b/rs/private/rustc_src_repository.bzl
+@@ -123,4 +123,5 @@
+         build_script_env_select = {},
+         build_script_tags = [],
++        build_script_use_cc_toolchain = "auto",
+         build_script_toolchains = [],
+         build_script_tools = [],

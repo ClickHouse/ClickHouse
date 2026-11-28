@@ -1,0 +1,28 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "COPYING",
+])
+
+ch_cc_library(
+    name = "_bcrypt",
+    srcs = [
+        "bcrypt.c",
+        "crypt_blowfish/crypt_blowfish.h",
+        "crypt_blowfish/crypt_gensalt.h",
+        "crypt_blowfish/ow-crypt.h",
+    ] + glob(["crypt_blowfish/*.c"]),
+    hdrs = ["bcrypt.h"],
+    includes = [
+        ".",
+    ],
+    language = "C",
+    local_defines = CXX_RUNTIME_DEFINES + [
+        "__SKIP_GNU",
+    ],
+)

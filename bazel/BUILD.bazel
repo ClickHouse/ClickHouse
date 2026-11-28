@@ -1,0 +1,395 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@protobuf//bazel/toolchains:proto_lang_toolchain.bzl", "proto_lang_toolchain")
+load("@protobuf//bazel/toolchains:proto_toolchain.bzl", "proto_toolchain")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_rs//rs/platforms:triples.bzl", "triple_to_rust_constraint_set")
+load("//bazel/initial_migration:cmake_metadata.bzl", "CMAKE_METADATA")
+load("//bazel/initial_migration:cmake_toolchain.bzl", "cmake_toolchain")
+load("//bazel/initial_migration:native_cmake_reference.bzl", "native_cmake_reference")
+load("//bazel/initial_migration:native_stripped_hash.bzl", "native_stripped_hash")
+load("//bazel/rules:build_options.bzl", "build_options")
+load("//bazel/rules:build_options_data.bzl", "BUILD_OPTIONS")
+load("//bazel/rules:codegen_actions.bzl", "declare_codegen")
+load("//bazel/rules:codegen_rules.bzl", "ARROW_FLIGHT_CODEGEN_RULES", "CODEGEN_RULES", "KRB5_PRIVATE_CODEGEN_RULES")
+load("//bazel/rules:googleapis_protos.bzl", "google_api_protos")
+load("//bazel/rules/clickstack:embed.bzl", "embed_clickstack")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_toolchain(
+    name = "clickhouse_proto",
+    exec_compatible_with = ["@platforms//os:linux"],
+    proto_compiler = "@clickhouse_google_protobuf//:protoc",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+proto_lang_toolchain(
+    name = "clickhouse_cc_proto",
+    command_line = "--cpp_out=$(OUT)",
+    denylisted_protos = ["@clickhouse_google_protobuf//:libprotobuf_well_known_protos"],
+    output_files = "multiple",
+    runtime = "@clickhouse_google_protobuf//:_libprotobuf",
+    target_compatible_with = ["@platforms//os:linux"],
+    toolchain_type = "@protobuf//bazel/private:cc_toolchain_type",
+)
+
+proto_lang_toolchain(
+    name = "clickhouse_grpc_proto",
+    command_line = "--grpc_out=$(OUT)",
+    output_files = "multiple",
+    plugin = "@clickhouse_grpc//:grpc_cpp_plugin",
+    plugin_format_flag = "--plugin=protoc-gen-grpc=%s",
+)
+
+google_api_protos()
+
+copy_file(
+    name = "configure_git_hash",
+    src = select({
+        "@platforms//cpu:x86_64": "config/x86_64/base/base/GitHash.generated.cpp",
+        "@platforms//cpu:aarch64": "config/aarch64/base/base/GitHash.generated.cpp",
+    }),
+    out = "gen/base/base/GitHash.generated.cpp",
+    allow_symlink = False,
+)
+
+copy_file(
+    name = "configure_clickhouse_config",
+    src = select({
+        "@platforms//cpu:x86_64": "config/x86_64/includes/configs/config.h",
+        "@platforms//cpu:aarch64": "config/aarch64/includes/configs/config.h",
+    }),
+    out = "gen/includes/configs/config.h",
+    allow_symlink = False,
+)
+
+copy_file(
+    name = "configure_clickhouse_tools",
+    src = select({
+        "@platforms//cpu:x86_64": "config/x86_64/includes/configs/config_tools.h",
+        "@platforms//cpu:aarch64": "config/aarch64/includes/configs/config_tools.h",
+    }),
+    out = "gen/includes/configs/config_tools.h",
+    allow_symlink = False,
+)
+
+copy_file(
+    name = "configure_clickhouse_version",
+    src = select({
+        "@platforms//cpu:x86_64": "config/x86_64/includes/configs/config_version.cpp",
+        "@platforms//cpu:aarch64": "config/aarch64/includes/configs/config_version.cpp",
+    }),
+    out = "gen/includes/configs/config_version.cpp",
+    allow_symlink = False,
+)
+
+cc_library(
+    name = "clickhouse_config_headers",
+    hdrs = [
+        ":configure_clickhouse_config",
+        ":configure_clickhouse_tools",
+    ],
+    features = ["-system_include_paths"],
+    strip_include_prefix = "gen/includes/configs",
+)
+
+_ARROW_IPC_HEADERS = [
+    "gen/contrib/flatbuffers/generated/File_generated.h",
+    "gen/contrib/flatbuffers/generated/Message_generated.h",
+    "gen/contrib/flatbuffers/generated/Schema_generated.h",
+    "gen/contrib/flatbuffers/generated/SparseTensor_generated.h",
+    "gen/contrib/flatbuffers/generated/Tensor_generated.h",
+    "gen/contrib/flatbuffers/generated/feather_generated.h",
+]
+
+genrule(
+    name = "generate_contrib_flatbuffers_generated_File_generated_h",
+    srcs = ["@clickhouse_arrow//:ipc_metadata_schemas"],
+    outs = _ARROW_IPC_HEADERS,
+    cmd = "\"$(execpath @clickhouse_flatbuffers//:flatc)\" --cpp --cpp-std c++11 --no-warnings -o \"$(RULEDIR)/gen/contrib/flatbuffers/generated\" $(SRCS)",
+    tools = ["@clickhouse_flatbuffers//:flatc"],
+)
+
+cc_library(
+    name = "arrow_flatbuffer_headers",
+    hdrs = _ARROW_IPC_HEADERS,
+    includes = ["gen/contrib/flatbuffers"],
+    deps = ["@clickhouse_flatbuffers//:_flatbuffers"],
+)
+
+platform(
+    name = "buildbuddy_linux_x86_64",
+    # BuildBuddy prewarms this image. Ubuntu 20.04 satisfies LLVM's gnu.2.28
+    # constraint, without requiring each executor to pull Ubuntu from Docker Hub.
+    exec_properties = {
+        "container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622",
+    },
+    parents = ["@llvm//:rbe_linux_x86_64"],
+)
+
+platform(
+    name = "buildbuddy_linux_aarch64",
+    # LLVM's Ubuntu 22.04 image, pinned through the mirror so ARM actions
+    # do not depend on Docker Hub authentication at executor startup.
+    exec_properties = {
+        "container-image": "docker://mirror.gcr.io/library/ubuntu@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956",
+    },
+    parents = ["@llvm//:rbe_linux_aarch64"],
+)
+
+# Match the glibc releases and Linux header series in ClickHouse's CMake sysroots.
+# Register these target platforms as executors for tests that run on each CPU.
+platform(
+    name = "linux_x86_64",
+    constraint_values = triple_to_rust_constraint_set("x86_64-unknown-linux-gnu") + [
+        "@llvm//constraints/kernel/linux:4.15",
+        "@llvm//constraints/libc:gnu.2.27",
+    ],
+    parents = [":buildbuddy_linux_x86_64"],
+)
+
+platform(
+    name = "linux_aarch64",
+    constraint_values = triple_to_rust_constraint_set("aarch64-unknown-linux-gnu") + [
+        "@llvm//constraints/kernel/linux:4.19",
+        "@llvm//constraints/libc:gnu.2.28",
+    ],
+    parents = [":buildbuddy_linux_aarch64"],
+)
+
+exports_files(glob([
+    "*.MODULE.bazel",
+    "config/**",
+]))
+
+config_setting(
+    name = "opt",
+    values = {"compilation_mode": "opt"},
+)
+
+config_setting(
+    name = "strict_system_includes",
+    values = {"strict_system_includes": "true"},
+)
+
+bool_flag(
+    name = "cmake_metadata",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_cmake_metadata",
+    flag_values = {":cmake_metadata": "true"},
+)
+
+[
+    config_setting(
+        name = "use_cmake_metadata_" + arch,
+        constraint_values = ["@platforms//cpu:" + arch],
+        flag_values = {":cmake_metadata": "true"},
+    )
+    for arch in [
+        "x86_64",
+        "aarch64",
+    ]
+]
+
+cmake_toolchain(
+    name = "cmake_toolchain_files",
+    features = [
+        "-static_link_cpp_runtimes",
+        "-fortify_source",
+    ],
+)
+
+# initial_migration/prepare_native_reference.py creates the archives.
+# Only these manual CMake targets consume the archives.
+native_stripped_hash(
+    name = "stripped_hash_aarch64",
+    clickhouse = "//:clickhouse",
+    exec_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+    features = [
+        "-static_link_cpp_runtimes",
+        "-fortify_source",
+    ],
+    reference = ":cmake_reference_aarch64",
+    tags = ["manual"],
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+)
+
+[
+    native_cmake_reference(
+        name = name,
+        configure_only = configure_only,
+        exec_compatible_with = [
+            "@platforms//cpu:aarch64",
+            "@platforms//os:linux",
+        ],
+        exec_properties = {
+            # BuildBuddy uses learned sizes in preference to CPU/memory alone.
+            # Compute units disable learned sizing; keep 64 GB for Ninja/link.
+            "EstimatedComputeUnits": "16",
+            "EstimatedMemory": "64GB",
+            "EstimatedFreeDiskBytes": "180GB",
+            "default-timeout": "23h",
+        },
+        features = [
+            "-static_link_cpp_runtimes",
+            "-fortify_source",
+        ],
+        source_archive = "//bazel/native_reference_inputs:source.tar",
+        tags = ["manual"],
+        target_compatible_with = [
+            "@platforms//cpu:aarch64",
+            "@platforms//os:linux",
+        ],
+        tools_archive = "//bazel/native_reference_inputs:tools.tar",
+    )
+    for name, configure_only in [
+        ("cmake_reference_aarch64", False),
+        ("cmake_configure_aarch64", True),
+    ]
+]
+
+build_options(
+    name = "build_options",
+    out = "gen/src/Storages/System/StorageSystemBuildOptions.generated.cpp",
+    c_flags = select({
+        "@platforms//cpu:x86_64": BUILD_OPTIONS["x86_64"]["c_flags"],
+        "@platforms//cpu:aarch64": BUILD_OPTIONS["aarch64"]["c_flags"],
+    }),
+    cmake_metadata = select({
+        ":use_cmake_metadata": True,
+        "//conditions:default": False,
+    }),
+    cmake_substitutions = select({
+        "@platforms//cpu:x86_64": CMAKE_METADATA["x86_64"]["build_options"],
+        "@platforms//cpu:aarch64": CMAKE_METADATA["aarch64"]["build_options"],
+    }),
+    cxx_flags = select({
+        "@platforms//cpu:x86_64": BUILD_OPTIONS["x86_64"]["cxx_flags"],
+        "@platforms//cpu:aarch64": BUILD_OPTIONS["aarch64"]["cxx_flags"],
+    }),
+    features = [
+        "-static_link_cpp_runtimes",
+        "-fortify_source",
+    ],
+    link_flags = select({
+        "@platforms//cpu:x86_64": BUILD_OPTIONS["x86_64"]["link_flags"],
+        "@platforms//cpu:aarch64": BUILD_OPTIONS["aarch64"]["link_flags"],
+    }),
+    template = select({
+        "@platforms//cpu:x86_64": BUILD_OPTIONS["x86_64"]["template"],
+        "@platforms//cpu:aarch64": BUILD_OPTIONS["aarch64"]["template"],
+    }),
+)
+
+[
+    alias(
+        name = name,
+        actual = "//bazel/rules:" + name,
+    )
+    for name in [
+        "prepare_hdfs_crc",
+        "extract_archive",
+        "generate_licenses",
+        "embed_resources",
+        "process_rust_archive",
+        "cmake_cargo",
+        "cbindgen",
+        "generate_timezones",
+    ]
+]
+
+[
+    declare_codegen(
+        name = name,
+        attrs = attrs,
+    )
+    for name, attrs in CODEGEN_RULES.items()
+]
+
+[
+    filegroup(
+        name = "generated_" + arch,
+        srcs = [
+            ":generate_native_ClickStack",
+            ":build_options",
+            "@clickhouse_krb5//:generate_contrib_krb5_cmake_include_krb5_krb5_h",
+            ":generate_contrib_flatbuffers_generated_File_generated_h",
+        ] + [
+            ":" + name
+            for name in CODEGEN_RULES
+            if name.startswith("generate_" + arch + "_") or name.startswith("generate_contrib_") or name.startswith("generate_native_") or name == "extract_googleapis"
+        ] + [
+            "@clickhouse_arrow//:" + name
+            for name in ARROW_FLIGHT_CODEGEN_RULES
+        ] + [
+            "@clickhouse_krb5//:" + name
+            for name in KRB5_PRIVATE_CODEGEN_RULES
+        ],
+    )
+    for arch in [
+        "x86_64",
+        "aarch64",
+    ]
+]
+
+filegroup(
+    name = "clickstack_header",
+    srcs = [":generate_native_ClickStack"],
+    output_group = "header",
+)
+
+filegroup(
+    name = "clickstack_assets",
+    srcs = [":generate_native_ClickStack"],
+    output_group = "assets",
+)
+
+filegroup(
+    name = "web_ui_embedded_assets",
+    srcs = [":clickstack_assets"] + [
+        out
+        for out in CODEGEN_RULES["generate_native_SQLConsole"]["outs"]
+        if out.endswith(".gz")
+    ],
+    visibility = ["//src:__pkg__"],
+)
+
+cc_library(
+    name = "web_ui_resources",
+    hdrs = [
+        ":clickstack_header",
+        "gen/contrib/sql-console-cmake/SQLConsoleResources.generated.h",
+    ],
+    additional_compiler_inputs = [":web_ui_embedded_assets"],
+    includes = [
+        "gen/contrib/sql-console-cmake",
+        "gen/contrib/clickstack-cmake",
+    ],
+    visibility = ["//src:__pkg__"],
+)
+
+embed_clickstack(
+    name = "generate_native_ClickStack",
+    src = "//bazel/rules/clickstack:source_export",
+    gzip_mtime = select({
+        ":use_cmake_metadata_x86_64": CMAKE_METADATA["x86_64"]["resource_gzip_mtimes"]["ClickStack"],
+        ":use_cmake_metadata_aarch64": CMAKE_METADATA["aarch64"]["resource_gzip_mtimes"]["ClickStack"],
+        "//conditions:default": -1,
+    }),
+)
+
+label_flag(
+    name = "clickhouse_link_runtime",
+    build_setting_default = "@bazel_tools//tools/cpp:empty_lib",
+    scope = "target",
+)

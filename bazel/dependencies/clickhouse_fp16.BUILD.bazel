@@ -1,0 +1,19 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+cc_library(
+    name = "fp16",
+    hdrs = [
+        "include/fp16.h",
+        "include/fp16/bitcasts.h",
+        "include/fp16/fp16.h",
+    ],
+    includes = [
+        "include",
+    ],
+)

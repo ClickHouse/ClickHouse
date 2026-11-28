@@ -1,0 +1,65 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:cargo_sources.bzl", "cargo_repository_sources")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+expand_template(
+    name = "configure_include_wasmtime_conf_h",
+    out = "config/contrib/wasmtime/include/wasmtime/conf.h",
+    substitutions = {
+        "#cmakedefine WASMTIME_FEATURE_COMPONENT_MODEL_ASYNC": "/* #undef WASMTIME_FEATURE_COMPONENT_MODEL_ASYNC */",
+        "#cmakedefine WASMTIME_FEATURE_PARALLEL_COMPILATION": "/* #undef WASMTIME_FEATURE_PARALLEL_COMPILATION */",
+        "#cmakedefine WASMTIME_FEATURE_POOLING_ALLOCATOR": "/* #undef WASMTIME_FEATURE_POOLING_ALLOCATOR */",
+        "#cmakedefine WASMTIME_FEATURE_COMPONENT_MODEL": "/* #undef WASMTIME_FEATURE_COMPONENT_MODEL */",
+        "#cmakedefine WASMTIME_FEATURE_DISABLE_LOGGING": "#define WASMTIME_FEATURE_DISABLE_LOGGING",
+        "#cmakedefine WASMTIME_FEATURE_DEBUG_BUILTINS": "#define WASMTIME_FEATURE_DEBUG_BUILTINS",
+        "#cmakedefine WASMTIME_FEATURE_ADDR2LINE": "#define WASMTIME_FEATURE_ADDR2LINE",
+        "#cmakedefine WASMTIME_FEATURE_CRANELIFT": "#define WASMTIME_FEATURE_CRANELIFT",
+        "#cmakedefine WASMTIME_FEATURE_PROFILING": "/* #undef WASMTIME_FEATURE_PROFILING */",
+        "#cmakedefine WASMTIME_FEATURE_WASI_HTTP": "/* #undef WASMTIME_FEATURE_WASI_HTTP */",
+        "#cmakedefine WASMTIME_FEATURE_ALL_ARCH": "/* #undef WASMTIME_FEATURE_ALL_ARCH */",
+        "#cmakedefine WASMTIME_FEATURE_COREDUMP": "#define WASMTIME_FEATURE_COREDUMP",
+        "#cmakedefine WASMTIME_FEATURE_DEMANGLE": "#define WASMTIME_FEATURE_DEMANGLE",
+        "#cmakedefine WASMTIME_FEATURE_GC_NULL": "#define WASMTIME_FEATURE_GC_NULL",
+        "#cmakedefine WASMTIME_FEATURE_LOGGING": "/* #undef WASMTIME_FEATURE_LOGGING */",
+        "#cmakedefine WASMTIME_FEATURE_THREADS": "/* #undef WASMTIME_FEATURE_THREADS */",
+        "#cmakedefine WASMTIME_FEATURE_GC_DRC": "/* #undef WASMTIME_FEATURE_GC_DRC */",
+        "#cmakedefine WASMTIME_FEATURE_PULLEY": "/* #undef WASMTIME_FEATURE_PULLEY */",
+        "#cmakedefine WASMTIME_FEATURE_ASYNC": "/* #undef WASMTIME_FEATURE_ASYNC */",
+        "#cmakedefine WASMTIME_FEATURE_CACHE": "/* #undef WASMTIME_FEATURE_CACHE */",
+        "#cmakedefine WASMTIME_FEATURE_WINCH": "/* #undef WASMTIME_FEATURE_WINCH */",
+        "#cmakedefine WASMTIME_FEATURE_WASI": "/* #undef WASMTIME_FEATURE_WASI */",
+        "#cmakedefine WASMTIME_FEATURE_WAT": "#define WASMTIME_FEATURE_WAT",
+        "#cmakedefine WASMTIME_FEATURE_GC": "#define WASMTIME_FEATURE_GC",
+        "\n": "\r\n",
+    },
+    template = ":crates/c-api/include/wasmtime/conf.h.in",
+)
+
+cc_library(
+    name = "wasmtime",
+    srcs = ["@clickhouse//bazel/rust:wasmtime_processed"],
+    hdrs = glob([
+        "crates/c-api/include/**/*.h",
+        "crates/c-api/include/**/*.hh",
+    ]) + [":config/contrib/wasmtime/include/wasmtime/conf.h"],
+    includes = [
+        "config/contrib/wasmtime/include",
+        "crates/c-api/include",
+    ],
+    source_header_directories = source_header_directories([
+        "crates/c-api/include/wasmtime/component",
+        "crates/c-api/include/wasmtime/types",
+    ]),
+)
+
+cargo_repository_sources(
+    name = "cmake_cargo_sources",
+    exclude_top_level = ["target"],
+)

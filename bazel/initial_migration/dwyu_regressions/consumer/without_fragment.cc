@@ -1,0 +1,1 @@
+int dwyu_consumer_without_fragment;

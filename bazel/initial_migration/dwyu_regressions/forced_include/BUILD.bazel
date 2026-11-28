@@ -1,0 +1,72 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "api",
+    hdrs = ["api/config.h"],
+    includes = ["api"],
+)
+
+cc_library(
+    name = "bridge",
+    deps = [":api"],
+)
+
+cc_library(
+    name = "other",
+    hdrs = ["other/transitive.h"],
+    includes = ["other"],
+)
+
+cc_library(
+    name = "api_parent",
+    hdrs = ["api/parent.h"],
+    includes = ["api"],
+    deps = [":other"],
+)
+
+cc_library(
+    name = "foreign_reader",
+    srcs = ["needs_config.c"],
+    copts = [
+        "-include",
+        "bazel/initial_migration/dwyu_regressions/forced_include/api/parent.h",
+    ],
+    implementation_deps = [":api_parent"],
+)
+
+cc_library(
+    name = "direct",
+    srcs = ["needs_config.c"],
+    copts = [
+        "-include",
+        "bazel/initial_migration/dwyu_regressions/forced_include/api/config.h",
+    ],
+    implementation_deps = [":api"],
+)
+
+cc_library(
+    name = "negative_bridge",
+    srcs = ["needs_config.c"],
+    copts = [
+        "-include",
+        "bazel/initial_migration/dwyu_regressions/forced_include/api/config.h",
+    ],
+    implementation_deps = [":bridge"],
+)
+
+cc_library(
+    name = "negative_unused",
+    srcs = ["plain.c"],
+    implementation_deps = [":api"],
+)
+
+cc_library(
+    name = "negative_missing",
+    srcs = ["plain.c"],
+    copts = [
+        "-include",
+        "bazel/initial_migration/dwyu_regressions/forced_include/missing_config.h",
+    ],
+)

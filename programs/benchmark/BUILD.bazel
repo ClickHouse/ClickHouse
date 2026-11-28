@@ -1,0 +1,35 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//programs:program_defines.bzl", "CLICKHOUSE_PROGRAM_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "clickhouse-benchmark-lib",
+    srcs = ["Benchmark.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src/Common/Config:clickhouse_common_config",
+        "//base:common",
+        "//base:pcg_random",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Util:_poco_util",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "//src/Common",
+        "//src/AggregateFunctions:headers",
+        "//src/Parsers:clickhouse_parsers",
+        "//programs/client:clickhouse-client-lib",
+        "//src/AggregateFunctions:clickhouse_aggregate_functions",
+        "//src:dbms",
+        "@clickhouse_boost//:_boost_program_options",
+        "//src/Common:current_metrics",
+        "//src/Common:exception_api",
+        "//src/Common:stopwatch",
+        "//src:clickhouse_common_io__compile_0",
+        "//src:dbms__compile_0",
+        "//src:headers",
+        "//src:io_string_buffers",
+        "//src/Parsers:parser_api",
+    ],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_PROGRAM_DEFINES,
+)

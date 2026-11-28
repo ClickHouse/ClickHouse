@@ -1,0 +1,90 @@
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_COPTS", "AWS_CRT_DEFINES")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "aws_c_io",
+    srcs = [
+        "source/alpn_handler.c",
+        "source/async_stream.c",
+        "source/channel.c",
+        "source/channel_bootstrap.c",
+        "source/event_loop.c",
+        "source/exponential_backoff_retry_strategy.c",
+        "source/future.c",
+        "source/host_resolver.c",
+        "source/io.c",
+        "source/message_pool.c",
+        "source/no_retry_strategy.c",
+        "source/pem.c",
+        "source/pkcs11_lib.c",
+        "source/pkcs11_tls_op_handler.c",
+        "source/retry_strategy.c",
+        "source/socket.c",
+        "source/socket_channel_handler.c",
+        "source/socket_shared.c",
+        "source/standard_retry_strategy.c",
+        "source/statistics.c",
+        "source/stream.c",
+        "source/tls_channel_handler_shared.c",
+        "source/tracing.c",
+        "source/linux/epoll_event_loop.c",
+    ] + glob(["source/posix/*.c"]) + [
+        "source/pkcs11_private.h",
+        "source/pkcs11/v2.40/pkcs11.h",
+    ] + glob(
+        ["include/aws/io/private/*.h"],
+        exclude = [
+            "include/aws/io/private/pki_utils.h",
+            "include/aws/io/private/tls_channel_handler_private.h",
+        ],
+    ),
+    hdrs = glob(["include/aws/io/*.h"]),
+    copts = AWS_CRT_COPTS,
+    implementation_deps = ["@clickhouse_aws_c_cal//:aws_c_cal"],
+    includes = ["include"],
+    language = "C",
+    local_defines = AWS_CRT_DEFINES,
+    deps = ["@clickhouse_aws_c_common//:aws_c_common"],
+)
+
+ch_cc_library(
+    name = "aws_c_io__compile_3",
+    srcs = [
+        "source/tls_channel_handler.c",
+        "source/pkcs11_private.h",
+        "source/pkcs11/v2.40/pkcs11.h",
+        "include/aws/io/private/pem_utils.h",
+        "include/aws/io/private/tls_channel_handler_private.h",
+        "include/aws/io/private/tls_channel_handler_shared.h",
+    ],
+    copts = AWS_CRT_COPTS,
+    implementation_deps = [
+        ":aws_c_io",
+        "@clickhouse_aws_c_common//:aws_c_common",
+    ],
+    language = "C",
+    local_defines = [
+        "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
+        "AWS_ENABLE_EPOLL",
+        "AWS_PTHREAD_SETNAME_TAKES_2ARGS",
+        "BYO_CRYPTO",
+        "ENABLE_OPENSSL_ENCRYPTION",
+        "INTEL_NO_ITTNOTIFY_API",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "USE_SIMD_ENCODING",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+)

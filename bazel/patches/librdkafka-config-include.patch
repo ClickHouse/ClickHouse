@@ -1,0 +1,24 @@
+diff --git a/src/rd.h b/src/rd.h
+--- a/src/rd.h
++++ b/src/rd.h
+@@ -70,7 +70,7 @@
+ #include "win32_config.h"
+ #else
+ /* POSIX / UNIX based systems */
+-#include "../config.h" /* mklove output */
++#include "config.h" /* supplied through the build's include path */
+ #endif
+ 
+ #ifdef _WIN32
+diff --git a/src/tinycthread.h b/src/tinycthread.h
+--- a/src/tinycthread.h
++++ b/src/tinycthread.h
+@@ -29,7 +29,7 @@
+ #ifdef _WIN32
+ #include "win32_config.h"
+ #else
+-#include "../config.h"
++#include "config.h"
+ #endif
+ 
+ #if WITH_C11THREADS

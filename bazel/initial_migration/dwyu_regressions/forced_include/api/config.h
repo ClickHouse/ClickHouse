@@ -1,0 +1,4 @@
+#ifndef DWYU_FORCED_CONFIG_H
+#define DWYU_FORCED_CONFIG_H
+#define DWYU_FORCED_VALUE 19
+#endif
