@@ -36,7 +36,7 @@ $CLICKHOUSE_CLIENT --multiquery "
 CREATE USER ${user} NOT IDENTIFIED;
 GRANT CREATE TABLE, DROP TABLE, INSERT, SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${user};
 GRANT TABLE ENGINE ON MergeTree TO ${user};
-CREATE ROW POLICY ${policy} ON system.one USING a != 0 TO ${user};
+CREATE ROW POLICY ${policy} ON system.one USING 0 TO ${user};
 "
 
 $CLICKHOUSE_CLIENT --user "${user}" --multiquery "
