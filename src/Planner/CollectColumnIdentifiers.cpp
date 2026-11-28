@@ -3,6 +3,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
@@ -39,6 +40,22 @@ public:
 
     void visitImpl(const QueryTreeNodePtr & node)
     {
+        /// The right side of `JOIN LATERAL` reads its correlated columns from the left side of the join.
+        if (const auto * join_node = node->as<JoinNode>(); join_node && join_node->isLateral())
+        {
+            const auto & right_table_expression = join_node->getRightTableExpressionNode();
+            if (isCorrelatedQueryOrUnionNode(right_table_expression))
+            {
+                const auto * query_node = right_table_expression->as<QueryNode>();
+                const auto & correlated_columns = query_node ? query_node->getCorrelatedColumns()
+                    : right_table_expression->as<UnionNode &>().getCorrelatedColumns();
+                for (const auto & column : correlated_columns)
+                    if (const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(column))
+                        used_identifiers.insert(*column_identifier);
+            }
+            return;
+        }
+
         if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
         {
             auto * function_node = node->as<FunctionNode>();
