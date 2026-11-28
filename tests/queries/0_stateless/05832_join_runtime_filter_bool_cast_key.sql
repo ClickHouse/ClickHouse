@@ -7,6 +7,10 @@ SET query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = '
 SET enable_parallel_replicas = 0, join_algorithm = 'hash';
 SET date_time_overflow_behavior = 'ignore';
 SET allow_suspicious_variant_types = 1;
+-- Disable force_primary_key_reverse_order: the check of `RuntimeFilterRowsPassed` for the `ANTI JOIN` relies on the rows with the bytes 0 and 1 being in the first block
+-- of `probe_bool_set`. The runtime filter passes almost all rows, so it is disabled as poorly performing after the first block, and with a descending key
+-- (and the probe side read in several blocks, as on s3) the only rows it rejects are in a block it skips.
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS probe_u8;
 DROP TABLE IF EXISTS probe_u8_si;

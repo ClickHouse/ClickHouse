@@ -2,6 +2,9 @@
 -- interval intersects the primary key interval of some granule selected by the skip index.
 -- The selected granules are scattered over parts with overlapping key ranges.
 
+-- Disable force_primary_key_reverse_order: the expected granule counts are computed from the primary key index
+-- assuming ascending keys (the first mark of a granule is its lower bound)
+SET force_primary_key_reverse_order = 0;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_if_final = 1;
 SET use_skip_indexes_if_final_exact_mode = 1;

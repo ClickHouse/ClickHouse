@@ -3,6 +3,8 @@
 -- join shapes the search for that leaf descends. A non-leftmost join outside that set leaves no leaf
 -- coordinated, so every replica evaluates the whole join and the initiator concatenates the copies,
 -- multiplying every row by the replica count.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 -- The restriction asserted here is specific to the query-based implementation, which ships the
 -- whole join tree: the plan-based one places the split itself and distributes several of these

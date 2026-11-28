@@ -80,7 +80,7 @@ write_geoparquet(
 )
 PYEOF
 
-GEO_SETTINGS="--input_format_parquet_use_native_reader_v3=1 --input_format_parquet_allow_geoparquet_parser=1"
+GEO_SETTINGS="--input_format_parquet_allow_geoparquet_parser=1"
 
 # Test 1: typed MultiLineString column must return geometry data, not throw.
 echo "=== MultiLineString typed ==="

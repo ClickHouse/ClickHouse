@@ -24,7 +24,6 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 \
     --output_format_parquet_data_page_size=4096 \
     --output_format_parquet_write_page_index=1 \
     --output_format_parquet_write_bloom_filter=1 \
-    --output_format_parquet_use_custom_encoder=1 \
     --max_threads=1 \
     --query "
 INSERT INTO ${TABLE}

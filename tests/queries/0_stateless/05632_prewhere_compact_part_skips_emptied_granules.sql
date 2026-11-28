@@ -1,6 +1,9 @@
 -- A multi-granule read of a Compact part must not read granules emptied by an earlier PREWHERE step again,
 -- even when they are less than half of the read.
 
+-- Disable force_primary_key_reverse_order: the reference pins the rows read per PREWHERE step, which depend on how the rows fall into granules
+SET force_primary_key_reverse_order = 0;
+
 CREATE TABLE t (k UInt32, a UInt8, b UInt8, v UInt64) ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000, index_granularity = 100, index_granularity_bytes = '10M';
 

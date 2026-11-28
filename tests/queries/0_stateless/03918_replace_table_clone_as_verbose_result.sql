@@ -1,6 +1,8 @@
 -- Tags: no-replicated-database
 -- Reproducer for LOGICAL_ERROR in REPLACE TABLE ... CLONE AS
 -- when alter_partition_verbose_result = true.
+-- Disable force_primary_key_reverse_order: creates MergeTree with ORDER BY, REPLACE TABLE CLONE AS output depends on key direction
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS target;

@@ -2,6 +2,8 @@
 -- and a projection it rebuilds must still leave them out.
 
 SET mutations_sync = 2, lightweight_deletes_sync = 2;
+-- Disable force_primary_key_reverse_order: the test checks `_part_offset`, which depends on the sort order of the table
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_upd_normal;
 DROP TABLE IF EXISTS t_upd_aggregate;
