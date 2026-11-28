@@ -167,6 +167,7 @@ void ASTViewTargets::setInnerEngine(ViewTarget::Kind kind, ASTPtr new_inner_engi
                 setOrReplace(target.inner_engine, std::move(new_inner_engine));
             else
                 reset(target.inner_engine);
+            normalizeChildrenOrder();
             return;
         }
     }
@@ -175,6 +176,7 @@ void ASTViewTargets::setInnerEngine(ViewTarget::Kind kind, ASTPtr new_inner_engi
     {
         auto & new_target = targets.emplace_back(kind);
         set(new_target.inner_engine, std::move(new_inner_engine));
+        normalizeChildrenOrder();
     }
 }
 
@@ -209,6 +211,7 @@ void ASTViewTargets::setInnerColumns(ViewTarget::Kind kind, ASTPtr new_inner_col
                 setOrReplace(target.inner_columns, std::move(new_inner_columns));
             else
                 reset(target.inner_columns);
+            normalizeChildrenOrder();
             return;
         }
     }
@@ -217,6 +220,7 @@ void ASTViewTargets::setInnerColumns(ViewTarget::Kind kind, ASTPtr new_inner_col
     {
         auto & new_target = targets.emplace_back(kind);
         set(new_target.inner_columns, std::move(new_inner_columns));
+        normalizeChildrenOrder();
     }
 }
 
@@ -253,19 +257,33 @@ void ASTViewTargets::removeTarget(ViewTarget::Kind kind)
     }
 }
 
+void ASTViewTargets::normalizeChildrenOrder()
+{
+    children.clear();
+    for (const auto & target : targets)
+    {
+        if (target.table_ast)
+            children.push_back(target.table_ast);
+        if (target.inner_columns)
+            children.push_back(target.inner_columns);
+        if (target.inner_engine)
+            children.push_back(target.inner_engine);
+    }
+}
+
 ASTPtr ASTViewTargets::clone() const
 {
     auto res = make_intrusive<ASTViewTargets>(*this);
-    res->children.clear();
     for (auto & target : res->targets)
     {
         if (target.inner_engine)
-            res->set(target.inner_engine, target.inner_engine->clone());
+            target.inner_engine = target.inner_engine->clone();
         if (target.inner_columns)
-            res->set(target.inner_columns, target.inner_columns->clone());
+            target.inner_columns = target.inner_columns->clone();
         if (target.table_ast)
-            res->set(target.table_ast, target.table_ast->clone());
+            target.table_ast = target.table_ast->clone();
     }
+    res->normalizeChildrenOrder();
     return res;
 }
 
@@ -359,6 +377,7 @@ void ASTViewTargets::setTableASTWithQueryParams(ViewTarget::Kind kind, ASTPtr ne
                 setOrReplace(target.table_ast, std::move(new_table_ast));
             else
                 reset(target.table_ast);
+            normalizeChildrenOrder();
             return;
         }
     }
@@ -367,6 +386,7 @@ void ASTViewTargets::setTableASTWithQueryParams(ViewTarget::Kind kind, ASTPtr ne
     {
         auto & new_target = targets.emplace_back(kind);
         set(new_target.table_ast, std::move(new_table_ast));
+        normalizeChildrenOrder();
     }
 }
 
@@ -457,7 +477,6 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
             target.inner_engine = IAST::createFromJSON(*engine_obj);
             if (!target.inner_engine->as<ASTStorage>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_engine' is not a storage definition at index {} in 'targets' array during AST JSON deserialization", i);
-            children.push_back(target.inner_engine);
         }
         if (target_obj->has("inner_columns"))
         {
@@ -467,7 +486,6 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
             target.inner_columns = IAST::createFromJSON(*columns_obj);
             if (!target.inner_columns->as<ASTColumns>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_columns' is not a columns definition at index {} in 'targets' array during AST JSON deserialization", i);
-            children.push_back(target.inner_columns);
         }
         if (target_obj->has("table_ast"))
         {
@@ -477,10 +495,10 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
             target.table_ast = IAST::createFromJSON(*table_ast_obj);
             if (!target.table_ast->as<ASTTableIdentifier>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "'table_ast' is not a table identifier at index {} in 'targets' array during AST JSON deserialization", i);
-            children.push_back(target.table_ast);
         }
         targets.push_back(std::move(target));
     }
+    normalizeChildrenOrder();
 }
 
 void ASTViewTargets::writeJSON(WriteBuffer & out) const
