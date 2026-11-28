@@ -1,0 +1,59 @@
+1	str1	2023-12-24
+1	str1	2023-12-25
+2	str2	2023-12-24
+4	str4	2023-12-24
+222	str2	2023-12-25
+333333	str3	2023-12-24
+1	str1	2023-12-24
+1	str1	2023-12-25
+2	str2	2023-12-24
+4	str4	2023-12-24
+222	str2	2023-12-25
+333333	str3	2023-12-24
+2	str2	2023-12-24
+111	str1	2023-12-24
+2	str2	2023-12-24
+{\'sub_1\', \'sub_1_1\'}
+{\'sub_2\', \'sub_2_1\'}
+{\'sub_3\', NULL}
+the schema of its data files is unknown
+ICEBERG_SPECIFICATION_VIOLATION
+55	0	54	55	2	2
+54
+no partition spec with id 0
+ICEBERG_SPECIFICATION_VIOLATION
+cannot be matched to the partition spec with id 0
+ICEBERG_SPECIFICATION_VIOLATION
+{\'sub_1_1\', \'sub_1\'}
+{\'sub_2_1\', \'sub_2\'}
+{NULL, \'sub_3\'}
+{\'sub_1\', \'sub_1_1\'}
+{\'sub_2\', \'sub_2_1\'}
+{\'sub_3\', NULL}
+field ids of the partition record are incomplete, invalid or not unique
+ICEBERG_SPECIFICATION_VIOLATION
+ICEBERG_SPECIFICATION_VIOLATION
+deleted_manifest_lists_count	3
+dry_run	1
+7
+8
+9
+7
+8
+9
+the schema of its data files is unknown
+ICEBERG_SPECIFICATION_VIOLATION
+the schema of its data files is unknown
+ICEBERG_SPECIFICATION_VIOLATION
+7
+8
+9
+the schema of its data files is unknown
+ICEBERG_SPECIFICATION_VIOLATION
+7
+8
+9
+the schema of that data file is unknown
+ICEBERG_SPECIFICATION_VIOLATION
+the schema of that data file is unknown
+ICEBERG_SPECIFICATION_VIOLATION

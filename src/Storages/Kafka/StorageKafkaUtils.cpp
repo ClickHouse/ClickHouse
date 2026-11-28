@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/Kafka/Kafka_fwd.h>
@@ -128,9 +129,11 @@ void registerStorageKafka(StorageFactory & factory)
             &args.table_id,
             args.storage_def->settings))
         {
-            /// The named collection is checked every time, also when the definition is read back from metadata
-            /// (server startup, short `ATTACH`): the collection can change after the table is created.
-            KafkaConfigLoader::checkNamedCollection(*named_collection);
+            /// Only for a statement of the user: a replayed definition must stay loadable, and consumers and producers check the collection again.
+            const auto local_context = args.getLocalContext();
+            if (!isLoadingFromExistingMetadata(args.mode) && !isSecondaryDDLReplay(local_context)
+                && !local_context->isRecoveryFromStoredMetadata())
+                KafkaConfigLoader::checkNamedCollection(*named_collection);
 
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();

@@ -14,6 +14,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/indexHint.h>
@@ -131,7 +132,8 @@ bool isFilterColumnConst(const FilterStep & filter)
 
 void materializeFilterColumnIfNeededAfterPushDown(FilterStep & filter, const bool was_filter_const_before, const bool is_filter_const_after)
 {
-    if (was_filter_const_before || !is_filter_const_after)
+    /// A removed filter column leaves only result columns of that name, which keep their own expression.
+    if (was_filter_const_before || !is_filter_const_after || filter.removesFilterColumn())
         return;
 
     auto & expression = filter.getExpression();
@@ -722,7 +724,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
 
     /// Register the cross-type equi-key pairs that `buildEquialentSetsForJoinStepLogical` skips: its
-    /// Union-Find needs the two input types to be equal, plain name substitution does not.
+    /// Union-Find needs the two input types to be equal, plain name substitution does not. Register
+    /// also the equal-typed pairs the loop above skips because `join_use_nulls` changes the output type.
     ///
     /// Substitution needs two other things. The replacement must carry the type the replaced name has
     /// in the JOIN output, because that is what the filter's nodes were typed against, and it must
@@ -733,8 +736,10 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     /// the two sides are compared in their least supertype, so `CAST(<opposite side>, supertype)` is
     /// exactly what is behind the JOIN output column. Demanding that the JOIN output type is that
     /// supertype keeps the cast widening - a narrowing one would change what the predicate returns -
-    /// and rejects a column the JOIN altered for an unrelated reason, such as `join_use_nulls` widening
-    /// it to `Nullable`, where the replacement no longer matches the output.
+    /// and rejects a column the JOIN altered for an unrelated reason. The one alteration accepted is
+    /// `join_use_nulls` wrapping the key into `Nullable`: a name is substituted only when the JOIN pads
+    /// no row of its side with NULLs (see `equivalent_columns_to_push_down` below), so the cast of the
+    /// opposite key to the output type still gives the output value.
     ///
     /// The cast node itself is only added once we know a filter really reaches that side, so the two
     /// lists below carry what is needed to build it.
@@ -776,7 +781,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                 return;
 
             const auto * replaced = join_output_header.findByName(replaced_name);
-            if (!replaced || !areTypesIdentical(*replaced->type, *supertype))
+            if (!replaced)
+                return;
+            const auto & target_type = replaced->type;
+            if (!areTypesIdentical(*target_type, *supertype)
+                && !areTypesIdentical(*target_type, *makeNullableOrLowCardinalityNullableSafe(supertype)))
                 return;
 
             /// A float key can be join-equal while bit-different: `-0.0` and `+0.0` are equal to the comparison a merge-based
@@ -810,14 +819,14 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
             cross_type_equivalent_columns.insert(replaced_name);
 
-            /// A source that already has the supertype is not cast by the JOIN either, so it can stand in
+            /// A source that already has the output type is not cast by the JOIN either, so it can stand in
             /// under its own name, provided that name carries the source's type wherever it also occurs in
             /// the JOIN output, and does occur at that type in the input of the stream this filter is pushed to.
             const auto & source_stream_input_header
                 = source.fromLeft() ? *left_stream_input_header : *right_stream_input_header;
             const auto * source_in_output = join_output_header.findByName(source.getColumnName());
             const auto * source_in_stream = source_stream_input_header.findByName(source.getColumnName());
-            if (areTypesIdentical(*source.getType(), *supertype)
+            if (areTypesIdentical(*source.getType(), *target_type)
                 && (!source_in_output || areTypesIdentical(*source_in_output->type, *source.getType()))
                 && source_in_stream && areTypesIdentical(*source_in_stream->type, *source.getType()))
             {
@@ -826,9 +835,22 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             }
 
             auto name = create_replacement_name(replaced_name);
-            equivalent_columns[replaced_name] = ColumnWithTypeAndName(nullptr, supertype, name);
-            replacements.push_back({source, supertype, std::move(name)});
+            equivalent_columns[replaced_name] = ColumnWithTypeAndName(nullptr, target_type, name);
+            replacements.push_back({source, target_type, std::move(name)});
         };
+
+        /// Equal-typed pairs are already in the maps unless their side changes type, see the loop above.
+        for (const auto & [lhs, rhs] : equivalent_expressions)
+        {
+            add_replacement(
+                equivalent_left_stream_column_to_right_stream_column,
+                cross_type_replacements_for_right_stream,
+                lhs.getColumnName(), rhs, lhs.getType());
+            add_replacement(
+                equivalent_right_stream_column_to_left_stream_column,
+                cross_type_replacements_for_left_stream,
+                rhs.getColumnName(), lhs, rhs.getType());
+        }
 
         forEachEquiJoinKey(logical_join->getJoinOperator(), [&](const JoinActionRef & lhs, const JoinActionRef & rhs)
         {
@@ -1219,10 +1241,13 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 static bool mayFixColumn(const ActionsDAG::Node * conjunct)
 {
     VectorWithMemoryTracking<const ActionsDAG::Node *> stack{conjunct};
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     while (!stack.empty())
     {
         const auto * node = stack.back();
         stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
         if (node->type == ActionsDAG::ActionType::INPUT)
             return true;
         if (node->type == ActionsDAG::ActionType::ALIAS

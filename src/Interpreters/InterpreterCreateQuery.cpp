@@ -49,6 +49,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
@@ -1152,6 +1153,20 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
         properties.columns = as_storage_metadata->getColumns();
 
+        /// `SHOW COLUMNS` masks credentials, but the copy can evaluate them, so copying them needs `SELECT` as in `setEngine`.
+        auto check_access_to_copied_definition = [&](const IAST & definition)
+        {
+            if (!definition.hasSecretParts())
+                return;
+            getContext()->checkAccess(AccessType::SELECT, as_database_name, create.as_table);
+            if (const auto * alias = as_storage->as<StorageAlias>();
+                alias && !alias->isTargetTableGranted(getContext(), AccessType::SELECT, {}))
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Not enough privileges to copy credentials exposed by {}",
+                    StorageID{as_database_name, create.as_table}.getNameForLogs());
+        };
+
         /// Copying subcolumn codecs is a new declaration of them.
         for (const auto & column : properties.columns)
             if (!column.subcolumn_codecs.empty())
@@ -1181,16 +1196,28 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
                 {
                     if (!create.storage->primary_key && as_storage_metadata->isPrimaryKeyDefined() && as_storage_metadata->hasPrimaryKey())
+                    {
+                        check_access_to_copied_definition(*as_storage_metadata->getPrimaryKeyAST());
                         create.storage->set(create.storage->primary_key, as_storage_metadata->getPrimaryKeyAST()->clone());
+                    }
 
                     if (!create.storage->partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
+                    {
+                        check_access_to_copied_definition(*as_storage_metadata->getPartitionKeyAST());
                         create.storage->set(create.storage->partition_by, as_storage_metadata->getPartitionKeyAST()->clone());
+                    }
 
                     if (!create.storage->order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
+                    {
+                        check_access_to_copied_definition(*as_storage_metadata->getSortingKeyAST());
                         create.storage->set(create.storage->order_by, as_storage_metadata->getSortingKeyAST()->clone());
+                    }
 
                     if (!create.storage->sample_by && as_storage_metadata->isSamplingKeyDefined() && as_storage_metadata->hasSamplingKey())
+                    {
+                        check_access_to_copied_definition(*as_storage_metadata->getSamplingKeyAST());
                         create.storage->set(create.storage->sample_by, as_storage_metadata->getSamplingKeyAST()->clone());
+                    }
                 }
             }
         }
@@ -1201,6 +1228,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         properties.constraints = as_storage_metadata->getConstraints();
+
+        for (const auto & copied :
+             {formatColumns(properties.columns),
+              formatIndices(properties.indices),
+              formatProjections(properties.projections),
+              formatConstraints(properties.constraints)})
+            check_access_to_copied_definition(*copied);
 
         if (create.is_clone_as)
         {
@@ -1438,6 +1472,22 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
+SharedHeader InterpreterCreateQuery::getMaterializedViewSampleBlock(const ASTCreateQuery & create) const
+{
+    /// We should treat SELECT as an initial query in order to properly analyze it.
+    auto context = Context::createCopy(getContext());
+    context->setQueryKindInitial();
+
+    /// For refreshable materialized views, use the MV's database as context.
+    /// This ensures unqualified references resolve in the MV's database, not session's database.
+    if (create.refresh_strategy)
+        context->setCurrentDatabaseUnchecked(create.getDatabase());
+
+    return InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
+        context,
+        SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
+}
+
 void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties)
 {
     /// This is not strict validation, just catches common errors that would make the view not work.
@@ -1479,20 +1529,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     {
         try
         {
-            {
-                /// We should treat SELECT as an initial query in order to properly analyze it.
-                auto context = Context::createCopy(getContext());
-                context->setQueryKindInitial();
-
-                /// For refreshable materialized views, use the MV's database as context.
-                /// This ensures unqualified references resolve in the MV's database, not session's database.
-                if (create.refresh_strategy)
-                    context->setCurrentDatabaseUnchecked(create.getDatabase());
-
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
-                    context,
-                    SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
-            }
+            input_block = getMaterializedViewSampleBlock(create);
         }
         catch (Exception & e)
         {
@@ -2441,6 +2478,34 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (mode <= LoadingStrictnessLevel::CREATE && create.is_materialized_view_with_inner_table())
             getContext()->setSetting("flatten_nested", false);
         validateMaterializedViewColumnsAndEngine(create, properties);
+    }
+    else if (create.select && create.is_materialized_view && is_restore_from_backup && !is_secondary_query)
+    {
+        /// A restore does not validate the view, but checks the rights for the tables that its query reads, as `CREATE` does.
+        try
+        {
+            (void)getMaterializedViewSampleBlock(create);
+        }
+        catch (Exception & e)
+        {
+            /// The rights for a table function are checked only by the analysis.
+            std::function<bool(const IAST &)> has_table_function = [&](const IAST & ast)
+            {
+                const auto * table_expression = ast.as<ASTTableExpression>();
+                return (table_expression && table_expression->table_function)
+                    || std::ranges::any_of(ast.children, [&](const auto & child) { return has_table_function(*child); });
+            };
+            if (e.code() == ErrorCodes::ACCESS_DENIED || has_table_function(*create.select))
+                throw;
+
+            /// The query cannot be analyzed, for example a table is missing. Then the rights are checked for every table that it names.
+            const auto dependencies = getDependenciesFromCreateQuery(
+                getContext()->getGlobalContext(), {create.getDatabase(), create.getTable()}, query_ptr, getContext()->getCurrentDatabase());
+            for (const auto & table : dependencies.dependencies)
+                getContext()->checkAccess(AccessType::SELECT, table.database, table.table);
+            if (dependencies.mv_from_dependency)
+                getContext()->checkAccess(AccessType::SELECT, *dependencies.mv_from_dependency);
+        }
     }
 
     bool is_storage_replicated = false;

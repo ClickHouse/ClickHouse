@@ -212,7 +212,7 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
                     task,
                     /*final=*/true,
                     bucket,
-                    aggregator.parallelMergeThreshold(session.get()),
+                    aggregator.parallelMergeThreshold(session.get(), /*workers=*/1),
                     cancelled,
                     /*updater=*/nullptr,
                     /*merged_group_count=*/nullptr);
@@ -286,8 +286,9 @@ TEST(AggregatorAdaptiveStaging, ConstantSerializedKey)
     for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
     {
         const auto chunks = aggregator.mergeAndConvertAdaptiveBucket(
-            prepared, *session, task, /*final=*/true, static_cast<Int32>(bucket), aggregator.parallelMergeThreshold(session.get()),
-            cancelled, /*updater=*/nullptr, /*merged_group_count=*/nullptr);
+            prepared, *session, task, /*final=*/true, static_cast<Int32>(bucket),
+            aggregator.parallelMergeThreshold(session.get(), /*workers=*/1), cancelled, /*updater=*/nullptr,
+            /*merged_group_count=*/nullptr);
         for (const auto & converted : chunks)
         {
             const auto & columns = converted.chunk.getColumns();

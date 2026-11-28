@@ -244,16 +244,16 @@ SELECT 1
 | `replica`                      | `zookeeper`와 동일합니다. `zookeeper` 사용을 권장합니다                 |                                                      |
 | `no-fasttest`                  | [빠른 테스트](#test-types)에서는 테스트를 실행하지 않습니다                   | 테스트에서 빠른 테스트에 비활성화된 `MySQL` 테이블 엔진을 사용합니다            |
 | `fasttest-only`                | 테스트를 [빠른 테스트](#test-types)에서만 실행합니다                       |                                                      |
-| `no-[asan, tsan, msan, ubsan]` | [새니타이저](#sanitizers)가 적용된 빌드에서는 테스트를 비활성화합니다         | 테스트가 새니타이저와 호환되지 않는 QEMU에서 실행됩니다                 |
+| `no-[asan, tsan, msan, ubsan]` | [새니타이저](#sanitizers)가 적용된 빌드에서는 테스트를 비활성화합니다              | 테스트가 새니타이저와 호환되지 않는 QEMU에서 실행됩니다                     |
 | `no-replicated-database`       | 기본 데이터베이스가 `ReplicatedDatabaseEngine`를 사용할 때 테스트를 비활성화합니다 |                                                      |
 | `no-ordinary-database`         | 기본 데이터베이스 엔진이 `Ordinary`일 때 테스트를 비활성화합니다                  |                                                      |
 | `no-parallel`                  | 이 테스트와 다른 테스트를 병렬로 실행하지 않도록 합니다                           | 테스트가 `system` 테이블에서 읽기 때문에 불변식이 깨질 수 있습니다            |
 | `no-parallel-replicas`         | 병렬 레플리카가 활성화된 경우 테스트를 비활성화합니다                             |                                                      |
-| `no-debug`                     | Debug 빌드에서는 테스트를 비활성화합니다                                  |                                                      |
-| `no-release`                   | Release 빌드에서는 테스트를 비활성화합니다                                |                                                      |
+| `no-debug`                     | 디버그 빌드에서는 테스트를 비활성화합니다                                  |                                                      |
+| `no-release`                   | 릴리스 빌드에서는 테스트를 비활성화합니다                                |                                                      |
 | `no-darwin`                    | macOS(Darwin)에서는 테스트를 비활성화합니다                             | 테스트가 분산 쿼리, `procfs`, HTTP 서버와 같은 Linux 전용 기능에 의존합니다 |
 
-다음 옵션도 지원됩니다: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
+다음 옵션도 지원됩니다: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
 
 위 설정에 더해, 특정 ClickHouse 기능 사용 여부를 정의하기 위해 `system.build_options`의 `USE_*` 플래그도 사용할 수 있습니다.
 예를 들어 테스트에서 MySQL 테이블을 사용하는 경우 `use-mysql` 태그를 추가해야 합니다.

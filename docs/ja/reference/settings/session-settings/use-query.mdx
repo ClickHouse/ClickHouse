@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
@@ -41,11 +42,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 ## use_query_condition_cache_for_time_conditions {#use_query_condition_cache_for_time_conditions}
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<ExperimentalBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "現在時刻を含む条件（例: `WHERE time >= now() - INTERVAL 10 DAY`）について、時刻定数をグリッド上に丸めた決定論的な条件を導出することで、クエリ条件cacheがそれらの条件を扱えるようにする新しい設定です。デフォルトで有効です。previous_value=false のため、以前のバージョンを指定した `compatibility` では、従来どおりこのような条件はcacheされません。"}]}]} />
+<SettingsInfoBlock type="Bool" default_value="0" />
 
-`MergeTree` テーブルからの読み取り時に、現在時刻を含む条件 (例: `WHERE time >= now() - INTERVAL 10 DAY`) に対して[クエリ条件cache](/ja/concepts/features/performance/caches/query-condition-cache)を有効化します。ファイルやオブジェクトストレージ (`file`、`s3` など) からの読み取りでは、クエリ条件cacheは決定論的な条件にのみ使用されるため、この設定の影響を受けません。
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "26.10 リリースと同様に、実験的としてマークされ、デフォルトで無効になりました。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "現在時刻を含む条件（例: `WHERE time >= now() - INTERVAL 10 DAY`）について、時刻定数をグリッド上に丸めた決定論的な条件を導出することで、クエリ条件キャッシュがそれらの条件を扱えるようにする新しい実験的設定です。デフォルトで無効です。"}]}]} />
+
+実験的。`MergeTree` テーブルからの読み取り時に、現在時刻を含む条件 (例: `WHERE time >= now() - INTERVAL 10 DAY`) に対して[クエリ条件キャッシュ](/ja/concepts/features/performance/caches/query-condition-cache)を有効化します。ファイルやオブジェクトストレージ (`file`、`s3` など) からの読み取りでは、クエリ条件キャッシュは決定論的な条件にのみ使用されるため、この設定の影響を受けません。
 
 このような条件は時計の進行に伴って変化する非決定的な条件であるため、そのままではcacheできません。そこで、畳み込まれた現在時刻の定数を時間グリッド上に丸めることで、決定論的な条件を導出します。たとえば、`WHERE time >= '2026-08-09 12:34:56'` は `WHERE time >= '2026-08-09 00:00:00'` になります (cacheの健全性を保つため、cacheの読み取り時には切り捨て、書き込み時には切り上げを行います) 。グリッドの刻み幅は定数と現在時刻との差に比例し ([`query_condition_cache_time_condition_grid_factor`](/ja/reference/settings/session-settings/other#query_condition_cache_time_condition_grid_factor) を参照) 、1 秒から 1 日の範囲に制限されます。
 
@@ -64,9 +67,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`ORDER BY ... LIMIT n`（TopK）の読み取りに対するクエリ条件キャッシュを制御する新しい設定。デフォルトで有効。26.7ではゲートが無効になっているため、以前のバージョンとの`compatibility`では無効のままになります。"}]}]} />
 
-`ORDER BY <column> LIMIT n` (TopK) 最適化 (動的フィルタリングまたはスキップ索引ベース) を使用するクエリで、[クエリ条件キャッシュ](/ja/concepts/features/performance/caches/query-condition-cache)を有効にします。無効の場合、このような読み取りではcacheの参照も格納も行いません。
+`ORDER BY <column> LIMIT n` (TopK) 最適化 (動的フィルタリングまたはスキップ索引ベース) を使用するクエリで、[クエリ条件キャッシュ](/ja/concepts/features/performance/caches/query-condition-cache)を有効にします。無効の場合、このような読み取りではcacheの参照も格納も行いません。しきい値を統計情報に基づく行グループのスキップにのみ使用する Parquet ファイルの読み取り (`use_top_k_dynamic_filtering_for_variable_length_types` が無効な状態で `String` 型のカラムでソートする場合) は、この設定の値にかかわらず、TopK を使用しない読み取りと同様にキャッシュを使用します。
 
-このようなクエリでは、実行時にしきい値に応じてgranuleを除外できるため、cacheエントリはTopKプランのパラメータと読み取られるパーツのセット (`File` テーブルの場合は、読み取られるファイルのセットとそのバージョン、データレイクテーブルの場合はそのスナップショット) ごとに分割されます。`use_query_condition_cache`も有効でない限り、効果はありません。
+このようなクエリでは、実行時にしきい値に応じてgranuleを除外できるため、cacheエントリはTopKプランのパラメータと読み取られるパーツのセット (`File` テーブルの場合は、読み取られるファイルのセットとそのバージョン、データレイクテーブルの場合はそのスナップショット、オブジェクトストレージの場合は、読み取られるオブジェクトのセットとその ETag) ごとに分割されます。`use_query_condition_cache`も有効でない限り、効果はありません。
 
 設定可能な値:
 

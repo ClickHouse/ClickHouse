@@ -3,7 +3,7 @@ slug: /use-cases/observability/clickstack/deployment/helm
 title: 'Helm'
 description: 'Helm を使用した ClickStack のデプロイ - ClickHouse オブザーバビリティスタック'
 doc_type: 'guide'
-keywords: ['ClickStack Helm チャート', 'Helm を使用した ClickHouse のデプロイ', 'Helm による HyperDX のインストール', 'Kubernetes オブザーバビリティスタック', 'ClickStack の Kubernetes デプロイ']
+keywords: ['ClickStack Helm チャート', 'Helm を使用した ClickHouse のデプロイ', 'Helm による ClickStack UI のインストール', 'Kubernetes オブザーバビリティスタック', 'ClickStack の Kubernetes デプロイ']
 ---
 
 import JSONSupport from '/snippets/ja/_json_support.mdx';
@@ -11,17 +11,21 @@ import JSONSupport from '/snippets/ja/_json_support.mdx';
 <Warning>
   **チャートバージョン 2.x**
 
-  このページでは、**v2.x** のサブチャートベースの Helm チャートについて説明します。まだ v1.x のインラインテンプレートチャートを使用している場合は、[v1.x Helm ガイド](/ja/clickstack/deployment/helm-v1)を参照してください。移行手順については、[アップグレード ガイド](/ja/clickstack/deployment/helm-upgrade)を参照してください。
+  このページでは、**v2.x** のサブチャートベースの Helm チャートについて説明します。まだ v1.x の inline-template チャートを使用している場合は、[v1.x Helm ガイド](/ja/clickstack/deployment/helm-v1)を参照してください。移行手順については、[アップグレード ガイド](/ja/clickstack/deployment/helm-upgrade)を参照してください。
 </Warning>
 
 ClickStack の Helm チャートは[こちら](https://github.com/ClickHouse/ClickStack-helm-charts)にあり、本番環境へのデプロイにはこの方法が**推奨**されています。
+
+<Tip>
+  [ClickHouse Observability](/ja/clickstack/observability) を使用すれば、ClickStack のバックエンドを自前で運用することなく Kubernetes ワークロードを監視できます。[ClickHouse Cloud にサインアップ](https://clickhouse.cloud/signUp?loc=docs-clickstack-helm-inline)して、今すぐ始めましょう。
+</Tip>
 
 v2.x チャートでは、**2 段階のインストール**を採用しています。まず `clickstack-operators` チャートでオペレーターと CRD をインストールし、その後メインの `clickstack` チャートで、ClickHouse、MongoDB、OpenTelemetry Collector 用のオペレーター管理カスタムリソースを作成します。
 
 デフォルトでは、Helm チャートは次のコアコンポーネントをすべてプロビジョニングします。
 
 * **ClickHouse** — `ClickHouseCluster` および `KeeperCluster` カスタムリソースを通じて [ClickHouse Operator](/ja/products/kubernetes-operator/overview) により管理
-* **HyperDX** — オブザーバビリティ UI と API
+* **ClickStack UI** — オブザーバビリティ UI と API
 * **OpenTelemetry (OTel) collector** — サブチャートとして [公式の OpenTelemetry Collector Helm チャート](https://github.com/open-telemetry/opentelemetry-helm-charts) を使用してデプロイ
 * **MongoDB** — `MongoDBCommunity` カスタムリソースを通じて [MongoDB Kubernetes Operator (MCK)](https://github.com/mongodb/mongodb-kubernetes) により管理
 
@@ -32,18 +36,18 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
 * `values.yaml` による環境別の設定
 * リソース制限とポッドレベルのスケーリング
 * TLS とイングレスの設定
-* シークレット管理と認証の設定
-* チャートとあわせて任意の Kubernetes オブジェクト (NetworkPolicy、HPA、ALB Ingress など) をデプロイするための[追加マニフェスト](/ja/clickstack/deployment/helm-additional-manifests)
+* Secret管理と認証の設定
+* チャートとあわせて任意の Kubernetes オブジェクト (NetworkPolicy、HPA、ALB イングレス など) をデプロイするための[追加マニフェスト](/ja/clickstack/deployment/helm-additional-manifests)
 
 <div id="suitable-for">
-  ### 適した用途
+  ### 適した用途 {#suitable-for}
 </div>
 
 * 概念実証
 * 本番環境
 
 <div id="deployment-steps">
-  ## デプロイ手順
+  ## デプロイ手順 {#deployment-steps}
 </div>
 
 <br />
@@ -97,7 +101,7 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
   </Step>
 
   <Step title="ポートフォワード" id="forward-ports">
-    ポートフォワードを使用すると、HyperDX にアクセスしてセットアップできます。本番環境にデプロイする場合は、適切なネットワークアクセス、TLS 終端、スケーラビリティを確保するため、代わりにイングレスまたはロードバランサー経由でサービスを公開してください。ポートフォワードは、ローカル開発や一時的な管理作業には適していますが、長期運用や高可用性が求められる環境には向きません。
+    ポートフォワードを使用すると、ClickStack UI にアクセスしてセットアップできます。本番環境にデプロイする場合は、適切なネットワークアクセス、TLS 終端、スケーラビリティを確保するため、代わりにイングレスまたはロードバランサー経由でサービスを公開してください。ポートフォワードは、ローカル開発や一時的な管理作業には適していますが、長期運用や高可用性が求められる環境には向きません。
 
     ```shell
     kubectl port-forward \
@@ -113,18 +117,14 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
   </Step>
 
   <Step title="UI に移動する" id="navigate-to-the-ui">
-    HyperDX UI を開くには、[http://localhost:8080](http://localhost:8080) にアクセスします。
+    ClickStack UI を開くには、[http://localhost:8080](http://localhost:8080) にアクセスします。
 
     要件を満たすユーザー名とパスワードを入力して、ユーザーを作成します。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickStack UI](/images/use-cases/observability/hyperdx-login.webp)
+      </Frame>
     </div>
 
     `Create` をクリックすると、Helm チャートでデプロイされた ClickHouse インスタンス用のデータソースが作成されます。
@@ -179,7 +179,7 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
   </Step>
 
   <Step title="Secret の使用 (任意)" id="using-secrets">
-    v2.x チャートでは、`values` の `hyperdx.secrets` から設定される単一の Secret (`clickstack-secret`) を使用します。ClickHouse のパスワード、MongoDB のパスワード、HyperDX の API key を含むすべての機密環境変数は、この 1 つの Secret を通じて扱われます。
+    v2.x チャートでは、`values` の `hyperdx.secrets` から設定される単一の Secret (`clickstack-secret`) を使用します。ClickHouse のパスワード、MongoDB のパスワード、ClickStack UI の API key を含むすべての機密環境変数は、この 1 つの Secret を通じて扱われます。
 
     Secret の値を上書きするには:
 
@@ -211,7 +211,7 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
 </Steps>
 
 <div id="using-clickhouse-cloud">
-  ## Using ClickHouse Cloud
+  ## Using ClickHouse Cloud {#using-clickhouse-cloud}
 </div>
 
 ClickHouse Cloud を使用する場合は、組み込みの ClickHouse インスタンスを無効にし、ClickHouse Cloud の認証情報を指定します。
@@ -264,7 +264,7 @@ helm install my-clickstack clickstack/clickstack -f values-clickhouse-cloud.yaml
 </Tip>
 
 <div id="production-notes">
-  ## 本番環境に関する注意事項
+  ## 本番環境に関する注意事項 {#production-notes}
 </div>
 
 デフォルトでは、このチャートによってClickHouse、MongoDB、OTel collectorがインストールされます。本番環境では、ClickHouse と OTel collector は個別に管理することを推奨します。
@@ -289,19 +289,19 @@ otel-collector:
 </Tip>
 
 <div id="task-configuration">
-  ## タスク設定
+  ## タスク設定 {#task-configuration}
 </div>
 
 デフォルトでは、チャートの設定には CronJob として 1 つのタスクがあり、アラートを発報すべきかどうかを確認します。v2.x では、タスク設定は `hyperdx.tasks` 配下に移動しました。
 
-| Parameter                             | Description                                                                                                       | Default           |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------- |
-| `hyperdx.tasks.enabled`               | クラスター内の cron タスクを有効/無効にします。デフォルトでは、HyperDX イメージがプロセス内で cron タスクを実行します。クラスター内で別の cron タスクを使用したい場合は、true に変更してください。 | `false`           |
-| `hyperdx.tasks.checkAlerts.schedule`  | check-alerts タスクの Cron スケジュール                                                                                     | `*/1 * * * *`     |
-| `hyperdx.tasks.checkAlerts.resources` | check-alerts タスクのリソースのリクエストと上限                                                                                    | `values.yaml` を参照 |
+| Parameter                             | Description                                                                                                             | Default           |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `hyperdx.tasks.enabled`               | クラスター内の cron タスクを有効/無効にします。デフォルトでは、ClickStack UI イメージがプロセス内で cron タスクを実行します。クラスター内で別の cron タスクを使用したい場合は、true に変更してください。 | `false`           |
+| `hyperdx.tasks.checkAlerts.schedule`  | check-alerts タスクの Cron スケジュール                                                                                           | `*/1 * * * *`     |
+| `hyperdx.tasks.checkAlerts.resources` | check-alerts タスクのリソースのリクエストと上限                                                                                          | `values.yaml` を参照 |
 
 <div id="upgrading-the-chart">
-  ## チャートのアップグレード
+  ## チャートのアップグレード {#upgrading-the-chart}
 </div>
 
 新しいバージョンにアップグレードするには:
@@ -323,7 +323,7 @@ helm search repo clickstack
 </Info>
 
 <div id="uninstalling-clickstack">
-  ## ClickStack のアンインストール
+  ## ClickStack のアンインストール {#uninstalling-clickstack}
 </div>
 
 逆の順序でアンインストールします。
@@ -338,11 +338,11 @@ helm uninstall clickstack-operators     # operatorとCRDを削除
 * [MongoDB Kubernetes Operator docs](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity)
 
 <div id="troubleshooting">
-  ## トラブルシューティング
+  ## トラブルシューティング {#troubleshooting}
 </div>
 
 <div id="checking-logs">
-  ### ログの確認
+  ### ログの確認 {#checking-logs}
 </div>
 
 ```shell
@@ -350,7 +350,7 @@ kubectl logs -l app.kubernetes.io/name=clickstack
 ```
 
 <div id="debugging-a-failed-install">
-  ### インストール失敗時のデバッグ
+  ### インストール失敗時のデバッグ {#debugging-a-failed-install}
 </div>
 
 ```shell
@@ -358,7 +358,7 @@ helm install my-clickstack clickstack/clickstack --debug --dry-run
 ```
 
 <div id="verifying-deployment">
-  ### デプロイの確認
+  ### デプロイの確認 {#verifying-deployment}
 </div>
 
 ```shell
@@ -377,11 +377,11 @@ kubectl get pods -l app.kubernetes.io/name=clickstack
 <JSONSupport />
 
 <div id="related-documentation">
-  ## 関連ドキュメント
+  ## 関連ドキュメント {#related-documentation}
 </div>
 
 <div id="deployment-guides">
-  ### デプロイメントガイド
+  ### デプロイメントガイド {#deployment-guides}
 </div>
 
 * [デプロイメントオプション](/ja/clickstack/deployment/helm-deployment-options) - 外部 ClickHouse、OTel collector、最小構成のデプロイメント
@@ -391,7 +391,7 @@ kubectl get pods -l app.kubernetes.io/name=clickstack
 * [追加マニフェスト](/ja/clickstack/deployment/helm-additional-manifests) - チャート とあわせてカスタム Kubernetes オブジェクトをデプロイ
 
 <div id="v1x-documentation">
-  ### v1.x ドキュメント
+  ### v1.x ドキュメント {#v1x-documentation}
 </div>
 
 * [Helm (v1.x)](/ja/clickstack/deployment/helm-v1) - v1.x デプロイメントガイド
@@ -400,10 +400,10 @@ kubectl get pods -l app.kubernetes.io/name=clickstack
 * [Cloud デプロイメント (v1.x)](/ja/clickstack/deployment/helm-cloud-v1) - v1.x Cloud 設定
 
 <div id="additional-resources">
-  ### 参考資料
+  ### 参考資料 {#additional-resources}
 </div>
 
-* [ClickStack スタートガイド](/ja/clickstack/getting-started/index) - ClickStack の紹介
+* [ClickStack スタートガイド](/ja/clickstack/getting-started/oss) - ClickStack の紹介
 * [ClickStack Helm チャート リポジトリ](https://github.com/ClickHouse/ClickStack-helm-charts) - チャートのソースコードと values のリファレンス
 * [Kubernetes ドキュメント](https://kubernetes.io/docs/) - Kubernetes リファレンス
 * [Helm ドキュメント](https://helm.sh/docs/) - Helm リファレンス

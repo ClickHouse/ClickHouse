@@ -1,0 +1,78 @@
+---
+slug: /clickstack/observability/text-to-chart
+title: 'Text-to-Chart'
+sidebarTitle: 'Text-to-Chart'
+description: 'Создавайте чарты по промптам на естественном языке в ClickHouse Observability с помощью возможности Text-to-Chart на базе ИИ.'
+doc_type: 'guide'
+keywords: ['clickstack', 'text-to-chart', 'AI', 'visualization', 'Chart Explorer', 'natural language', 'observability']
+---
+
+Возможность Text-to-Chart в ClickHouse Observability позволяет создавать визуализации, просто описав обычным текстом, что вы хотите увидеть. Вместо того чтобы вручную выбирать метрики, фильтры и поля group-by, достаточно ввести промпт, например «Количество ошибок по сервисам за последние 3 дня», и ИИ-ассистент автоматически построит соответствующий чарт.
+
+Эта возможность с помощью большой языковой модели (LLM) преобразует текстовый промпт в запрос, а затем строит визуализацию в [Обозревателе чартов](/ru/clickstack/observability/features/dashboards/overview#navigate-chart-explorer).
+
+## Предварительные требования {#prerequisites}
+
+Администратор команды должен включить функцию «Генеративный ИИ» в **Team Settings** в разделе **Configure Generative AI**. Инструкции см. в разделе [Включение генеративного ИИ](/ru/clickstack/observability/notebooks#enabling-generative-ai). Платформа управляет ИИ-моделями и провайдерами автоматически.
+
+## Использование Text-to-Chart {#using-text-to-chart}
+
+<Steps>
+  <Step title="Перейдите в Обозреватель диаграмм" id="navigate-chart-explorer">
+    Выберите **Обозреватель диаграмм** на левой боковой панели.
+  </Step>
+
+  <Step title="Выберите источник данных" id="select-data-source">
+    Разверните панель **ИИ-ассистент** в верхней части Обозревателя диаграмм, если она свёрнута. В селекторе рядом с полем промпта выберите источник данных для визуализации — например, **журнал** или **трассировка**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Обозреватель диаграмм с развёрнутой панелью ИИ-ассистента, выбранным источником журнала и кнопкой Generate](/images/clickstack/observability-text-to-chart-explorer.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Введите текстовый промпт" id="enter-text-prompt">
+    В поле промпта **ИИ-ассистента** опишите нужный чарт на естественном языке. Например:
+
+    * `Error counts by service over the last 3 days`
+    * `Latency breakdown by endpoint`
+    * `Count of events over time grouped by severity`
+
+    Нажмите **Generate**, чтобы создать чарт по промпту. Проверьте сгенерированную конфигурацию в построителе ниже. При необходимости измените тип чарта, фильтры и группировку, а затем нажмите **Run**, чтобы обновить визуализацию.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Сгенерированный чарт числа ошибок по сервисам с выделенным промптом ИИ-ассистента](/images/clickstack/observability-text-to-chart-result.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Примеры промптов {#example-prompts}
+
+Ниже приведены промпты для типичных сценариев работы с данными обсервабилити:
+
+| Промпт                                            | Источник данных | Описание                                               |
+| ------------------------------------------------- | --------------- | ------------------------------------------------------ |
+| `Error count by service over time`                | Журналы         | Строит чарт частоты ошибок по сервисам                 |
+| `Average request duration grouped by endpoint`    | Трассировки     | Показывает характер задержек для каждой конечной точки |
+| `P99 latency by service`                          | Трассировки     | Выявляет хвостовую задержку по сервисам                |
+| `Count of 5xx status codes over the last 6 hours` | Журналы         | Отслеживает динамику серверных ошибок                  |
+
+В промптах можно ссылаться на любой столбец или атрибут, доступный в настроенных источниках данных. Чтобы ИИ построил нужный чарт, указывайте конкретные имена столбцов, фильтры и временные диапазоны.
+
+## Ограничения {#limitations}
+
+* В качестве источников данных поддерживаются только журналы и трассировки. Метрики Prometheus пока не поддерживаются.
+* Точность чарта зависит от того, насколько ясно сформулирован промпт, и от структуры исходных данных. Если сгенерированный чарт не соответствует ожиданиям, попробуйте переформулировать промпт или явно указать имена столбцов.
+
+## Дополнительные материалы {#further-reading}
+
+* [Text-to-Dashboard](/ru/clickstack/observability/text-to-dashboard) — создание сохранённой панели мониторинга с несколькими плитками по промпту
+
+* [From text to charts: a faster way to visualize with ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — статья в блоге, в которой представлена эта возможность
+
+* [Дашборды и визуализации](/ru/clickstack/observability/features/dashboards/overview) — ручное создание чартов в Обозревателе чартов
+
+* [Поиск](/ru/clickstack/observability/features/search) — синтаксис полнотекстового поиска и поиска по свойствам

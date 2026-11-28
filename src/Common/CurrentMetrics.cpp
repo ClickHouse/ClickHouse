@@ -219,6 +219,9 @@
     M(ObjectStorageS3Threads, "Number of threads in the S3ObjectStorage thread pool.") \
     M(ObjectStorageS3ThreadsActive, "Number of threads in the S3ObjectStorage thread pool running a task.") \
     M(ObjectStorageS3ThreadsScheduled, "Number of queued or active jobs in the S3ObjectStorage thread pool.") \
+    M(ObjectStorageParallelListingThreads, "Number of threads in the object storage parallel listing thread pool.") \
+    M(ObjectStorageParallelListingThreadsActive, "Number of threads in the object storage parallel listing thread pool running a task.") \
+    M(ObjectStorageParallelListingThreadsScheduled, "Number of queued or active jobs in the object storage parallel listing thread pool.") \
     M(StorageObjectStorageThreads, "Number of threads in the remote table engines thread pools.") \
     M(StorageObjectStorageThreadsActive, "Number of threads in the remote table engines thread pool running a task.") \
     M(StorageObjectStorageThreadsScheduled, "Number of queued or active jobs in remote table engines thread pool.") \
@@ -384,6 +387,9 @@
     M(FilesystemCacheEvictionThreads, "Number of threads in the filesystem cache background eviction (removal) pool") \
     M(FilesystemCacheEvictionThreadsActive, "Number of threads in the filesystem cache background eviction pool running a task") \
     M(FilesystemCacheEvictionThreadsScheduled, "Number of queued or active jobs in the filesystem cache background eviction pool") \
+    M(FilesystemCacheCleanupHelperThreads, "Number of helper threads in the filesystem cache background cleanup, which removes the keys without file segments from the cache metadata and from disk, and the empty key directories found at startup") \
+    M(FilesystemCacheCleanupHelperThreadsActive, "Number of helper threads in the filesystem cache background cleanup running a task") \
+    M(FilesystemCacheCleanupHelperThreadsScheduled, "Number of queued or active jobs of the helper threads in the filesystem cache background cleanup") \
     M(FilesystemCacheDropCacheThreads, "Number of threads in the filesystem cache pool for parallel keys removal on SYSTEM DROP FILESYSTEM CACHE") \
     M(FilesystemCacheDropCacheThreadsActive, "Number of threads in the filesystem cache keys removal pool running a task") \
     M(FilesystemCacheDropCacheThreadsScheduled, "Number of queued or active jobs in the filesystem cache keys removal pool") \

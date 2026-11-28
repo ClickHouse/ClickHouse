@@ -63,6 +63,7 @@ SCENARIOS = (
     "notebook-change-survives-immediate-reload",
     "save-load-round-trips-notebook",
     "save-drops-stale-parameters",
+    "background-cell-samples-io",
 )
 
 

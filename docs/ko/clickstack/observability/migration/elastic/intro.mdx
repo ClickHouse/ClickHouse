@@ -1,0 +1,39 @@
+---
+slug: /clickstack/observability/migration/elastic/intro
+title: 'Elastic에서 ClickHouse Observability로 마이그레이션'
+sidebarTitle: '소개'
+description: 'Elastic Stack에서 완전 관리형 ClickHouse Observability로 마이그레이션할 때의 고려 사항입니다.'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="베타 기능" />
+
+## Elastic에서 ClickHouse Observability로 마이그레이션 {#migrating-to-clickstack-from-elastic-self-configured}
+
+이 가이드는 Elastic Stack에서의 마이그레이션(migration)을 다루며, Elastic Agent로 수집하여 Elasticsearch에 저장한 로그, 트레이스, 메트릭을 Kibana로 탐색하는 배포도 포함합니다. 완전 관리형 ClickHouse Observability를 중심으로 Lucene 기반 검색을 전환하는 방법, 텔레메트리 수집을 마이그레이션하는 방법, 데이터 전환 계획을 수립하는 방법을 설명합니다. 절차가 다른 부분에는 자가 관리형 환경에 대한 안내도 함께 제공합니다.
+
+ClickHouse Observability는 SRE, 개발자 및 이들의 에이전트를 위한 완전 관리형 플랫폼입니다. 완전한 충실도(full-fidelity)의 텔레메트리에 빠른 검색, high-cardinality 집계(aggregations), SQL을 결합하여 장애 조사를 지원합니다. 관리형 OpenTelemetry 엔드포인트로 텔레메트리를 전송하기만 하면 수집, 스키마(schemas), 인프라, 스케일링은 ClickHouse가 처리합니다.
+
+Elasticsearch 내부 구조를 ClickHouse에 대응시키지 않아도 바로 시작할 수 있습니다. 자가 관리형 배포는 [대응 개념](/ko/clickstack/self-configured/migration/elastic/concepts) 및 [유형 매핑](/ko/clickstack/self-configured/migration/elastic/types)을 참조하십시오.
+
+다음과 같은 경우 ClickHouse Observability로의 전환을 고려하십시오.
+
+* **자체 SRE 에이전트를 사용하려는 경우.** [ClickStack MCP 서버](/ko/clickstack/observability/mcp)를 통해 Claude, Codex 또는 자체 에이전트 하네스를 연결하고, 팀에 맞는 모델과 조사 워크플로를 선택할 수 있습니다.
+* **에이전트에 사전 정의된 검색 이상의 기능이 필요한 경우.** MCP 도구는 로그 검색, 트레이스 탐색, 이벤트 패턴, 이벤트 델타를 지원합니다. SQL을 사용하면 텔레메트리 간 조인, 과거 데이터 비교, 보다 심층적인 분석도 가능합니다.
+* **느린 쿼리 때문에 조사가 지연되는 경우.** high-cardinality 텔레메트리에 대한 빠른 검색과 집계(aggregations)를 통해 엔지니어와 에이전트가 가설을 검증하고 증거를 비교할 수 있습니다.
+* **근본 원인 분석에 완전한 충실도의 텔레메트리가 필요한 경우.** 샘플링이나 사전 집계(pre-aggregation) 과정에서 손실될 수 있는 상세 로그, 트레이스 스팬, 속성을 그대로 보존하여 조사에 필요한 컨텍스트를 유지합니다.
+* **텔레메트리 볼륨 증가로 비용 부담이 커지는 경우.** ClickHouse의 컬럼 기반 압축과 분석 엔진을 통해 대량의 텔레메트리를 효율적으로 저장하고 쿼리할 수 있습니다.
+* **관측성 플랫폼 운영에 드는 시간을 줄이려는 경우.** 완전 관리형 서비스가 데이터베이스 사이징, 스키마(schemas), 수집, 스케일링을 처리합니다.
+* **개방형 표준을 기반으로 구축하려는 경우.** 오픈 소스 ClickStack을 기반으로 수집에는 OpenTelemetry, 분석에는 SQL, 에이전트 액세스에는 MCP를 사용합니다.
+
+다음과 같은 경우에는 ClickHouse Observability가 적합하지 않을 수 있습니다.
+
+* 보안 분석이 주요 요구 사항이며 SIEM 중심 제품이 필요한 경우
+* Universal profiling이 워크플로에 필수적인 경우
+* SRE 및 개발자를 위한 조사 워크플로보다 범용 비즈니스 인텔리전스 플랫폼이 필요한 경우. 이 경우 ClickHouse를 [Grafana](/ko/integrations/connectors/data-visualization/grafana/index) 또는 [Superset](/ko/integrations/connectors/data-visualization/superset-and-clickhouse)과 함께 사용하는 방안을 고려하십시오.
+
+텔레메트리를 외부 비즈니스 데이터와 조인하기 위해 데이터베이스에 직접 액세스해야 하거나 데이터베이스를 직접 최적화하려는 경우 [자체 관리형 ClickHouse Observability](/ko/clickstack/self-configured/overview)를 고려하십시오. 대부분의 팀에는 완전 관리형 환경을 우선 권장합니다.

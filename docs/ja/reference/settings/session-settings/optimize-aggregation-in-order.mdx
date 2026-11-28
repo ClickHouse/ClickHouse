@@ -13,13 +13,15 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="optimize_aggregation_in_order">
-  ## optimize_aggregation_in_order
-</div>
+## optimize_aggregation_in_order {#optimize_aggregation_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルにおいて、対応する順序でデータを集約する [SELECT](/ja/reference/statements/select/index) クエリでの [GROUP BY](/ja/reference/statements/select/group-by) 最適化を有効にします。
+
+この設定は、引数でソート済みのテーブルに対して、`GROUP BY` なしで単一の `uniqExact` (または `count(DISTINCT)`) を実行する場合にも適用されます。この場合、異なる値は順序どおりに到着した時点でカウントされるため、メモリには保持されません。複数のスレッドを使用する場合、読み取りは sorting key の範囲ごとに分割され、各範囲が並列にカウントされます。分割できない場合 (例えば、引数が floating-point の場合や sorting key の関数である場合) は、通常の集約が使用されます。
+
+プロジェクションは、集約の順序よりも先に選択されます。[プロジェクション](/ja/reference/engines/table-engines/mergetree-family/mergetree#projections) がテーブルよりも少ないグラニュールしか読み取らない場合、`GROUP BY` キーでソートされていなくてもそのプロジェクションが使用されます。その場合、集約は順序どおりには行われず、すべてのグループがメモリに保持されます。
 
 設定可能な値:
 
@@ -28,11 +30,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 **関連項目**
 
-* [GROUP BY optimization](/ja/reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
+* [GROUP BY 最適化](/ja/reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 
-<div id="optimize_aggregation_in_order_limit">
-  ## optimize_aggregation_in_order_limit
-</div>
+## optimize_aggregation_in_order_limit {#optimize_aggregation_in_order_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

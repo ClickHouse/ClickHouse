@@ -1,14 +1,14 @@
 ---
 sidebarTitle: 'BACKUP 및 RESTORE 사용'
 slug: /cloud/migration/oss-to-cloud-backup-restore
-title: Backup 명령을 사용한 자가 관리형 ClickHouse에서 ClickHouse Cloud로의 마이그레이션
+title: 백업(backup) 명령을 사용한 자가 관리형 ClickHouse에서 ClickHouse Cloud로의 마이그레이션
 description: 'BACKUP 및 RESTORE 명령을 사용해 자가 관리형 ClickHouse와 ClickHouse Cloud 간에 마이그레이션하는 방법을 설명하는 페이지'
 doc_type: 'guide'
 keywords: ['마이그레이션', 'ClickHouse Cloud', 'OSS', '자가 관리형에서 Cloud로 마이그레이션', 'BACKUP', 'RESTORE']
 ---
 
 <div id="overview-migration-approaches">
-  ## 개요
+  ## 개요 {#overview-migration-approaches}
 </div>
 
 자가 관리형 ClickHouse(OSS)에서 ClickHouse Cloud로 데이터를 마이그레이션하는 주요 방법은 두 가지입니다.
@@ -34,7 +34,7 @@ keywords: ['마이그레이션', 'ClickHouse Cloud', 'OSS', '자가 관리형에
 </Info>
 
 <div id="oss-setup">
-  ## OSS 준비
+  ## OSS 준비 {#oss-setup}
 </div>
 
 먼저 examples 리포지토리의 Docker Compose 구성을 사용해 ClickHouse 클러스터를 구동합니다.
@@ -68,7 +68,7 @@ docker exec -it clickhouse-01 clickhouse-client
 ```
 
 <div id="mergetree-to-replicatedmergetree">
-  ### MergeTree 테이블에서 ReplicatedMergeTree 테이블로
+  ### MergeTree 테이블에서 ReplicatedMergeTree 테이블로 {#mergetree-to-replicatedmergetree}
 </div>
 
 ClickHouse Cloud는 [`SharedMergeTree`](/ko/products/cloud/features/infrastructure/shared-merge-tree)를 사용합니다.
@@ -171,7 +171,7 @@ WHERE name = 'trips_small_adapted' AND database = 'nyc_taxi';
 준비가 되었습니다.
 
 <div id="distributed-tables">
-  ### ReplicatedMergeTree를 사용하는 분산 테이블
+  ### ReplicatedMergeTree를 사용하는 분산 테이블 {#distributed-tables}
 </div>
 
 구성에서 여러 세그먼트에 걸쳐 분산 테이블을 사용하는 경우, 각 노드에 로컬 `ReplicatedMergeTree` 테이블이 필요하며, 쿼리 진입점 역할을 하는 `Distributed` 테이블도 필요합니다.
@@ -260,9 +260,7 @@ FROM s3(
 );
 ```
 
-<div id="cloud-setup">
-  ## Cloud 준비
-</div>
+## Cloud 준비 {#cloud-setup}
 
 데이터를 새 Cloud 서비스로 복원하게 됩니다.
 아래 단계에 따라 새 Cloud 서비스를 생성하십시오.
@@ -274,13 +272,9 @@ FROM s3(
 
   <Step title="새 서비스 생성" id="create-new-service">
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![새 서비스 생성](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
-
-    </Frame>
-
+      <Frame>
+        ![새 서비스 생성](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -288,13 +282,9 @@ FROM s3(
     원하는 리전과 구성을 선택한 다음 `Create service`를 클릭하십시오.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![서비스 기본 설정 구성](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
-
-    </Frame>
-
+      <Frame>
+        ![서비스 기본 설정 구성](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -302,18 +292,14 @@ FROM s3(
     SQL 콘솔을 여십시오
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![서비스 기본 설정 구성](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
-
-    </Frame>
-
+      <Frame>
+        ![서비스 기본 설정 구성](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
+      </Frame>
     </div>
 
-    ### S3 액세스 설정
+### S3 액세스 설정 {#set-up-s3-access}
 
-    S3에서 Backup을 복원하려면 ClickHouse Cloud와 S3 버킷 간의 보안 액세스를 구성해야 합니다.
+    S3에서 백업(backup)을 복원하려면 ClickHouse Cloud와 S3 버킷 간의 보안 액세스를 구성해야 합니다.
 
     1. [&quot;S3 데이터에 안전하게 액세스하기&quot;](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)의 단계에 따라 액세스 역할을 생성하고 role ARN을 가져오십시오.
 
@@ -347,17 +333,15 @@ FROM s3(
 
     이 정책에는 두 ARN이 모두 포함됩니다.
 
-    * **IAM user** (`docs-s3-user`): 자가 관리형 ClickHouse 클러스터가 S3에 Backup할 수 있도록 허용합니다.
+    * **IAM 사용자** (`docs-s3-user`): 자가 관리형 ClickHouse 클러스터가 S3에 백업(backup)할 수 있도록 허용합니다.
     * **ClickHouse Cloud role** (`ClickHouseAccess-001`): Cloud 서비스가 S3에서 복원할 수 있도록 허용합니다.
   </Step>
 </Steps>
 
-<div id="taking-a-backup-on-oss">
-  ## Backup 수행하기(자가 관리형 배포)
-</div>
+## 백업(backup) 수행하기(자가 관리형 배포) {#taking-a-backup-on-oss}
 
-각 세그먼트는 개별적으로 Backup해야 합니다. 각 세그먼트의 노드에 연결한 후,
-세그먼트별로 고유한 대상 경로를 사용해 Backup 명령을 실행하십시오.
+각 세그먼트는 개별적으로 백업(backup)해야 합니다. 각 세그먼트의 노드에 연결한 후,
+세그먼트별로 고유한 대상 경로를 사용해 백업(backup) 명령을 실행하십시오.
 
 `BUCKET_URL`, `KEY_ID`, `SECRET_KEY`를 보유한 AWS 자격 증명으로 교체하십시오.
 아직 없다면 가이드 [&quot;S3 버킷 및 IAM role 생성 방법&quot;](/ko/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)에서
@@ -386,7 +370,7 @@ TO S3(
 ```
 
 모든 것이 올바르게 구성되어 있으면 아래와 유사한 응답이 표시되며
-여기에는 Backup에 할당된 고유 ID와 Backup 상태가 포함됩니다.
+여기에는 백업(backup)에 할당된 고유 ID와 백업(backup) 상태가 포함됩니다.
 
 ```response
 Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
@@ -399,7 +383,7 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 <Info>
   **단일 노드 배포**
 
-  분산 테이블을 사용하지 않는다면, 명령 하나로 전체 데이터베이스를 Backup할 수 있습니다:
+  분산 테이블을 사용하지 않는다면, 명령 하나로 전체 데이터베이스를 백업(backup)할 수 있습니다:
 
   ```sql
   BACKUP DATABASE nyc_taxi
@@ -414,16 +398,12 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 이제 앞서 비어 있던 S3 버킷을 확인하면 몇 개의 폴더가 생성된 것을 볼 수 있습니다:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Backup, 데이터 및 메타데이터](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
-
-</Frame>
-
+  <Frame>
+    ![백업(backup), 데이터 및 메타데이터](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
+  </Frame>
 </div>
 
-전체 마이그레이션을 수행하는 경우에는, 다음 명령으로 전체 서버를 Backup할 수 있습니다:
+전체 마이그레이션을 수행하는 경우에는, 다음 명령으로 전체 서버를 백업(backup)할 수 있습니다:
 
 ```sql
 BACKUP
@@ -444,7 +424,7 @@ SETTINGS
   compression_level=3;
 ```
 
-위 명령은 다음 항목을 Backup합니다:
+위 명령은 다음 항목을 백업(backup)합니다:
 
 * 모든 사용자 데이터베이스와 테이블
 * 사용자 계정과 비밀번호
@@ -456,7 +436,7 @@ SETTINGS
 
 다른 클라우드 서비스 제공업체(CSP)를 사용하는 경우 `TO S3()`(AWS와 GCP 모두) 및 `TO AzureBlobStorage()` 구문을 사용할 수 있습니다.
 
-데이터베이스가 매우 큰 경우 Backup을 백그라운드에서 실행하도록 `ASYNC` 사용을 고려하십시오:
+데이터베이스가 매우 큰 경우 백업(backup)을 백그라운드에서 실행하도록 `ASYNC` 사용을 고려하십시오:
 
 ```sql
 BACKUP DATABASE my_database 
@@ -470,7 +450,7 @@ ASYNC;
 -- └─────────────────────────────────────┴───────────────────┘
 ```
 
-그런 다음 Backup ID를 사용하여 Backup 진행 상태를 모니터링할 수 있습니다:
+그런 다음 백업(backup) ID를 사용하여 백업(backup) 진행 상태를 모니터링할 수 있습니다:
 
 ```sql
 SELECT * 
@@ -478,11 +458,11 @@ FROM system.backups
 WHERE id = 'abc123-def456-789'
 ```
 
-증분 Backup도 생성할 수 있습니다.
-Backup 전반에 대한 자세한 내용은 [Backup 및 복원](/ko/concepts/features/backup-restore/overview) 문서를 참조하십시오.
+증분 백업(backup)도 생성할 수 있습니다.
+백업(backup) 전반에 대한 자세한 내용은 [백업(backup) 및 복원](/ko/concepts/features/backup-restore/overview) 문서를 참조하십시오.
 
 <div id="restore-to-clickhouse-cloud">
-  ## ClickHouse Cloud로 복원
+  ## ClickHouse Cloud로 복원 {#restore-to-clickhouse-cloud}
 </div>
 
 각 세그먼트의 Backup을 하나씩 순서대로 Cloud 서비스에 복원합니다. `ROLE_ARN`은

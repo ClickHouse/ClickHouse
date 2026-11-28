@@ -2,20 +2,16 @@
 title: 'Установка chDB для Rust'
 sidebarTitle: 'Rust'
 slug: /chdb/install/rust
-description: 'Как установить и использовать chDB для Rust'
+description: 'Как установить и использовать привязки chDB для Rust'
 keywords: ['chdb', 'встроенный', 'clickhouse-lite', 'rust', 'установка', 'ffi', 'привязки']
 doc_type: 'guide'
 ---
 
 chDB-rust предоставляет экспериментальные привязки FFI (Foreign Function Interface) для chDB, позволяя выполнять запросы ClickHouse напрямую в приложениях на Rust без внешних зависимостей.
 
-<div id="installation">
-  ## Установка
-</div>
+## Установка {#installation}
 
-<div id="install-libchdb">
-  ### Установка libchdb
-</div>
+### Установка libchdb {#install-libchdb}
 
 Установите библиотеку chDB:
 
@@ -23,15 +19,11 @@ chDB-rust предоставляет экспериментальные прив
 curl -sL https://lib.chdb.io | bash
 ```
 
-<div id="usage">
-  ## Использование
-</div>
+## Использование {#usage}
 
 chDB для Rust поддерживает как режим выполнения запросов без сохранения состояния, так и режим с сохранением состояния.
 
-<div id="stateless-usage">
-  ### Использование без сохранения состояния
-</div>
+### Использование без сохранения состояния {#stateless-usage}
 
 Для простых запросов без сохранения состояния:
 
@@ -57,9 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-<div id="stateful-usage-sessions">
-  ### Использование с сохранением состояния (сеансы)
-</div>
+### Использование с сохранением состояния (сеансы) {#stateful-usage-sessions}
 
 Для запросов, которым требуется сохранение состояния, например при работе с базами данных и таблицами:
 
@@ -117,29 +107,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-<div id="building-testing">
-  ## Сборка и тестирование
-</div>
+## Сборка и тестирование {#building-testing}
 
-<div id="build-the-project">
-  ### Сборка проекта
-</div>
+### Сборка проекта {#build-the-project}
 
 ```bash
 cargo build
 ```
 
-<div id="run-tests">
-  ### Запуск тестов
-</div>
+### Запуск тестов {#run-tests}
 
 ```bash
 cargo test
 ```
 
-<div id="development-dependencies">
-  ### Зависимости для разработки
-</div>
+### Зависимости для разработки {#development-dependencies}
 
 Проект включает следующие зависимости для разработки:
 
@@ -147,9 +129,7 @@ cargo test
 * `tempdir` (v0.3.7) - Работа с временными каталогами в тестах
 * `thiserror` (v1) - Утилиты для обработки ошибок
 
-<div id="error-handling">
-  ## Обработка ошибок
-</div>
+## Обработка ошибок {#error-handling}
 
 chDB для Rust обеспечивает всестороннюю обработку ошибок с помощью перечисления `Error`:
 
@@ -175,8 +155,6 @@ match execute("SELECT 1", None) {
 }
 ```
 
-<div id="github-repository">
-  ## Репозиторий GitHub
-</div>
+## Репозиторий GitHub {#github-repository}
 
 Репозиторий проекта на GitHub доступен по адресу [chdb-io/chdb-rust](https://github.com/chdb-io/chdb-rust).

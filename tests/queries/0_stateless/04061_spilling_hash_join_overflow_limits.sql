@@ -4,6 +4,7 @@
 -- check_limits=false to the underlying join, silently disabling
 -- join_overflow_mode enforcement.
 
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join build side / overflow limits, which depend on join order
 -- Force the right table (t2) to stay the build side. With 'auto', the planner may swap the
 -- tiny left table (t1) to the build side, so the accumulating hash table never exceeds the
