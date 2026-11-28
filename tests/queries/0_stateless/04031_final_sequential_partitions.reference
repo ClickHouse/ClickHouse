@@ -1,0 +1,39 @@
+--- Part 1: Correctness - newest 5 rows (DESC) ---
+2024-03-01 00:01:39	3
+2024-03-01 00:01:38	3
+2024-03-01 00:01:37	3
+2024-03-01 00:01:36	3
+2024-03-01 00:01:35	3
+--- Part 2: Pipeline contains Concat ---
+1
+--- Part 3: Cross-partition boundary (10 rows) ---
+2024-03-01 00:01:39	3
+2024-03-01 00:01:38	3
+2024-03-01 00:01:37	3
+2024-03-01 00:01:36	3
+2024-03-01 00:01:35	3
+2024-03-01 00:01:34	3
+2024-03-01 00:01:33	3
+2024-03-01 00:01:32	3
+2024-03-01 00:01:31	3
+2024-03-01 00:01:30	3
+--- Part 4: ASC direction - oldest 5 rows ---
+2024-01-01 00:00:00	3
+2024-01-01 00:00:01	3
+2024-01-01 00:00:02	3
+2024-01-01 00:00:03	3
+2024-01-01 00:00:04	3
+--- Part 5: Pipeline contains Concat (ASC) ---
+1
+--- Part 6: No Concat without limit pushdown ---
+0
+--- Part 7: Uncorrelated keys (no sequential partitions) ---
+0	3
+1	3
+2	3
+3	3
+4	3
+--- Part 8: No Concat (uncorrelated keys) ---
+0
+--- Part 9: Single partition - no Concat ---
+0

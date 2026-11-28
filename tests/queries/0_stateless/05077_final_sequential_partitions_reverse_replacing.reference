@@ -1,0 +1,28 @@
+sequential partitions are used for the reverse read
+1	1
+desc, optimized
+99	990
+98	980
+97	970
+96	960
+95	950
+desc, reference
+99	990
+98	980
+97	970
+96	960
+95	950
+desc with offset, optimized
+75	750
+74	740
+73	730
+desc with offset, reference
+75	750
+74	740
+73	730
+asc, optimized
+0	0
+1	10
+2	20
+3	30
+4	40

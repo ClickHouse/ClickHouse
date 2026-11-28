@@ -1,0 +1,16 @@
+distinct_top5_pushdown_on
+0
+1
+2
+3
+4
+distinct_top5_pushdown_off
+0
+1
+2
+3
+4
+explain_distinct_no_limit_in_merge
+0
+explain_no_distinct_limit_in_merge
+1
