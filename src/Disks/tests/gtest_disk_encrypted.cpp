@@ -16,6 +16,7 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PersistentRemovalQueue.h>
 #include <Poco/TemporaryFile.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <boost/algorithm/string/join.hpp>
@@ -453,7 +454,8 @@ TEST_F(DiskEncryptedTest, LocalBlobs)
 {
     ObjectStoragePtr object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("test", fs::path{getDirectory()} / "local_blobs", false));
     DiskPtr metadata_disk = std::make_shared<DiskLocal>("metadata_disk", fs::path{getDirectory()} / "metadata");
-    MetadataStoragePtr metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator(), /*persist_removal_queue_=*/true, /*removal_log_compaction_threshold_=*/1000);
+    MetadataStoragePtr metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator(),
+        std::make_unique<PersistentRemovalQueue>(metadata_disk, std::string(MetadataStorageFromDisk::SYSTEM_METADATA_DIR), /*compaction_threshold_=*/1000));
 
     std::unordered_map<Location, LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
     std::unordered_map<Location, ObjectStoragePtr> object_storage_registry = {{"main", object_storage}};

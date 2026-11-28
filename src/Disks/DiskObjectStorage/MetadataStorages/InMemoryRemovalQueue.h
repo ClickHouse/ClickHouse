@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Disks/DiskObjectStorage/MetadataStorages/IRemovalQueue.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <map>
@@ -8,23 +9,18 @@
 namespace DB
 {
 
-class InMemoryRemovalQueue
+class InMemoryRemovalQueue final : public IRemovalQueue
 {
 public:
-    /// Enqueue blobs that are not already present.
-    void submitForRemoval(const StoredObjects & blobs);
+    void load() override {}
 
-    /// Return up to `max_count` oldest blobs (0 means unlimited).
-    [[nodiscard]] StoredObjects takeFirst(int64_t max_count) const;
+    void submitForRemoval(const StoredObjects & blobs) override;
 
-    /// Remove blobs from the queue. Returns the number actually removed.
-    int64_t markAsRemoved(const StoredObjects & blobs);
+    [[nodiscard]] StoredObjects takeFirst(int64_t max_count) const override;
 
-    /// Check if any of the given blobs are still in the queue.
-    [[nodiscard]] bool containsAny(const StoredObjects & blobs) const;
+    int64_t markAsRemoved(const StoredObjects & blobs) override;
 
-    /// Return current number of entries in the queue.
-    [[nodiscard]] size_t size() const { return index.size(); }
+    [[nodiscard]] size_t size() const override { return index.size(); }
 
 private:
     int64_t next_slot = 0;

@@ -268,9 +268,13 @@ void IDisk::checkAccessImpl(const String & path)
 try
 {
     const std::string_view payload("test", 4);
-    const auto read_settings = getReadSettings();
+    /// The probe file is removed right after the check, and its blobs are removed in background:
+    /// it must not be left in the filesystem cache until then.
+    auto read_settings = getReadSettings();
+    read_settings.enable_filesystem_cache = false;
     auto write_settings = getWriteSettings();
     write_settings.is_initial_access_check = true;
+    write_settings.enable_filesystem_cache_on_write_operations = false;
 
     /// write
     {

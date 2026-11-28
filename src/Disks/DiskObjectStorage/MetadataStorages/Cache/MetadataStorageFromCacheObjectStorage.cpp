@@ -1,12 +1,17 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
 {
 
-MetadataStorageFromCacheObjectStorage::MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, ObjectStoragePtr object_storage_)
+MetadataStorageFromCacheObjectStorage::MetadataStorageFromCacheObjectStorage(
+    MetadataStoragePtr underlying_, ObjectStoragePtr object_storage_, std::shared_ptr<CachedObjectStorage> cached_object_storage_)
     : underlying(std::move(underlying_))
     , object_storage(std::move(object_storage_))
+    , cached_object_storage(std::move(cached_object_storage_))
 {
 }
 
@@ -226,20 +231,6 @@ int64_t MetadataStorageFromCacheObjectStorage::recordAsRemoved(const StoredObjec
     return objects_to_remove.markAsRemoved(blobs);
 }
 
-bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBlobs(const StoredObjects & blobs) const
-{
-    if (underlying->hasPendingRemovalBlobs(blobs))
-        return true;
-
-    std::lock_guard guard(removed_objects_mutex);
-    return objects_to_remove.containsAny(blobs);
-}
-
-bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBatches(const BatchIds & batch_ids) const
-{
-    return underlying->hasPendingRemovalBatches(batch_ids);
-}
-
 int64_t MetadataStorageFromCacheObjectStorage::getDeadBlobsQueueEstimate()
 {
     std::lock_guard guard(removed_objects_mutex);
@@ -292,6 +283,20 @@ void MetadataStorageFromCacheObjectStorage::submitForRemoval(const StoredObjects
     {
         std::lock_guard guard(removed_objects_mutex);
         objects_to_remove.submitForRemoval(blobs);
+    }
+
+    /// A new file may get the key of a removed blob before the blob killer runs: a `plain_rewritable` storage derives
+    /// keys from paths, and a move copies the blob through the wrapped object storage, which does not drop the cache.
+    /// So the cache entries are dropped right away, otherwise a read of the new file could return the cached old data.
+    /// This runs after the metadata is committed, so an error must not reach the disk transaction: it would roll back
+    /// the blobs that the committed metadata refers to. The blobs are already queued, so the blob killer drops them later.
+    try
+    {
+        cached_object_storage->removeObjectsIfExist(blobs);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("MetadataStorageFromCacheObjectStorage"), "Cannot drop the cache entries of the removed blobs");
     }
 
     /// Called after the blobs are queued, so `hasDeadBlobsQueue` already answers `true` in the woken up round.
@@ -446,11 +451,6 @@ void MetadataStorageFromCacheObjectStorageTransaction::recordBlobsReplication(co
 StoredObjects MetadataStorageFromCacheObjectStorageTransaction::getSubmittedForRemovalBlobs()
 {
     return underlying->getSubmittedForRemovalBlobs();
-}
-
-BatchIds MetadataStorageFromCacheObjectStorageTransaction::getSubmittedForRemovalBatches()
-{
-    return underlying->getSubmittedForRemovalBatches();
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)
