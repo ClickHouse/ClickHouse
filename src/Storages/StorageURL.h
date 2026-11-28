@@ -103,7 +103,8 @@ public:
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context,
         const RemoteDescriptionCaller & caller = tableFunctionURLCaller(),
-        bool check_redirect_access = false);
+        bool check_redirect_access = false,
+        bool structure_is_required = true);
 
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
@@ -197,7 +198,8 @@ private:
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context,
         const RemoteDescriptionCaller & caller,
-        bool check_redirect_access);
+        bool check_redirect_access,
+        bool structure_is_required = true);
 
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };

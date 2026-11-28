@@ -93,7 +93,8 @@ StorageURLCluster::StorageURLCluster(
                            std::nullopt,
                            context,
                            glob_caller,
-                           /*check_redirect_access=*/ true)
+                           /*check_redirect_access=*/ true,
+                           /*structure_is_required=*/false)
                            .second;
 
         storage_metadata.setColumns(columns_);

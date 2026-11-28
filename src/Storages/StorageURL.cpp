@@ -279,8 +279,8 @@ IStorageURLBase::IStorageURLBase(
     else
     {
         if (format_name == "auto")
-            format_name
-                = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_, glob_caller, check_redirect_access).second;
+            format_name = getTableStructureAndFormatFromData(
+                uri, compression_method, headers, format_settings, context_, glob_caller, check_redirect_access, /*structure_is_required=*/false).second;
 
         /// We don't allow special columns in URL storage.
         if (!columns_.hasOnlyOrdinary())
@@ -1971,7 +1971,8 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context,
     const RemoteDescriptionCaller & caller,
-    bool check_redirect_access)
+    bool check_redirect_access,
+    bool structure_is_required)
 {
     context->getRemoteHostFilter().checkURL(parseURI(uri));
     /// Enforce <http_forbid_headers> before any network access. This is the single funnel for
@@ -2004,7 +2005,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     URLReadBufferIterator read_buffer_iterator(url_producer, uri, format, compression_method, headers, format_settings, context, caller, check_redirect_access);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
-    return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
+    return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context, structure_is_required);
 }
 
 ColumnsDescription IStorageURLBase::getTableStructureFromData(
@@ -2027,9 +2028,11 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context,
     const RemoteDescriptionCaller & caller,
-    bool check_redirect_access)
+    bool check_redirect_access,
+    bool structure_is_required)
 {
-    return getTableStructureAndFormatFromDataImpl(std::nullopt, uri, compression_method, headers, format_settings, context, caller, check_redirect_access);
+    return getTableStructureAndFormatFromDataImpl(
+        std::nullopt, uri, compression_method, headers, format_settings, context, caller, check_redirect_access, structure_is_required);
 }
 
 bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
