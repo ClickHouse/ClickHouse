@@ -20,8 +20,8 @@ if (TARGET ch_contrib::vectorscan)
     target_link_libraries(clickhouse_functions_array PRIVATE ch_contrib::vectorscan)
 endif()
 
-if (TARGET ch_contrib::simsimd)
-    target_link_libraries(clickhouse_functions_array PRIVATE ch_contrib::simsimd)
+if (TARGET ch_contrib::numkong)
+    target_link_libraries(clickhouse_functions_array PRIVATE ch_contrib::numkong)
 endif()
 
 # TODO: at v3 the SLP vectorizer widens the per-row accumulator loops in arrayNorm and
