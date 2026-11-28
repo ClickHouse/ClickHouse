@@ -2,6 +2,7 @@
 
 import os
 import random
+import re
 import string
 import time
 
@@ -27,6 +28,12 @@ node_uncompressed = cluster.add_instance(
     "node_uncompressed",
     main_configs=["configs/enable_keeper.xml", "configs/uncompressed_snapshots.xml"],
     stay_alive=True,
+)
+
+# No client other than the test, so the test controls every log entry.
+node_dump_state = cluster.add_instance(
+    "node_dump_state",
+    main_configs=["configs/enable_keeper_dump_state.xml"],
 )
 
 
@@ -475,6 +482,89 @@ def test_snapshot_analyzer(started_cluster, request, node_name):
         assert output.count("  Number of nodes: ") == 1
         assert "Error analyzing snapshot snapshot_1_00000000deadbeef.bin" in output
         assert f"Failed to analyze 1 of 2 snapshots in {broken_dir}" in output
+    finally:
+        try:
+            if node_zk is not None:
+                node_zk.stop()
+                node_zk.close()
+        except:
+            pass
+
+
+def run_dump_state(keeper_node, dump_dir, extra_args=""):
+    """Runs `clickhouse keeper-utils dump-state` on a fresh copy of the coordination dirs.
+    Returns (set of dumped paths, stderr)."""
+    output = keeper_node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"rm -rf {dump_dir} && mkdir -p {dump_dir} && cp -r /var/lib/clickhouse/coordination/snapshots "
+            f"/var/lib/clickhouse/coordination/log {dump_dir}/ && /usr/bin/clickhouse keeper-utils dump-state "
+            f"--snapshot-path {dump_dir}/snapshots --log-path {dump_dir}/log {extra_args} "
+            f"2> {dump_dir}/stderr.txt; echo EXIT_CODE=$?",
+        ]
+    )
+    stderr = keeper_node.exec_in_container(["cat", f"{dump_dir}/stderr.txt"])
+    lines = output.splitlines()
+    assert lines[-1] == "EXIT_CODE=0", output + stderr
+    return {line for line in lines if line.startswith("/")}, stderr
+
+
+def test_dump_state_applies_last_log_entry(started_cluster, request):
+    keeper_utils.wait_until_connected(started_cluster, node_dump_state)
+    retry = get_retry_number(request)
+    chroot = f"/test_dump_state_{retry}"
+    node_zk = None
+    try:
+        node_zk = get_connection_zk("node_dump_state")
+        node_zk.create(chroot, b"")
+        node_zk.create(chroot + "/before_snapshot", b"1")
+
+        for _ in range(20):
+            snapshot_idx = keeper_utils.send_4lw_cmd(
+                started_cluster, node_dump_state, "csnp"
+            ).strip()
+            if snapshot_idx.isdigit():
+                break
+            node_zk.set(chroot + "/before_snapshot", random_string(10).encode())
+            time.sleep(1)
+        else:
+            assert False, f"csnp kept refusing to schedule: {snapshot_idx!r}"
+
+        node_dump_state.wait_for_log_line(
+            f"Created persistent snapshot {snapshot_idx} with path"
+        )
+
+        node_zk.create(chroot + "/after_snapshot", b"2")
+        node_zk.create(chroot + "/ephemeral", b"3", ephemeral=True)
+
+        # The session's Close removes the ephemeral node and is the last log entry.
+        node_zk.stop()
+        node_zk.close()
+        node_zk = None
+        for _ in range(300):
+            mntr = keeper_utils.send_4lw_cmd(started_cluster, node_dump_state, "mntr")
+            if "zk_ephemerals_count\t0\n" in mntr:
+                break
+            time.sleep(0.1)
+        else:
+            assert False, f"the session Close was not committed:\n{mntr}"
+
+        paths, stderr = run_dump_state(
+            node_dump_state, f"/tmp/test_dump_state_{retry}_0"
+        )
+        assert chroot + "/before_snapshot" in paths, stderr
+        assert chroot + "/after_snapshot" in paths, stderr
+        assert chroot + "/ephemeral" not in paths, stderr
+        last = int(re.search(r"Last changelog entry (\d+)", stderr).group(1))
+        assert last > int(snapshot_idx), stderr
+
+        # The end index is exclusive: the Close, entry `last`, is not applied.
+        paths, stderr = run_dump_state(
+            node_dump_state, f"/tmp/test_dump_state_{retry}_1", f"--end-index {last}"
+        )
+        assert chroot + "/after_snapshot" in paths, stderr
+        assert chroot + "/ephemeral" in paths, stderr
     finally:
         try:
             if node_zk is not None:
