@@ -19,6 +19,8 @@ using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
+class AggregatingStep;
+
 using ColumnIdentifier = std::string;
 using ColumnIdentifiers = std::vector<ColumnIdentifier>;
 
@@ -57,6 +59,9 @@ struct CorrelatedSubtrees
 
     CorrelatedSubqueries subqueries;
 };
+
+/// Whether decorrelation of a correlated `EXISTS` restores the row this aggregate produces for an outer row without inner rows.
+bool canRestoreEmptyGroupsOfExists(const AggregatingStep & aggregating_step);
 
 void buildQueryPlanForCorrelatedSubquery(
     const PlannerContextPtr & planner_context,
