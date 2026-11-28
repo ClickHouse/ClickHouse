@@ -4,9 +4,10 @@
 # no-parallel: the columns cache is system-wide, and the test drops it and checks what it holds
 # no-random-settings: the block sizes depend on the settings
 
-# The columns cache holds a row group of a `Parquet` file in chunks of 65536 rows. A row group that uses
-# the cache is read in its chunks, whatever the block size settings: a chunk decoded whole is written to
-# the cache as it is, and a chunk found in the cache is the block itself.
+# The columns cache holds a row group of a `Parquet` file in chunks of 65536 rows. A row group that is
+# written to the cache is read in its chunks, whatever the block size settings: a chunk decoded whole is
+# written to the cache as it is. A row group served from the cache is read in the blocks the settings ask
+# for, cut out of the chunks and never crossing one, when a chunk is more than twice as many rows.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -41,7 +42,7 @@ $CLICKHOUSE_CLIENT -q "
     WHERE database = '' AND endsWith(part, '/${FILE}')
     GROUP BY column ORDER BY column"
 
-echo "--- the second read is served from the cache, in blocks of the chunks"
+echo "--- the second read is served from the cache, in the blocks the settings ask for, within the chunks"
 $CLICKHOUSE_CLIENT -q "${QUERY} SETTINGS ${SETTINGS}, use_columns_cache = 1"
 $CLICKHOUSE_CLIENT -q "${BLOCKS}, use_columns_cache = 1"
 
