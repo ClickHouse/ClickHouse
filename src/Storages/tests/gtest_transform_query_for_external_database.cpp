@@ -25,6 +25,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -99,6 +100,8 @@ private:
                 {"uuid_col", std::make_shared<DataTypeUUID>()},
                 {"lc_uuid_col", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUUID>())},
                 {"arr", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>())},
+                {"nullable_flag", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
+                {"nullable_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
             }),
         TableWithColumnNamesAndTypes(
             createDBAndTable("table2"),
@@ -672,7 +675,7 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
         R"(SELECT "column" FROM "test"."table")");
 
     check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col", "arr"},
-        "SELECT * EXCEPT (is_value) FROM table WHERE (column) IN (1)",
+        "SELECT * EXCEPT (is_value, nullable_flag, nullable_id) FROM table WHERE (column) IN (1)",
         R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col", "arr" FROM "test"."table" WHERE ("column") IN (1))",
         R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col", "arr" FROM "test"."table" WHERE "column" IN (1))");
 
@@ -1037,6 +1040,161 @@ TEST(TransformQueryForExternalDatabase, RowValueOutsideComparison)
              "SELECT a, column FROM table WHERE (a > 0, column > 10)",
              R"(SELECT "column", "a" FROM "test"."table" WHERE ("a" > 0) AND ("column" > 10))",
              LiteralEscapingStyle::PostgreSQL);
+}
+
+/// A `boolean` column of PostgreSQL is read as `UInt8`, and PostgreSQL does not compare a `boolean` with
+/// an integer, so 0 and 1 compared with a `UInt8` column are written quoted: PostgreSQL gives such a
+/// literal the type of the column, whether that is a `boolean` or a number.
+TEST(TransformQueryForExternalDatabase, ZeroAndOneComparedWithUInt8ColumnForPostgreSQL)
+{
+    const State & state = State::instance();
+
+    auto check_postgresql = [&](const Names & column_names, const std::string & query, const std::string & expected)
+    {
+        check(state, 1, column_names, query, expected, /*expected_new=*/"", LiteralEscapingStyle::PostgreSQL);
+    };
+
+    /// A `Nullable` column: a `NULL` of PostgreSQL stays a `NULL`, and the comparison with it selects the
+    /// row neither in ClickHouse nor in PostgreSQL.
+    check_postgresql({"nullable_flag"},
+        "SELECT nullable_flag FROM table WHERE nullable_flag = 1",
+        R"(SELECT "nullable_flag" FROM "test"."table" WHERE "nullable_flag" = '1')");
+    check_postgresql({"nullable_flag"},
+        "SELECT nullable_flag FROM table WHERE nullable_flag = 0",
+        R"(SELECT "nullable_flag" FROM "test"."table" WHERE "nullable_flag" = '0')");
+    check_postgresql({"nullable_flag"},
+        "SELECT nullable_flag FROM table WHERE nullable_flag != 1",
+        R"(SELECT "nullable_flag" FROM "test"."table" WHERE "nullable_flag" != '1')");
+    check_postgresql({"nullable_flag"},
+        "SELECT nullable_flag FROM table WHERE 1 = nullable_flag",
+        R"(SELECT "nullable_flag" FROM "test"."table" WHERE '1' = "nullable_flag")");
+    check_postgresql({"nullable_flag"},
+        "SELECT nullable_flag FROM table WHERE nullable_flag IN (0, 1)",
+        R"(SELECT "nullable_flag" FROM "test"."table" WHERE "nullable_flag" IN ('0', '1'))");
+    check_postgresql({"nullable_flag"},
+        "SELECT nullable_flag FROM table WHERE nullable_flag NOT IN (0, 1)",
+        R"(SELECT "nullable_flag" FROM "test"."table" WHERE "nullable_flag" NOT IN ('0', '1'))");
+    check_postgresql({"nullable_flag"},
+        "SELECT nullable_flag FROM table WHERE nullable_flag IN (1)",
+        R"(SELECT "nullable_flag" FROM "test"."table" WHERE "nullable_flag" IN ('1'))");
+    check_postgresql({"nullable_flag"},
+        "SELECT nullable_flag FROM table WHERE NOT (nullable_flag = 1)",
+        R"(SELECT "nullable_flag" FROM "test"."table" WHERE NOT ("nullable_flag" = '1'))");
+    check_postgresql({"apply_id", "nullable_flag"},
+        "SELECT nullable_flag, apply_id FROM table WHERE (nullable_flag = 1 OR nullable_flag = 0) AND apply_id != 0",
+        R"(SELECT "apply_id", "nullable_flag" FROM "test"."table" WHERE (("nullable_flag" = '1') OR ("nullable_flag" = '0')) AND ("apply_id" != 0))");
+
+    /// A column that is not `Nullable` reads a `NULL` of PostgreSQL as 0, so a comparison that is true for 0
+    /// selects such a row in ClickHouse: the rows with `NULL` are added to it.
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column = 0",
+        R"(SELECT "column" FROM "test"."table" WHERE ("column" = '0') OR ("column" IS NULL))");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column != 1",
+        R"(SELECT "column" FROM "test"."table" WHERE ("column" != '1') OR ("column" IS NULL))");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column IN (0, 1)",
+        R"(SELECT "column" FROM "test"."table" WHERE ("column" IN ('0', '1')) OR ("column" IS NULL))");
+    /// A comparison that is false for 0 does not select them, as in PostgreSQL.
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column = 1",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" = '1')");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE 1 = column",
+        R"(SELECT "column" FROM "test"."table" WHERE '1' = "column")");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column NOT IN (0, 1)",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" NOT IN ('0', '1'))");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column IN (1)",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" IN ('1'))");
+    /// Under a `NOT` it is the other way round: the comparison has to be false, not unknown, for a `NULL`.
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE NOT (column = 1)",
+        R"(SELECT "column" FROM "test"."table" WHERE NOT (("column" = '1') AND ("column" IS NOT NULL)))");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE NOT (column = 0)",
+        R"(SELECT "column" FROM "test"."table" WHERE NOT ("column" = '0'))");
+    check_postgresql({"column", "apply_id"},
+        "SELECT column, apply_id FROM table WHERE (column = 1 OR column = 0) AND apply_id != 0",
+        R"(SELECT "column", "apply_id" FROM "test"."table" WHERE (("column" = '1') OR (("column" = '0') OR ("column" IS NULL))) AND ("apply_id" != 0))");
+
+    /// A `Bool` column is a `UInt8` column. A `Bool` literal is already written as PostgreSQL reads it.
+    check_postgresql({"is_value"},
+        "SELECT is_value FROM table WHERE is_value = 1",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = '1')");
+    check_postgresql({"is_value"},
+        "SELECT is_value FROM table WHERE is_value = 0",
+        R"(SELECT "is_value" FROM "test"."table" WHERE ("is_value" = '0') OR ("is_value" IS NULL))");
+    check_postgresql({"is_value"},
+        "SELECT is_value FROM table WHERE is_value = true",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = true)");
+
+    /// A constant of a signed type is 0 or 1 as well.
+    check_postgresql({"nullable_flag"},
+        "SELECT nullable_flag FROM table WHERE nullable_flag = toInt64(1)",
+        R"(SELECT "nullable_flag" FROM "test"."table" WHERE "nullable_flag" = '1')");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column = toInt64(0)",
+        R"(SELECT "column" FROM "test"."table" WHERE ("column" = '0') OR ("column" IS NULL))");
+
+    /// The filter selects the rows that ClickHouse selects, so the LIMIT is pushed down with it as before.
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column = 1 LIMIT 10",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" = '1' LIMIT 10)");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column = 0 LIMIT 10",
+        R"(SELECT "column" FROM "test"."table" WHERE ("column" = '0') OR ("column" IS NULL) LIMIT 10)");
+
+    /// Only 0 and 1 have a reading as a `boolean`; another number in the same list stays a number.
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column = 2",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" = 2)");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column IN (1, 2)",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" IN ('1', 2))");
+
+    /// A list with an element that is not an integer: ClickHouse converts it to the type of the column, so
+    /// for a column that is not `Nullable` it is not known here whether the list has 0, and whether the rows
+    /// with `NULL` have to be kept. Such a list is left as it is; for a `Nullable` column it does not matter.
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column IN (1, '0')",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" IN (1, '0'))");
+    check_postgresql({"nullable_flag"},
+        "SELECT nullable_flag FROM table WHERE nullable_flag IN (1, '0')",
+        R"(SELECT "nullable_flag" FROM "test"."table" WHERE "nullable_flag" IN ('1', '0'))");
+
+    /// In a multi-column `IN` the positions of the `UInt8` columns are rewritten in every row, if every
+    /// column of the left side is `Nullable`.
+    check_postgresql({"nullable_flag", "nullable_id"},
+        "SELECT nullable_flag, nullable_id FROM table WHERE (nullable_flag, nullable_id) IN ((0, 1), (1, 2))",
+        R"(SELECT "nullable_flag", "nullable_id" FROM "test"."table" WHERE ("nullable_flag", "nullable_id") IN (('0', 1), ('1', 2)))");
+    check_postgresql({"nullable_flag", "nullable_id"},
+        "SELECT nullable_flag, nullable_id FROM table WHERE (nullable_flag, nullable_id) IN ((1, 5))",
+        R"(SELECT "nullable_flag", "nullable_id" FROM "test"."table" WHERE ("nullable_flag", "nullable_id") IN (('1', 5)))");
+    /// It is left as it is if a column of the left side is not `Nullable`, whether it is the `UInt8` one or
+    /// another one, and when it is negated: the rows that ClickHouse selects by a value it reads a `NULL` as,
+    /// or by the negation, cannot be kept.
+    check_postgresql({"column", "apply_id"},
+        "SELECT column, apply_id FROM table WHERE (column, apply_id) IN ((0, 1), (1, 2))",
+        R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column", "apply_id") IN ((0, 1), (1, 2)))");
+    check_postgresql({"apply_id", "nullable_flag"},
+        "SELECT nullable_flag, apply_id FROM table WHERE (nullable_flag, apply_id) IN ((0, 0), (1, 2))",
+        R"(SELECT "apply_id", "nullable_flag" FROM "test"."table" WHERE ("nullable_flag", "apply_id") IN ((0, 0), (1, 2)))");
+    check_postgresql({"nullable_flag", "nullable_id"},
+        "SELECT nullable_flag, nullable_id FROM table WHERE (nullable_flag, nullable_id) NOT IN ((0, 1), (1, 2))",
+        R"(SELECT "nullable_flag", "nullable_id" FROM "test"."table" WHERE ("nullable_flag", "nullable_id") NOT IN ((0, 1), (1, 2)))");
+
+    /// The other comparisons, the columns of other types and the other databases are not changed.
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column > 0",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" > 0)");
+    check_postgresql({"apply_id"},
+        "SELECT apply_id FROM table WHERE apply_id = 1",
+        R"(SELECT "apply_id" FROM "test"."table" WHERE "apply_id" = 1)");
+    check(state, 1, {"column"},
+        "SELECT column FROM table WHERE column = 0",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" = 0)");
 }
 
 /// Parse a user-provided `(SELECT ...)` table argument of an external database engine / table

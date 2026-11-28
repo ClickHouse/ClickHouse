@@ -900,6 +900,104 @@ def test_filter_pushdown(started_cluster):
     node1.query("DROP TABLE test_filter_pushdown_pg_table")
 
 
+def test_filter_pushdown_boolean_column(started_cluster):
+    # A `boolean` column of PostgreSQL is read as `UInt8`, so a query compares it with a number, and
+    # PostgreSQL does not compare a `boolean` with an integer: the filter failed there with
+    # `operator does not exist: boolean = integer`.
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_boolean_filter")
+    cursor.execute("CREATE TABLE test_boolean_filter (id integer, deleted boolean, num smallint)")
+    cursor.execute(
+        "INSERT INTO test_boolean_filter VALUES (1, false, 0), (2, true, 1), (3, NULL, 2), (4, false, 1)"
+    )
+
+    # The structure is inferred by the table function and declared by the table.
+    inferred = f"postgresql('postgres1:5432', 'postgres', 'test_boolean_filter', 'postgres', '{pg_pass}')"
+    node1.query("DROP TABLE IF EXISTS pg_boolean_filter")
+    node1.query(
+        f"""
+        CREATE TABLE pg_boolean_filter (id Int32, deleted Nullable(Bool), num Nullable(UInt8))
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_boolean_filter', 'postgres', '{pg_pass}');
+    """
+    )
+
+    def ids(table, condition, settings=None):
+        return node1.query(
+            f"SELECT id FROM {table} WHERE {condition} ORDER BY id", settings=settings
+        ).split()
+
+    for table in [inferred, "pg_boolean_filter"]:
+        assert ids(table, "deleted = 0") == ["1", "4"]
+        assert ids(table, "deleted = 1") == ["2"]
+        assert ids(table, "deleted != 1") == ["1", "4"]
+        assert ids(table, "deleted IN (0, 1)") == ["1", "2", "4"]
+        assert ids(table, "deleted NOT IN (1)") == ["1", "4"]
+        assert ids(table, "NOT (deleted = 1)") == ["1", "4"]
+        assert ids(table, "deleted = 0 AND id > 1") == ["4"]
+        # A constant of a signed type.
+        assert ids(table, "deleted = toInt64(1)") == ["2"]
+        # A list with an element that is not an integer.
+        assert ids(table, "deleted IN (1, '0')") == ["1", "2", "4"]
+
+    # A multi-column `IN` is rewritten if every column of its left side is `Nullable`, which is what
+    # the table function infers.
+    assert ids(inferred, "(deleted, id) IN ((0, 1), (1, 2))") == ["1", "2"]
+    assert ids(inferred, "(deleted, id) IN ((1, 2))") == ["2"]
+    assert ids(inferred, "(deleted, id) IN ((0, 1), (1, 2)) AND id < 2") == ["1"]
+
+    # The same numbers compared with a column that is a number in PostgreSQL and `UInt8` in the table.
+    assert ids("pg_boolean_filter", "num = 1") == ["2", "4"]
+    assert ids("pg_boolean_filter", "num != 0") == ["2", "3", "4"]
+    assert ids("pg_boolean_filter", "num IN (0, 1)") == ["1", "2", "4"]
+    assert ids("pg_boolean_filter", "num IN (1, 2)") == ["2", "3", "4"]
+
+    # A column that is not `Nullable` reads a `NULL` of PostgreSQL as 0 (the row with id 3), so the
+    # filter has to select this row whenever it is true for 0, although the comparison with a `NULL`
+    # is not true in PostgreSQL. The structure is declared by the table, or inferred by the table
+    # function with `external_table_functions_use_nulls = 0`.
+    node1.query("DROP TABLE IF EXISTS pg_boolean_filter_not_null")
+    node1.query(
+        f"""
+        CREATE TABLE pg_boolean_filter_not_null (id Int32, deleted Bool, num UInt8)
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_boolean_filter', 'postgres', '{pg_pass}');
+    """
+    )
+    for table, settings in [
+        ("pg_boolean_filter_not_null", None),
+        (inferred, {"external_table_functions_use_nulls": 0}),
+    ]:
+        assert ids(table, "deleted = 0", settings) == ["1", "3", "4"]
+        assert ids(table, "deleted = 1", settings) == ["2"]
+        assert ids(table, "deleted != 1", settings) == ["1", "3", "4"]
+        assert ids(table, "deleted IN (0, 1)", settings) == ["1", "2", "3", "4"]
+        assert ids(table, "deleted NOT IN (1)", settings) == ["1", "3", "4"]
+        assert ids(table, "NOT (deleted = 1)", settings) == ["1", "3", "4"]
+        assert ids(table, "NOT (deleted = 0)", settings) == ["2"]
+        assert ids(table, "deleted = 0 AND id > 1", settings) == ["3", "4"]
+        assert ids(table, "deleted = 0 OR id = 2", settings) == ["1", "2", "3", "4"]
+        assert ids(table, "deleted = toInt64(0)", settings) == ["1", "3", "4"]
+
+    # Where the rewritten filter could select other rows than ClickHouse does, it is not rewritten, and
+    # PostgreSQL rejects it as before instead of returning a part of the rows:
+    # - whether a list with a string has 0 is not known for a column that is not `Nullable`;
+    # - in a multi-column `IN`, a column that is not `Nullable` (here `id` of the declared table) reads
+    #   a `NULL` as a value that a row of the set can have;
+    # - a multi-column `NOT IN` selects a row with a `NULL` in ClickHouse and not in PostgreSQL.
+    # PostgreSQL names the operator of the comparison in the message: `=` for `IN`, `<>` for `NOT IN`.
+    for table, condition, operator in [
+        ("pg_boolean_filter_not_null", "deleted IN (1, '0')", "="),
+        ("pg_boolean_filter", "(deleted, id) IN ((0, 0), (1, 2))", "="),
+        (inferred, "(deleted, id) NOT IN ((0, 1))", "<>"),
+    ]:
+        assert f"operator does not exist: boolean {operator} integer" in node1.query_and_get_error(
+            f"SELECT id FROM {table} WHERE {condition}"
+        )
+
+    node1.query("DROP TABLE pg_boolean_filter_not_null")
+    node1.query("DROP TABLE pg_boolean_filter")
+    cursor.execute("DROP TABLE test_boolean_filter")
+
+
 
 def test_limit_pushdown(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()

@@ -30,9 +30,12 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <queue>
+#include <vector>
 
 
 namespace DB
@@ -42,6 +45,7 @@ namespace Setting
     extern const SettingsBool external_table_strict_query;
     extern const SettingsBool external_storage_push_down_limit;
     extern const SettingsUInt64 parallel_replicas_count;
+    extern const SettingsBool transform_null_in;
 }
 
 namespace ErrorCodes
@@ -460,6 +464,358 @@ bool containsUUIDColumn(const ASTPtr & node, const NamesAndTypesList & available
             return true;
 
     return false;
+}
+
+/// The type of the column, if `node` is one of the columns.
+DataTypePtr getTypeIfColumn(const ASTPtr & node, const NamesAndTypesList & available_columns)
+{
+    const auto * identifier = node->as<ASTIdentifier>();
+    if (!identifier)
+        return nullptr;
+
+    for (const auto & column : available_columns)
+        if (column.name == identifier->name())
+            return column.type;
+    return nullptr;
+}
+
+/// Whether the values of the type are `UInt8`, which includes `Bool`, possibly `Nullable` or `LowCardinality`.
+bool hasUInt8Values(const DataTypePtr & type)
+{
+    return WhichDataType(removeLowCardinalityAndNullable(type)).isUInt8();
+}
+
+/// The type of the column, if `node` is a column whose type is `UInt8`, which includes `Bool`.
+DataTypePtr getTypeIfUInt8Column(const ASTPtr & node, const NamesAndTypesList & available_columns)
+{
+    const DataTypePtr type = getTypeIfColumn(node, available_columns);
+    return type && hasUInt8Values(type) ? type : nullptr;
+}
+
+/// Whether the field is the number 0, or `std::nullopt` if it is not an integer number.
+std::optional<bool> isZero(const Field & field)
+{
+    if (field.getType() == Field::Types::UInt64)
+        return field.safeGet<UInt64>() == 0;
+    if (field.getType() == Field::Types::Int64)
+        return field.safeGet<Int64>() == 0;
+    return std::nullopt;
+}
+
+/// Replaces the number 0 or 1 with the string '0' or '1'. See `quoteZeroAndOneComparedWithUInt8Column`.
+/// The number is signed if it comes from a constant expression or a query parameter of a signed type,
+/// such as `toInt64(1)`. A `Bool` literal is left alone: it is written as `true` or `false`.
+bool quoteZeroOrOne(Field & field)
+{
+    bool value = false;
+    if (field.getType() == Field::Types::UInt64 && field.safeGet<UInt64>() <= 1)
+        value = field.safeGet<UInt64>() == 1;
+    else if (field.getType() == Field::Types::Int64 && (field.safeGet<Int64>() == 0 || field.safeGet<Int64>() == 1))
+        value = field.safeGet<Int64>() == 1;
+    else
+        return false;
+
+    field = String(value ? "1" : "0");
+    return true;
+}
+
+bool quoteZeroOrOne(ASTPtr & node)
+{
+    const auto * literal = node->as<ASTLiteral>();
+    if (!literal)
+        return false;
+
+    Field value = literal->value;
+    if (!quoteZeroOrOne(value))
+        return false;
+
+    node = make_intrusive<ASTLiteral>(std::move(value));
+    return true;
+}
+
+/// The elements of a list, which is one literal `(0, 1)` or `(1)`, or `tuple(0, 1)`, or a function with an empty
+/// name around the elements, see `isCompatible`. `std::nullopt` if an element is not a literal.
+std::optional<Tuple> getLiteralsOfList(const ASTPtr & node)
+{
+    if (const auto * literal = node->as<ASTLiteral>())
+    {
+        if (literal->value.getType() == Field::Types::Tuple)
+            return literal->value.safeGet<Tuple>();
+        return Tuple{literal->value};
+    }
+
+    const auto * function = node->as<ASTFunction>();
+    if (!function || !(function->name.empty() || function->name == "tuple") || !function->arguments)
+        return std::nullopt;
+
+    Tuple elements;
+    for (const auto & element : function->arguments->children)
+    {
+        const auto * literal = element->as<ASTLiteral>();
+        if (!literal)
+            return std::nullopt;
+        elements.push_back(literal->value);
+    }
+    return elements;
+}
+
+/// The same for the list of an `IN`. Nothing is changed, and false is returned, if the rewritten list could
+/// select other rows than ClickHouse does:
+/// - if an element is not a literal, or is a `NULL`;
+/// - if `zero_membership_is_needed` (the column is not `Nullable`, see `keepRowsWithNullReadAsZero`) and an
+///   element is not an integer: ClickHouse converts it to the type of the column, so a string such as '0'
+///   is the number 0 as well, and whether 0 is in the list is not known here.
+/// Otherwise `contains_zero` is set to whether the number 0 is in the list.
+bool quoteZeroOrOneInList(ASTPtr & node, bool zero_membership_is_needed, bool & contains_zero)
+{
+    const std::optional<Tuple> literals = getLiteralsOfList(node);
+    if (!literals)
+        return false;
+
+    contains_zero = false;
+    for (const auto & element : *literals)
+    {
+        if (element.isNull())
+            return false;
+
+        const std::optional<bool> is_zero = isZero(element);
+        if (!is_zero && zero_membership_is_needed)
+            return false;
+        contains_zero |= is_zero.value_or(false);
+    }
+
+    bool changed = false;
+    if (const auto * literal = node->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::Tuple)
+    {
+        Tuple elements = literal->value.safeGet<Tuple>();
+        for (auto & element : elements)
+            changed |= quoteZeroOrOne(element);
+        if (changed)
+            node = make_intrusive<ASTLiteral>(Field(std::move(elements)));
+    }
+    else if (auto * function = node->as<ASTFunction>())
+    {
+        for (auto & element : function->arguments->children)
+            changed |= quoteZeroOrOne(element);
+    }
+    else
+        changed = quoteZeroOrOne(node);
+
+    return changed;
+}
+
+/// The same for a multi-column `IN`, `(a, b) IN ((0, 1), (1, 2))`: 0 and 1 are quoted at the positions of the
+/// `UInt8` columns of the left side, in every row of the set. The set is a literal with a tuple for each row,
+/// or a `tuple` of rows, and a single row is wrapped in a function with an empty name, see
+/// `wrapSingleRowTupleSetForINNode`.
+///
+/// It is rewritten only if it then selects the rows that ClickHouse selects, and is left as it is otherwise:
+/// for a `boolean` column PostgreSQL still rejects it, which is better than rows that are silently missing.
+/// - Every element of the left side has to be a `Nullable` column, whatever its type. A column that is not
+///   `Nullable` reads a `NULL` of PostgreSQL as a default value, see `keepRowsWithNullReadAsZero`, and a row
+///   with it can be selected by a tuple with this value, which no simple addition to the `IN` expresses.
+/// - Every row of the set has to be a tuple of literals of the size of the left side, without a `NULL`.
+/// - It must not be a `NOT IN`, or an `IN` under a `NOT`, which the caller checks: for a row whose tuple has
+///   a `NULL`, the `IN` is false in ClickHouse and unknown in PostgreSQL, so its negation selects the row
+///   only in ClickHouse.
+void quoteZeroOrOneInRows(const ASTPtr & left, ASTPtr & right, const NamesAndTypesList & available_columns)
+{
+    const auto * left_tuple = left->as<ASTFunction>();
+    if (!left_tuple || left_tuple->name != "tuple" || !left_tuple->arguments)
+        return;
+
+    std::vector<bool> positions;
+    for (const auto & element : left_tuple->arguments->children)
+    {
+        const DataTypePtr type = getTypeIfColumn(element, available_columns);
+        if (!type || !removeLowCardinality(type)->isNullable())
+            return;
+        positions.push_back(hasUInt8Values(type));
+    }
+    if (std::ranges::find(positions, true) == positions.end())
+        return;
+
+    const auto can_be_rewritten = [&](const std::optional<Tuple> & row)
+    {
+        return row && row->size() == positions.size()
+            && std::ranges::none_of(*row, [](const Field & element) { return element.isNull(); });
+    };
+
+    const auto quote_row_field = [&](Field & row)
+    {
+        Tuple elements = row.safeGet<Tuple>();
+        bool changed = false;
+        for (size_t i = 0; i < elements.size(); ++i)
+            if (positions[i])
+                changed |= quoteZeroOrOne(elements[i]);
+        if (changed)
+            row = std::move(elements);
+        return changed;
+    };
+
+    const auto quote_row = [&](ASTPtr & row)
+    {
+        if (const auto * literal = row->as<ASTLiteral>())
+        {
+            Field value = literal->value;
+            if (quote_row_field(value))
+                row = make_intrusive<ASTLiteral>(std::move(value));
+        }
+        else if (auto * function = row->as<ASTFunction>())
+        {
+            for (size_t i = 0; i < positions.size(); ++i)
+                if (positions[i])
+                    quoteZeroOrOne(function->arguments->children[i]);
+        }
+    };
+
+    /// A row is a literal with a tuple, or a `tuple` of literals.
+    const auto literals_of_row = [](const ASTPtr & row) -> std::optional<Tuple>
+    {
+        const auto * literal = row->as<ASTLiteral>();
+        if (literal && literal->value.getType() != Field::Types::Tuple)
+            return std::nullopt;
+        const auto * function = row->as<ASTFunction>();
+        if (function && function->name != "tuple")
+            return std::nullopt;
+        return getLiteralsOfList(row);
+    };
+
+    if (auto * wrapper = right->as<ASTFunction>();
+        wrapper && wrapper->name.empty() && wrapper->arguments && wrapper->arguments->children.size() == 1)
+    {
+        ASTPtr & row = wrapper->arguments->children[0];
+        if (can_be_rewritten(literals_of_row(row)))
+            quote_row(row);
+    }
+    else if (const auto * literal = right->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::Tuple)
+    {
+        Tuple rows = literal->value.safeGet<Tuple>();
+        for (const auto & row : rows)
+            if (row.getType() != Field::Types::Tuple || !can_be_rewritten(row.safeGet<Tuple>()))
+                return;
+
+        bool changed = false;
+        for (auto & row : rows)
+            changed |= quote_row_field(row);
+        if (changed)
+            right = make_intrusive<ASTLiteral>(Field(std::move(rows)));
+    }
+    else if (auto * rows = right->as<ASTFunction>(); rows && rows->name == "tuple" && rows->arguments)
+    {
+        for (const auto & row : rows->arguments->children)
+            if (!can_be_rewritten(literals_of_row(row)))
+                return;
+
+        for (auto & row : rows->arguments->children)
+            quote_row(row);
+    }
+}
+
+/// How the result of an expression decides whether a row is selected: the row is selected if the expression
+/// is true (the filter itself and the operands of `AND` and `OR`), if it is false (under a `NOT`), or in a
+/// way that is not followed here (an argument of another function).
+enum class FilterPolarity : uint8_t
+{
+    Positive,
+    Negative,
+    Unknown,
+};
+
+/// A column that is not `Nullable` reads a `NULL` of PostgreSQL as 0, so the filter that ClickHouse applies
+/// sees 0 in such a row, while for PostgreSQL the comparison with the `NULL` is neither true nor false and
+/// the row is not selected. If the comparison `node` of `column` was rewritten, it must not lose the rows
+/// that the filter selects after this conversion. `true_for_zero` is the result of the comparison for 0:
+/// - if it is true, the rows with `NULL` are added, unless the row is selected when the comparison is false;
+/// - if it is false, the comparison is made false, not unknown, for the rows with `NULL`, unless the row is
+///   selected when the comparison is true: then it is not selected either way.
+/// An index on the column can still be used, unlike with a `coalesce` around it.
+void keepRowsWithNullReadAsZero(ASTPtr & node, const ASTPtr & column, bool true_for_zero, FilterPolarity polarity)
+{
+    if (true_for_zero && polarity != FilterPolarity::Negative)
+        node = makeASTOperator("or", node, makeASTOperator("isNull", column->clone()));
+    else if (!true_for_zero && polarity != FilterPolarity::Positive)
+        node = makeASTOperator("and", node, makeASTOperator("isNotNull", column->clone()));
+}
+
+/// A `boolean` column of PostgreSQL is read as `UInt8`, so a query compares it with a number:
+/// `WHERE deleted = 0`. PostgreSQL has no comparison of a `boolean` with an integer and rejects the
+/// filter (`operator does not exist: boolean = integer`). Whether a `UInt8` column is a `boolean` or a
+/// number there is not known here: a table can declare it either way. A quoted literal is right for
+/// both: PostgreSQL gives a literal of an unknown type the type of the column it is compared with, and
+/// reads '0' and '1' as `false` and `true` for a `boolean` and as numbers for a numeric column, and it
+/// still uses an index on the column. So in the equality comparisons and `IN` of a `UInt8` column the
+/// numbers 0 and 1 are written quoted. Other numbers have no reading as a `boolean` and are left as
+/// they are.
+///
+/// Before this, such a filter over a `boolean` column failed, so a comparison that is rewritten here must
+/// select exactly the rows that ClickHouse selects from the values it reads, see `keepRowsWithNullReadAsZero`.
+void quoteZeroAndOneComparedWithUInt8Column(
+    ASTPtr & node, const NamesAndTypesList & available_columns, bool transform_null_in, FilterPolarity polarity)
+{
+    /// The depth of the AST is user-controlled: fail with TOO_DEEP_RECURSION instead of exhausting the stack.
+    checkStackSize();
+
+    auto * function = node->as<ASTFunction>();
+    if (!function || !function->arguments)
+        return;
+
+    auto & arguments = function->arguments->children;
+    const String & name = function->name;
+
+    if (arguments.size() == 2 && (name == "equals" || name == "notEquals"))
+    {
+        for (const size_t column_index : {0, 1})
+        {
+            const size_t literal_index = 1 - column_index;
+            const DataTypePtr type = getTypeIfUInt8Column(arguments[column_index], available_columns);
+            const auto * literal = arguments[literal_index]->as<ASTLiteral>();
+            if (!type || !literal)
+                continue;
+
+            const std::optional<bool> is_zero = isZero(literal->value);
+            if (quoteZeroOrOne(arguments[literal_index]) && is_zero && !removeLowCardinality(type)->isNullable())
+            {
+                const ASTPtr column = arguments[column_index];
+                const bool true_for_zero = (name == "equals") == *is_zero;
+                keepRowsWithNullReadAsZero(node, column, true_for_zero, polarity);
+            }
+            return;
+        }
+    }
+    else if (arguments.size() == 2 && (name == "in" || name == "notIn"))
+    {
+        /// With `transform_null_in` a `NULL` is a value like any other for `IN`: a row with it is selected by
+        /// `NOT IN`, which PostgreSQL does not do, so the `IN` is left as it is.
+        if (transform_null_in)
+            return;
+
+        if (const DataTypePtr type = getTypeIfUInt8Column(arguments[0], available_columns))
+        {
+            const bool is_nullable = removeLowCardinality(type)->isNullable();
+            bool contains_zero = false;
+            if (quoteZeroOrOneInList(arguments[1], /*zero_membership_is_needed=*/ !is_nullable, contains_zero) && !is_nullable)
+            {
+                const ASTPtr column = arguments[0];
+                const bool true_for_zero = (name == "in") == contains_zero;
+                keepRowsWithNullReadAsZero(node, column, true_for_zero, polarity);
+            }
+        }
+        else if (name == "in" && polarity == FilterPolarity::Positive)
+            quoteZeroOrOneInRows(arguments[0], arguments[1], available_columns);
+        return;
+    }
+
+    FilterPolarity polarity_of_arguments = FilterPolarity::Unknown;
+    if (name == "and" || name == "or")
+        polarity_of_arguments = polarity;
+    else if (name == "not" && polarity == FilterPolarity::Positive)
+        polarity_of_arguments = FilterPolarity::Negative;
+    else if (name == "not" && polarity == FilterPolarity::Negative)
+        polarity_of_arguments = FilterPolarity::Positive;
+
+    for (auto & argument : arguments)
+        quoteZeroAndOneComparedWithUInt8Column(argument, available_columns, transform_null_in, polarity_of_arguments);
 }
 
 /// Returns true if the AST node is a tuple: either an `ASTLiteral` holding a `Tuple` field
@@ -1196,6 +1552,19 @@ String transformQueryForExternalDatabaseImpl(
     /// cut off the rows of any table, so it is not sent to the external database at all.
     if (limit && *limit <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
         select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(*limit));
+
+    /// This is done after the `LIMIT` is decided: the filter selects the rows that the original one selects
+    /// from the values ClickHouse reads, so it does not make the push-down of the `LIMIT` wrong, while it
+    /// would no longer be equal to the original one. The filter itself can be replaced, so it is set again.
+    if (literal_escaping_style == LiteralEscapingStyle::PostgreSQL)
+    {
+        if (ASTPtr where = select->where())
+        {
+            quoteZeroAndOneComparedWithUInt8Column(
+                where, pushdown_columns, context->getSettingsRef()[Setting::transform_null_in], FilterPolarity::Positive);
+            select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where));
+        }
+    }
 
     ASTPtr select_ptr = select;
     dropAliases(select_ptr);
