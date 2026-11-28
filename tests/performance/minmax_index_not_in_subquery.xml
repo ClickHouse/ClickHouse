@@ -1,0 +1,16 @@
+<test>
+    <!-- A minmax index cannot skip a granule of several values by `NOT IN`, so it must not build and sort the subquery set while the query is planned. -->
+
+    <create_query>CREATE TABLE minmax_not_in (k UInt64, s String, INDEX i s TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE minmax_not_in_src (s String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO minmax_not_in SELECT number, lower(hex(sipHash128(number))) FROM numbers(3000000)</fill_query>
+    <fill_query>INSERT INTO minmax_not_in_src SELECT lower(hex(sipHash128(number + 1000000))) FROM numbers(3000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE minmax_not_in FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE minmax_not_in_src FINAL</fill_query>
+
+    <query>SELECT count() FROM minmax_not_in WHERE s NOT IN (SELECT s FROM minmax_not_in_src)</query>
+
+    <drop_query>DROP TABLE IF EXISTS minmax_not_in</drop_query>
+    <drop_query>DROP TABLE IF EXISTS minmax_not_in_src</drop_query>
+</test>
