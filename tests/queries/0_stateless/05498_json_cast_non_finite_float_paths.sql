@@ -7,6 +7,9 @@ SELECT j.a, dynamicType(j.a) FROM (SELECT CAST('{"a":"inf"}'::JSON(a Float64), '
 SELECT j.a FROM (SELECT CAST('{"a":"inf"}'::JSON(a Float64), 'JSON(a String)') AS j);
 SELECT CAST('{"a":"inf"}'::JSON(a Float64), 'JSON(a Int64)'); -- { serverError INCORRECT_DATA }
 SELECT accurateCastOrNull('{"a":"inf"}'::JSON(a Float64), 'JSON(a Int64)');
+SELECT CAST('{"a":"nan"}'::JSON(a Float64), 'JSON(a Int64)'); -- { serverError INCORRECT_DATA }
+SELECT accurateCastOrNull('{"a":"nan"}'::JSON(a Float64), 'JSON(a Int64)');
+SELECT JSONExtract('{"a":"nan"}', 'a', 'Nullable(Int32)');
 SELECT CAST('{"a":"inf"}'::JSON(a Float64), 'JSON(a Decimal64(2))'); -- { serverError INCORRECT_DATA }
 SELECT accurateCastOrNull('{"a":"inf"}'::JSON(a Float64), 'JSON(a Decimal64(2))');
 SELECT CAST('{"a":"inf"}'::JSON(a Float64), 'JSON(a Array(Float64))'); -- { serverError INCORRECT_DATA }

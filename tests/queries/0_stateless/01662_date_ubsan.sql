@@ -16,3 +16,10 @@ SELECT addHours(toDateTime('2021-01-01 00:00:00', 'GMT'), inf); -- { serverError
 SELECT addWeeks(toDateTime('2021-01-01 00:00:00', 'GMT'), inf); -- { serverError DECIMAL_OVERFLOW }
 SELECT addDays(toDateTime('2021-01-01 00:00:00', 'GMT'), inf); -- { serverError DECIMAL_OVERFLOW }
 SELECT addYears(toDateTime('2021-01-01 00:00:00', 'GMT'), inf); -- { serverError DECIMAL_OVERFLOW }
+-- tests with nan
+SELECT addSeconds(toDateTime('2021-01-01 00:00:00', 'GMT'), nan); -- { serverError DECIMAL_OVERFLOW }
+SELECT addMinutes(toDateTime('2021-01-01 00:00:00', 'GMT'), nan); -- { serverError DECIMAL_OVERFLOW }
+SELECT addHours(toDateTime('2021-01-01 00:00:00', 'GMT'), nan); -- { serverError DECIMAL_OVERFLOW }
+SELECT addWeeks(toDateTime('2021-01-01 00:00:00', 'GMT'), nan); -- { serverError DECIMAL_OVERFLOW }
+SELECT addDays(toDateTime('2021-01-01 00:00:00', 'GMT'), nan); -- { serverError DECIMAL_OVERFLOW }
+SELECT addYears(toDateTime('2021-01-01 00:00:00', 'GMT'), nan); -- { serverError DECIMAL_OVERFLOW }

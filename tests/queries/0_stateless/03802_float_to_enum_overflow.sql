@@ -19,6 +19,11 @@ SELECT CAST(-32769.0 AS Enum16('a' = 1, 'b' = 2)); -- { serverError CANNOT_CONVE
 SELECT CAST(128.0 AS Enum8('a' = 1, 'b' = 2)); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT CAST(-129.0 AS Enum8('a' = 1, 'b' = 2)); -- { serverError CANNOT_CONVERT_TYPE }
 
+-- Test nan
+SELECT CAST(nan AS Enum8('a' = 0, 'b' = 1)); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT CAST(toFloat32(nan) AS Enum16('a' = 0, 'b' = 1)); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT CAST(nan AS Enum8('a' = 1, 'b' = 2)); -- { serverError CANNOT_CONVERT_TYPE }
+
 -- Test valid conversions still work (value in range but not in enum - different error)
 SELECT CAST(3.0 AS Enum8('a' = 1, 'b' = 2)); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT CAST(3.0 AS Enum16('a' = 1, 'b' = 2)); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
