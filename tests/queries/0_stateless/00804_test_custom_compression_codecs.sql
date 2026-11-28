@@ -43,7 +43,7 @@ CREATE TABLE params_when_no_params(id UInt64 CODEC(LZ4(1))) ENGINE = MergeTree()
 CREATE TABLE codec_multiple_direct_specification_1(id UInt64 CODEC(MULTIPLE(LZ4, ZSTD))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError UNKNOWN_CODEC }
 CREATE TABLE codec_multiple_direct_specification_2(id UInt64 CODEC(multiple(LZ4, ZSTD))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError UNKNOWN_CODEC }
 CREATE TABLE delta_bad_params1(id UInt64 CODEC(Delta(3))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_CODEC_PARAMETER }
-CREATE TABLE delta_bad_params2(id UInt64 CODEC(Delta(16))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_CODEC_PARAMETER }
+CREATE TABLE delta_bad_params2(id UInt64 CODEC(Delta(64))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_CODEC_PARAMETER }
 
 DROP TABLE IF EXISTS bad_codec;
 DROP TABLE IF EXISTS params_when_no_params;
