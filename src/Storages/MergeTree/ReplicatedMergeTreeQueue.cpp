@@ -66,11 +66,13 @@ static bool hasSupportedMetadataMutation(const MutationCommands & commands)
     return false;
 }
 
-/// A mutation applies the patch parts of its partition with a lower data version.
-static bool isPatchPartAppliedByMutation(const MergeTreePartInfo & patch_info, const MergeTreePartInfo & mutated_part_info)
+/// A mutation applies the patch parts of its partition that are newer than its source part and older than its result part.
+static bool isPatchPartAppliedByMutation(
+    const MergeTreePartInfo & patch_info, const MergeTreePartInfo & source_part_info, const MergeTreePartInfo & mutated_part_info)
 {
     return patch_info.isPatch()
         && patch_info.getOriginalPartitionId() == mutated_part_info.getPartitionId()
+        && patch_info.getDataVersion() > source_part_info.getDataVersion()
         && patch_info.getDataVersion() < mutated_part_info.getDataVersion();
 }
 
@@ -396,6 +398,7 @@ bool ReplicatedMergeTreeQueue::havePendingPatchPartsForMutation(
         return false;
 
     auto new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+    auto source_part_info = MergeTreePartInfo::fromPartName(entry.source_parts.at(0), format_version);
     auto data_version = new_part_info.getDataVersion();
 
     auto it = committing_blocks.find(new_part_info.getPartitionId());
@@ -422,7 +425,7 @@ bool ReplicatedMergeTreeQueue::havePendingPatchPartsForMutation(
             continue;
 
         auto fetch_part_info = MergeTreePartInfo::fromPartName(fetch_entry->new_part_name, format_version);
-        if (!isPatchPartAppliedByMutation(fetch_part_info, new_part_info))
+        if (!isPatchPartAppliedByMutation(fetch_part_info, source_part_info, new_part_info))
             continue;
 
         /// The fetch waits for a DROP_PART that waits for this mutation, so the mutated part is fetched instead.
@@ -444,6 +447,7 @@ String ReplicatedMergeTreeQueue::getPatchPartBlockedByDropPart(const LogEntry & 
         return {};
 
     auto new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+    auto source_part_info = MergeTreePartInfo::fromPartName(entry.source_parts.at(0), format_version);
     std::shared_lock lock(state_mutex);
 
     for (const auto & fetch_entry : queue)
@@ -453,7 +457,8 @@ String ReplicatedMergeTreeQueue::getPatchPartBlockedByDropPart(const LogEntry & 
 
         auto fetch_part_info = MergeTreePartInfo::fromPartName(fetch_entry->new_part_name, format_version);
         String drop_reason;
-        if (isPatchPartAppliedByMutation(fetch_part_info, new_part_info) && drop_parts.isAffectedByDropPart(*fetch_entry, drop_reason))
+        if (isPatchPartAppliedByMutation(fetch_part_info, source_part_info, new_part_info)
+            && drop_parts.isAffectedByDropPart(*fetch_entry, drop_reason))
             return fetch_entry->new_part_name;
     }
 

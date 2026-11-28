@@ -36,6 +36,18 @@ for _ in {1..120}; do
 done
 echo "$pulled"
 
+# The next mutation of partition 2 can only run on t_r2: its source part there will already contain the update.
+$CLICKHOUSE_CLIENT --query "
+    SYSTEM STOP REPLICATION QUEUES t_r1;
+    ALTER TABLE t_r1 UPDATE val = val + 1 WHERE part_key = 2 SETTINGS mutations_sync = 0;
+"
+for _ in {1..120}; do
+    queued=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.replication_queue WHERE database = currentDatabase() AND table = 't_r2' AND type = 'MUTATE_PART' AND startsWith(new_part_name, '2_')")
+    [[ $queued == 2 ]] && break
+    sleep 0.5
+done
+echo "$queued"
+
 $CLICKHOUSE_CLIENT --query "SYSTEM START REPLICATION QUEUES t_r2"
 $CLICKHOUSE_CLIENT --receive_timeout 60 --query "SYSTEM SYNC REPLICA t_r2 STRICT"
 
@@ -43,13 +55,14 @@ $CLICKHOUSE_CLIENT --query "
     SELECT * FROM t_r2 ORDER BY part_key;
     SELECT count() FROM system.replication_queue WHERE database = currentDatabase() AND table = 't_r2';
     SYSTEM FLUSH LOGS part_log;
-    -- partition 1 is mutated locally, partition 2 is fetched: t_r2 never had the patch
-    SELECT partition_id, event_type FROM system.part_log
+    -- partition 1 is mutated locally; in partition 2 the patched part is fetched (t_r2 never had the patch) and the next mutation runs on it
+    SELECT partition_id, event_type, has(merged_from, partition_id || '_0_0_0') FROM system.part_log
     WHERE database = currentDatabase() AND table = 't_r2' AND error = 0 AND event_type IN ('MutatePart', 'DownloadPart')
-        AND part_name IN (SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't_r2' AND active)
-    ORDER BY ALL;
+        AND part_name NOT IN ('1_0_0_0', '2_0_0_0')
+    ORDER BY partition_id, event_time_microseconds;
     SELECT count() FROM system.part_log
-    WHERE database = currentDatabase() AND table = 't_r2' AND event_type = 'MutatePart' AND partition_id = '2';
+    WHERE database = currentDatabase() AND table = 't_r2' AND event_type = 'MutatePart' AND has(merged_from, '2_0_0_0');
+    SYSTEM START REPLICATION QUEUES t_r1;
     DROP TABLE t_r1 SYNC;
     DROP TABLE t_r2 SYNC;
 "
