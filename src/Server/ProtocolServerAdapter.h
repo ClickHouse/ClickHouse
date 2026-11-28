@@ -6,6 +6,7 @@
 
 #include <base/types.h>
 #include <memory>
+#include <optional>
 #include <string>
 
 
@@ -91,6 +92,20 @@ public:
 
     [[nodiscard]] const std::string & getDescription() const { return description; }
 
+    /// The `default_session_user` of the endpoint in the `protocols` section this server was created for, which overrides
+    /// the server setting; nullopt if the server uses the server setting. This is the value the handlers of the server were
+    /// created with, not the one of the current configuration: they keep it until the server is re-created, which
+    /// a configuration reload does not do for every server (it never re-creates the introspection servers, for example).
+    [[nodiscard]] const std::optional<String> & getDefaultSessionUser() const { return default_session_user; }
+    void setDefaultSessionUser(std::optional<String> default_session_user_) { default_session_user = std::move(default_session_user_); }
+
+    /// Whether a client of this server can log in as a user it names (or, without a user name, as the default session user)
+    /// with the credentials of that user. The server clears it for a listener whose handlers, as configured when the listener
+    /// is created, only expose metrics or only log in as a user fixed in the configuration (a `prometheus` listener).
+    /// Like `getDefaultSessionUser`, this is what the handlers were created with.
+    [[nodiscard]] bool authenticatesUsers() const { return authenticates_users; }
+    void setAuthenticatesUsers(bool authenticates_users_) { authenticates_users = authenticates_users_; }
+
 private:
     class Impl
     {
@@ -113,6 +128,8 @@ private:
     ServerType::Type protocol_type;
     std::string description;
     std::unique_ptr<Impl> impl;
+    std::optional<String> default_session_user;
+    bool authenticates_users = true;
     bool supports_runtime_reconfiguration = true;
     bool started = false;
 };

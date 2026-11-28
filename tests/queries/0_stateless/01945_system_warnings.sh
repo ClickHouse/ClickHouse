@@ -21,6 +21,7 @@ ${CLICKHOUSE_CLIENT} --cloud_mode=1 --multiple_joins_rewriter_version=42 -q "SEL
 # Avoid duplicated warnings
 ${CLICKHOUSE_CLIENT} -q "SELECT count() = countDistinct(message) FROM system.warnings"
 
-# Avoid too many warnings, especially in CI
-${CLICKHOUSE_CLIENT} -q "SELECT count() < 10 FROM system.warnings"
+# Avoid too many warnings, especially in CI. The bound includes the warning about the
+# passwordless `default` user of the test configuration, which listens on all addresses.
+${CLICKHOUSE_CLIENT} -q "SELECT count() < 11 FROM system.warnings"
 

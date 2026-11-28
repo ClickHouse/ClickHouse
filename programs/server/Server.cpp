@@ -77,6 +77,7 @@
 #include <Server/ConnectionRegistry.h>
 #include <Server/createServer.h>
 #include <Server/StartupWarnings.h>
+#include <Server/UsersWithoutPasswordWarning.h>
 #include <Server/socketBindListen.h>
 #include <Server/stopServers.h>
 #include <Server/waitServersToFinish.h>
@@ -267,6 +268,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsUInt64 database_catalog_shutdown_table_concurrency;
     extern const ServerSettingsString default_database;
+    extern const ServerSettingsString default_session_user;
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
@@ -756,6 +758,33 @@ Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & conf
 
     /// Use more general restriction in case of emptiness
     return getListenHosts(config);
+}
+
+/// The running listeners that authenticate users, each with the user that a connection without a user name gets.
+std::vector<UsersWithoutPasswordWarning::Listener> getUserListeners(
+    const String & global_default_session_user,
+    std::initializer_list<const std::vector<ProtocolServerAdapter> *> server_lists)
+{
+    std::vector<UsersWithoutPasswordWarning::Listener> listeners;
+    for (const auto * server_list : server_lists)
+    {
+        for (const auto & server : *server_list)
+        {
+            /// Keeper and the interserver protocol do not authenticate users, nor do the handlers of a listener that, as configured
+            /// when it was created, only expose metrics or only log in as fixed users (e.g. a `prometheus` listener).
+            if (server.isStopping() || !server.authenticatesUsers() || server.getPortName().starts_with("keeper_server.")
+                || server.getProtocolType() == ServerType::Type::INTERSERVER_HTTP
+                || server.getProtocolType() == ServerType::Type::INTERSERVER_HTTPS)
+                continue;
+
+            /// An endpoint of the `protocols` section can override the setting. The override is the one the handlers were
+            /// created with: the current configuration may differ for a server that a reload has not re-created.
+            listeners.push_back(
+                {.host = server.getListenHost(),
+                 .default_session_user = server.getDefaultSessionUser().value_or(global_default_session_user)});
+        }
+    }
+    return listeners;
 }
 
 bool isIntrospectionProtocol(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
@@ -2731,6 +2760,24 @@ try
         command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
     }
 
+    /// Created before the main config reloader, which updates its listeners, so that it outlives the reloader, and destroyed
+    /// before the global context is shut down. The callbacks stored in the global context refer to it through a `weak_ptr`.
+    auto users_without_password_warning = std::make_shared<UsersWithoutPasswordWarning>(global_context);
+    /// Must be called under `servers_lock` after the servers change, so that the listeners are passed on in the same order.
+    auto update_users_without_password_warning = [&](UsersWithoutPasswordWarning & warning)
+    {
+        try
+        {
+            warning.setListeners(getUserListeners(
+                global_context->getServerSettings()[ServerSetting::default_session_user],
+                {&servers, &servers_to_start_before_tables, &introspection_servers}));
+        }
+        catch (...)
+        {
+            tryLogCurrentException("UsersWithoutPasswordWarning", "Cannot update the listeners");
+        }
+    };
+
     /// The preprocessed configuration goes into `path` as it is used everywhere else: without the whitespace around it,
     /// and relative to the original working directory rather than to the current one, which differs with `--daemon`.
     auto main_config_reloader = std::make_unique<ConfigReloader>(
@@ -3174,6 +3221,7 @@ try
                 {
                     std::lock_guard lock(servers_lock);
                     updateServers(config(), new_server_settings, server_pool, *async_metrics, servers, servers_to_start_before_tables);
+                    update_users_without_password_warning(*users_without_password_warning);
                 }
             }
 
@@ -3603,34 +3651,43 @@ try
         access_control.reload(AccessControl::ReloadMode::USERS_CONFIG_ONLY);
     });
 
-    global_context->setStopServersCallback([&](const ServerType & server_type)
-    {
-        std::lock_guard lock(servers_lock);
-        stopServers(servers, server_type);
-    });
+    /// `update_users_without_password_warning` is copied: these callbacks may be called after it goes out of scope.
+    global_context->setStopServersCallback(
+        [&, update_users_without_password_warning, weak_warning = std::weak_ptr(users_without_password_warning)](
+            const ServerType & server_type)
+        {
+            std::lock_guard lock(servers_lock);
+            stopServers(servers, server_type);
+            if (auto warning = weak_warning.lock())
+                update_users_without_password_warning(*warning);
+        });
 
-    global_context->setStartServersCallback([&](const ServerType & server_type)
-    {
-        std::lock_guard lock(servers_lock);
-        /// Introspection server can run SYSTEM START LISTEN before other servers' startup or after other servers' shutdown.
-        /// In either case, we need to return an error.
-        if (is_cancelled || !global_context->isServerCompletelyStarted())
-            throw Exception(ErrorCodes::ABORTED, "Cannot start listeners because the server is starting up or shutting down");
-        /// The config may have been reloaded since startup, so recompute the listener
-        /// configuration from the current config instead of the startup snapshot.
-        ServerSettings current_server_settings;
-        current_server_settings.loadSettingsFromConfig(config());
-        createServers(
-            config(),
-            current_server_settings,
-            getListenHosts(config()),
-            getListenTry(config(), current_server_settings),
-            server_pool,
-            *async_metrics,
-            servers,
-            /* start_servers= */ true,
-            server_type);
-    });
+    global_context->setStartServersCallback(
+        [&, update_users_without_password_warning, weak_warning = std::weak_ptr(users_without_password_warning)](
+            const ServerType & server_type)
+        {
+            std::lock_guard lock(servers_lock);
+            /// Introspection server can run SYSTEM START LISTEN before other servers' startup or after other servers' shutdown.
+            /// In either case, we need to return an error.
+            if (is_cancelled || !global_context->isServerCompletelyStarted())
+                throw Exception(ErrorCodes::ABORTED, "Cannot start listeners because the server is starting up or shutting down");
+            /// The config may have been reloaded since startup, so recompute the listener
+            /// configuration from the current config instead of the startup snapshot.
+            ServerSettings current_server_settings;
+            current_server_settings.loadSettingsFromConfig(config());
+            createServers(
+                config(),
+                current_server_settings,
+                getListenHosts(config()),
+                getListenTry(config(), current_server_settings),
+                server_pool,
+                *async_metrics,
+                servers,
+                /* start_servers= */ true,
+                server_type);
+            if (auto warning = weak_warning.lock())
+                update_users_without_password_warning(*warning);
+        });
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(server_settings[ServerSetting::max_concurrent_queries]);
@@ -4199,6 +4256,7 @@ try
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                     "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)");
 
+            update_users_without_password_warning(*users_without_password_warning);
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
@@ -4413,6 +4471,14 @@ bool prometheusHandlersConsumeDefaultSessionUser(const Poco::Util::AbstractConfi
     return false;
 }
 
+/// Whether a `prometheus` listener authenticates users by the credentials of the client. The keeper-metrics-only one
+/// (`KeeperPrometheusHandler-factory`) only exposes metrics, and the regular one authenticates them only in the time-series
+/// handlers without a fixed `user`, which are exactly the handlers that consult the default session user.
+bool prometheusListenerAuthenticatesUsers(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings)
+{
+    return !server_settings[ServerSetting::prometheus_keeper_metrics_only] && prometheusHandlersConsumeDefaultSessionUser(config);
+}
+
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
@@ -4422,7 +4488,9 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     Poco::Net::HTTPServerParams::Ptr http_params,
     AsynchronousMetrics & async_metrics,
     bool & is_secure,
-    ServerType::Type & protocol_type)
+    ServerType::Type & protocol_type,
+    std::optional<String> & default_session_user,
+    bool & authenticates_users)
 {
     /// The default session user for the endpoint: the `default_session_user` key looked up
     /// from the endpoint's protocol module towards the referenced (`impl`) modules; the value
@@ -4431,7 +4499,8 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     /// It is resolved for the whole `impl` chain up front, because a module can be both typed
     /// (so its handler factory is created while walking the chain) and inherit the setting from
     /// a module it references, which the walk reaches only later.
-    const std::optional<String> default_session_user = getEffectiveDefaultSessionUser(config, "protocols." + protocol);
+    default_session_user = getEffectiveDefaultSessionUser(config, "protocols." + protocol);
+    authenticates_users = false;
 
     auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
@@ -4512,7 +4581,12 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             else if (type == "proxy1")
                 has_proxy = true;
             else
+            {
                 leaf_type = type;
+                /// The interserver protocol does not authenticate users, and a `prometheus` endpoint may only expose metrics.
+                if (type != "interserver" && (type != "prometheus" || prometheusListenerAuthenticatesUsers(config, server_settings)))
+                    authenticates_users = true;
+            }
 
             if (type == "interserver")
                 has_interserver = true;
@@ -4639,8 +4713,11 @@ void Server::createServers(
         {
             bool is_secure = false;
             auto protocol_type = ServerType::Type::END;
+            std::optional<String> default_session_user;
+            bool authenticates_users = true;
             auto stack = buildProtocolStackFromConfig(
-                config, server_settings, protocol, http_params, async_metrics, is_secure, protocol_type);
+                config, server_settings, protocol, http_params, async_metrics, is_secure, protocol_type, default_session_user,
+                authenticates_users);
 
             if (stack->empty())
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
@@ -4652,7 +4729,7 @@ void Server::createServers(
                 socket.setReceiveTimeout(settings[Setting::receive_timeout]);
                 socket.setSendTimeout(settings[Setting::send_timeout]);
 
-                return ProtocolServerAdapter(
+                ProtocolServerAdapter adapter(
                     host,
                     port_name.c_str(),
                     protocol_type,
@@ -4663,6 +4740,9 @@ void Server::createServers(
                         socket,
                         makeServerParams(server_settings),
                         is_introspection ? TCPServerConnectionFilter::Ptr() : connection_filter));
+                adapter.setDefaultSessionUser(default_session_user);
+                adapter.setAuthenticatesUsers(authenticates_users);
+                return adapter;
             });
         }
     }
@@ -4951,19 +5031,22 @@ void Server::createServers(
             if (!config.getString(port_name, "").empty())
             {
                 auto handler_factory = createHandlerFactory(*this, config, async_metrics, handler_name);
+                const bool authenticates_users = prometheusListenerAuthenticatesUsers(config, server_settings);
                 createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(server_settings, socket, listen_host, port);
                     socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
                     socket.setSendTimeout(settings[Setting::http_send_timeout]);
-                    return ProtocolServerAdapter(
+                    ProtocolServerAdapter adapter(
                         listen_host,
                         port_name,
                         ServerType::Type::PROMETHEUS,
                         "Prometheus: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
+                    adapter.setAuthenticatesUsers(authenticates_users);
+                    return adapter;
                 });
             }
         }

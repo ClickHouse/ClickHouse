@@ -200,14 +200,9 @@ namespace
         return {password_with_otp.substr(0, separator_pos), password_with_otp.substr(separator_pos + 1)};
     }
 
-    /// Verifies the primary credential: the password without the one-time password part.
-    bool checkPrimaryCredential(
-        std::string_view password,
-        const BasicCredentials & basic_credentials,
-        const AuthenticationData & authentication_method,
-        const ExternalAuthenticators & external_authenticators,
-        const ClientInfo & client_info,
-        SettingsChanges & settings)
+    /// Verifies a password against a method that is checked locally: by the absence of a password or by the password hash.
+    /// Returns nullopt for the other methods.
+    std::optional<bool> checkPasswordLocally(std::string_view password, const AuthenticationData & authentication_method)
     {
         switch (authentication_method.getType())
         {
@@ -239,14 +234,33 @@ namespace
                 const auto & password_double_sha1 = authentication_method.getPasswordHashBinary();
                 return Util::encodeDoubleSHA1(password) == password_double_sha1;
             }
-            case AuthenticationType::LDAP:
-            {
-                return external_authenticators.checkLDAPCredentials(authentication_method.getLDAPServerName(), basic_credentials);
-            }
             case AuthenticationType::BCRYPT_PASSWORD:
             {
                 const auto & password_bcrypt = authentication_method.getPasswordHashBinary();
                 return Util::checkPasswordBcrypt(password, password_bcrypt);
+            }
+            default:
+                return std::nullopt;
+        }
+    }
+
+    /// Verifies the primary credential: the password without the one-time password part.
+    bool checkPrimaryCredential(
+        std::string_view password,
+        const BasicCredentials & basic_credentials,
+        const AuthenticationData & authentication_method,
+        const ExternalAuthenticators & external_authenticators,
+        const ClientInfo & client_info,
+        SettingsChanges & settings)
+    {
+        if (auto result = checkPasswordLocally(password, authentication_method))
+            return *result;
+
+        switch (authentication_method.getType())
+        {
+            case AuthenticationType::LDAP:
+            {
+                return external_authenticators.checkLDAPCredentials(authentication_method.getLDAPServerName(), basic_credentials);
             }
             case AuthenticationType::HTTP:
             {
@@ -465,6 +479,15 @@ bool Authentication::mysqlNative41CannotVerify(const AuthenticationData & authen
         default:
             return false;
     }
+}
+
+bool Authentication::acceptsEmptyPassword(const AuthenticationData & authentication_method)
+{
+    /// A login without the required one-time password fails (see `checkBasicAuthentication`).
+    if (authentication_method.getOneTimePassword())
+        return false;
+    /// Not `std::string_view{}`: `Util::checkPasswordBcrypt` passes the data to `bcrypt_checkpw` as a null-terminated string.
+    return checkPasswordLocally(std::string_view(""), authentication_method).value_or(false);
 }
 
 bool Authentication::consumeOneTimePassword(

@@ -47,6 +47,13 @@ node_reject = cluster.add_instance(
     main_configs=["configs/config_reject.xml", "configs/config_reloader.xml"],
     user_configs=["configs/users.xml"],
 )
+# A node with a `prometheus` endpoint on all addresses and a native endpoint on the loopback address only,
+# which remain when the other listeners are stopped.
+node_metrics = cluster.add_instance(
+    "node_metrics",
+    main_configs=["configs/config_public_metrics.xml", "configs/config_reloader.xml"],
+    user_configs=["configs/users.xml"],
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -58,7 +65,7 @@ def started_cluster():
         node1.wait_until_port_is_ready(9110, timeout=10)
         node_reject.wait_until_port_is_ready(9110, timeout=10)
         # `SYSTEM RELOAD CONFIG` is the only reloader every test below relies on.
-        for node in (node1, node2, node_reject):
+        for node in (node1, node2, node_reject, node_metrics):
             assert (
                 node.query(
                     "SELECT value FROM system.server_settings WHERE name = 'config_reload_interval_ms'"
@@ -946,6 +953,248 @@ def test_config_reload_http_handlers_reference_switch():
             pass
         time.sleep(1)
     assert response == b"fixed_handler_user\n"
+
+
+def users_without_password(node, query=None):
+    # TSVRaw: the default TabSeparated output would escape the quotes around the user names.
+    warning = (query or node.query)(
+        "SELECT message FROM system.warnings WHERE message LIKE 'The server listens on %' FORMAT TSVRaw"
+    ).strip()
+    if not warning:
+        return []
+    marker = "these users can connect from any host without a password: "
+    assert marker in warning, warning
+    return [
+        name.strip("'") for name in warning.split(marker)[1].split(". ")[0].split(", ")
+    ]
+
+
+def wait_for_users_without_password(node, expected, timeout=30):
+    for _ in range(timeout):
+        if users_without_password(node) == expected:
+            return
+        time.sleep(1)
+    assert users_without_password(node) == expected
+
+
+def test_users_without_password_warning():
+    # All nodes listen on a non-loopback address and have the shipped `default` user: no password, any host.
+    # `default` is always checked: node_reject prohibits connections without a user name, but `default` can still
+    # be named explicitly. node2's global default session user does not exist.
+    users = users_without_password(node1)
+    assert users[0] == "default", users
+    assert node1.contains_in_log(
+        "these users can connect from any host without a password"
+    )
+    assert users_without_password(node2) == ["default"]
+    assert users_without_password(node_reject)[0] == "default"
+
+    # node1 also reports the users that connections without a user name get: the global default session user and
+    # those of the endpoints in the `protocols` section, also when inherited through `impl` or of an introspection endpoint.
+    for user in [
+        "global_default_user",
+        "proto_tcp_user",
+        "proto_endpoint_user",
+        "proto_shared_impl_user",
+        "proto_mysql_user",
+        "proto_pg_user",
+        "proto_introspection_user",
+    ]:
+        assert user in users, users
+    # Not reported: default session users with a password, an explicitly named user, the default session user of a
+    # module without a port (it does not listen), whatever value an earlier test has reloaded it to, and that of a
+    # keeper-metrics-only `prometheus` endpoint, which serves metrics without authenticating users.
+    for user in [
+        "proto_tcp_password_user",
+        "proto_pg_password_user",
+        "explicit_user",
+        "reload_shadow_base_before",
+        "reload_shadow_base_after",
+        "proto_prometheus_user",
+    ]:
+        assert user not in users, users
+
+    # The warning follows the users: the default session user drops out once it gets a password
+    # (here through a users.d override picked up by the users config reload) and comes back when
+    # the password is removed again.
+    override_path = "/etc/clickhouse-server/users.d/z_global_default_user_password.xml"
+    try:
+        node1.replace_config(
+            override_path,
+            "<clickhouse><users><global_default_user><password>secret</password>"
+            "</global_default_user></users></clickhouse>",
+        )
+        node1.query("SYSTEM RELOAD CONFIG")
+        assert sorted(users_without_password(node1)) == sorted(
+            user for user in users if user != "global_default_user"
+        )
+
+        # The empty user name is only an alias for the user: the password is now required.
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            execute_query_http(8123, "SELECT currentUser()")
+        assert exc_info.value.code == 403
+        assert (
+            execute_query_http(
+                8123, "SELECT currentUser()", headers={"X-ClickHouse-Key": "secret"}
+            )
+            == "global_default_user\n"
+        )
+    finally:
+        node1.exec_in_container(["rm", "-f", override_path])
+        node1.query("SYSTEM RELOAD CONFIG")
+
+    assert sorted(users_without_password(node1)) == sorted(users)
+    assert execute_query_http(8123, "SELECT currentUser()") == "global_default_user\n"
+
+
+def test_users_without_password_warning_listeners():
+    # The warning follows the listeners: an endpoint added by a config reload reports its default session user,
+    # unless it listens on a loopback address only.
+    config_path = "/etc/clickhouse-server/config.d/z_users_without_password_warning.xml"
+    assert users_without_password(node2) == ["default"]
+    try:
+        node2.replace_config(
+            config_path,
+            """<clickhouse>
+    <protocols>
+        <warning_loopback>
+            <type>tcp</type>
+            <host>127.0.0.1</host>
+            <port>9201</port>
+            <default_session_user>proto_tcp_user</default_session_user>
+        </warning_loopback>
+        <warning_public>
+            <type>tcp</type>
+            <host>0.0.0.0</host>
+            <port>9202</port>
+            <default_session_user>proto_mysql_user</default_session_user>
+        </warning_public>
+    </protocols>
+</clickhouse>
+""",
+        )
+        node2.query("SYSTEM RELOAD CONFIG")
+        wait_for_users_without_password(node2, ["default", "proto_mysql_user"])
+    finally:
+        node2.exec_in_container(["rm", "-f", config_path])
+        node2.query("SYSTEM RELOAD CONFIG")
+
+    wait_for_users_without_password(node2, ["default"])
+
+
+def test_users_without_password_warning_sql_users():
+    # node2's global default session user `undeclared_user` is not declared in users.xml, so it can be created with SQL.
+    assert users_without_password(node2) == ["default"]
+    try:
+        # After `TRUNCATE TABLE system.warnings` the warning stays hidden while the situation does not change ...
+        node2.query("TRUNCATE TABLE system.warnings")
+        node2.query("CREATE USER unrelated_user IDENTIFIED WITH no_password")
+        assert users_without_password(node2) == []
+
+        # ... and comes back when the reported users change.
+        node2.query("CREATE USER undeclared_user IDENTIFIED WITH no_password")
+        assert users_without_password(node2) == ["default", "undeclared_user"]
+
+        # A password or a restriction of the hosts removes the user from the warning.
+        node2.query("ALTER USER undeclared_user IDENTIFIED BY 'Secret_password_1'")
+        assert users_without_password(node2) == ["default"]
+        node2.query("ALTER USER undeclared_user IDENTIFIED WITH no_password HOST LOCAL")
+        assert users_without_password(node2) == ["default"]
+
+        # A login without a password that expires is reported until it expires.
+        valid_until = node2.query("SELECT formatDateTime(now() + 10, '%F %T')").strip()
+        node2.query(
+            f"ALTER USER undeclared_user IDENTIFIED WITH no_password VALID UNTIL '{valid_until}' HOST ANY"
+        )
+        assert users_without_password(node2) == ["default", "undeclared_user"]
+        wait_for_users_without_password(node2, ["default"])
+    finally:
+        node2.query("DROP USER IF EXISTS undeclared_user, unrelated_user")
+
+
+def test_users_without_password_warning_introspection_reload():
+    # A configuration reload never re-creates the introspection servers, so their handlers keep the default session user
+    # they were started with. The warning must follow the running listener rather than the reloaded configuration.
+    hello = 0
+    override_path = "/etc/clickhouse-server/config.d/z_introspection_default_session_user.xml"
+    assert "proto_introspection_user" in users_without_password(node1)
+    with assert_login_success("proto_introspection_user", "TCP"):
+        assert native_hello(9119, "") == hello
+    try:
+        node1.replace_config(
+            override_path,
+            "<clickhouse><protocols><introspection_defuser><default_session_user></default_session_user>"
+            "</introspection_defuser></protocols></clickhouse>",
+        )
+        node1.query("SYSTEM RELOAD CONFIG")
+
+        # A fresh connection without a user name still gets the user the listener was started with ...
+        with assert_login_success("proto_introspection_user", "TCP"):
+            assert native_hello(9119, "") == hello
+        # ... so the warning still reports it.
+        assert "proto_introspection_user" in users_without_password(node1)
+    finally:
+        node1.exec_in_container(["rm", "-f", override_path])
+        node1.query("SYSTEM RELOAD CONFIG")
+
+    assert "proto_introspection_user" in users_without_password(node1)
+
+
+def test_users_without_password_warning_metrics_only_listener():
+    # With all the other listeners stopped, node_metrics answers queries on the loopback address only, and only its
+    # `prometheus` endpoint listens on all addresses. Nobody can log in from another host while that endpoint only
+    # exposes metrics, but its time-series handlers authenticate users.
+    stop_listen = "SYSTEM STOP LISTEN QUERIES ALL EXCEPT CUSTOM 'loopback_tcp', CUSTOM 'public_metrics'"
+    override_path = "/etc/clickhouse-server/config.d/z_prometheus_handlers.xml"
+    write_handlers = (
+        "<handlers><write_rule><url>/write</url><handler><type>write</type>"
+        "<table>default.prometheus_ts</table></handler></write_rule></handlers>"
+    )
+
+    def loopback_query(query):
+        return node_metrics.exec_in_container(
+            ["clickhouse", "client", "--host", "127.0.0.1", "--port", "9120", "--query", query]
+        )
+
+    def users_after_stopping_other_listeners():
+        # A configuration reload starts the stopped listeners again.
+        loopback_query(stop_listen)
+        return users_without_password(node_metrics, loopback_query)
+
+    assert users_without_password(node_metrics) == ["default"]
+    try:
+        node_metrics.query(stop_listen)
+        assert users_without_password(node_metrics, loopback_query) == []
+
+        # A time-series handler without a fixed user lets a client log in as a user it names. The reload re-creates the
+        # endpoint with it, because the `prometheus.handlers` section changes.
+        node_metrics.replace_config(override_path, f"<clickhouse><prometheus>{write_handlers}</prometheus></clickhouse>")
+        loopback_query("SYSTEM RELOAD CONFIG")
+        assert users_after_stopping_other_listeners() == ["default"]
+
+        # ... unless the handler has a fixed user.
+        node_metrics.replace_config(
+            override_path,
+            "<clickhouse><prometheus>"
+            + write_handlers.replace("</table>", "</table><user>fixed_write_user</user>")
+            + "</prometheus></clickhouse>",
+        )
+        loopback_query("SYSTEM RELOAD CONFIG")
+        assert users_after_stopping_other_listeners() == []
+
+        # The keeper-metrics-only mode serves nothing but metrics, whatever the handlers.
+        node_metrics.replace_config(
+            override_path,
+            f"<clickhouse><prometheus><keeper_metrics_only>true</keeper_metrics_only>{write_handlers}</prometheus>"
+            "</clickhouse>",
+        )
+        loopback_query("SYSTEM RELOAD CONFIG")
+        assert users_after_stopping_other_listeners() == []
+    finally:
+        node_metrics.exec_in_container(["rm", "-f", override_path])
+        loopback_query("SYSTEM RELOAD CONFIG")
+
+    assert users_without_password(node_metrics) == ["default"]
 
 
 def test_config_reload_prometheus_keeper_metrics_only_switch():

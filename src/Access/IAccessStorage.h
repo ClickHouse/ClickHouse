@@ -224,6 +224,13 @@ public:
         bool allow_no_password,
         bool allow_plaintext_password) const;
 
+    /// Whether `authenticate` lets `user` log in with an empty password at `now`, ignoring the network restrictions (`HOST`):
+    /// methods disabled by `allow_no_password` / `allow_plaintext_password` are ignored, and the login expires at the earliest
+    /// `VALID UNTIL` of all methods that accept the empty password. If the login succeeds, `valid_until` (unless null) receives
+    /// that time, or 0 if the login does not expire. Methods verified by an external system are not probed and do not count.
+    static bool acceptsEmptyPassword(
+        const User & user, bool allow_no_password, bool allow_plaintext_password, time_t now, time_t * valid_until = nullptr);
+
     /// Returns true if this storage can be stored to or restored from a backup.
     virtual bool isBackupAllowed() const { return false; }
     virtual bool isRestoreAllowed() const { return isBackupAllowed() && !isReadOnly(); }
