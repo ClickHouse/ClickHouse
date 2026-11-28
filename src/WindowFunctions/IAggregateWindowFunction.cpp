@@ -1,6 +1,9 @@
 #include <WindowFunctions/IAggregateWindowFunction.h>
+#include <WindowFunctions/Aggregate/AggregateWindowFunctionCrossTab.h>
 #include <WindowFunctions/Aggregate/AggregateWindowFunctionPrefix.h>
 #include <WindowFunctions/Aggregate/AggregateWindowFunctionRecalculate.h>
+#include <WindowFunctions/Aggregate/AggregateWindowFunctionSliding.h>
+#include <WindowFunctions/Common/WindowFunctionSettings.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -14,10 +17,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-AggregateWindowFunctionPtr createAggregateWindowFunction(AggregateFunctionPtr function, const WindowDescription & window)
+AggregateWindowFunctionPtr createAggregateWindowFunction(AggregateFunctionPtr function, const WindowDescription & window, const WindowFunctionSettings & settings)
 {
-    if (auto prefix = tryCreateAggregateWindowFunctionPrefix(function, window))
+    if (auto cross_tab = tryCreateAggregateWindowFunctionCrossTab(function, window))
+        return cross_tab;
+    else if (auto prefix = tryCreateAggregateWindowFunctionPrefix(function, window))
         return prefix;
+    else if (auto sliding = tryCreateAggregateWindowFunctionSliding(function, window, settings.sliding_aggregation_min_frame_rows))
+        return sliding;
     else if (auto recalculate = tryCreateAggregateWindowFunctionRecalculate(function, window))
         return recalculate;
     else

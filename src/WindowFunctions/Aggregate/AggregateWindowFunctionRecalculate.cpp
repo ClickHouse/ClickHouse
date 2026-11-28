@@ -1,5 +1,5 @@
 #include <WindowFunctions/Aggregate/AggregateWindowFunctionRecalculate.h>
-#include <WindowFunctions/Aggregate/AggregateState.h>
+#include <WindowFunctions/Aggregate/AggregationState.h>
 
 #include <Columns/IColumn.h>
 #include <WindowFunctions/Common/WindowBounds.h>
@@ -55,7 +55,7 @@ public:
     }
 
 private:
-    AggregateState state;
+    AggregationState state;
     Int64 covered_start = 0;
     Int64 covered_end = 0;
 };

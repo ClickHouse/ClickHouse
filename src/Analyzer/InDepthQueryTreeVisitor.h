@@ -136,33 +136,13 @@ public:
 
     void visit(VisitQueryTreeNodeType & query_tree_node)
     {
-        auto current_scope_context_ptr = current_context;
-        bool is_subquery_node = false;
-        SCOPE_EXIT(
-            current_context = std::move(current_scope_context_ptr);
-            if (is_subquery_node)
-                --subquery_depth;
-        );
-
+        /// Only a query or a union node changes the context and the subquery depth.
         if (auto * query_node = query_tree_node->template as<QueryNode>())
-        {
-            current_context = query_node->getContext();
-            is_subquery_node = true;
-        }
+            visitSubqueryNode(query_tree_node, query_node->getContext());
         else if (auto * union_node = query_tree_node->template as<UnionNode>())
-        {
-            current_context = union_node->getContext();
-            is_subquery_node = true;
-        }
-
-        if (is_subquery_node)
-            ++subquery_depth;
-
-        getDerived().enterImpl(query_tree_node);
-
-        visitChildren(query_tree_node);
-
-        getDerived().leaveImpl(query_tree_node);
+            visitSubqueryNode(query_tree_node, union_node->getContext());
+        else
+            visitNode(query_tree_node);
     }
 
     void enterImpl(VisitQueryTreeNodeType & node [[maybe_unused]])
@@ -179,6 +159,27 @@ private:
     [[nodiscard]] const Derived & getDerived() const
     {
         return *static_cast<Derived *>(this);
+    }
+
+    void visitSubqueryNode(VisitQueryTreeNodeType & query_tree_node, ContextPtr subquery_context)
+    {
+        auto current_scope_context_ptr = std::exchange(current_context, std::move(subquery_context));
+        ++subquery_depth;
+        SCOPE_EXIT(
+            current_context = std::move(current_scope_context_ptr);
+            --subquery_depth;
+        );
+
+        visitNode(query_tree_node);
+    }
+
+    void visitNode(VisitQueryTreeNodeType & query_tree_node)
+    {
+        getDerived().enterImpl(query_tree_node);
+
+        visitChildren(query_tree_node);
+
+        getDerived().leaveImpl(query_tree_node);
     }
 
     void visitChildIfNeeded(
