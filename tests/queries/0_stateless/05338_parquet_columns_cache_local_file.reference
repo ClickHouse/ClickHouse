@@ -25,11 +25,12 @@ no_reads	0	0
 42848616	33327	85697232	28562010	5712	8569
 49995000	38890	99990000	33326667	6666	49995000	38890	49995000
 after_dense	70	0
---- PREWHERE: the columns of the filter are written, the columns read after it are not
+--- PREWHERE: the columns of the filter are written in chunks, the columns read after it only for the rows that passed
 7142142	5556	1429
 7142142	5556	1429
 prewhere_first	0	20
 id	10	10000	0	10000
+s	10	1429	0	10000
 7142142	5556	1429
 prewhere_second	10	10
 --- the same column read as another type is another entry
@@ -37,6 +38,7 @@ prewhere_second	10	10
 49995000	Int32
 other_type	10	0
 id	20	20000	0	10000
+s	10	1429	0	10000
 --- a column with nulls replaced with defaults is not written
 49995000	33466695
 49995000	33466695

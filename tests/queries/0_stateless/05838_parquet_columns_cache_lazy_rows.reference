@@ -1,0 +1,22 @@
+1
+top5	4	5	9079270865895478283
+top5 columns	['d','n','pad','s']
+top4	4	4	2654266019949148939
+top3000	4	3000	9016833961203886014
+filtered	4	3	15852808420597084405
+rows	4	52685	100002	52685	685	15	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx	[52685,52686]
+rows	4	5367	100001	5367	367	8	xxxxxxxxxxxxxxxxx	[5367,5368]
+rows	4	58052	100000	58052	52	0	xx	[58052,58053]
+null as default	4	300	128014	45
+default expression lazy	1
+default expression	4	300	129862	44
+rewritten	4	5	12088654007385947446
+rewritten rows	4	52685	100002	52686	685	15	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx	[52685,52686]
+rewritten rows	4	5367	100001	5368	367	8	xxxxxxxxxxxxxxxxx	[5367,5368]
+rewritten rows	4	58052	100000	58053	52	0	xx	[58052,58053]
+estimate	3	5	18357630018776206401
+estimate events	1	1
+estimate const	3	5	9737115730767890268
+estimate const events	1	1
+--- the read of the requested rows used the cache
+1	1

@@ -9,3 +9,11 @@ s	8	524288
 --- the chunks of a column that cannot be written in full are taken back
 393216	85899083776	25165824
 id	8	524288
+s	4	131072
+--- under a memory limit, the query does not fail for the copy that shrinks the rows that passed
+65535	33619455
+id	1	65536
+--- without the limit, they are written
+65535	33619455
+id	1	65536
+s	1	65535

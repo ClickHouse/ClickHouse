@@ -1,0 +1,20 @@
+<!-- Repeated reads of a Parquet file with the columns cache on, where a read decodes only some rows of a chunk: the
+     columns read after a PREWHERE step, and the columns lazy materialization reads for the requested rows. Such rows
+     are cached under their set, so every run after the first reads them from the cache. -->
+<test>
+    <settings>
+        <use_columns_cache>1</use_columns_cache>
+        <max_threads>4</max_threads>
+    </settings>
+
+    <fill_query>
+        INSERT INTO FUNCTION file('test_parquet_partial_rows.parquet', Parquet)
+        SELECT * FROM hits_10m_single
+        SETTINGS output_format_parquet_row_group_size = 500000, engine_file_truncate_on_insert = 1
+    </fill_query>
+    <!-- A local file is cached only once it has not been modified for 3 seconds. -->
+    <fill_query>SELECT sleep(3) FORMAT Null</fill_query>
+
+    <query>SELECT count(), sum(length(URL)), sum(length(Title)), sum(length(Referer)) FROM file('test_parquet_partial_rows.parquet') WHERE SearchPhrase != '' FORMAT Null</query>
+    <query>SELECT * FROM file('test_parquet_partial_rows.parquet') ORDER BY WatchID LIMIT 10000 FORMAT Null</query>
+</test>
