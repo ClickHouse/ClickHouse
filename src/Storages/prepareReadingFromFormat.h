@@ -25,8 +25,8 @@ namespace DB
         Block source_header;
         /// Header that will be passed to IInputFormat to read data from file.
         /// Superset of requested_columns.
-        /// It can contain more columns than were requested if format doesn't support
-        /// reading subset of columns.
+        /// It also has the columns the defaults of the read columns use, and all columns
+        /// if format doesn't support reading subset of columns.
         Block format_header;
         /// Description of columns for format_header. Used for inserting defaults.
         ColumnsDescription columns_description;
@@ -48,6 +48,8 @@ namespace DB
         /// reads: the format may read only that side and fill the other with defaults. Not serialized: without them the whole map is read.
         NameSet map_columns_read_by_keys;
         NameSet map_columns_read_by_values;
+        /// Hive partition columns read by a `DEFAULT` of `columns_description`, given to `AddingDefaultsTransform`. Not serialized.
+        NamesAndTypesList hive_partition_columns_read_by_defaults;
 
         /// The serialization version of the enclosing step (`ctx.step_version`) since which `columns_added_after_format`
         /// is written. The step that serializes this structure (`ReadFromObjectStorage`) has to register this version in

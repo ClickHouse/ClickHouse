@@ -53,6 +53,48 @@ bool isSameOrNestedColumn(const String & lhs, const String & rhs)
     return lhs == rhs || is_nested_in(lhs, rhs) || is_nested_in(rhs, lhs);
 }
 
+/// Appends the file columns that the defaults of `columns` read, transitively: `AddingDefaultsTransform` evaluates
+/// the default of a column missing in a file from the columns the format reads.
+void addFileColumnsReadByDefaults(
+    NamesAndTypesList & columns,
+    const ColumnsDescription & storage_columns,
+    const NamesAndTypesList & file_columns,
+    const UnorderedMapWithMemoryTracking<std::string, DataTypePtr> & hive_partition_columns)
+{
+    NameSet names;
+    for (const auto & column : columns)
+        names.insert(column.name);
+    NameSet file_column_names;
+    for (const auto & column : file_columns)
+        file_column_names.insert(column.name);
+    auto is_file_column = [&](const String & name) { return file_column_names.contains(name) && !hive_partition_columns.contains(name); };
+
+    /// Appending to a list keeps the iterator valid, so the appended columns are visited as well.
+    for (auto it = columns.begin(); it != columns.end(); ++it)
+    {
+        const String storage_name = it->getNameInStorage();
+        auto column_default = storage_columns.getDefault(storage_name);
+        if (!column_default || !is_file_column(storage_name))
+            continue;
+        /// A default is evaluated for the whole column, so its subcolumns are read through it.
+        if (it->name != storage_name)
+        {
+            if (names.insert(storage_name).second)
+                columns.push_back(storage_columns.getPhysical(storage_name));
+            continue;
+        }
+        RequiredSourceColumnsVisitor::Data columns_context;
+        auto expression = column_default->expression->clone();
+        RequiredSourceColumnsVisitor(columns_context).visit(expression);
+        for (const auto & input : columns_context.requiredColumns())
+        {
+            auto input_column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, input);
+            if (input_column && is_file_column(input_column->getNameInStorage()) && names.insert(input_column->name).second)
+                columns.push_back(*input_column);
+        }
+    }
+}
+
 void setMapColumnsReadByOneSide(ReadFromFormatInfo & info, const ColumnsDescription & columns)
 {
     std::unordered_map<String, std::optional<String>> side_of_map;
@@ -141,6 +183,12 @@ ReadFromFormatInfo prepareReadingFromFormat(
 
     if (supports_subset_of_columns)
     {
+        const size_t num_requested_columns = info.requested_columns.size();
+        /// The inputs of the defaults are read but not returned: `ExtractColumnsTransform` outputs `requested_columns`.
+        addFileColumnsReadByDefaults(
+            info.requested_columns, storage_snapshot->metadata->getColumns(), columns_in_data_file,
+            hive_parameters.hive_partition_columns_to_read_from_file_path_map);
+
         if (supports_tuple_elements)
         {
             columns_to_read = filterTupleColumnsToRead(info.requested_columns);
@@ -164,6 +212,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
             }
             columns_to_read = std::move(new_columns_to_read);
         }
+        info.requested_columns.resize(num_requested_columns);
 
         /// If only virtual or hive partition columns were requested, just read the smallest column.
         /// Prefer a non-partition column: partition columns are dropped from the format header below.
@@ -197,6 +246,39 @@ ReadFromFormatInfo prepareReadingFromFormat(
     if (info.format_header.columns() == 0)
         for (const auto & column : info.columns_description)
             info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
+
+    NameSet unread_columns_read_by_defaults;
+    for (const auto & [_, column_default] : info.columns_description.getDefaults())
+    {
+        if (!column_default.expression)
+            continue;
+        RequiredSourceColumnsVisitor::Data columns_context;
+        auto expression = column_default.expression->clone();
+        RequiredSourceColumnsVisitor(columns_context).visit(expression);
+        for (const auto & input : columns_context.requiredColumns())
+        {
+            auto column = storage_snapshot->metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, input);
+            if (!column)
+                continue;
+            const auto name = column->getNameInStorage();
+            if (info.format_header.has(name))
+                continue;
+            auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(name);
+            if (it == hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
+                unread_columns_read_by_defaults.insert(name);
+            else if (!info.hive_partition_columns_read_by_defaults.contains(name))
+                info.hive_partition_columns_read_by_defaults.emplace_back(name, it->second);
+        }
+    }
+    /// Among the read columns, an unread column `k.null` would resolve to a subcolumn of the Hive column `k`.
+    info.hive_partition_columns_read_by_defaults.remove_if([&](const NameAndTypePair & hive_column)
+    {
+        return std::ranges::any_of(unread_columns_read_by_defaults, [&](const String & name)
+        {
+            return name.starts_with(hive_column.name + ".")
+                && hive_column.type->tryGetSubcolumnType(std::string_view(name).substr(hive_column.name.size() + 1));
+        });
+    });
 
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
@@ -390,6 +472,7 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     /// virtual columns (as in prepareReadingFromFormat), otherwise the source skips appending them
     /// to the chunk and selecting a hive column while filtering a real one fails.
     new_info.hive_partition_columns_to_read_from_file_path = info.hive_partition_columns_to_read_from_file_path;
+    new_info.hive_partition_columns_read_by_defaults = info.hive_partition_columns_read_by_defaults;
     for (const auto & column_from_file_path : new_info.hive_partition_columns_to_read_from_file_path)
         new_info.source_header.insert({column_from_file_path.type->createColumn(), column_from_file_path.type, column_from_file_path.name});
 
@@ -763,12 +846,8 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
     /// main branch. The last rule feeds itself (pinning an input can strand another default's
     /// expression), so iterate to a fixpoint.
     ///
-    /// A hive partition column is such a format-unread input: it is parsed from the file path and
-    /// appended to the chunk only after the per-file reader pipeline, where `AddingDefaultsTransform`
-    /// runs, so no branch ever sees its real value and a default over one cannot be evaluated at
-    /// all - the single-pass plan fails with `UNKNOWN_IDENTIFIER` just the same (a pre-existing
-    /// limitation of hive partitioning). Keeping such a defaulted column on the main branch
-    /// preserves the single-pass behavior exactly.
+    /// A hive partition column is such a format-unread input: only the main branch's `AddingDefaultsTransform` gets it
+    /// from the file path, so a defaulted column whose expression reads one stays on the main branch.
     ///
     /// Only the defaults that this query can actually evaluate matter: `AddingDefaultsTransform`
     /// applies a default expression solely for a column present in the block of its own branch

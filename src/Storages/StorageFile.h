@@ -501,6 +501,7 @@ private:
     NameSet map_columns_read_by_keys;
     NameSet map_columns_read_by_values;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    NamesAndTypesList hive_partition_columns_read_by_defaults;
 
     UInt64 max_block_size;
 
