@@ -911,6 +911,13 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Modifying column '{}' without changing its type is not supported by Iceberg storage", command.column_name);
+
+        if ((command.type == AlterCommand::Type::ADD_COLUMN || command.type == AlterCommand::Type::MODIFY_COLUMN)
+            && command.default_kind != ColumnDefaultKind::Default)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Column '{}' cannot be {}: special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported by Iceberg storage",
+                command.column_name, toString(command.default_kind));
     }
 }
 

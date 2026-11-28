@@ -17,6 +17,7 @@ FROM system.server_settings WHERE name = 'user_files_path';
 CREATE TABLE t (id Int64, d Decimal(5, 0), s String) ENGINE = IcebergLocal((SELECT path FROM iceberg_path), 'Parquet');
 INSERT INTO t VALUES (1, 12345, 'a');
 
+ALTER TABLE t MODIFY COLUMN d Decimal(14, 0) EPHEMERAL; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t MODIFY COLUMN d Decimal(14, 0) MATERIALIZED 1; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t MODIFY COLUMN d Nullable(Decimal(38, 0)) ALIAS '10737418.24'; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t ADD COLUMN a Nullable(Int64) ALIAS id + 1; -- { serverError BAD_ARGUMENTS }
@@ -34,6 +35,16 @@ SELECT * FROM t ORDER BY id;
 
 ALTER TABLE t MODIFY COLUMN d Decimal(14, 0);
 SELECT id, d, toTypeName(d) FROM t ORDER BY id;
+
+-- `t_stale` keeps `y` after `t` drops it, so its `IF NOT EXISTS` is skipped by ClickHouse but not by the latest Iceberg schema.
+ALTER TABLE t ADD COLUMN y Nullable(String);
+CREATE TABLE t_stale ENGINE = IcebergLocal((SELECT path FROM iceberg_path), 'Parquet');
+ALTER TABLE t DROP COLUMN y;
+ALTER TABLE t_stale ADD COLUMN IF NOT EXISTS y Nullable(String) ALIAS 'a'; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_stale;
+CREATE TABLE t2 ENGINE = IcebergLocal((SELECT path FROM iceberg_path), 'Parquet');
+DESCRIBE t2;
+DROP TABLE t2;
 
 DROP TABLE t SYNC;
 DROP TABLE iceberg_path;
