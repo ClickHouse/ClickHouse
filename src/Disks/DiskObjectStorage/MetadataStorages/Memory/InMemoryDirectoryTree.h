@@ -19,17 +19,17 @@ namespace DB
 class InMemoryDirectoryTree
 {
 public:
-    bool existsFile(const NormalizedPath & path) const;
-    bool existsDirectory(const NormalizedPath & path) const;
-    bool existsFileOrDirectory(const NormalizedPath & path) const;
+    [[nodiscard]] bool existsFile(const NormalizedPath & path) const;
+    [[nodiscard]] bool existsDirectory(const NormalizedPath & path) const;
+    [[nodiscard]] bool existsFileOrDirectory(const NormalizedPath & path) const;
 
     /// The metadata of the file at `path`, or nullptr.
     DiskObjectStorageMetadata * getMetadata(const NormalizedPath & path);
-    const DiskObjectStorageMetadata * getMetadata(const NormalizedPath & path) const;
+    [[nodiscard]] const DiskObjectStorageMetadata * getMetadata(const NormalizedPath & path) const;
 
     /// Children of the directory at `path` as full paths, in lexicographic order; throws if
     /// there is no directory there.
-    std::vector<std::string> listDirectory(const NormalizedPath & path) const;
+    [[nodiscard]] std::vector<std::string> listDirectory(const NormalizedPath & path) const;
 
     /// Insert a file at `path`, returning the metadata it displaced (if any); throws if the
     /// parent is missing or a directory occupies `path`.
@@ -70,16 +70,16 @@ private:
         std::optional<DiskObjectStorageMetadata> metadata;
         std::map<std::string, std::shared_ptr<Node>> children;
 
-        bool isFile() const { return metadata.has_value(); }
+        [[nodiscard]] bool isFile() const { return metadata.has_value(); }
     };
     using NodePtr = std::shared_ptr<Node>;
 
     /// The node at `path`, or nullptr if any component is missing or a file stands in the way.
-    NodePtr resolve(const NormalizedPath & path) const;
+    [[nodiscard]] NodePtr resolve(const NormalizedPath & path) const;
 
     /// The directory that holds `path`'s last component, plus the leaf name; throws unless
     /// every parent component exists and is a directory, or if `path` is the root.
-    std::pair<Node *, std::string> resolveParent(const NormalizedPath & path) const;
+    [[nodiscard]] std::pair<Node *, std::string> resolveParent(const NormalizedPath & path) const;
 
     NodePtr root = std::make_shared<Node>();
 };

@@ -1,0 +1,2 @@
+max_time	SimpleAggregateFunction(max, DateTime64(3))	2
+min_time	SimpleAggregateFunction(min, DateTime64(3))	2

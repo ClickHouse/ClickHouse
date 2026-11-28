@@ -64,6 +64,25 @@ FROM
 ) AS query_spans
 JOIN traced_queries USING (query_id);
 
+-- A span is logged when its thread finishes it, which can be after the client has the result: the request span of the
+-- failed request is finished after its error response is sent, a thread pool span after its job reported completion.
+-- Retry until the failed request has its request span and every span below the initiators' `query` spans has its
+-- parent logged (the span log is flushed in the background meanwhile).
+WITH trace_spans AS
+(
+    SELECT trace_id, span_id, parent_span_id, operation_name, attribute
+    FROM system.opentelemetry_span_log
+    WHERE finish_date >= yesterday() AND trace_id IN (SELECT trace_id FROM traces)
+)
+SELECT throwIf(
+    countIf(operation_name = 'InterserverIOHTTPHandler' AND trace_id IN (SELECT trace_id FROM traces WHERE label = 'failed request')) > 0
+    AND countIf(parent_span_id != 0
+        AND parent_span_id NOT IN (SELECT span_id FROM trace_spans)
+        AND parent_span_id NOT IN (SELECT parent_span_id FROM trace_spans
+            WHERE operation_name = 'query' AND attribute['clickhouse.query_id'] IN (SELECT initiator_query_id FROM traces))) = 0)
+FROM trace_spans
+FORMAT Null; -- { retry 30 until serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+
 CREATE TEMPORARY TABLE spans ENGINE = Memory AS
 SELECT
     label, span_id, parent_span_id, operation_name, kind, attribute,

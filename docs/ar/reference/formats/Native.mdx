@@ -15,9 +15,7 @@ doc_type: 'reference'
 | ----- | ----- | ---------- |
 | ✔     | ✔     |            |
 
-<div id="description">
-  ## الوصف
-</div>
+## الوصف {#description}
 
 المواصفة الرسمية الكاملة لتنسيق `Native` متاحة [هنا](/ar/resources/develop-contribute/native-protocol/format)، كما تتوفر [هنا](/ar/resources/develop-contribute/native-protocol/protocol) المواصفة المرافقة لبروتوكول `Native` — أي بروتوكول TCP الذي ينقله.
 
@@ -29,7 +27,7 @@ doc_type: 'reference'
 إذ لا يحوّل الأعمدة إلى صفوف.
 
 في هذا التنسيق، تُكتب البيانات وتُقرأ على شكل [كتل](/ar/resources/develop-contribute/introduction/architecture#block) بتنسيق ثنائي.
-ولكل كتلة، يُسجَّل عدد الصفوف، وعدد الأعمدة، وأسماء الأعمدة وأنواعها، وأجزاء الأعمدة في الكتلة، واحدًا تلو الآخر.
+ولكل كتلة، يُسجَّل عدد الصفوف، وعدد الأعمدة، وأسماء الأعمدة وأنواعها، وأجزاء الأعمدة في الكتلة، واحدًا تلو الآخر.
 
 وهذا هو التنسيق المستخدم في الواجهة الأصلية للتفاعل بين الخوادم، ولاستخدام عميل سطر الأوامر، ولعملاء C++.
 
@@ -38,9 +36,7 @@ doc_type: 'reference'
   وقد لا يكون من العملي التعامل مع هذا التنسيق بنفسك.
 </Tip>
 
-<div id="data-types-wire-format">
-  ## تنسيق أنواع البيانات wire
-</div>
+## تنسيق أنواع البيانات wire {#data-types-wire-format}
 
 تُرسَل البيانات أثناء النقل بتنسيق عمودي، ما يعني أن كل عمود يُرسَل على حدة،
 وتُرسَل جميع قيم العمود معًا في مصفوفة واحدة.
@@ -53,9 +49,7 @@ doc_type: 'reference'
   واجهة HTTP العادية من دون إصدار للبروتوكول، ولذلك لا تتضمن `BlockInfo`.
 </Note>
 
-<div id="block-structure">
-  ### بنية الكتلة
-</div>
+### بنية الكتلة {#block-structure}
 
 يعرض الاستعلام التالي عمودين، `number` و`str`، في ثلاثة صفوف:
 
@@ -97,9 +91,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="multiple-blocks">
-  ### كتل متعددة
-</div>
+### كتل متعددة {#multiple-blocks}
 
 ومع ذلك، في كثير من الحالات، لا تتسع البيانات ضمن كتلة واحدة، لذا سيرسل ClickHouse البيانات على شكل عدة كتل.
 انظر إلى الاستعلام التالي الذي يجلب صفّين مع تقليل حجم الكتلة لفرض تقسيم البيانات بحيث يكون كل صف في كتلة منفصلة:
@@ -153,9 +145,7 @@ const data = new Uint8Array([
 ]);
 ```
 
-<div id="simple-data-types">
-  ### أنواع البيانات البسيطة
-</div>
+### أنواع البيانات البسيطة {#simple-data-types}
 
 يشبه تنسيق wire لقيمة مفردة من أحد أنواع البيانات الأبسط تنسيق `RowBinary`/`RowBinaryWithNamesAndTypes`.
 تتضمن القائمة الكاملة للأنواع التي ينطبق عليها هذا الوصف ما يلي:
@@ -175,9 +165,7 @@ const data = new Uint8Array([
 
 ارجع إلى أوصاف الأنواع أعلاه في [&quot;تنسيق wire لأنواع بيانات RowBinary&quot;](/ar/reference/formats/RowBinary/RowBinary#data-types-wire-format) لمزيد من التفاصيل.
 
-<div id="complex-data-types">
-  ### أنواع البيانات المعقدة
-</div>
+### أنواع البيانات المعقدة {#complex-data-types}
 
 يختلف ترميز الأنواع التالية عن ترميز `RowBinary` و`RowBinaryWithNamesAndTypes`.
 
@@ -189,9 +177,7 @@ const data = new Uint8Array([
 * Dynamic
 * JSON
 
-<div id="nullable">
-  #### Nullable
-</div>
+#### Nullable {#nullable}
 
 في تنسيق `Native`، يسبق البيانات الفعلية في العمود القابل لأن تكون قيمته `NULL` عددٌ من البايتات يساوي عدد الصفوف في الكتلة. ويشير كل بايت من هذه البايتات إلى ما إذا كانت القيمة `NULL` أم لا. على سبيل المثال، في هذا الاستعلام، ستكون كل قيمة فردية `NULL` بدلًا من ذلك:
 
@@ -311,9 +297,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="lowcardinality">
-  #### LowCardinality
-</div>
+#### LowCardinality {#lowcardinality}
 
 على عكس [RowBinary](/ar/reference/formats/RowBinary/RowBinary#lowcardinality)، حيث يكون `LowCardinality` شفافًا، يستخدم تنسيق Native ترميزًا عموديًا قائمًا على القاموس. ويُرمَّز العمود على هيئة بادئة إصدار، ثم قاموس للقيم الفريدة، ثم Array من فهارس الأعداد الصحيحة التي تشير إلى ذلك القاموس.
 
@@ -361,9 +345,7 @@ const data = new Uint8Array([
 02 00 02 00 02              // indexes → "yes", NULL, "yes", NULL, "yes"
 ```
 
-<div id="array">
-  #### Array
-</div>
+#### Array {#array}
 
 بخلاف [RowBinary](/ar/reference/formats/RowBinary/RowBinary#array)، حيث تُسبق كل مصفوفة بعدد عناصر مُرمَّز بـ LEB128، يشفّر التنسيق Native المصفوفات على شكل تدفقين فرعيين عموديين:
 
@@ -402,9 +384,7 @@ const data = new Uint8Array([
 01 32                       // "2"
 ```
 
-<div id="map">
-  #### Map
-</div>
+#### Map {#map}
 
 يُرمَّز `Map(K, V)` على شكل `Array(Tuple(K, V))` — إزاحات المصفوفة، تليها جميع المفاتيح، ثم جميع القيم. ويختلف ذلك عن [RowBinary](/ar/reference/formats/RowBinary/RowBinary#map)، حيث تتعاقب المفاتيح والقيم في كل عنصر.
 
@@ -433,9 +413,7 @@ const data = new Uint8Array([
 0c 00 00 00 00 00 00 00    // 12
 ```
 
-<div id="variant">
-  #### Variant
-</div>
+#### Variant {#variant}
 
 بخلاف [RowBinary](/ar/reference/formats/RowBinary/RowBinary#variant)، حيث يحمل كل صف بايت المميِّز الخاص به متبوعًا بالقيمة بشكل Inline، يفصل تنسيق Native بين المميِّزات والبيانات.
 
@@ -464,9 +442,7 @@ const data = new Uint8Array([
 03 00 00 00                 // 3
 ```
 
-<div id="dynamic">
-  #### Dynamic
-</div>
+#### Dynamic {#dynamic}
 
 على عكس [RowBinary](/ar/reference/formats/RowBinary/RowBinary#dynamic)، حيث تكون كل قيمة موصوفة ذاتيًا (بادئة النوع + القيمة)، فإن تنسيق Native يُسلسِل `Dynamic` كبادئة بنية تتبعها عمود [Variant](#variant).
 
@@ -493,9 +469,7 @@ const data = new Uint8Array([
 03 00 00 00                 // UInt32: 3
 ```
 
-<div id="json">
-  #### JSON
-</div>
+#### JSON {#json}
 
 على عكس [RowBinary](/ar/reference/formats/RowBinary/RowBinary#json)، حيث يكون كل صف موصوف ذاتيًا بأسماء المسارات والقيم، فإن تنسيق Native يُسلسل `JSON` ببنية عمودية. ويكون هذا الترميز معقدًا ومعتمدًا على الإصدار: إذ يتكون من بادئة بنية تتضمن إصدار التسلسل، وأسماء المسارات الديناميكية، وتخطيط البيانات المشتركة، ثم تليها مسارات محددة النوع (كل منها على هيئة عمود مجمّع)، ومسارات ديناميكية (كل منها عمود [Dynamic](#dynamic))، وبيانات مشتركة لمسارات overflow.
 

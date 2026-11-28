@@ -18,7 +18,6 @@ INSERT INTO t_join_on_fact SELECT number, if(number = 0, '', toString(number)) F
 -- `v` is offset so a matched row is distinguishable from the default an unmatched one gets.
 INSERT INTO t_join_on_dim SELECT number, number + 1000 FROM numbers(50);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

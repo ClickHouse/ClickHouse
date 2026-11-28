@@ -228,7 +228,7 @@ allocated、active、resident、mapped memory に加え、アリーナごとお�
 
     * `GET /jemalloc/stats` — 生の `malloc_stats_print` 出力
     * `GET /jemalloc/status` — JSON 形式の profiling state (`prof_enabled`、`prof_active`、`thread_active_init`、`lg_sample`)
-    * `GET /jemalloc/profile?format={collapsed|raw}` — サーバー側で symbolization を行ってヒーププロファイルを flush し、フレームグラフの描画に適したコラプスされたスタック (デフォルト) または生の jemalloc dump を返します
+    * `GET /jemalloc/profile?format={collapsed|raw}` — サーバー側で シンボル化 を行ってヒーププロファイルを flush し、フレームグラフの描画に適したコラプスされたスタック (デフォルト)、または `system.jemalloc_profile_text` の `raw` フォーマットと同じ形式のヒーププロファイルを返します
   </Tab>
 </Tabs>
 
@@ -256,7 +256,7 @@ SELECT * FROM system.jemalloc_profile_text
 
 出力フォーマットは `jemalloc_profile_text_output_format` 設定で制御され、次の 3 つの値をサポートしています。
 
-* `raw` — jemalloc によって生成される生のヒーププロファイル。
+* `raw` — jemalloc によって生成されるヒーププロファイルです。ただし、ランタイムアドレスは公開されません。ClickHouse バイナリ内のスタックアドレスはバイナリ内のオフセットに、その他のアドレス (共有ライブラリ、JIT コード) は `0` に置換され、メモリマップ (`MAPPED_LIBRARIES`) は削除されます。`jeprof` で解析する際は ClickHouse バイナリを指定します: `jeprof /path/to/clickhouse profile.heap`。
 * `symbolized` — 関数シンボルが埋め込まれた `jeprof` 互換フォーマットです。シンボルはすでに埋め込まれているため、`jeprof` は ClickHouse バイナリがなくても出力を解析できます。
 * `collapsed` (デフォルト) — フレームグラフ互換のコラプスされたスタックです。各行に 1 つのスタックとバイト数が含まれます。
 
@@ -344,13 +344,13 @@ SETTINGS allow_introspection_functions=1
 
 ### 例: 断片化のフレームグラフを生成する {#example-fragmentation-flamegraph}
 
-同じクエリで、各 size class の無駄を、古い割り当ての数に比例させてバックトレースごとに分割し、その結果を `flamegraph.pl` 向けの collapsed フォーマットで出力することもできます。無駄はあるものの十分に古いサンプルが存在しない size class は `[unattributed]` フレームにまとめられるため、フレームグラフの合計が無駄の総量となります。`system.jemalloc_sampled_allocations` の読み取りは 1 クエリにつき 1 回にしてください。読み取るたびに新しい profile がフラッシュされるため、2 つのサブクエリからは異なるデータが見えてしまいます。
+同じクエリで、各 size class の無駄を、古い割り当ての数に比例させてバックトレースごとに分割し、その結果を `flamegraph.pl` 向けの collapsed フォーマットで出力することもできます。無駄はあるものの十分に古いサンプルが存在しない size class は `[unattributed]` フレームにまとめられるため、フレームグラフの合計が無駄の総量となります。jemalloc がスタックを巻き戻せなかったサンプルは `trace` が空になり、`[unknown]` にまとめられます。`system.jemalloc_sampled_allocations` の読み取りは 1 クエリにつき 1 回にしてください。読み取るたびに新しい プロファイル が flush されるため、2 つのサブクエリからは異なるデータが見えてしまいます。
 
 ```sql
 WITH 60e9 AS min_age_ns
 SELECT format('{} {}',
     if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
-    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), toFloat64(b.waste)))))
 FROM system.jemalloc_arena_bins AS b
 LEFT JOIN
 (
@@ -358,7 +358,7 @@ LEFT JOIN
         arena,
         size_class,
         sum(weight) AS est_old_objects,
-        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+        if(empty(trace), '[unknown]', arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';')) AS stack
     FROM system.jemalloc_sampled_allocations
     WHERE age_ns > min_age_ns
     GROUP BY arena, size_class, trace

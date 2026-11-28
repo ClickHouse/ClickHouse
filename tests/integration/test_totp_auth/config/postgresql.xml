@@ -1,0 +1,3 @@
+<clickhouse>
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>

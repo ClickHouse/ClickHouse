@@ -4,8 +4,9 @@
 namespace DB
 {
 
-MetadataStorageFromCacheObjectStorage::MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_)
+MetadataStorageFromCacheObjectStorage::MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, ObjectStoragePtr object_storage_)
     : underlying(std::move(underlying_))
+    , object_storage(std::move(object_storage_))
 {
 }
 
@@ -104,11 +105,6 @@ time_t MetadataStorageFromCacheObjectStorage::getLastChanged(const std::string &
     return underlying->getLastChanged(path);
 }
 
-bool MetadataStorageFromCacheObjectStorage::supportsChmod() const
-{
-    return underlying->supportsChmod();
-}
-
 bool MetadataStorageFromCacheObjectStorage::supportsStat() const
 {
     return underlying->supportsStat();
@@ -149,14 +145,13 @@ std::string MetadataStorageFromCacheObjectStorage::readInlineDataToString(const 
     return underlying->readInlineDataToString(path);
 }
 
+/// The underlying metadata storage belongs to the wrapped disk, which starts it up and shuts it down itself.
 void MetadataStorageFromCacheObjectStorage::startup()
 {
-    underlying->startup();
 }
 
 void MetadataStorageFromCacheObjectStorage::shutdown()
 {
-    underlying->shutdown();
 }
 
 void MetadataStorageFromCacheObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
@@ -240,10 +235,70 @@ bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBlobs(const StoredO
     return objects_to_remove.containsAny(blobs);
 }
 
+bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBatches(const BatchIds & batch_ids) const
+{
+    return underlying->hasPendingRemovalBatches(batch_ids);
+}
+
 int64_t MetadataStorageFromCacheObjectStorage::getDeadBlobsQueueEstimate()
 {
     std::lock_guard guard(removed_objects_mutex);
     return std::ssize(objects_to_remove);
+}
+
+bool MetadataStorageFromCacheObjectStorage::hasDeadBlobsQueue() const
+{
+    /// This must not be delegated to the wrapped storage: this wrapper has a queue of its own. Every commit
+    /// moves the blobs that the wrapped storage removed into `objects_to_remove`, so that the blob killer
+    /// drops the stale cache entries for them. That is exactly what a cached `plain` or `plain_rewritable`
+    /// disk needs, where blob paths are not random and a new file reuses the path of a deleted one.
+    /// The checks below only tell whether new blobs can be queued from now on. The disk may have been
+    /// reloaded as read-only after some blobs were already queued, and the queue is kept only in memory,
+    /// so as long as it is not empty, it has to be drained, otherwise the stale cache entries would survive.
+    {
+        std::lock_guard guard(removed_objects_mutex);
+        if (objects_to_remove.size() > 0)
+            return true;
+    }
+
+    /// A read-only storage never removes anything, so nothing is ever queued for it.
+    if (underlying->isReadOnly())
+        return false;
+
+    /// `plain` and `plain_rewritable` answer `isReadOnly` with `false` even over a read-only object storage.
+    /// A storage that removes its blobs synchronously has to write to the object storage for that, so over
+    /// a read-only one it never removes anything either. A storage with a deferred removal queue of its own
+    /// (`local`) may still commit a removal, so the queue is kept for it.
+    /// The object storage is asked every time: its `readonly` setting can change on config reload.
+    /// `BlobKillerThread` re-evaluates this after every round and after the object storage got the new
+    /// settings, and a commit that is still in flight during the reload wakes it up in `submitForRemoval`.
+    if (object_storage->isReadOnly() && !underlying->hasDeadBlobsQueue())
+        return false;
+
+    return true;
+}
+
+void MetadataStorageFromCacheObjectStorage::setDeadBlobsQueuedCallback(std::function<void()> callback)
+{
+    std::lock_guard guard(dead_blobs_queued_callback_mutex);
+    dead_blobs_queued_callback = std::move(callback);
+}
+
+void MetadataStorageFromCacheObjectStorage::submitForRemoval(const StoredObjects & blobs)
+{
+    if (blobs.empty())
+        return;
+
+    {
+        std::lock_guard guard(removed_objects_mutex);
+        objects_to_remove.submitForRemoval(blobs);
+    }
+
+    /// Called after the blobs are queued, so `hasDeadBlobsQueue` already answers `true` in the woken up round.
+    /// The mutex is held during the call, so that the callback is not unregistered while it is running.
+    std::lock_guard guard(dead_blobs_queued_callback_mutex);
+    if (dead_blobs_queued_callback)
+        dead_blobs_queued_callback();
 }
 
 IMetadataStorage::BlobsToReplicate MetadataStorageFromCacheObjectStorage::getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count)
@@ -259,6 +314,11 @@ int64_t MetadataStorageFromCacheObjectStorage::recordAsReplicated(const BlobsToR
 bool MetadataStorageFromCacheObjectStorage::hasUnreplicatedBlobs(const Location & location_to_check)
 {
     return underlying->hasUnreplicatedBlobs(location_to_check);
+}
+
+bool MetadataStorageFromCacheObjectStorage::hasMissingBlobsQueue() const
+{
+    return underlying->hasMissingBlobsQueue();
 }
 
 void MetadataStorageFromCacheObjectStorage::updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description)
@@ -295,11 +355,7 @@ MetadataStorageFromCacheObjectStorageTransaction::MetadataStorageFromCacheObject
 void MetadataStorageFromCacheObjectStorageTransaction::commit(const TransactionCommitOptionsVariant & options)
 {
     underlying->commit(options);
-
-    {
-        std::lock_guard guard(metadata_storage.removed_objects_mutex);
-        metadata_storage.objects_to_remove.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
-    }
+    metadata_storage.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
 }
 
 TransactionCommitOutcomeVariant MetadataStorageFromCacheObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant & options)
@@ -307,10 +363,7 @@ TransactionCommitOutcomeVariant MetadataStorageFromCacheObjectStorageTransaction
     auto result = underlying->tryCommit(options);
 
     if (isSuccessfulOutcome(result))
-    {
-        std::lock_guard guard(metadata_storage.removed_objects_mutex);
-        metadata_storage.objects_to_remove.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
-    }
+        metadata_storage.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
 
     return result;
 }
@@ -328,16 +381,6 @@ void MetadataStorageFromCacheObjectStorageTransaction::writeInlineDataToFile(con
 void MetadataStorageFromCacheObjectStorageTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
 {
     underlying->setLastModified(path, timestamp);
-}
-
-bool MetadataStorageFromCacheObjectStorageTransaction::supportsChmod() const
-{
-    return underlying->supportsChmod();
-}
-
-void MetadataStorageFromCacheObjectStorageTransaction::chmod(const String & path, mode_t mode)
-{
-    underlying->chmod(path, mode);
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::setReadOnly(const std::string & path)
@@ -403,6 +446,11 @@ void MetadataStorageFromCacheObjectStorageTransaction::recordBlobsReplication(co
 StoredObjects MetadataStorageFromCacheObjectStorageTransaction::getSubmittedForRemovalBlobs()
 {
     return underlying->getSubmittedForRemovalBlobs();
+}
+
+BatchIds MetadataStorageFromCacheObjectStorageTransaction::getSubmittedForRemovalBatches()
+{
+    return underlying->getSubmittedForRemovalBatches();
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)

@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/62464
-SET enable_analyzer = 1;
 
 SELECT n, [number] AS inter FROM (
    SELECT toFloat32(number % 10) AS n, number

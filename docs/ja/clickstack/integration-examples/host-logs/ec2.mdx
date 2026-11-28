@@ -7,18 +7,16 @@ doc_type: 'guide'
 keywords: ['EC2', 'AWS', 'ホストログ', 'systemd', 'syslog', 'OTel', 'ClickStack', 'システム監視', 'クラウドメタデータ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
   **要点**
 
-  OpenTelemetry Collector を使用して、EC2 のシステムログを自動的に EC2 メタデータ (インスタンス ID、リージョン、AZ、インスタンスタイプ) でエンリッチし、ClickStack に収集・可視化します。デモデータセットとあらかじめ用意されたダッシュボードも含まれています。
+  OpenTelemetry Collector を使用して、EC2 のシステムログを自動的に EC2 メタデータ (インスタンス ID、リージョン、AZ、インスタンスタイプ) でエンリッチメントし、ClickStack に収集・可視化します。デモデータセットとあらかじめ用意されたダッシュボードも含まれています。
 </Info>
 
 <div id="existing-ec2">
-  ## 既存のEC2インスタンスとのインテグレーション
+  ## 既存のEC2インスタンスとのインテグレーション {#existing-ec2}
 </div>
 
 このセクションでは、システムログを収集し、EC2メタデータを自動的に付与して ClickStack に送信するために、EC2インスタンスへ OpenTelemetry Collector をインストールする方法を説明します。この分散アーキテクチャは本番環境での利用を前提としており、複数のインスタンスへスケールできます。
@@ -32,7 +30,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 本番インスタンスを構成する前に EC2 ホストログのインテグレーションを試したい場合は、[&quot;デモデータセット&quot;](/ja/clickstack/integration-examples/host-logs/ec2#demo-dataset) セクションにある事前構成済みのセットアップとサンプルデータでテストできます。
 
 <div id="prerequisites">
-  ##### 前提条件
+  ##### 前提条件 {#prerequisites}
 </div>
 
 * ClickStack インスタンスが稼働中であること (オンプレミス、クラウド、またはローカル環境のいずれでも可)
@@ -278,8 +276,8 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step title="HyperDX でログを確認する" id="verifying-logs">
-    collector が起動したら、HyperDX にログインし、EC2 メタデータ付きのログが流れていることを確認します。
+  <Step title="ClickStack UI でログを確認する" id="verifying-logs">
+    collector が起動したら、ClickStack UI にログインし、EC2 メタデータ付きのログが流れていることを確認します。
 
     1. Search view に移動します
     2. ログソースを `Logs` に設定します
@@ -292,14 +290,22 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
        * `host.type` (インスタンスタイプ)
        * `cloud.availability_zone`
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view.webp" alt="EC2 ログの Search view" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![EC2 ログの Search view](/images/clickstack/host-logs/ec2/search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view.webp" alt="メタデータが表示された EC2 ログの詳細" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![メタデータが表示された EC2 ログの詳細](/images/clickstack/host-logs/ec2/log-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## デモデータセット
+  ## デモデータセット {#demo-dataset}
 </div>
 
 本番環境のインスタンスを構成する前に EC2 ホストログのインテグレーションを試したい方向けに、シミュレーションされた EC2 メタデータを含むデモデータセットを用意しています。
@@ -404,27 +410,35 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
       -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
       -v "$(pwd)/ec2-host-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
       -v "$(pwd)/journal.log:/tmp/host-demo/journal.log:ro" \
-      docker.hyperdx.io/hyperdx/hyperdx-all-in-one:latest
+      clickhouse/clickstack-all-in-one:latest
     ```
   </Step>
 
-  <Step title="HyperDX でログを確認する" id="verify-demo-logs">
+  <Step title="ClickStack UI でログを確認する" id="verify-demo-logs">
     collector が起動したら、次の手順を実行します。
 
-    1. [HyperDX](http://localhost:8080/) を開き、アカウントにログインします (必要に応じて先にアカウントを作成してください)
+    1. [ClickStack UI](http://localhost:8080/) を開き、アカウントにログインします (必要に応じて先にアカウントを作成してください)
     2. 検索ビューに移動し、ログソースを `Logs` に設定します
     3. 時間範囲を **2025-11-10 00:00:00 - 2025-11-13 00:00:00** に設定します
     4. `source:ec2-demo` で絞り込みます
     5. ログエントリを展開し、リソース属性に含まれる EC2 メタデータを確認します
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view-demo.webp" alt="EC2 ログの検索ビュー" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![EC2 ログの検索ビュー](/images/clickstack/host-logs/ec2/search-view-demo.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view-demo.webp" alt="メタデータ付きの EC2 ログ詳細" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![メタデータ付きの EC2 ログ詳細](/images/clickstack/host-logs/ec2/log-view-demo.webp)
+      </Frame>
+    </div>
 
     <Info>
       **タイムゾーン表示**
 
-      HyperDX はタイムスタンプをブラウザーのローカルタイムゾーンで表示します。デモデータの期間は **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** です。時間範囲を広めに設定しているため、どの地域からでもデモログを確認できます。ログが表示されたら、可視化を見やすくするために期間を 24 時間まで絞り込めます。
+      ClickStack UI はタイムスタンプをブラウザーのローカルタイムゾーンで表示します。デモデータの期間は **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** です。時間範囲を広めに設定しているため、どの地域からでもデモログを確認できます。ログが表示されたら、可視化を見やすくするために期間を 24 時間まで絞り込めます。
     </Info>
 
     以下を含む、シミュレートされた EC2 コンテキストを持つログが表示されるはずです。
@@ -436,9 +450,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## ダッシュボードと可視化
-</div>
+## ダッシュボードと可視化 {#dashboards}
 
 ClickStack で EC2 ホストログの監視をすぐに始められるよう、クラウドコンテキストを含む主要な可視化を用意しています。
 
@@ -448,20 +460,32 @@ ClickStack で EC2 ホストログの監視をすぐに始められるよう、�
   </Step>
 
   <Step title="あらかじめ用意されたダッシュボードをインポートする" id="import-dashboard">
-    1. HyperDX を開き、Dashboards セクションに移動します
+    1. ClickStack UI を開き、Dashboards セクションに移動します
     2. 右上の三点メニューから **Import Dashboard** をクリックします
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードのインポートボタン" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ダッシュボードのインポートボタン](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
     3. `host-logs-dashboard.json` ファイルをアップロードし、**Finish Import** をクリックします
 
-    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="インポートの完了" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![インポートの完了](/images/clickstack/host-logs/import-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="ダッシュボードを表示する" id="created-dashboard">
     ダッシュボードは、すべての可視化があらかじめ設定された状態で作成されます。
 
-    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="EC2 ログダッシュボード" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![EC2 ログダッシュボード](/images/clickstack/host-logs/host-logs-dashboard.webp)
+      </Frame>
+    </div>
 
     ダッシュボードの可視化は、EC2 コンテキストで絞り込めます。
 
@@ -476,11 +500,11 @@ ClickStack で EC2 ホストログの監視をすぐに始められるよう、�
 </Steps>
 
 <div id="troubleshooting">
-  ## トラブルシューティング
+  ## トラブルシューティング {#troubleshooting}
 </div>
 
 <div id="no-metadata">
-  ### ログにEC2メタデータが表示されない
+  ### ログにEC2メタデータが表示されない {#no-metadata}
 </div>
 
 **EC2メタデータサービスにアクセスできることを確認してください。**
@@ -508,9 +532,7 @@ sudo journalctl -u otelcol-contrib -f | grep -i "ec2\|metadata\|resourcedetectio
 # フォアグラウンドで実行している場合は、stdoutを確認する
 ```
 
-<div id="no-logs">
-  ### HyperDX にログが表示されない
-</div>
+### ClickStack UI にログが表示されない {#no-logs}
 
 **syslog ファイルが存在し、書き込みが行われていることを確認します。**
 
@@ -528,24 +550,24 @@ cat /var/log/syslog | head -20
 **ClickStack へのネットワーク接続を確認する:**
 
 ```bash
-# OTLPエンドポイントをテスト
+# Test OTLP endpoint
 curl -v http://YOUR_CLICKSTACK_HOST:4318/v1/logs
 
-# レスポンスが返ってくれば（エラーでも可）、エンドポイントに到達できている
+# Should get a response (even if error, means endpoint is reachable)
 ```
 
 **collector のログにエラーがないか確認する:**
 
 ```bash
-# フォアグラウンドで実行している場合
-# 標準出力のエラーメッセージを確認する
+# If running in foreground
+# Look for error messages in stdout
 
-# systemd サービスとして実行している場合
+# If running as systemd service
 sudo journalctl -u otelcol-contrib -f | grep -i "error\|failed"
 ```
 
 <div id="logs-not-parsing">
-  ### ログが正しくパースされない
+  ### ログが正しくパースされない {#logs-not-parsing}
 </div>
 
 **syslog のフォーマットを確認してください:**
@@ -567,7 +589,7 @@ tail -5 /var/log/messages
 フォーマットが一致しない場合は、使用しているディストリビューションに応じて、[collector 設定の作成](#create-config) セクションで該当する設定タブを使用してください。
 
 <div id="systemd-issues">
-  ### systemd サービスとして collector が起動しない
+  ### systemd サービスとして collector が起動しない {#systemd-issues}
 </div>
 
 **サービスの状態を確認します。**
@@ -589,7 +611,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * ログファイルの読み取り権限の問題
 
 <div id="next-steps">
-  ## 次のステップ
+  ## 次のステップ {#next-steps}
 </div>
 
 * 重要なシステムイベント (サービス障害、認証の失敗、ディスク警告) に対する[アラート](/ja/clickstack/features/alerts)を設定します
@@ -597,8 +619,6 @@ sudo journalctl -u otelcol-contrib -n 50
 * EC2 のホストログをアプリケーションログと相関付け、総合的なトラブルシューティングを行います
 * セキュリティ監視 (SSH 接続の試行、sudo の使用、ファイアウォールによるブロック) 向けにカスタムダッシュボードを作成します
 
-<div id="going-to-production">
-  ## 本番環境への移行
-</div>
+## 本番環境への移行 {#going-to-production}
 
 このガイドでは、ホストレベルの監視における本番環境の推奨構成として、OpenTelemetry Collector を EC2 インスタンスに直接インストールします。多数のインスタンスにわたって collector を管理する場合は、構成管理ツール (Ansible、Chef、Puppet) や、Kubernetes 環境では OpenTelemetry Operator の利用を検討してください。本番環境向けの設定については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

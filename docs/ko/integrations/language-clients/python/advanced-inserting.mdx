@@ -11,7 +11,9 @@ doc_type: 'reference'
 
 ### InsertContexts {#insertcontexts}
 
-ClickHouse Connect는 Native 형식 삽입 작업과 `insert`, `insert_df` 메서드를 `InsertContext` 내에서 실행합니다. `insert_arrow`, `insert_df_arrow`, `raw_insert` 메서드는 payload를 직접 전송하며 `InsertContext`를 사용하지 않습니다. `InsertContext`에는 클라이언트 `insert` 메서드에 인수로 전달되는 모든 값이 포함됩니다. 또한 `InsertContext`가 처음 생성될 때 ClickHouse Connect는 효율적인 Native 형식 삽입에 필요한 대상 컬럼의 데이터 타입을 가져옵니다. 여러 번의 삽입에 `InsertContext`를 재사용하면 이러한 &quot;사전 쿼리&quot;를 수행하지 않아도 되므로, 삽입을 더 빠르고 효율적으로 실행할 수 있습니다.
+ClickHouse Connect는 네이티브 형식 삽입 작업과 `insert`, `insert_df` 메서드를 `InsertContext` 내에서 실행합니다. `insert_arrow`, `insert_df_arrow`, `raw_insert` 메서드는 payload를 직접 전송하며 `InsertContext`를 사용하지 않습니다. `InsertContext`에는 클라이언트 `insert` 메서드에 인수로 전달되는 모든 값이 포함됩니다. 또한 `InsertContext`가 처음 생성될 때 ClickHouse Connect는 효율적인 네이티브 형식 삽입에 필요한 대상 컬럼의 데이터 타입을 가져옵니다. 여러 번의 삽입에 `InsertContext`를 재사용하면 이러한 &quot;사전 쿼리&quot;를 수행하지 않아도 되므로, 삽입을 더 빠르고 효율적으로 실행할 수 있습니다.
+
+내부적으로 실행되는 `DESCRIBE TABLE`은 서버가 생성한 자체 쿼리 ID를 사용하는 반면, `INSERT`는 삽입별 설정이나 클라이언트 기본값에 지정된 `query_id`를 그대로 사용합니다.
 
 `InsertContext`는 클라이언트 `create_insert_context` 메서드로 가져올 수 있습니다. 이 메서드는 `context` 자체를 제외하고 `insert` 함수와 동일한 인수를 받습니다. 재사용 시에는 `InsertContext`의 `data` 속성만 수정해야 합니다. 이는 동일한 테이블에 새 데이터를 반복적으로 삽입할 때 재사용 가능한 객체를 제공하려는 목적에 부합합니다.
 
@@ -31,11 +33,23 @@ assert qr.first_row[0] == 113
 
 `InsertContext`s에는 삽입 과정에서 갱신되는 가변 상태가 포함되어 있으므로 스레드에 안전하지 않습니다.
 
+### 삽입 재시도와 중복 제거 {#insert-retries-and-deduplication}
+
+두 HTTP 클라이언트 모두 특정 원격 연결 종료가 발생하면 `insert`와 `insert_df`를 한 번 재시도할 수 있습니다. 클라이언트는 재시도를 위해 네이티브 삽입 데이터를 다시 생성합니다. `raw_insert`에 전달된 문자열 또는 bytes payload도 동일하게 재시도 대상이 됩니다. 제너레이터나 열린 파일은 다시 전송되지 않습니다. 이러한 삽입 재시도에는 `query_retries`가 사용되지 않으며, HTTP 429, 503, 504 응답에는 적용되지 않습니다.
+
+삽입 재시도는 최소 1회(at-least-once) 의미 체계를 따릅니다. 첫 번째 시도가 커밋되었으나 응답이 유실되면, 재시도 과정에서 동일한 행이 다시 삽입될 수 있습니다. 또한 첫 번째 시도가 커밋된 후에 예외가 발생할 수도 있습니다. 클라이언트는 정확히 1회(exactly-once) 삽입을 보장하지 않습니다.
+
+중복 제거 동작은 테이블 엔진, 서버 버전, 설정에 따라 달라집니다. 일반 MergeTree 테이블에서는 테이블 설정 `non_replicated_deduplication_window`를 재시도를 충분히 포괄할 수 있는 0이 아닌 값으로 설정하십시오. 기본값 `0`에서는 중복 제거가 비활성화됩니다. Replicated 및 Shared MergeTree는 삽입 중복 제거를 지원하지만, 이를 활용하기 전에 실제 적용되는 설정을 확인하십시오. 특히 ClickHouse 26.2 이전 버전이거나 이전 compatibility 설정을 사용하는 경우, 서버 측 비동기 삽입은 기본적으로 중복 제거를 수행하지 않습니다. 중복 제거는 구성된 중복 제거 윈도우 내의 삽입에만 적용됩니다.
+
+query 또는 command 메서드를 통해 전송되는 SQL `INSERT` 문은 별도의 [HTTP 재시도 정책](/ko/integrations/language-clients/python/driver-api#http-retries)을 따릅니다.
+
 ### 쓰기 포맷 {#write-formats}
 
 쓰기 포맷은 일부 타입에 대해서만 구현되어 있습니다. 대부분의 경우 ClickHouse Connect는 컬럼의 첫 번째 NULL이 아닌 데이터 값을 기준으로 올바른 쓰기 포맷을 자동으로 결정합니다. 예를 들어 `DateTime` 컬럼의 첫 번째 값이 정수이면 클라이언트는 이를 epoch 초로 처리합니다.
 
 일반적으로 쓰기 포맷을 재정의할 필요는 없지만, `clickhouse_connect.datatypes.format`의 메서드를 사용하면 전역으로 설정할 수 있습니다. `Array`, `Nullable`, `LowCardinality`와 같은 컨테이너 래퍼는 내부 타입의 포맷 동작을 그대로 유지합니다.
+
+8~64비트 정수 컬럼에 직접 삽입할 때는 float NaN과 무한대 값이 `DataError`와 함께 거부되며, 이는 널 허용 컬럼과 중첩된 값에도 동일하게 적용됩니다. 널 허용 정수 컬럼에 SQL NULL을 넣으려면 `None`을 사용하십시오. 널 허용이 아닌 정수 컬럼은 `None`을 허용하지 않습니다. `insert_df`는 어떤 코덱을 사용하든 결측값을 널 허용 정수 컬럼에는 NULL로, 널 허용이 아닌 정수 컬럼에는 0으로 기록합니다.
 
 #### 쓰기 포맷 옵션 {#write-format-options}
 
@@ -51,7 +65,7 @@ assert qr.first_row[0] == 113
 | Interval*             | int                                |                   | 값은 해당 인터벌 타입의 단위로 표현된 부호 있는 64비트 카운트입니다.                                                                                               |
 | String                | str or bytes                       |                   | 하나의 컬럼에는 텍스트 또는 bytes 중 하나만 일관되게 포함되어야 합니다.                                                                                            |
 | FixedString           | bytes                              | string            | String 값은 0 바이트로 채워집니다. 빈 bytes는 모두 0 바이트로 기록됩니다.                                                                                      |
-| Enum[8,16]            | str or int                         |                   | 레이블은 문자열 또는 해당 내부 정수 값으로 삽입합니다.                                                                                                        |
+| Enum[8,16]            | str or int                         |                   | 레이블을 문자열 또는 정수 코드로 삽입합니다. 같은 컬럼 안에서 레이블과 코드를 함께 사용할 수 있습니다.                                                                            |
 | Date                  | datetime.date or datetime.datetime | int               | 정수 값은 1970-01-01 이후 경과한 일수로 해석됩니다.                                                                                                     |
 | Date32                | datetime.date or datetime.datetime | int               | 정수 값은 부호 있는 일 오프셋으로 해석됩니다.                                                                                                             |
 | DateTime              | datetime.datetime                  | int               | 정수 값은 epoch 초로 해석됩니다.                                                                                                                  |
@@ -70,6 +84,12 @@ assert qr.first_row[0] == 113
 | MultiPoint            | Sequence[tuple]                    |                   | 각 point는 2-튜플입니다. MultiPoint 값을 삽입하려면 ClickHouse 26.8 이상이 필요합니다.                                                                       |
 | Geometry              | tuple or list                      |                   | Point 값은 2-튜플입니다. MultiPoint를 포함한 리스트 기반 값은 `typed_variant`로 감싸서 geometry 멤버를 선택하십시오.                                                  |
 | QBit                  | Sequence[float]                    |                   | 설치되어 있으면 더 빠른 비트 전치를 위해 NumPy가 자동으로 사용됩니다.                                                                                             |
+
+#### Enum 값 {#enum-values}
+
+알 수 없는 문자열 레이블이 사용되면 컬럼명과 유효하지 않은 레이블 정보를 포함한 `clickhouse_connect.driver.exceptions.DataError` 예외가 발생합니다. 이는 `Array` 및 `Tuple` 값 내부와 Pandas 데이터프레임에도 동일하게 적용됩니다. 빈 문자열은 선언된 레이블인 경우에만 유효합니다.
+
+Python 리스트로 삽입할 때 `None`은 `Nullable(Enum8(...))` 또는 `Nullable(Enum16(...))`에서만 허용됩니다. NULL을 허용하지 않는 Enum 컬럼에서는 `insert_df`가 직렬화 전에 결측값을 정수(integer) 0으로 변환합니다.
 
 #### Date 및 Date32 값 {#date-and-date32-values}
 
@@ -221,7 +241,9 @@ assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
 전역 `naive_datetime_insert` 설정은 시간대 정보가 없는 `datetime` 값의 네이티브 Python 객체 삽입 방식을 제어합니다. 또한 `DateTime64` 컬럼에서 허용하는 시간대 정보가 없는 ISO 문자열에도 적용됩니다.
 
 * `"local"`은 1.x의 기본값입니다. Python은 `.timestamp()`가 호출될 때 프로세스 시간대에 따라 값을 해석합니다. 이 설정은 기존 동작을 유지합니다.
-* `"server"`는 `DateTime` 또는 `DateTime64` 컬럼에 선언된 시간대의 실제 시각으로 값을 해석합니다. 컬럼에 시간대가 없으면 클라이언트 연결 시 보고된 서버 시간대를 사용합니다.
+* `"server"`는 `DateTime` 또는 `DateTime64` 컬럼에 선언된 시간대의 경과 시간으로 값을 해석합니다. 컬럼에 시간대가 없으면 클라이언트 연결 시 보고된 서버 시간대를 사용합니다.
+
+`"local"` 모드에서 Python 코덱을 사용할 때 Windows에서 epoch 근처 또는 그 이전 시각에 대해 `.timestamp()`가 `OSError`를 발생시키면, 드라이버는 감지한 로컬 시간대를 적용하여 재시도합니다. 과거 시간대 규칙을 반영하려면 드라이버를 가져오기 전에 `tzlocal`을 설치하거나 `TZ`를 확인 가능한 IANA 시간대 이름으로 설정하십시오. 그렇지 않으면 폴백 시 과거의 일광 절약 시간과 다른 고정 오프셋이 사용될 수 있습니다.
 
 삽입 전에 옵션을 설정하십시오. Python `datetime` 객체 또는 `DateTime64` ISO 문자열이 포함된 각 네이티브 삽입 컬럼을 직렬화할 때 이 옵션을 읽으므로, 변경 사항은 기존 클라이언트와 재사용 가능한 삽입 컨텍스트에도 적용됩니다.
 
@@ -238,9 +260,9 @@ client.insert("events", [[naive_time]], column_names=["event_time"])
 
 `"server"`를 사용하면 ClickHouse Connect는 값을 epoch로 변환하기 전에 대상 `tzinfo`를 적용합니다. IANA 시간대에는 일광 절약 시간 전환에 관한 표준 라이브러리 규칙을 따릅니다. 가을철 중복 구간에서는 datetime&#39;s `fold` 값을 사용합니다. 기본값인 `fold=0`은 전환 전 오프셋을 선택하고, `fold=1`은 전환 후 오프셋을 선택합니다. 봄철 공백 구간에도 동일한 오프셋 선택이 적용되며, 거부되거나 정규화되지 않습니다.
 
-존재하지 않는 봄철 공백 구간의 wall time은 ClickHouse 텍스트 파싱에서 다른 오프셋이 선택될 수 있으므로 wall-mode 쿼리 매개변수를 거치면 왕복 변환되지 않을 수 있습니다. 특정 시점이 중요하다면 시간대 정보를 포함하는 `datetime` 또는 유효한 wall time을 사용하십시오.
+존재하지 않는 봄철 공백 구간의 경과 시간은 ClickHouse 텍스트 파싱에서 다른 오프셋이 선택될 수 있으므로 wall-mode 쿼리 매개변수를 거치면 왕복 변환되지 않을 수 있습니다. 특정 시점이 중요하다면 시간대 정보를 포함하는 `datetime` 또는 유효한 경과 시간을 사용하십시오.
 
-이 옵션은 `datetime` 값의 네이티브 Python 객체 삽입과 `DateTime64`에서 허용하는 시간대 정보가 없는 ISO 문자열에만 적용됩니다. 시간대 정보가 없는 `datetime64`-dtype NumPy 및 Pandas 컬럼은 기존 UTC wall time 변환을 유지합니다.
+이 옵션은 `datetime` 값의 네이티브 Python 객체 삽입과 `DateTime64`에서 허용하는 시간대 정보가 없는 ISO 문자열에만 적용됩니다. 시간대 정보가 없는 `datetime64`-dtype NumPy 및 Pandas 컬럼은 기존 UTC 경과 시간 변환을 유지합니다.
 
 두 모드와 관계없이 특정 시점을 나타내려면 의도한 시간대를 적용하거나 epoch 정수를 명시적으로 제공하십시오.
 

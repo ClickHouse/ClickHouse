@@ -12,15 +12,71 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки используются для настройки сервера ClickHouse и автоматически генерируются на основе исходного кода ClickHouse.
 
-## distributed_cache_apply_throttling_settings_from_client
+## distributed_cache_apply_throttling_settings_from_client {#distributed_cache_apply_throttling_settings_from_client}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Следует ли кеш-серверу применять настройки throttling, полученные от клиента.
 
-## distributed_cache_keep_up_free_connections_ratio
+## distributed_cache_keep_up_free_connections_ratio {#distributed_cache_keep_up_free_connections_ratio}
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="Нет" />Мягкий лимит на число активных соединений, которые distributed cache старается держать незанятыми. Когда число свободных соединений становится меньше distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections, закрываются соединения с самой давней активностью, пока это число снова не превысит лимит.
 
-## distributed_cache_write_pool_size
+## distributed_cache_temporary_data_background_retry_delay_milliseconds {#distributed_cache_temporary_data_background_retry_delay_milliseconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="30000" changeable_without_restart="No" />Задержка в миллисекундах перед фоновой повторной попыткой для закоммиченных временных данных.
+
+## distributed_cache_temporary_data_cleanup_period_milliseconds {#distributed_cache_temporary_data_cleanup_period_milliseconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" changeable_without_restart="No" />Период (в миллисекундах) между очистками закоммиченных временных данных с истёкшим сроком хранения.
+
+## distributed_cache_temporary_data_confirmation_retry_delay_milliseconds {#distributed_cache_temporary_data_confirmation_retry_delay_milliseconds}
+
+<SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />Задержка в миллисекундах перед повторной попыткой подтверждения публикации закоммиченных временных данных.
+
+## distributed_cache_temporary_data_control_hello_timeout_milliseconds {#distributed_cache_temporary_data_control_hello_timeout_milliseconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="2000" changeable_without_restart="No" />Закоммиченный контроль временных данных продлевает время жизни файла не более чем до момента отправки hello по управляющему соединению + этот тайм-аут + TTL (в миллисекундах). Столько же времени после hello клиент ожидает ответ. Клиент использует собственное значение, которое считывается при создании закоммиченного файла (для фоновых продлений — при запуске). Если значения на клиенте и на сервере распределённого кэша различаются, время жизни файла всё равно не становится меньше hello + TTL.
+
+## distributed_cache_temporary_data_max_bytes_per_server {#distributed_cache_temporary_data_max_bytes_per_server}
+
+<SettingsInfoBlock type="UInt64" default_value="1099511627776" changeable_without_restart="No" />Максимальный суммарный размер (в байтах) закоммиченных временных файлов, хранящихся на одном сервере распределённого кэша. Закоммиченные временные файлы закрепляются в файловом кэше и не могут быть вытеснены, пока не будут освобождены или пока не истечёт срок их хранения, поэтому этот лимит ограничивает долю кэша, которую они могут занимать. Значение по умолчанию — 1 TiB. При достижении лимита сервер отклоняет публикацию новых закоммиченных временных файлов. `0` означает отсутствие ограничений.
+
+## distributed_cache_temporary_data_max_connections_bypassing_pool {#distributed_cache_temporary_data_max_connections_bypassing_pool}
+
+<SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="Yes" />Действует только в ClickHouse Cloud. Максимальное количество соединений на один сервер распределённого кэша, которые временные файлы могут открывать в обход пула соединений. При достижении лимита временные данные ожидают соединение из пула в течение `distributed_cache_wait_connection_from_pool_milliseconds`, а затем операция завершается ошибкой. `0` — без ограничений. Короткие управляющие обмены для закоммиченных временных данных (подтверждение, продление, освобождение) всегда открывают новое соединение и не учитываются. Можно изменить без перезапуска.
+
+## distributed_cache_temporary_data_max_control_batch_ids {#distributed_cache_temporary_data_max_control_batch_ids}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1024" changeable_without_restart="No" />Максимальное количество ID закоммиченных временных данных, которые клиент отправляет в одном управляющем запросе. Значения больше 65536 ограничиваются значением 65536 (ограничение протокола).
+
+## distributed_cache_temporary_data_max_files_per_server {#distributed_cache_temporary_data_max_files_per_server}
+
+<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />Максимальное количество закоммиченных временных файлов, которые может хранить один сервер распределённого кэша. Значение по умолчанию выбрано большим, поскольку этот лимит служит лишь страховкой, ограничивающей объём памяти для отслеживания файлов; ёмкость в основном определяется настройкой `distributed_cache_temporary_data_max_bytes_per_server`. При достижении лимита сервер отклоняет публикацию новых закоммиченных временных файлов. `0` — без ограничений.
+
+## distributed_cache_temporary_data_pool_behaviour_on_limit {#distributed_cache_temporary_data_pool_behaviour_on_limit}
+
+<SettingsInfoBlock type="DistributedCachePoolBehaviourOnLimit" default_value="allocate_bypassing_pool" changeable_without_restart="Yes" />Действует только в ClickHouse Cloud. Определяет поведение соединений distributed cache для временных данных при достижении лимита пула соединений. У временных данных нет объектного хранилища, на которое можно переключиться в качестве резервного варианта, поэтому по умолчанию вместо завершения с ошибкой открывается соединение в обход пула. Настройка применяется к временным файлам запросов и фоновых операций (слияний, резервного копирования). Короткие управляющие обмены для закоммиченных временных данных (подтверждение, продление, освобождение) всегда открывают новое соединение и не зависят от этой настройки. При значении `wait` соединение из пула ожидается в течение `distributed_cache_wait_connection_from_pool_milliseconds`, после чего операция завершается с ошибкой. Может быть изменена без перезапуска.
+
+## distributed_cache_temporary_data_renewal_period_seconds {#distributed_cache_temporary_data_renewal_period_seconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="900" changeable_without_restart="No" />Период (в секундах) между продлениями права владения закоммиченными временными данными.
+
+## distributed_cache_temporary_data_ttl_seconds {#distributed_cache_temporary_data_ttl_seconds}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="3600" changeable_without_restart="No" />Время жизни закоммиченного временного файла в секундах.
+
+## distributed_cache_warmer_max_bytes_in_queue {#distributed_cache_warmer_max_bytes_in_queue}
+
+<SettingsInfoBlock type="UInt64" default_value="107374182400" changeable_without_restart="No" />Действует только в ClickHouse Cloud. Максимальный суммарный размер диапазонов, которые механизм прогрева кэша держит в очереди для диска без локального файлового кэша; при превышении этого предела самые старые диапазоны отбрасываются (при наличии локального кэша механизм прогрева кэша использует его `max_size`). Ноль означает отсутствие ограничений.
+
+## distributed_cache_warmer_max_file_segment_size {#distributed_cache_warmer_max_file_segment_size}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="33554432" changeable_without_restart="No" />Действует только в ClickHouse Cloud. Размер диапазонов, которыми механизм прогрева кэша считывает полученную через fetch часть в distributed cache, если у диска этой части нет локального файлового кэша (при наличии локального кэша механизм прогрева использует собственный параметр `max_file_segment_size`).
+
+## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
+
+<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />Действует только в ClickHouse Cloud. Максимальное количество диапазонов, которые механизм прогрева кэша держит в очереди для диска без локального файлового кэша; при превышении этого значения самые старые диапазоны отбрасываются (при наличии локального кэша используется его параметр `max_elements`). Ноль означает отсутствие ограничения.
+
+## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />Максимальное количество запросов на запись в distributed cache, которые могут одновременно выполняться в фоновых потоках (для всех запросов). Когда этот предел достигнут, запись в write-through cache пропускается (данные всё равно записываются в объектное хранилище), поэтому она не блокируется в ожидании слота и не создаёт неограниченное число потоков. Запись временных данных не использует фоновые потоки, и этот предел на неё не влияет.
 

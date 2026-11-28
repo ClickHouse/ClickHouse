@@ -19,6 +19,47 @@ namespace DB
 /// Out of line and taking values by value: an inlined `throw` gives the per-row `insertRangeFrom` a stack canary.
 [[noreturn]] void throwInsertRangeFromOutOfBound(std::string_view column_name, size_t start, size_t length, size_t size);
 
+/// Implements `IColumn::insertFromEither` for columns of fixed-size values: appends `condition.size()` values,
+/// `src_true[i]` where `condition[i]` is non-zero and `src_false[i]` otherwise (`[0]` for a constant source).
+template <typename Container>
+void insertFromEitherFixedSize(
+    Container & res,
+    const Container & src_true,
+    bool src_true_is_const,
+    const Container & src_false,
+    bool src_false_is_const,
+    const IColumn::Filter & condition)
+{
+    const size_t rows = condition.size();
+    const size_t old_size = res.size();
+    res.resize(old_size + rows);
+
+    auto * out = res.data() + old_size;
+    const auto * true_data = src_true.data();
+    const auto * false_data = src_false.data();
+    const UInt8 * condition_data = condition.data();
+
+    /// Both values are loaded unconditionally, so that the loop is a select and can be vectorized.
+    auto select = [&]<bool true_is_const, bool false_is_const>()
+    {
+        for (size_t i = 0; i < rows; ++i)
+        {
+            const auto value_true = true_data[true_is_const ? 0 : i];
+            const auto value_false = false_data[false_is_const ? 0 : i];
+            out[i] = condition_data[i] ? value_true : value_false;
+        }
+    };
+
+    if (src_true_is_const && src_false_is_const)
+        select.template operator()<true, true>();
+    else if (src_true_is_const)
+        select.template operator()<true, false>();
+    else if (src_false_is_const)
+        select.template operator()<false, true>();
+    else
+        select.template operator()<false, false>();
+}
+
 /// Transform 64-byte mask to 64-bit mask
 inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
 {
@@ -56,9 +97,7 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
         /// Converting to `bool` lanes is `!= 0`; a comparison would depend on `-faltivec-src-compat` on PowerPC.
         const BitMask mask = __builtin_convertvector(bytes, BitMask);
 
-        UInt64 res;
-        __builtin_memcpy(&res, &mask, sizeof(res));
-        return res;
+        return std::bit_cast<UInt64>(mask);
     }
     else
     {

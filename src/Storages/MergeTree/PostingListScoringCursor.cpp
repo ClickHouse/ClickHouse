@@ -22,10 +22,14 @@ PostingListScoringCursor::PostingListScoringCursor(
     const TextIndexDocLengthsReader * doc_lengths_,
     TextIndexPostingsCache * postings_cache_,
     const String & index_id_for_cache_)
-    : PostingListCursor(stream_, info_, postings_cache_, index_id_for_cache_)
+    : PostingListCursor(stream_, info_, TextIndexScoringKind::BM25, postings_cache_, index_id_for_cache_)
     , doc_lengths(doc_lengths_)
 {
     chassert(doc_lengths);
+
+    /// A compressed posting list of an index with scoring always stores the weights.
+    if (scoring != TextIndexScoringKind::BM25)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data in text index: compressed posting list of a scoring index has no weights");
 }
 
 PostingListScoringCursor::PostingListScoringCursor(std::shared_ptr<const ScoringPostings> scoring_postings_, const TextIndexDocLengthsReader * doc_lengths_)
@@ -87,12 +91,9 @@ void PostingListScoringCursor::decodeBlock(size_t block_idx)
         reinterpret_cast<const std::byte *>(segment.payload_buffer.data() + tf_offset),
         next_offset - tf_offset);
 
-    std::span<uint32_t> decoded_tfs_span(decoded_tfs, decoded_count);
-    block_codec->decodeBlock(compressed_tf_data, decoded_count, decoded_tfs_span);
-
-    /// Block stores `(tf - 1)`, restore the original term frequencies.
-    for (size_t i = 0; i < decoded_count; ++i)
-        decoded_tfs[i] += 1u;
+    /// With BM25 scoring the weights are the term frequencies.
+    chassert(weights_codec);
+    weights_codec->decodeBlock(compressed_tf_data, decoded_count, std::span<uint32_t>(decoded_tfs, decoded_count));
 }
 
 UInt8 PostingListScoringCursor::minDocumentLengthByte(size_t block_idx) const
@@ -104,7 +105,7 @@ UInt8 PostingListScoringCursor::maxTermFrequencyMinusOne(size_t block_idx) const
 {
     return is_embedded
         ? embedded_scoring_postings->max_tf_minus_one
-        : current_segment->block_max_tf_minus_one[block_idx];
+        : current_segment->block_max_weight_minus_one[block_idx];
 }
 
 UInt8 PostingListScoringCursor::segmentMinDocumentLengthByte() const
@@ -116,13 +117,13 @@ UInt8 PostingListScoringCursor::segmentMaxTermFrequencyMinusOne() const
 {
     return is_embedded
         ? embedded_scoring_postings->max_tf_minus_one
-        : current_segment->max_tf_minus_one;
+        : current_segment->max_weight_minus_one;
 }
 
 Float32 PostingListScoringCursor::blockMaxScore(const BM25Weight & w) const
 {
     /// The embedded cursor has no `current_segment`; its single block carries the precomputed UB pair.
-    chassert(is_embedded || (current_block < current_segment->block_count && !current_segment->block_max_tf_minus_one.empty()));
+    chassert(is_embedded || (current_block < current_segment->block_count && !current_segment->block_max_weight_minus_one.empty()));
     const size_t block_index = currentBlockIndex();
 
     return maxTermFrequencyMinusOne(block_index) == 255

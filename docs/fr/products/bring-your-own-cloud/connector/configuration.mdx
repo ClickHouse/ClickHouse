@@ -12,16 +12,16 @@ import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge
 
 Cette page présente les modifications de configuration les plus courantes après l’installation du connector. Chaque clé, avec sa valeur par défaut et sa signification, figure dans la [référence de configuration](/fr/products/bring-your-own-cloud/connector/reference/configuration) ; les options de ligne de commande figurent dans la [référence CLI](/fr/products/bring-your-own-cloud/connector/reference/cli). La création, le scaling et la suppression de services sont traités dans [services managés](/fr/products/bring-your-own-cloud/connector/managed-services).
 
-## Points de configuration {#configuration-surfaces}
+## Interfaces de configuration {#configuration-surfaces}
 
-Le connecteur dispose d&#39;un point de configuration pour chaque cible d&#39;installation.
+Le connector dispose d&#39;une interface de configuration pour chaque cible d&#39;installation.
 
 <Tabs>
   <Tab title="Kubernetes" id="surfaces-kubernetes">
     `clicklink clctl init` crée, dans le répertoire de travail, un fichier de valeurs de surcharge nommé `clicklink-values.yaml`, puis déploie le chart `clicklink-connector` avec celui-ci. Ce fichier de surcharge constitue la trace persistante de votre déploiement : relancer `init` le conserve, sauf si vous passez `--force`, afin que vos modifications soient préservées lors des nouvelles exécutions et de la récupération.
 
     <Note>
-      Les commandes d&#39;exploitation de cette page et de la page [opérations](/fr/products/bring-your-own-cloud/connector/operations) utilisent la CLI `helm`. Seule `init` intègre un client Helm.
+      Les blocs `helm upgrade` de cette page nécessitent la CLI `helm` sur votre poste de travail ; seules les commandes `init` et `connector upgrade` intègrent un client Helm.
     </Note>
 
     Modifiez le fichier de surcharge, puis appliquez-le :

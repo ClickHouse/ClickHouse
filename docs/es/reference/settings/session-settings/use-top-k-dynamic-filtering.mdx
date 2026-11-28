@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_top_k_dynamic_filtering">
-  ## use_top_k_dynamic_filtering
-</div>
+## use_top_k_dynamic_filtering {#use_top_k_dynamic_filtering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,9 +28,22 @@ Valores posibles:
 * 0 — Deshabilitado.
 * 1 — Habilitado.
 
-<div id="use_top_k_dynamic_filtering_for_variable_length_types">
-  ## use_top_k_dynamic_filtering_for_variable_length_types
-</div>
+## use_top_k_dynamic_filtering_for_single_string_sort_column {#use_top_k_dynamic_filtering_for_single_string_sort_column}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración: filtrado dinámico TopN para una única columna `String` de `ORDER BY` en una tabla `MergeTree`."}]}]} />
+
+Aplica `use_top_k_dynamic_filtering` a una tabla `MergeTree` cuando `ORDER BY` contiene una única columna `String` (también dentro de `Nullable`), incluso si `use_top_k_dynamic_filtering_for_variable_length_types` es `0`.
+
+En el caso de una columna de este tipo, el filtro también descarta las filas iguales al umbral en cuanto la mayoría de las filas de un bloque son iguales a él (por ejemplo, una columna compuesta mayoritariamente por cadenas vacías). Cada valor umbral se comprueba en un único bloque: el primero en el que la mayoría de las filas superan el filtro. Otras fuentes, como los archivos Parquet, no se ven afectadas.
+
+Valores posibles:
+
+* 0 - Deshabilitado.
+* 1 - Habilitado.
+
+## use_top_k_dynamic_filtering_for_variable_length_types {#use_top_k_dynamic_filtering_for_variable_length_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -44,7 +55,9 @@ Para estos tipos, la comparación por umbral por fila que realiza el filtro din�
 
 Cuando esta configuración es `0`, el filtrado dinámico se restringe a columnas cuyos valores tienen un tamaño máximo fijo en memoria (números, `Date`, `DateTime`, `FixedString`, `Enum`, `Nullable` de esos tipos, `Tuple` de esos tipos). Cuando se establece en `1`, el filtrado dinámico también se aplica a tipos de longitud variable.
 
-Posibles valores:
+Cuando esta configuración es `0`, las lecturas de archivos Parquet siguen omitiendo grupos de filas completos según las estadísticas de una columna de ordenación `String`; la configuración solo controla el filtro por fila.
+
+Valores posibles:
 
 * 0 — Deshabilitado.
 * 1 — Habilitado.

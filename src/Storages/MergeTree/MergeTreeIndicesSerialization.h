@@ -57,10 +57,8 @@ struct MergeTreeIndexSubstream
     {
         /// Text index postings and positions are not compressed by write buffer,
         /// because the compression is implicitly applied during building them.
-        /// Document lengths are `SmallFloat` bytes, which generic codec expand rather than compress.
-        return type != Type::TextIndexPostings
-            && type != Type::TextIndexPositions
-            && type != Type::TextIndexDocLengths;
+        /// Document lengths are quantized `SmallFloat` bytes, which also cannot be compressed efficiently.
+        return type != Type::TextIndexPostings && type != Type::TextIndexPositions && type != Type::TextIndexDocLengths;
     }
 };
 
@@ -74,7 +72,7 @@ struct MergeTreeIndexFormat
 
     explicit operator bool() const { return version != 0; }
 
-    bool hasSubstream(MergeTreeIndexSubstream::Type type) const
+    [[nodiscard]] bool hasSubstream(MergeTreeIndexSubstream::Type type) const
     {
         return std::ranges::any_of(substreams, [type](const auto & substream) { return substream.type == type; });
     }
@@ -87,10 +85,8 @@ class MergeTreeIndexGranularity;
 
 struct MergeTreeIndexSerializationState
 {
-    /// Granularity of the part the index is written to. Null for the temporary segments of the text index materialization.
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     bool can_use_adaptive_granularity = false;
-    /// Marks to prewarm the mark cache, by stream name. Marks written by the index itself must be added here too.
     PlainMarksByName * cached_marks = nullptr;
 };
 

@@ -1,10 +1,10 @@
 {
-  "icon": "/images/icons/icon-clickpipes.svg",
   "item": "ClickPipes",
+  "root": "ja/integrations/clickpipes/home",
   "pages": [
     "ja/integrations/clickpipes/home",
     {
-      "group": "ストリーミング向け ClickPipes",
+      "group": "ClickPipes for Streaming",
       "pages": [
         {
           "group": "Kafka",
@@ -37,7 +37,7 @@
       ]
     },
     {
-      "group": "オブジェクトストレージ向け ClickPipes",
+      "group": "ClickPipes for Object Storage",
       "pages": [
         {
           "group": "Amazon S3",
@@ -49,7 +49,7 @@
           ]
         },
         {
-          "group": "Google Cloud ストレージ",
+          "group": "Google Cloud Storage",
           "icon": "/images/integrations/logos/gcs.svg",
           "pages": [
             "ja/integrations/clickpipes/object-storage/google-cloud-storage/overview",
@@ -68,7 +68,7 @@
       ]
     },
     {
-      "group": "CDC 向け ClickPipes",
+      "group": "ClickPipes for CDC",
       "pages": [
         {
           "group": "Postgres",
@@ -87,7 +87,7 @@
             "ja/integrations/clickpipes/postgres/lifecycle",
             "ja/integrations/clickpipes/postgres/auth",
             {
-              "group": "操作",
+              "group": "Operations",
               "pages": [
                 "ja/integrations/clickpipes/postgres/add-table",
                 "ja/integrations/clickpipes/postgres/pause-and-resume",
@@ -99,7 +99,7 @@
               ]
             },
             {
-              "group": "ソース",
+              "group": "Source",
               "pages": [
                 "ja/integrations/clickpipes/postgres/source/managed-postgres",
                 "ja/integrations/clickpipes/postgres/source/alloydb",
@@ -128,7 +128,7 @@
             "ja/integrations/clickpipes/mysql/schema-changes",
             "ja/integrations/clickpipes/mysql/lifecycle",
             {
-              "group": "操作",
+              "group": "Operations",
               "pages": [
                 "ja/integrations/clickpipes/mysql/add-table",
                 "ja/integrations/clickpipes/mysql/pause-and-resume",
@@ -140,7 +140,7 @@
               ]
             },
             {
-              "group": "ソース",
+              "group": "Source",
               "pages": [
                 "ja/integrations/clickpipes/mysql/source/rds",
                 "ja/integrations/clickpipes/mysql/source/aurora",
@@ -163,7 +163,7 @@
             "ja/integrations/clickpipes/mongodb/lifecycle",
             "ja/integrations/clickpipes/mongodb/faq",
             {
-              "group": "操作",
+              "group": "Operations",
               "pages": [
                 "ja/integrations/clickpipes/mongodb/add-table",
                 "ja/integrations/clickpipes/mongodb/remove-table",
@@ -175,7 +175,7 @@
               ]
             },
             {
-              "group": "ソース",
+              "group": "Source",
               "pages": [
                 "ja/integrations/clickpipes/mongodb/source/atlas",
                 "ja/integrations/clickpipes/mongodb/source/generic",
@@ -189,13 +189,14 @@
           "icon": "/images/logo-bigquery.svg",
           "pages": [
             "ja/integrations/clickpipes/bigquery/overview",
-            "ja/integrations/clickpipes/bigquery/get-started"
+            "ja/integrations/clickpipes/bigquery/get-started",
+            "ja/integrations/clickpipes/bigquery/faq"
           ]
         }
       ]
     },
     {
-      "group": "プログラムからのアクセス",
+      "group": "Programmatic access",
       "icon": "code",
       "pages": [
         "ja/integrations/clickpipes/programmatic-access/openapi",
@@ -203,7 +204,15 @@
       ]
     },
     {
-      "group": "ネットワーク",
+      "group": "Security and access",
+      "icon": "shield-check",
+      "pages": [
+        "ja/integrations/clickpipes/security/aws-iam-role",
+        "ja/integrations/clickpipes/security/gcp-workload-identity"
+      ]
+    },
+    {
+      "group": "Networking",
       "icon": "network-wired",
       "pages": [
         "ja/integrations/clickpipes/networking/index",
@@ -215,6 +224,5 @@
     },
     "ja/integrations/clickpipes/monitoring",
     "ja/integrations/clickpipes/dynamodb"
-  ],
-  "root": "ja/integrations/clickpipes/home"
+  ]
 }

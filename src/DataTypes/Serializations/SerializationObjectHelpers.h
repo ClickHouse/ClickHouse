@@ -4,6 +4,9 @@
 #include <Columns/ColumnObject.h>
 #include <Common/PODArray.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Core/MergeTreeSerializationEnums.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/MarkInCompressedFile.h>
 
 namespace DB
 {
@@ -58,13 +61,13 @@ public:
     SharedDataBucketsSplitter(const IColumn & shared_data_column_, size_t start_, size_t end_, size_t num_buckets_);
 
     /// Build the shared data column for a single bucket.
-    ColumnPtr extractBucket(size_t bucket) const;
+    [[nodiscard]] ColumnPtr extractBucket(size_t bucket) const;
 
     /// Flatten the paths of a single bucket into separate per-path columns, each densified to one value
     /// per row (the stored value where the path is present, a default where it is absent), sorted by path.
     /// IMPORTANT: returned string_views reference path data inside the shared data column, which must
     /// stay alive while the result is used.
-    std::vector<std::pair<std::string_view, ColumnPtr>> flattenBucket(size_t bucket, const DataTypePtr & dynamic_type) const;
+    [[nodiscard]] std::vector<std::pair<std::string_view, ColumnPtr>> flattenBucket(size_t bucket, const DataTypePtr & dynamic_type) const;
 
 private:
     const IColumn & shared_data_column;
@@ -87,5 +90,14 @@ std::pair<ColumnPtr, DataTypePtr> createPathsIndexes(const std::unordered_map<st
 
 /// Deserialize up to limit indexes from the read buffer and collect corresponding paths to the paths_column.
 void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, VectorWithMemoryTracking<String> && paths, size_t limit);
+
+/// Write a mark as a delta of the compressed offset from the previous mark of the same stream.
+void writeMarkDelta(const MarkInCompressedFile & mark, size_t previous_compressed_offset, WriteBuffer & buf);
+MarkInCompressedFile readMarkDelta(size_t previous_compressed_offset, ReadBuffer & buf);
+
+/// Settings for the data of one path inside a chunk of the shared data or a granule of the typed shared data: serialized
+/// like a column of a Compact part, with a fresh state per unit and no statistics. The caller sets the getters.
+ISerialization::SerializeBinaryBulkSettings getObjectPathDataSerializationSettings(
+    const ISerialization::SerializeBinaryBulkSettings & settings, MergeTreeObjectSharedDataSerializationVersion nested_shared_data_version);
 
 }

@@ -1,8 +1,6 @@
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS test2;
 
-SET enable_analyzer = 1;
-
 CREATE TABLE test ( `id` UInt32, `value` LowCardinality(Nullable(String)) )
 ENGINE = MergeTree ORDER BY id;
 

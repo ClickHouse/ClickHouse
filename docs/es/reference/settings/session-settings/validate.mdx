@@ -34,16 +34,6 @@ Valores posibles:
 * 0 - No se validan los tipos de las claves en que se expande `GROUP BY ALL`.
 * 1 - Se validan, igual que un `GROUP BY` explícito valida sus propias claves.
 
-## validate_mutation_query {#validate_mutation_query}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "Nuevo SETTING para validar las consultas de mutación de forma predeterminada."}]}]} />
-
-Valida las consultas de mutación antes de aceptarlas. Las mutaciones se ejecutan en segundo plano, y ejecutar una consulta no válida puede hacer que queden atascadas y requieran intervención manual.
-
-Cambie este SETTING solo si encuentra un error incompatible con versiones anteriores.
-
 ## validate_polygons {#validate_polygons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

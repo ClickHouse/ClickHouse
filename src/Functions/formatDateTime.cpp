@@ -47,7 +47,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
@@ -984,12 +983,12 @@ public:
     {
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// A LowCardinality dictionary always contains the default value, and the empty string is not a
     /// valid time zone: executing on the dictionary as is would throw for a time zone column that
@@ -999,12 +998,12 @@ public:
     /// LowCardinality date or integer, for which the default value is harmless. Only the former
     /// has to pay for the minimal dictionary, so `tryExecuteLowCardinality` below makes that
     /// distinction and keeps the cheap dictionary-only execution for every other argument.
-    bool canBeExecutedOnDefaultArguments() const override { return execute_on_dictionary_default; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return execute_on_dictionary_default; }
 
     /// Fast path hook for `FunctionWithLowCardinalityFastPath` (see `FunctionLowCardinalityFastPath.h`).
     /// Returns nullptr to decline, in which case the call is redone with the defaults enabled, i.e.
     /// on a minimal dictionary as `canBeExecutedOnDefaultArguments` above asks for.
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     tryExecuteLowCardinality(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if (!hasLowCardinalityTypes(arguments))
@@ -1021,59 +1020,24 @@ public:
             .execute(arguments, result_type, input_rows_count, /*dry_run=*/false);
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (support_integer == SupportInteger::Yes)
-        {
-            if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3",
-                    getName(), arguments.size());
-            if (arguments.size() == 1 && !isInteger(arguments[0].type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {} when arguments size is 1. Should be integer",
-                    arguments[0].type->getName(), getName());
-            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDate32(arguments[0].type) || isDateTime64(arguments[0].type)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of first argument of function {} when arguments size is 2 or 3. "
-                                "Should be a integer or a date with time",
-                                arguments[0].type->getName(), getName());
-        }
+            return
+                "(Integer) -> DateTime"
+                " OR (Integer | Date | Date32 | DateTime | DateTime64, const String, [String]) -> String";
         else
-        {
-            if (arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                    getName(), arguments.size());
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}. Should be a date or a date with time",
-                    arguments[0].type->getName(), getName());
-        }
-
-        if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}. Must be String.",
-                arguments[1].type->getName(), getName());
-
-        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of third argument of function {}. Must be String.",
-                arguments[2].type->getName(), getName());
-
-        if (arguments.size() == 1)
-            return std::make_shared<DataTypeDateTime>();
-        return std::make_shared<DataTypeString>();
+            return "(Date | Date32 | DateTime | DateTime64, const String, [String]) -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnPtr res;
         if constexpr (support_integer == SupportInteger::Yes)
@@ -1120,7 +1084,7 @@ public:
     }
 
     /// Tries Date, Date32, DateTime and DateTime64 in order; returns nullptr if none matches.
-    ColumnPtr executeDateOrDateTime(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeDateOrDateTime(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         ColumnPtr res;
         TypeListUtils::forEach(TypeList<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64>{}, [&]<typename DataType>(TypeList<DataType>)
@@ -1132,7 +1096,7 @@ public:
     }
 
     template <typename DataType>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         auto non_const_datetime = arguments[0].column->convertToFullColumnIfConst();
         auto * times = checkAndGetColumn<typename DataType::ColumnType>(non_const_datetime.get());
@@ -1370,7 +1334,7 @@ public:
                         break;
                     }
 
-                    // Month as a integer number:
+                    // Month as an integer number:
                     // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 1-12
                     // - otherwise: print with leading zeros: i.e. 01-12
                     case 'c':
@@ -1543,7 +1507,7 @@ public:
                         break;
                     }
 
-                    // Month as a integer number (01-12)
+                    // Month as an integer number (01-12)
                     case 'm':
                     {
                         Instruction<T> instruction;
@@ -2158,7 +2122,7 @@ The example column in the table below shows formatting result for `2018-01-02 22
 | %T | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S | 22:33:44 |
 | %u | ISO 8601 weekday as number with Monday as 1 (1-7) | 2 |
 | %V | ISO 8601 week number (01-53) | 01 |
-| %w | weekday as a integer number with Sunday as 0 (0-6) | 2 |
+| %w | weekday as an integer number with Sunday as 0 (0-6) | 2 |
 | %W | full weekday name (Monday-Sunday) | Monday |
 | %y | Year, last two digits (00-99) | 18 |
 | %Y | Year | 2018 |
@@ -2331,11 +2295,12 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
 └──────────────────────────────────────────────────────────────────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_formatDateTimeInJodaSyntax = {20, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_formatDateTimeInJodaSyntax = {23, 1};
     FunctionDocumentation::Category category_formatDateTimeInJodaSyntax = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation_formatDateTimeInJodaSyntax = {description_formatDateTimeInJodaSyntax, syntax_formatDateTimeInJodaSyntax, arguments_formatDateTimeInJodaSyntax, {}, returned_value_formatDateTimeInJodaSyntax, examples_formatDateTimeInJodaSyntax, introduced_in_formatDateTimeInJodaSyntax, category_formatDateTimeInJodaSyntax};
 
     factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionFormatDateTimeInJodaSyntax>>(documentation_formatDateTimeInJodaSyntax);
+    factory.registerAlias("FORMAT_DATETIME", FunctionFormatDateTimeInJodaSyntax::name, FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_fromUnixTimestampInJodaSyntax = R"(
 This function converts a Unix timestamp to a calendar date and a time of a day.

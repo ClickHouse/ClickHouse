@@ -4,11 +4,13 @@
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <Common/RemoteHostFilter.h>
 #include <IO/Archives/ArchiveUtils.h>
+#include <IO/parseURI.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -24,7 +26,7 @@ struct URIConverter
     static void modifyURI(Poco::URI & uri, NameToNameMap mapper)
     {
         Macros macros({{"bucket", uri.getHost()}});
-        uri = macros.expand(mapper[uri.getScheme()]).empty() ? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + uri.getPathAndQuery());
+        uri = macros.expand(mapper[uri.getScheme()]).empty() ? uri : parseURI(macros.expand(mapper[uri.getScheme()]) + uri.getPathAndQuery());
     }
 };
 
@@ -49,8 +51,11 @@ String maskedURIString(const Poco::URI & uri)
     /// With `compatibility_s3_presigned_url_query_in_path` the constructor folds the query of a presigned URL
     /// into the path by percent-encoding its '?', which `toString` renders as `%3F`, so `maskPresignedURLParameters`
     /// would not see the parameters. Put the '?' back: `toString` encodes '%' itself as `%25`, so a `%3F` can only
-    /// come from a '?'.
+    /// come from a '?'. Only then put the '%' back, so a percent-encoded parameter name reads as written. Only the
+    /// path is encoded: `toString` appends a raw query as is, and a folded query leaves none.
     boost::replace_all(result, "%3F", "?");
+    if (uri.getRawQuery().empty())
+        boost::replace_all(result, "%25", "%");
     maskPresignedURLParameters(result);
     return result;
 }
@@ -64,7 +69,7 @@ String maskedQuotedString(String value)
 
 }
 
-URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style)
+URI::URI(std::string_view uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style)
 {
     /// Case when AWS Private Link Interface is being used
     /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/bucket-name/key)
@@ -76,21 +81,13 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     else
         uri_str = uri_;
 
-    uri = Poco::URI(uri_str);
+    uri = parseURI(String(uri_str));
     /// Keep a copy of how Poco parsed the original string before any mapping
-    Poco::URI original_uri(uri_str);
+    Poco::URI original_uri{String(uri_str)};
     bool looks_like_presigned = false;
-    for (const auto & [qk, qv] : original_uri.getQueryParameters())
+    for (const auto & [qk, qv] : getURIQueryParameters(original_uri))
     {
-        if (
-            qk == "versionId" ||
-            qk == "AWSAccessKeyId" ||
-            qk == "Signature" ||
-            qk == "Expires" ||
-            qk.starts_with("X-Amz-") ||
-            qk == "GoogleAccessId" ||
-            qk.starts_with("X-Goog-")
-        )
+        if (qk == "versionId" || isPresignedURLParameterName(qk))
         {
             looks_like_presigned = true;
             break;
@@ -134,7 +131,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
 
     /// Extract object version ID from query string.
     bool has_version_id = false;
-    for (const auto & [query_key, query_value] : uri.getQueryParameters())
+    for (const auto & [query_key, query_value] : getURIQueryParameters(uri))
     {
         if (query_key == "versionId")
         {
@@ -146,7 +143,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     {
         String uri_with_question_mark_encode;
         Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
-        uri = Poco::URI(uri_with_question_mark_encode);
+        uri = parseURI(uri_with_question_mark_encode);
         if (!mapper.empty())
             URIConverter::modifyURI(uri, mapper);
     }
@@ -246,19 +243,19 @@ bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bo
     return true;
 }
 
-void URI::checkRemoteHostFilter(const RemoteHostFilter & filter) const
+bool URI::checkRemoteHostFilter(const RemoteHostFilter & filter, bool throw_on_error) const
 {
     Poco::URI endpoint_uri(endpoint);
     if (filter.isBucketAllowed(endpoint_uri.getHost(), endpoint_uri.getPort(), bucket))
-        return;
+        return true;
 
-    filter.checkURL(uri);
+    return filter.checkURL(uri, throw_on_error);
 }
 
-void URI::addRegionToURI(const std::string &region)
+void URI::addRegionToURI(std::string_view region)
 {
     if (auto pos = endpoint.find(".amazonaws.com"); pos != std::string::npos)
-        endpoint = endpoint.substr(0, pos) + "." + region + endpoint.substr(pos);
+        endpoint = fmt::format("{}.{}{}", std::string_view(endpoint).substr(0, pos), region, std::string_view(endpoint).substr(pos));
 }
 
 void URI::validateBucket(const String & bucket, const Poco::URI & uri)
@@ -312,7 +309,7 @@ std::string expandRegionToAmazonPath(const std::string & region)
     if (outcome.IsSuccess())
     {
         auto uri = outcome.GetResult().GetURI();
-        return uri.GetURIString();
+        return String(uri.GetURIString());
     }
     return "https://s3." + region + ".amazonaws.com";
 }

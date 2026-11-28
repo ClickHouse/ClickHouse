@@ -1,0 +1,11 @@
+<test>
+    <!-- The first argument is heavy, another one is cheap: the cheap one is evaluated first,
+         and the heavy one only on the rows where the result is not decided yet. -->
+    <query>SELECT count() FROM numbers_mt(100000000) WHERE isValidUTF8(repeat(toString(number), 10)) AND number % 100 = 0 FORMAT Null</query>
+    <query>SELECT count() FROM numbers_mt(100000000) WHERE NOT isValidUTF8(repeat(toString(number), 10)) OR number % 100 != 0 FORMAT Null</query>
+    <query>SELECT sum(isValidUTF8(repeat(toString(number), 10)) AND number % 100 = 0) FROM numbers_mt(100000000) FORMAT Null</query>
+
+    <!-- All arguments are lazy: the ones that cannot throw are ordered by the time per decided row,
+         the third argument decides almost all rows, the second one almost none. -->
+    <query>SELECT sum(number % 3 != 0 AND intHash64(number) % 1000 != 5 AND bitAnd(number, 1023) = 7) FROM numbers_mt(300000000) SETTINGS short_circuit_function_evaluation = 'force_enable' FORMAT Null</query>
+</test>

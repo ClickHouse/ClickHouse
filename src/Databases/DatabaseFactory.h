@@ -60,6 +60,10 @@ public:
         /// True when the definition comes from a backup being restored. Weaker than `is_metadata_replay`:
         /// a backup may be crafted by the user, so it must not skip safety checks.
         bool is_restore_from_backup = false;
+
+        /// The server replays a definition it stored itself: startup metadata loading (`is_metadata_replay`,
+        /// which runs with mode `ATTACH`), `FORCE_ATTACH` or `FORCE_RESTORE`. Not a user `ATTACH DATABASE`.
+        [[nodiscard]] bool isLoadingFromExistingMetadata() const;
     };
 
     struct EngineFeatures
@@ -104,17 +108,17 @@ public:
         .has_builtin_setting_fn = nullptr,
     }, Documentation documentation = {});
 
-    const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
+    [[nodiscard]] const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
 
     /// Features of a registered database engine, or nullptr if the engine is not registered.
-    const EngineFeatures * tryGetDatabaseEngineFeatures(const String & engine_name) const;
+    [[nodiscard]] const EngineFeatures * tryGetDatabaseEngineFeatures(const String & engine_name) const;
 
-    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & engine_name) const;
+    [[nodiscard]] const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & engine_name) const;
 
     /// Returns true if the given database engine accesses external data sources.
-    bool isDatabaseExternal(const String & engine_name) const;
+    [[nodiscard]] bool isDatabaseExternal(const String & engine_name) const;
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };

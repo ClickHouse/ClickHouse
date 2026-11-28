@@ -3,7 +3,6 @@
 -- Test for projection as secondary index with multiple parts
 -- This is a regression test for https://github.com/ClickHouse/ClickHouse/issues/90953
 
-SET enable_analyzer = 1;
 SET optimize_use_projections = 1;
 SET min_table_rows_to_use_projection_index = 0;
 

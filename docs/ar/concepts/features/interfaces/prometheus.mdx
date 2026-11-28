@@ -54,15 +54,18 @@ SET enable_time_series_table = 1;
 
 `<defaults/>` يحافظ على المعالجات المضمنة لنقاط النهاية، مثل `/ping` وطلبات SQL. تتيح البادئة أعلاه الوصول إلى هذه النقاط عبر معالج واحد:
 
-| نقطة النهاية                      | الغرض                            |
-| --------------------------------- | -------------------------------- |
-| `/prometheus/api/v1/write`        | الكتابة عن بُعد في Prometheus    |
-| `/prometheus/api/v1/read`         | القراءة عن بُعد من Prometheus    |
-| `/prometheus/api/v1/query`        | استعلامات PromQL الفورية         |
-| `/prometheus/api/v1/query_range`  | استعلامات PromQL للنطاق          |
-| `/prometheus/api/v1/format_query` | تنسيق تعبير PromQL               |
-| `/prometheus/api/v1/series`       | البيانات الوصفية للسلاسل         |
-| `/prometheus/api/v1/metadata`     | البيانات الوصفية لعائلة المقاييس |
+| نقطة النهاية                             | الغرض                            |
+| ---------------------------------------- | -------------------------------- |
+| `/prometheus/api/v1/write`               | الكتابة عن بُعد في Prometheus    |
+| `/prometheus/api/v1/read`                | القراءة عن بُعد من Prometheus    |
+| `/prometheus/api/v1/query`               | استعلامات PromQL الفورية         |
+| `/prometheus/api/v1/query_range`         | استعلامات PromQL للنطاق          |
+| `/prometheus/api/v1/format_query`        | تنسيق تعبير PromQL               |
+| `/prometheus/api/v1/series`              | البيانات الوصفية لسلاسل البيانات         |
+| `/prometheus/api/v1/labels`              | أسماء الوسوم                     |
+| `/prometheus/api/v1/label/<name>/values` | قيم الوسوم                       |
+| `/prometheus/api/v1/metadata`            | البيانات الوصفية لعائلة المقاييس |
+| `/prometheus/api/v1/federate`            | اتحاد أحدث العينات               |
 
 يحذف المثال `database` و`table` من المعالج. يجب أن يتضمن كل طلب معلمة الاستعلام `table` (باستثناء `/format_query`، الذي يحلل تعبير PromQL المُعطى فقط ولا يحتاج إلى جدول). ويمكنه أيضًا تضمين `database`، أو استخدام اسم جدول مؤهل مثل `prometheus.metrics`، أو حذف قاعدة البيانات لاستخدام `default`. يتيح ذلك لمعالج واحد خدمة عدة جداول `TimeSeries`.
 
@@ -76,7 +79,7 @@ SET enable_time_series_table = 1;
 </handler>
 ```
 
-لا يمكن تجاوز جدول مُهيأ في المعالج باستخدام معاملات الطلب.
+لا يمكن تجاوز جدول مُهيأ في المعالج باستخدام معلمات الطلب.
 
 إعدادات التوجيه والمعالج:
 
@@ -109,14 +112,15 @@ remote_write:
 
 يرسل Prometheus العينات إلى جدول `prometheus.metrics`.
 
-لتجميع البيانات من عدة طلبات كتابة عن بُعد متزامنة في عدد أقل من الأجزاء، فعّل [عمليات الإدراج غير المتزامنة](/ar/reference/settings/session-settings/async-insert#async_insert) بإضافة إعداد `async_insert` إلى عنوان URL (أو بتفعيله في ملف تعريف المستخدم):
-
-```yaml
-remote_write:
-  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
-```
+لتجميع البيانات من عدة طلبات كتابة عن بُعد متزامنة في عدد أقل من الأجزاء، يستخدم ClickHouse [عمليات الإدراج غير المتزامنة](/ar/reference/settings/session-settings/async-insert#async_insert). وهي مفعّلة افتراضيًا، ويتحكم إعداد `async_insert` في عنوان URL (أو في ملف تعريف المستخدم) في تشغيلها أو إيقافها.
 
 لا يقرّ ClickHouse طلب الكتابة عن بُعد غير المتزامن إلا بعد تفريغ البيانات إلى جميع الجداول الداخلية لجدول `TimeSeries`، بغض النظر عن إعداد [`wait_for_async_insert`](/ar/reference/settings/session-settings/wait-for#wait_for_async_insert): إذ يتعامل بروتوكول الكتابة عن بُعد مع الكتابة المُقَرّ بها على أنها دائمة. وإذا أخفق التفريغ، يُرجع الطلب خطأً ويعيد Prometheus محاولة إرساله.
+
+ولأن كل طلب ينتظر اكتمال تفريغه، فإن عمليات الإدراج غير المتزامنة تحدّ من سرعة الكتابة لدى المُرسِل الواحد. يرسل Prometheus طلبًا واحدًا في كل مرة لكل مقطع كتابة عن بُعد. وعندما ترسل عدة مقاطع في الوقت نفسه، تزداد مهلة التفريغ التكيفية حتى تبلغ [`async_insert_busy_timeout_max_ms`](/ar/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)، ما لم يبلغ حجم الطلبات قيد الانتظار [`async_insert_max_data_size`](/ar/reference/settings/session-settings/async-insert#async_insert_max_data_size) أولًا. وينتظر الطلب حتى تُفرَّغ دفعته، وهو ما يحدث في غضون هذه المدة كحد أقصى من بدء الدفعة؛ لذا يكتب كل مقطع في ظل حمل مستمر ما يقارب `samples per request / async_insert_busy_timeout_max_ms`، علمًا بأن Prometheus يرسل افتراضيًا ما يصل إلى 2,000 عينة لكل طلب. ولزيادة هذا المعدل:
+
+* ارفع قيمة `max_shards` (القيمة الافتراضية 50) أو `max_samples_per_send` في `queue_config` ضمن [`remote_write`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write). يضيف Prometheus مقاطع تلقائيًا عندما يتأخر عن مواكبة البيانات، حتى يبلغ `max_shards`.
+* اخفض قيمة `async_insert_busy_timeout_max_ms` في عنوان URL أو في ملف تعريف المستخدم، مثل `&async_insert_busy_timeout_max_ms=50`. عندها تحدث عمليات التفريغ بوتيرة أعلى، وتُنشئ كل عملية تفريغ أجزاء بيانات جديدة في الجداول الداخلية.
+* عطّل عمليات الإدراج غير المتزامنة باستخدام `async_insert=0`. عندها يُنشئ كل طلب أجزاء البيانات الخاصة به في الجداول الداخلية.
 
 ## الاستعلام باستخدام PromQL {#promql-query-support}
 
@@ -164,7 +168,7 @@ curl --user default:<password> --get \
   --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
 ```
 
-يُعاد التعبير مُسلسلاً من الاستعلام المُحلَّل، مع توحيد المسافات البيضاء، وإزالة التعليقات، وحذف الأقواس الزائدة، وتحويل المدد إلى أعداد بالثواني: `sum by (job) (http_requests_total{code="200"}) / 2`. لا تقوم نقطة النهاية هذه بتقييم التعبير، لذا فهي لا تحتاج إلى المعلمتين `database` و`table`.
+يُعاد التعبير مُسلسلاً من الاستعلام المُحلَّل، مع توحيد المسافات البيضاء، وإزالة التعليقات، وحذف الأقواس الزائدة، وطباعة المدد بالوحدات التي يقبلها المحلِّل: `sum by (job) (http_requests_total{code="200"}) / 2`. تحتفظ المدة بوحداتها بدلاً من تحويلها إلى عدد من الثواني، لذا يُعاد `rate(x[5m])` كما هو `rate(x[5m])`، أما المدة التي لا تساوي عدداً صحيحاً من وحدة واحدة فتُكتب بكل الوحدات التي تلزمها، لذا يُعاد `rate(x[90s])` بالصيغة `rate(x[1m30s])`. لا تقوم نقطة النهاية هذه بتقييم التعبير، لذا فهي لا تحتاج إلى المعلمتين `database` و`table`.
 
 راجع [ميزات PromQL المدعومة](/ar/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) للاطلاع على قائمة الدالات وعوامل التجميع التي تستخدمها واجهة برمجة تطبيقات HTTP، ولهجة `promql`، ودالات الجداول.
 
@@ -190,10 +194,10 @@ datasources:
 
 يُلحق Grafana المسارَين ‎`/api/v1/query` أو ‎`/api/v1/query_range` بعنوان URL الأساسي هذا، ويضيف `customQueryParameters` إلى كل طلب.
 
-عند استخدام `httpMethod: POST`، يرسل Grafana معلمات الاستعلام في متن الطلب. ويقرأ ClickHouse متن الطلب واستعلام عنوان URL معًا، لذا يظل `customQueryParameters` ساريًا. استخدم `POST` لتعبيرات PromQL الطويلة، لأن عنوان URL له حد أقصى للطول.
+عند استخدام `httpMethod: POST`، يرسل Grafana معلمات الاستعلام في متن الطلب. ويقرأ ClickHouse متن الطلب وسلسلة استعلام URL معًا، لذا يظل `customQueryParameters` ساريًا. استخدم `POST` لتعبيرات PromQL الطويلة، لأن عنوان URL له حد أقصى للطول.
 
 <Note>
-  لا تُنفَّذ إلا نقاط نهاية الاستعلام ‎`/api/v1/query` و‎`/api/v1/query_range` و‎`/api/v1/format_query` ونقاط نهاية البيانات الوصفية ‎`/api/v1/series` و‎`/api/v1/labels` و‎`/api/v1/label/<name>/values` و‎`/api/v1/metadata`. تتطلب ‎`/api/v1/series` محدِّد سلاسل واحدًا على الأقل من `match[]`، وتدعم المعلمات الاختيارية `start` و`end` و`limit`، وتُرجع اتحاد السلاسل المطابقة لكل محدِّد. تقبل ‎`/api/v1/labels` المعلمات نفسها، مع كون `match[]` اختياريًا، وتُرجع أسماء التسميات المرتبة للسلاسل المطابقة (أو لجميع السلاسل عند عدم تقديم أي محددات). وتقبل ‎`/api/v1/label/<name>/values` المعلمات نفسها التي تقبلها ‎`/api/v1/labels` وتُرجع القيم المرتبة لتسمية واحدة، مع إمكانية استخدام `<name>` لإفلات Prometheus بصيغة `U__...` لأسماء التسميات التي تحتوي على محارف خارج النطاق `[a-zA-Z0-9_]`. تغطي نقاط النهاية هذه ما يستخدمه مصدر بيانات Prometheus في Grafana لتصفّح التسميات ومتغيرات القوالب والإكمال التلقائي في أداة إنشاء الاستعلامات.
+  لا تُنفَّذ إلا نقاط نهاية الاستعلام ‎`/api/v1/query` و‎`/api/v1/query_range` و‎`/api/v1/format_query`، ونقاط نهاية البيانات الوصفية ‎`/api/v1/series` و‎`/api/v1/labels` و‎`/api/v1/label/<name>/values` و‎`/api/v1/metadata`، ونقطة نهاية [الاتحاد](#federation) ‎`/api/v1/federate`. تتطلب ‎`/api/v1/series` محدِّد سلاسل بيانات واحدًا على الأقل من `match[]`، وتدعم المعلمات الاختيارية `start` و`end` و`limit`، وتُرجع اتحاد سلاسل البيانات المطابقة لكل محدِّد. تقبل ‎`/api/v1/labels` المعلمات نفسها، مع كون `match[]` اختياريًا، وتُرجع أسماء الوسوم المرتبة لسلاسل البيانات المطابقة (أو لجميع سلاسل البيانات عند عدم تقديم أي محددات). وتقبل ‎`/api/v1/label/<name>/values` المعلمات نفسها التي تقبلها ‎`/api/v1/labels` وتُرجع القيم المرتبة لوسم واحد، مع إمكانية استخدام `<name>` لإفلات Prometheus بصيغة `U__...` لأسماء الوسوم التي تحتوي على محارف خارج النطاق `[a-zA-Z0-9_]`. تغطي نقاط النهاية هذه ما يستخدمه مصدر بيانات Prometheus في Grafana لتصفّح الوسوم ومتغيرات القوالب والإكمال التلقائي في أداة إنشاء الاستعلامات.
 </Note>
 
 ### نقاط إدخال SQL {#sql-entry-points}
@@ -241,6 +245,23 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+## اتحاد المقاييس {#federation}
+
+يدعم ClickHouse نقطة نهاية [الاتحاد في Prometheus](https://prometheus.io/docs/prometheus/latest/federation/) على المسار `/prometheus/api/v1/federate` (أو على أي مسار ينتهي بـ `/federate` يخدمه معالج من النوع `query`). ولكل سلسلة بيانات تطابق المحدِّدات `match[]`، يُعيد أحدث عينة ضمن آخر 5 دقائق بالتنسيق النصي الخاص بـ Prometheus، ليتمكّن خادم Prometheus من سحبها:
+
+```yaml
+scrape_configs:
+  - job_name: clickhouse-federate
+    honor_labels: true
+    scheme: https
+    metrics_path: /prometheus/api/v1/federate
+    params:
+      'match[]': ['{job="node"}']
+      table: ['prometheus.metrics']
+    static_configs:
+      - targets: ['clickhouse.example.com:8443']
+```
+
 ## قراءة المقاييس عبر القراءة عن بُعد {#remote-read}
 
 يدعم ClickHouse [بروتوكول القراءة عن بُعد لـ Prometheus](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) على المسار `/prometheus/api/v1/read`.
@@ -254,3 +275,35 @@ remote_read:
       username: default
       password: <password>
 ```
+
+## قواعد التسجيل {#recording-rules}
+
+لا يُقيِّم ClickHouse ملفات قواعد Prometheus، لكن يمكن لـ[عرض مُجسَّد قابل للتحديث](/ar/reference/statements/create/view#refreshable-materialized-view) أن يؤدي دور [قاعدة التسجيل](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/)، إذ يُقيِّم تعبير PromQL وفق جدول زمني ويُلحق النتيجة بجدول `TimeSeries`. يسجّل العرض التالي `sum by (job) (rate(http_requests_total[5m]))` باسم `job:http_requests:rate5m` كل دقيقة:
+
+```sql
+CREATE MATERIALIZED VIEW prometheus.job_http_requests_rate5m
+REFRESH EVERY 1 MINUTE APPEND TO prometheus.metrics (tags, samples) AS
+SELECT
+    mapUpdate(CAST(tags, 'Map(String, String)'), map('__name__', 'job:http_requests:rate5m')) AS tags,
+    [(timestamp, value)] AS samples
+FROM prometheusQuery(prometheus.metrics, 'sum by (job) (rate(http_requests_total[5m]))', toStartOfMinute(now()));
+```
+
+في كل عملية تحديث، يُقيَّم التعبير عند بداية الدقيقة الحالية، ويُعيَّن اسم المقياس باستخدام `mapUpdate`، ثم تُلحَق عينة واحدة لكل سلسلة بيانات في النتيجة. ويمكن إضافة تسميات إضافية إلى الخريطة نفسها، مثل `map('__name__', 'job:http_requests:rate5m', 'team', 'web')`. ويُستعلَم عن سلسلة البيانات المسجَّلة كما يُستعلَم عن أي مقياس آخر:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=job:http_requests:rate5m" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+يظهر وقت آخر تقييم والخطأ الناتج عنه في [`system.view_refreshes`](/ar/reference/system-tables/view_refreshes).
+
+يختلف العرض عن قاعدة التسجيل (recording rule) في Prometheus في الجوانب التالية:
+
+* وقت التقييم هو قيمة `now()` لحظة تشغيل التحديث. وإلى جانب الجدول الزمني، يُحدَّث العرض فور إنشائه (ما لم يُنشأ باستخدام `EMPTY`)، وبعد إعادة تشغيل الخادم إذا لم تكن تحديثاته منسَّقة (إذ إن العرض الموجود خارج قاعدة بيانات بمحرك Replicated أو Shared، أو العرض المُعدّ بـ `all_replicas = 1`، لا يحتفظ بآخر تحديث له)، وكذلك عندما يستأنفه الأمر `SYSTEM START VIEW` بعد أن فاته تحديث مجدول. قرِّب `now()` إلى بداية الفاصل الزمني كما في المثال، كي لا تضيف هذه التحديثات عينات بين العينات المجدولة. ومع ذلك، قد يكتب تحديث إضافي عينة ثانية عند الطابع الزمني المُقرَّب نفسه. فمثلًا، لقاعدة مدتها خمس دقائق، استخدم `toStartOfInterval(now(), INTERVAL 5 MINUTE)`.
+* لا تُستدرَك التقييمات الفائتة. فبعد توقف الخادم أو إيقاف العرض، لا يقيّم العرض إلا الفاصل الزمني الحالي، وتبقى الفترات الزمنية السابقة فارغة. ويحدث الأمر نفسه عندما يستغرق التحديث وقتًا أطول من الفاصل الزمني.
+* لا تحصل سلسلة البيانات التي تختفي من النتيجة على وسم تقادم البيانات، لذا تظل الاستعلامات تُرجع آخر قيمة مسجلة لها طوال فترة الاسترجاع، وهي 5 دقائق افتراضيًا.
+* لا يوجد ملف قواعد، بل كل قاعدة عبارة عن عرض مستقل. كما أن القواعد لا تظهر ضمن نتائج `/api/v1/rules`.

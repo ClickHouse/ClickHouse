@@ -20,11 +20,13 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <algorithm>
 #include <array>
 #include <bit>
 #include <limits>
+#include <memory>
 #include <numeric>
 #include <optional>
 #include <utility>
@@ -67,6 +69,7 @@ CompressionCodecPtr makeMarksCompressionCodec(const String & marks_compression_c
     return CompressionCodecFactory::instance().get(marks_compression_codec);
 }
 
+/// Long stream names are replaced with hashes, as the part writer does.
 std::pair<MergeTreeIndexOutputStreams, std::vector<std::unique_ptr<MergeTreeIndexWriterStream>>>
 makeOutputStreams(
     const MergeTreeIndexSubstreams & index_substreams,
@@ -74,7 +77,8 @@ makeOutputStreams(
     const MutableDataPartStoragePtr & data_part_storage,
     const CompressionCodecPtr & default_codec,
     const String & marks_file_extension,
-    const MergeTreeWriterSettings & settings)
+    const MergeTreeWriterSettings & settings,
+    const MergeTreeSettings & storage_settings)
 {
     auto marks_compression_codec = makeMarksCompressionCodec(settings.marks_compression_codec);
     MergeTreeIndexOutputStreams streams;
@@ -82,7 +86,7 @@ makeOutputStreams(
 
     for (const auto & index_substream : index_substreams)
     {
-        auto stream_name = index_name + index_substream.suffix;
+        auto stream_name = replaceFileNameToHashIfNeeded(index_name + index_substream.suffix, storage_settings, data_part_storage.get());
 
         auto stream = std::make_unique<MergeTreeIndexWriterStream>(
             stream_name,
@@ -127,7 +131,7 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     MergeTreeWriterSettings writer_settings_,
     CompressionCodecPtr default_codec_,
     String marks_file_extension_,
-    const MergeTreeSettings & storage_settings)
+    MergeTreeSettingsPtr storage_settings_)
     : ISimpleTransform(header, header, false)
     , index_file_prefix(std::move(index_file_prefix_))
     , indexes(std::move(indexes_))
@@ -135,10 +139,11 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     , writer_settings(std::move(writer_settings_))
     , default_codec(std::move(default_codec_))
     , marks_file_extension(std::move(marks_file_extension_))
+    , storage_settings(std::move(storage_settings_))
     , segment_numbers(indexes.size(), 0)
     , estimated_allocated_bytes(indexes.size(), 0)
-    , max_processed_tokens(storage_settings[MergeTreeSetting::text_index_max_processed_tokens_before_flush])
-    , max_allocated_bytes(storage_settings[MergeTreeSetting::text_index_max_memory_usage_before_flush])
+    , max_processed_tokens((*storage_settings)[MergeTreeSetting::text_index_max_processed_tokens_before_flush])
+    , max_allocated_bytes((*storage_settings)[MergeTreeSetting::text_index_max_memory_usage_before_flush])
 {
 
     for (size_t i = 0; i < indexes.size(); ++i)
@@ -229,7 +234,8 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
         temporary_storage,
         default_codec,
         marks_file_extension,
-        writer_settings);
+        writer_settings,
+        *storage_settings);
 
     writeMarks(streams, writer_settings.can_use_adaptive_granularity);
     granule->serializeBinaryWithMultipleStreams(streams, /*state=*/ {});
@@ -248,11 +254,11 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
     auto codec_copy = PostingListCodecFactory::createPostingListCodec(codec_type);
 
     /// The index parameters already carry the version that can represent every enabled feature, so with
-    /// BM25 scoring this is `V3_WithScoring` and each token's `HasTermFrequencies` flag is valid.
-    return PostingsSerialization(std::move(codec_copy), text_index.getParams().serialization_version);
+    /// BM25 scoring this is `V3_WithScoring` and each token's `HasWeights` flag is valid.
+    return PostingsSerialization(std::move(codec_copy), text_index.getParams().serialization_version, text_index.getParams().scoring);
 }
 
-static ALWAYS_INLINE UInt32 adjustPartOffset(const MergedPartOffsets & merged_part_offsets, size_t part_index, UInt32 row_id)
+static ALWAYS_INLINE UInt32 adjustPartOffset(const MergedPartOffsets & merged_part_offsets, size_t part_index, UInt64 row_id)
 {
     UInt64 new_offset = merged_part_offsets[part_index, row_id];
 
@@ -276,20 +282,22 @@ struct MergeTextIndexesTask::PostingsMergeCursor
     size_t next_segment = 0;
     /// Decoded and remapped row ids of the current segment, or the embedded postings.
     PaddedPODArray<UInt32> row_ids;
-    /// Exact per-row term frequencies of the current segment, parallel to the row ids.
-    /// Empty when the source stores none (every `tf == 1`) or the merge is not scoring.
-    PaddedPODArray<UInt32> tfs;
+    /// Exact per-row weights of the current segment, parallel to the row ids, on the scoring path.
+    /// Filled with 1 if the source stores no weights. Empty if the merge is not scoring.
+    PaddedPODArray<UInt32> weights;
 
-    UInt32 current() const { return row_ids[pos]; }
-    bool isValid() const { return pos < row_ids.size(); }
-    std::span<const UInt32> remaining() const { return {row_ids.data() + pos, row_ids.size() - pos}; }
+    [[nodiscard]] UInt32 current() const { return row_ids[pos]; }
+    [[nodiscard]] bool isValid() const { return pos < row_ids.size(); }
+    [[nodiscard]] std::span<const UInt32> remaining() const { return {row_ids.data() + pos, row_ids.size() - pos}; }
 
-    /// Term frequencies parallel to remaining(), or an empty span when the source stores none.
-    std::span<const UInt32> remainingTfs() const
+    /// Weights of the next `count` row ids, or an empty span if the merge is not scoring.
+    [[nodiscard]] std::span<const UInt32> nextWeights(size_t count) const
     {
-        if (tfs.empty())
+        if (weights.empty())
             return {};
-        return {tfs.data() + pos, tfs.size() - pos};
+
+        chassert(pos + count <= weights.size());
+        return {weights.data() + pos, count};
     }
 };
 
@@ -306,22 +314,20 @@ struct MergeTextIndexesTask::PostingsMergeCursor
 /// Row ids are passed to the sink in chunks that are multiples of the posting list encoder granularity,
 /// buffered only where a run or a window does not align.
 ///
-/// On the scoring path every chunk comes with the per-row `(tf - 1)` parallel to its row ids. The term frequencies
-/// are converted from the exact `tf` of the cursors on the way, so on this path every chunk goes through the buffer.
+/// On the scoring path every chunk comes with the per-row weights parallel to its row ids, and every chunk goes through the buffer.
 class MergeTextIndexesTask::PostingsMergeQueue
 {
 public:
-    PostingsMergeQueue(MergeTextIndexesTask & task_, size_t max_sources, bool with_term_frequencies_)
-        : task(task_), with_term_frequencies(with_term_frequencies_), cursors(max_sources)
+    PostingsMergeQueue(MergeTextIndexesTask & task_, size_t max_sources, bool with_weights_)
+        : task(task_), with_weights(with_weights_), cursors(max_sources)
     {
         active_cursors.reserve(max_sources);
+        if (with_weights)
+            window_weights.resize(WINDOW_ROWS);
     }
 
     void push(const TokenSource & source);
-    bool isValid() const { return !active_cursors.empty(); }
-
-    /// True if any pushed source of the current token stores term frequencies; otherwise every merged `tf` is 1.
-    bool hasTermFrequencies() const { return has_term_frequencies; }
+    [[nodiscard]] bool isValid() const { return !active_cursors.empty(); }
 
     /// Passes the row ids of the active cursors to the sink in the globally sorted order.
     /// Aligned runs of a single source are passed through without copying, the rest is buffered.
@@ -344,18 +350,18 @@ private:
         UInt64 end;
 
         /// Only the smallest source has row ids in the window.
-        bool hasOneSource() const { return second_head >= end; }
+        [[nodiscard]] bool hasOneSource() const { return second_head >= end; }
     };
 
     /// Selects the window of the smallest head from active cursors.
-    Window selectWindow() const;
+    [[nodiscard]] Window selectWindow() const;
 
     /// Sets a bit in window_bits for every row id of every cursor inside the window;
-    /// on the scoring path also stores its `(tf - 1)` in window_tfs under the same bit.
+    /// on the scoring path also stores its weight in window_weights under the same bit.
     /// Returns the number of consumed row ids and the mask of non-empty words of window_bits.
     std::pair<UInt64, UInt64> consumeWindow(Window window);
 
-    /// Extracts row ids with set bits inside the window (and their `(tf - 1)`) and appends them to the buffer.
+    /// Extracts row ids with set bits inside the window (and their weights) and appends them to the buffer.
     void processWindow(Window window);
 
     /// Flushes the run of the smallest source below the second head to the sink.
@@ -363,41 +369,38 @@ private:
     void flushRun(Window window, Sink && sink);
 
     /// Flushes the row ids to the sink directly if they are aligned with append_granularity, otherwise buffers them.
-    /// On the scoring path the chunk is always buffered, converting its term frequencies to `(tf - 1)`.
+    /// On the scoring path the chunk is always buffered with its weights.
     template <typename Sink>
-    void flushDirect(std::span<const UInt32> row_ids, std::span<const UInt32> tfs, Sink && sink);
+    void flushDirect(std::span<const UInt32> row_ids, std::span<const UInt32> weights, Sink && sink);
 
     /// Flushes the aligned prefix of the buffered row ids to the sink once enough are accumulated, or all of them at the end.
     template <typename Sink>
     void flushBuffered(bool is_final, Sink && sink);
 
-    /// Appends the row ids to the buffer and, on the scoring path, their `(tf - 1)` to tfs_buffer.
-    /// An empty `tfs` means every `tf` of the chunk is 1.
-    void appendToBuffer(std::span<const UInt32> row_ids, std::span<const UInt32> tfs);
+    /// Appends the row ids to the buffer and, on the scoring path, their weights to weights_buffer.
+    void appendToBuffer(std::span<const UInt32> row_ids, std::span<const UInt32> weights);
 
     /// Loads the next segment of the exhausted cursor or drops it.
     void refill(size_t pos);
 
     MergeTextIndexesTask & task;
-    /// Whether the chunks carry `(tf - 1)`, i.e. the merge is scoring.
-    const bool with_term_frequencies;
-    /// Whether any pushed source of the current token stores term frequencies.
-    bool has_term_frequencies = false;
+    /// Whether the chunks carry weights, i.e. the merge is scoring.
+    const bool with_weights;
     /// Reusable cursors, one per source.
     std::vector<PostingsMergeCursor> cursors;
     /// Cursors of the current token that still have row ids to merge.
     std::vector<PostingsMergeCursor *> active_cursors;
     /// Bitset of the current window.
     std::array<UInt64, WINDOW_ROWS / 64> window_bits{};
-    /// `(tf - 1)` of the row ids of the current window, indexed by the bit. Used only on the scoring path.
-    std::array<UInt32, WINDOW_ROWS> window_tfs{};
+    /// Weights of the row ids of the current window, indexed by the bit, allocated only on the scoring path.
+    std::vector<UInt32> window_weights;
     /// Source of each set bit, allocated and tracked only with positions.
     std::vector<UInt32> window_sources;
     PositionsMerge * positions = nullptr;
     /// Row ids buffered for the sink.
     PaddedPODArray<UInt32> buffer;
-    /// `(tf - 1)` buffered for the sink, parallel to buffer. Used only on the scoring path.
-    PaddedPODArray<UInt32> tfs_buffer;
+    /// Weights buffered for the sink, parallel to buffer. Used only on the scoring path.
+    PaddedPODArray<UInt32> weights_buffer;
 };
 
 class MergeTextIndexesTask::PositionsMerge
@@ -416,6 +419,7 @@ private:
     struct Reader
     {
         ReadBuffer * in = nullptr;
+        std::unique_ptr<ReadBufferFromMemory> embedded_in;
         TextIndexBlockedPositionsCodec::Directory directory;
         size_t next_rank = 0;
         /// Decoded block of `next_rank`, split by `offsets`.
@@ -447,23 +451,18 @@ void MergeTextIndexesTask::PositionsMerge::start()
         if (info.cardinality == 0)
             continue;
 
-        if (!(info.header & PostingsSerialization::Flags::HasPositions))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data in text index: a source of a token with positions has no positions");
+        if (info.header & PostingsSerialization::Flags::EmbeddedPositions)
+        {
+            reader.embedded_in = std::make_unique<ReadBufferFromMemory>(info.embedded_positions.data(), info.position_bytes);
+            reader.directory = TextIndexBlockedPositionsCodec::readDirectory(*reader.embedded_in, 0, info.cardinality, info.position_bytes);
+            reader.in = reader.embedded_in.get();
+            continue;
+        }
 
         auto * stream = task.input_streams[sources[i].source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
         auto * data_buffer = stream->getDataBuffer();
 
-        /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
-        const size_t file_size = stream->getFileSize();
-        if ((info.position_bytes == 0)
-            || (info.position_offset > file_size)
-            || (info.position_bytes > file_size - info.position_offset))
-        {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
-                info.position_bytes, info.position_offset, file_size);
-        }
-
+        validateTokenPositions(info, stream->getFileSize());
         stream->seekToMark({info.position_offset, 0});
         reader.directory = TextIndexBlockedPositionsCodec::readDirectory(*data_buffer, info.position_offset, info.cardinality, info.position_bytes);
         reader.in = data_buffer;
@@ -472,7 +471,7 @@ void MergeTextIndexesTask::PositionsMerge::start()
 
 void MergeTextIndexesTask::PositionsMerge::append(size_t source_idx, size_t count)
 {
-    constexpr size_t block_docs = TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+    constexpr size_t block_size = TextIndexBlockedPositionsCodec::BLOCK_SIZE;
     auto & reader = readers[source_idx];
 
     if (!reader.in || reader.next_rank + count > reader.directory.num_docs)
@@ -481,12 +480,12 @@ void MergeTextIndexesTask::PositionsMerge::append(size_t source_idx, size_t coun
 
     for (; count > 0; --count, ++reader.next_rank)
     {
-        const size_t local_rank = reader.next_rank % block_docs;
+        const size_t local_rank = reader.next_rank % block_size;
 
         /// Blocks follow the directory back to back, so the stream is at the next block.
         if (local_rank == 0)
         {
-            const size_t block_idx = reader.next_rank / block_docs;
+            const size_t block_idx = reader.next_rank / block_size;
             block_ranks.resize(reader.directory.docsInBlock(block_idx));
             std::iota(block_ranks.begin(), block_ranks.end(), UInt32{0});
 
@@ -521,10 +520,7 @@ void MergeTextIndexesTask::PositionsMerge::finish(TokenPostingsInfo & token_info
     }
 
     auto * positions_stream = task.output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
-    token_info.header |= PostingsSerialization::Flags::HasPositions;
-    token_info.position_offset = positions_stream->plain_hashing.count();
-    encoder->finalize(positions_stream->plain_hashing);
-    token_info.position_bytes = positions_stream->plain_hashing.count() - token_info.position_offset;
+    TextIndexSerialization::serializePositions(token_info, positions_stream->plain_hashing, [&](WriteBuffer & out) { encoder->finalize(out); });
     encoder.reset();
 }
 
@@ -561,6 +557,8 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
+    const auto storage_settings = new_data_part->storage.getSettings();
+
     /// Registered here rather than inside `makeOutputStreams`: the other caller writes temporary
     /// segments into a different directory and must claim nothing in this part.
     if (writer_settings.stream_base_manifest)
@@ -568,7 +566,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         const String index_file_name = index_ptr->getFileName();
         for (const auto & substream : index_ptr->getSubstreams())
             writer_settings.stream_base_manifest->registerStreamBase(
-                index_file_name + substream.suffix,
+                replaceFileNameToHashIfNeeded(index_file_name + substream.suffix, *storage_settings, &new_data_part->getDataPartStorage()),
                 {StreamBaseManifest::Kind::SkipIndex, index_ptr->index.name});
     }
 
@@ -578,7 +576,8 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         new_data_part->getDataPartStoragePtr(),
         new_data_part->default_codec,
         new_data_part->getMarksFileExtension(),
-        writer_settings);
+        writer_settings,
+        *storage_settings);
 
     auto substreams = index_ptr->getSubstreams();
 
@@ -587,7 +586,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         for (const auto & substream : substreams)
         {
             /// The merge reads the dictionary and the postings of a source part sequentially,
-            /// so their streams take the regular read buffer size.
+            /// so their streams take the regular read buffer size and keep the page cache lookahead.
             auto stream = makeTextIndexInputStream(
                 segments[i].part_storage,
                 segments[i].index_file_name,
@@ -609,7 +608,8 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         stream->seekToStart();
         /// Only the version and codecs are needed here, so skip deserializing the sparse index.
         auto header = TextIndexSerialization::deserializeHeaderPrefix(*stream->getDataBuffer());
-        source_postings_serializations.emplace_back(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
+        TextIndexSerialization::checkPositionIncrementGap(header, params);
+        source_postings_serializations.emplace_back(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version, header.scoring);
     }
 }
 
@@ -685,7 +685,7 @@ void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, cons
     cursor.pos = 0;
     cursor.next_segment = 0;
     cursor.row_ids.clear();
-    cursor.tfs.clear();
+    cursor.weights.clear();
 
     const auto & info = source.info;
 
@@ -702,23 +702,23 @@ void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, cons
     cursor.row_ids.assign(info.embedded_postings.begin(), info.embedded_postings.end());
     adjustPartOffsets(cursor.row_ids, segments[source.source_num].part_index);
 
-    if (params.hasScoring() && !info.embedded_term_frequencies.empty())
-        cursor.tfs.assign(info.embedded_term_frequencies.begin(), info.embedded_term_frequencies.end());
+    if (params.hasScoring())
+    {
+        if (info.embedded_weights.empty())
+            cursor.weights.resize_fill(cursor.row_ids.size(), 1u);
+        else
+            cursor.weights.assign(info.embedded_weights.begin(), info.embedded_weights.end());
+    }
 
     cursor.next_segment = info.offsets.size();
 }
 
-void MergeTextIndexesTask::readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & tfs)
+void MergeTextIndexesTask::readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights)
 {
     const auto & info = source.info;
     auto * stream = input_streams[source.source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     stream->seekToMark({info.offsets[segment_idx], 0});
-
-    /// The exact term frequencies are decoded only if the source stores them and the merge is scoring.
-    const bool has_term_frequencies = params.hasScoring() && (info.header & PostingsSerialization::Flags::HasTermFrequencies);
-
-    source_postings_serializations[source.source_num].deserializeToArray(
-        *stream->getDataBuffer(), info, segment_idx, row_ids, has_term_frequencies ? &tfs : nullptr);
+    source_postings_serializations[source.source_num].deserializeToArray(*stream->getDataBuffer(), info, segment_idx, row_ids, params.hasScoring() ? &weights : nullptr);
 }
 
 bool MergeTextIndexesTask::advancePostingsCursor(PostingsMergeCursor & cursor)
@@ -728,8 +728,8 @@ bool MergeTextIndexesTask::advancePostingsCursor(PostingsMergeCursor & cursor)
         return false;
 
     cursor.row_ids.clear();
-    cursor.tfs.clear();
-    readPostingsSegment(source, cursor.next_segment, cursor.row_ids, cursor.tfs);
+    cursor.weights.clear();
+    readPostingsSegment(source, cursor.next_segment, cursor.row_ids, cursor.weights);
     adjustPartOffsets(cursor.row_ids, segments[source.source_num].part_index);
 
     ++cursor.next_segment;
@@ -738,7 +738,7 @@ bool MergeTextIndexesTask::advancePostingsCursor(PostingsMergeCursor & cursor)
     /// Deserialization rejects an empty segment and a segment outside its row range; the order inside is not verified.
     chassert(!cursor.row_ids.empty());
     chassert(std::is_sorted(cursor.row_ids.begin(), cursor.row_ids.end()));
-    chassert(cursor.tfs.empty() || cursor.tfs.size() == cursor.row_ids.size());
+    chassert(cursor.weights.size() == (params.hasScoring() ? cursor.row_ids.size() : 0));
     return true;
 }
 
@@ -804,19 +804,11 @@ std::pair<UInt64, UInt64> MergeTextIndexesTask::PostingsMergeQueue::consumeWindo
                 row_ids[pos], window.begin, window.end);
         }
 
-        /// The `(tf - 1)` of every consumed row id is stored under its bit, to be gathered along with the row id.
-        if (with_term_frequencies)
+        /// The weight of every consumed row id is stored under its bit, to be gathered along with the row id.
+        if (with_weights)
         {
-            if (cursor.tfs.empty())
-            {
-                for (size_t j = cursor.pos; j < pos; ++j)
-                    window_tfs[row_ids[j] - window.begin] = 0;
-            }
-            else
-            {
-                for (size_t j = cursor.pos; j < pos; ++j)
-                    window_tfs[row_ids[j] - window.begin] = cursor.tfs[j] - 1;
-            }
+            for (size_t j = cursor.pos; j < pos; ++j)
+                window_weights[row_ids[j] - window.begin] = cursor.weights[j];
         }
 
         num_consumed += pos - cursor.pos;
@@ -841,11 +833,11 @@ void MergeTextIndexesTask::PostingsMergeQueue::processWindow(Window window)
     buffer.resize(old_size + num_consumed);
     UInt32 * out = buffer.data() + old_size;
 
-    UInt32 * tfs_out = nullptr;
-    if (with_term_frequencies)
+    UInt32 * weights_out = nullptr;
+    if (with_weights)
     {
-        tfs_buffer.resize(old_size + num_consumed);
-        tfs_out = tfs_buffer.data() + old_size;
+        weights_buffer.resize(old_size + num_consumed);
+        weights_out = weights_buffer.data() + old_size;
     }
 
     /// Consecutive row ids of one source are passed at once.
@@ -865,8 +857,8 @@ void MergeTextIndexesTask::PostingsMergeQueue::processWindow(Window window)
             *out++ = static_cast<UInt32>(window.begin + bit);
             word &= word - 1;
 
-            if (tfs_out)
-                *tfs_out++ = window_tfs[bit];
+            if (weights_out)
+                *weights_out++ = window_weights[bit];
 
             if (positions)
             {
@@ -901,7 +893,6 @@ void MergeTextIndexesTask::PostingsMergeQueue::flushRun(Window window, Sink && s
     chassert(window.hasOneSource());
     auto & cursor = *active_cursors[window.min_pos];
     auto remaining = cursor.remaining();
-    auto remaining_tfs = cursor.remainingTfs();
 
     size_t run_length = remaining.back() < window.second_head
         ? remaining.size()
@@ -909,7 +900,7 @@ void MergeTextIndexesTask::PostingsMergeQueue::flushRun(Window window, Sink && s
 
     if (positions)
         positions->append(cursor.source_idx, run_length);
-    flushDirect(remaining.first(run_length), remaining_tfs.empty() ? remaining_tfs : remaining_tfs.first(run_length), sink);
+    flushDirect(remaining.first(run_length), cursor.nextWeights(run_length), sink);
     cursor.pos += run_length;
 
     if (!cursor.isValid())
@@ -917,19 +908,19 @@ void MergeTextIndexesTask::PostingsMergeQueue::flushRun(Window window, Sink && s
 }
 
 template <typename Sink>
-void MergeTextIndexesTask::PostingsMergeQueue::flushDirect(std::span<const UInt32> row_ids, std::span<const UInt32> tfs, Sink && sink)
+void MergeTextIndexesTask::PostingsMergeQueue::flushDirect(std::span<const UInt32> row_ids, std::span<const UInt32> weights, Sink && sink)
 {
     constexpr size_t granularity = IPostingListEncoder::append_granularity;
 
-    if (with_term_frequencies || row_ids.size() < granularity)
+    if (with_weights || row_ids.size() < granularity)
     {
-        appendToBuffer(row_ids, tfs);
+        appendToBuffer(row_ids, weights);
         flushBuffered(false, sink);
         return;
     }
 
-    /// Only reached without scoring, so the chunks carry no term frequencies and the sink gets an empty span.
-    chassert(tfs.empty());
+    /// Only reached without scoring, so the chunks carry no weights and the sink gets an empty span.
+    chassert(weights.empty());
 
     /// The buffered row ids precede the run, so they are completed to the granularity and passed first.
     if (!buffer.empty())
@@ -969,31 +960,19 @@ void MergeTextIndexesTask::PostingsMergeQueue::flushBuffered(bool is_final, Sink
     if (count == 0)
         return;
 
-    auto tfs = with_term_frequencies ? std::span<const UInt32>(tfs_buffer.data(), count) : std::span<const UInt32>{};
-    sink(std::span<const UInt32>(buffer.data(), count), tfs);
+    auto weights = with_weights ? std::span<const UInt32>(weights_buffer.data(), count) : std::span<const UInt32>{};
+    sink(std::span<const UInt32>(buffer.data(), count), weights);
     buffer.erase(buffer.begin(), buffer.begin() + count);
 
-    if (with_term_frequencies)
-        tfs_buffer.erase(tfs_buffer.begin(), tfs_buffer.begin() + count);
+    if (with_weights)
+        weights_buffer.erase(weights_buffer.begin(), weights_buffer.begin() + count);
 }
 
-void MergeTextIndexesTask::PostingsMergeQueue::appendToBuffer(std::span<const UInt32> row_ids, std::span<const UInt32> tfs)
+void MergeTextIndexesTask::PostingsMergeQueue::appendToBuffer(std::span<const UInt32> row_ids, std::span<const UInt32> weights)
 {
+    chassert(weights.size() == (with_weights ? row_ids.size() : 0));
     buffer.insert(row_ids.begin(), row_ids.end());
-
-    if (!with_term_frequencies)
-        return;
-
-    if (tfs.empty())
-    {
-        tfs_buffer.resize_fill(tfs_buffer.size() + row_ids.size(), 0u);
-    }
-    else
-    {
-        chassert(tfs.size() == row_ids.size());
-        for (UInt32 tf : tfs)
-            tfs_buffer.push_back(tf - 1);
-    }
+    weights_buffer.insert(weights.begin(), weights.end());
 }
 
 void MergeTextIndexesTask::PostingsMergeQueue::refill(size_t pos)
@@ -1013,8 +992,6 @@ void MergeTextIndexesTask::PostingsMergeQueue::push(const TokenSource & source)
     chassert(active_cursors.size() < cursors.size());
     auto & cursor = cursors[active_cursors.size()];
     task.initPostingsCursor(cursor, source);
-    /// A source stores term frequencies either for all of its segments or for none, so the first decoded one tells.
-    has_term_frequencies |= !cursor.tfs.empty();
     active_cursors.push_back(&cursor);
 }
 
@@ -1022,7 +999,7 @@ template <typename Sink>
 void MergeTextIndexesTask::PostingsMergeQueue::merge(Sink && sink, PositionsMerge * positions_)
 {
     chassert(buffer.empty());
-    chassert(tfs_buffer.empty());
+    chassert(weights_buffer.empty());
     positions = positions_;
     if (positions && window_sources.empty())
         window_sources.resize(WINDOW_ROWS);
@@ -1033,9 +1010,10 @@ void MergeTextIndexesTask::PostingsMergeQueue::merge(Sink && sink, PositionsMerg
 
         do
         {
+            auto remaining = cursor.remaining();
             if (positions)
-                positions->append(cursor.source_idx, cursor.remaining().size());
-            flushDirect(cursor.remaining(), cursor.remainingTfs(), sink);
+                positions->append(cursor.source_idx, remaining.size());
+            flushDirect(remaining, cursor.nextWeights(remaining.size()), sink);
         }
         while (task.advancePostingsCursor(cursor));
 
@@ -1058,7 +1036,6 @@ void MergeTextIndexesTask::PostingsMergeQueue::merge(Sink && sink, PositionsMerg
     }
 
     flushBuffered(true, sink);
-    has_term_frequencies = false;
 }
 
 template <typename Sink>
@@ -1087,7 +1064,7 @@ TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStr
     TokenPostingsInfo token_info;
 
     /// Raw postings are fewer than the encoder granularity, so the queue passes all of them in one chunk.
-    mergePostings([&](std::span<const UInt32> row_ids, std::span<const UInt32> tf_minus_one)
+    mergePostings([&](std::span<const UInt32> row_ids, std::span<const UInt32> weights)
     {
         if (token_info.cardinality != 0)
         {
@@ -1098,18 +1075,18 @@ TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStr
 
         token_info.cardinality = static_cast<UInt32>(row_ids.size());
 
-        /// The term frequencies are written only if some source stores them, otherwise every `tf` is 1.
-        if (postings_queue->hasTermFrequencies())
-            token_info.header |= HasTermFrequencies;
+        /// Like on build, the weights are written only if some weight is not 1.
+        if (std::ranges::any_of(weights, [](UInt32 weight) { return weight != 1; }))
+            token_info.header |= HasWeights;
         else
-            tf_minus_one = {};
+            weights = {};
 
-        /// Embedded postings (and their inline term frequencies) are serialized into the dictionary block by flushDictionaryBlock.
+        /// Embedded postings (and their inline weights) are serialized into the dictionary block by flushDictionaryBlock.
         if (row_ids.size() <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
         {
             token_info.header |= RawPostings | EmbeddedPostings;
             token_info.embedded_postings.assign(row_ids.begin(), row_ids.end());
-            token_info.embedded_term_frequencies.assign(tf_minus_one.begin(), tf_minus_one.end());
+            token_info.embedded_weights.assign(weights.begin(), weights.end());
         }
         else
         {
@@ -1117,8 +1094,8 @@ TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStr
             token_info.offsets.emplace_back(postings_stream.plain_hashing.count());
             token_info.ranges.emplace_back(row_ids.front(), row_ids.back());
 
-            /// Per-row `(tf - 1)` parallel to the row ids, written as VarUInts after them.
-            TextIndexSerialization::serializeRawPostings(row_ids, tf_minus_one, postings_stream.plain_hashing);
+            /// Per-row weights parallel to the row ids, written as VarUInts after them.
+            TextIndexSerialization::serializeRawPostings(row_ids, weights, postings_stream.plain_hashing);
         }
     });
 
@@ -1136,20 +1113,20 @@ TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStr
 TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality)
 {
     const auto * codec = postings_serialization.getPostingListCodec();
-    auto encoder = codec->createEncoder(params.posting_list_block_size);
+    auto encoder = codec->createEncoder(params.posting_list_block_size, params.scoring);
 
     const PostingListBuildContext context
     {
         .codec = *codec,
         .segment_size = params.posting_list_block_size,
         .enable_positions = params.enable_positions,
-        .enable_scoring = params.hasScoring(),
+        .scoring = params.scoring,
         .doc_lengths = params.scoring == TextIndexScoringKind::BM25 ? &merged_doc_lengths : nullptr,
     };
 
-    mergePostings([&](std::span<const UInt32> row_ids, std::span<const UInt32> tf_minus_one)
+    mergePostings([&](std::span<const UInt32> row_ids, std::span<const UInt32> weights)
     {
-        encoder->append(row_ids, tf_minus_one, context);
+        encoder->append(row_ids, weights, context);
     });
 
     /// Sources own disjoint row sets, so the merged cardinality must equal the sum of source cardinalities.
@@ -1171,6 +1148,11 @@ void MergeTextIndexesTask::buildDocLengthsAndStats()
     merged_sum_doc_length = 0;
     merged_doc_lengths.clear();
     merged_doc_lengths.resize(num_rows);
+
+    /// The doc lengths of rows [0, covered_part_rows[part_index]) of each source part are already read by its previous segments.
+    /// Without the offsets map all segments are segments of the merged part, so they share one entry.
+    std::vector<UInt64> covered_part_rows;
+    size_t total_doc_lengths = 0;
 
     for (size_t source_num = 0; source_num < segments.size(); ++source_num)
     {
@@ -1202,25 +1184,47 @@ void MergeTextIndexesTask::buildDocLengthsAndStats()
         }
 
         const size_t doc_lengths_size = source_doc_lengths.size();
-        if (doc_lengths_size == 0)
-            continue;
 
-        if (header.scoring_stats.num_docs < doc_lengths_size)
+        /// The doc lengths of a segment are those of its last rows, [num_docs - doc_lengths_size, num_docs), and the segments
+        /// of a source part come in the order of their rows. Both bounds come from disk, so before looking up or writing any row
+        /// check that the range continues the rows covered by the previous segments of the part and does not exceed its rows:
+        /// the offsets map has an entry per row of the part, and without a map the rows of the segment are those of the merged part.
+        const UInt64 num_docs = header.scoring_stats.num_docs;
+        const size_t part_index = segments[source_num].part_index;
+        const UInt64 part_rows = merged_part_offsets ? merged_part_offsets->getPartRowsCount(part_index) : num_rows;
+
+        const size_t coverage_index = merged_part_offsets ? part_index : 0;
+        if (coverage_index >= covered_part_rows.size())
+            covered_part_rows.resize(coverage_index + 1, 0);
+
+        UInt64 & covered_rows = covered_part_rows[coverage_index];
+
+        if (num_docs < doc_lengths_size || num_docs - doc_lengths_size != covered_rows || num_docs > part_rows)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Text index merge: segment header num_docs ({}) is smaller than its doc-lengths size ({})",
-                header.scoring_stats.num_docs, doc_lengths_size);
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data in text index: segment '{}' has {} document lengths ending at row {}, "
+                "but the previous segments of the source part end at row {} and the part has {} rows",
+                segments[source_num].index_file_name, doc_lengths_size, num_docs, covered_rows, part_rows);
         }
 
-        const UInt64 segment_base = header.scoring_stats.num_docs - doc_lengths_size;
+        const UInt64 segment_base = covered_rows;
+        covered_rows = num_docs;
+        total_doc_lengths += doc_lengths_size;
 
         if (merged_part_offsets)
         {
-            size_t part_index = segments[source_num].part_index;
-
             for (size_t i = 0; i < doc_lengths_size; ++i)
             {
-                UInt32 new_offset = adjustPartOffset(*merged_part_offsets, part_index, static_cast<UInt32>(segment_base + i));
+                UInt32 new_offset = adjustPartOffset(*merged_part_offsets, part_index, segment_base + i);
+
+                /// The map is built by the merge itself, so a row of the source part cannot be mapped outside of the merged part.
+                if (new_offset >= merged_doc_lengths.size())
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Text index merge: row {} of source part {} is mapped to row {}, but the merged part has {} rows",
+                        segment_base + i, part_index, new_offset, merged_doc_lengths.size());
+                }
+
                 merged_doc_lengths[new_offset] = source_doc_lengths[i];
             }
         }
@@ -1229,6 +1233,15 @@ void MergeTextIndexesTask::buildDocLengthsAndStats()
             for (size_t i = 0; i < doc_lengths_size; ++i)
                 merged_doc_lengths[segment_base + i] = source_doc_lengths[i];
         }
+    }
+
+    /// The ranges of the segments are disjoint and the offsets map is injective, so every row of the merged part has
+    /// its doc length iff their total is the number of rows. Otherwise the rest of `merged_doc_lengths` is uninitialized.
+    if (total_doc_lengths != num_rows)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in text index: the source segments have {} document lengths, but the merged part has {} rows",
+            total_doc_lengths, num_rows);
     }
 }
 
@@ -1289,11 +1302,11 @@ void MergeTextIndexesTask::flushDictionaryBlock()
 
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
         {
-            /// The per-row `(tf - 1)`, non-empty only when the token has HasTermFrequencies.
+            /// The per-row weights, non-empty only when the token has HasWeights.
             const auto & embedded = output_infos[i].embedded_postings;
-            const auto & term_frequencies = output_infos[i].embedded_term_frequencies;
-            chassert(term_frequencies.empty() || term_frequencies.size() == embedded.size());
-            TextIndexSerialization::serializeRawPostings(embedded, term_frequencies, ostr);
+            const auto & weights = output_infos[i].embedded_weights;
+            chassert(weights.empty() || weights.size() == embedded.size());
+            TextIndexSerialization::serializeRawPostings(embedded, weights, ostr);
         }
     }
 
@@ -1420,6 +1433,7 @@ void MergeTextIndexesTask::finalize()
         .codec_type = postings_serialization.getPostingListCodec()->getType(),
         .has_positions = params.enable_positions,
         .positions_codec = params.positions_codec,
+        .position_increment_gap = params.position_increment_gap,
         .scoring = params.scoring,
         .sparse_index = DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets)),
         .scoring_stats = std::move(scoring_stats),
@@ -1511,12 +1525,19 @@ size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info)
 static MergeTreeReaderSettings makeTextIndexReaderSettings(
     const MergeTreeReaderSettings & reader_settings,
     MergeTreeIndexSubstream::Type substream_type,
-    std::optional<size_t> expected_buffer_size)
+    std::optional<size_t> expected_buffer_size,
+    bool use_page_cache_lookahead)
 {
     using enum MergeTreeIndexSubstream::Type;
 
     auto settings = reader_settings;
     settings.is_compressed = MergeTreeIndexSubstream::isCompressed(substream_type);
+
+    /// An out-of-order stream's seeks never read the lookahead blocks a cache miss would otherwise
+    /// request: the abandoned request leaves data in flight, so the connection (distributed cache,
+    /// or S3 HTTP, see `HTTPConnectionPool::EndpointConnectionPool::atConnectionDestroy`) is dropped.
+    if (!use_page_cache_lookahead && !reader_settings.use_page_cache_lookahead_for_text_index)
+        settings.read_settings.page_cache_settings.lookahead_blocks = 1;
 
     if (expected_buffer_size && (substream_type == TextIndexDictionary || substream_type == TextIndexPostings))
     {
@@ -1564,7 +1585,8 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size)
+    std::optional<size_t> expected_buffer_size,
+    bool use_page_cache_lookahead)
 {
     const auto stream_name = index_file_name + substream.suffix;
     const auto & extension = substream.extension;
@@ -1594,7 +1616,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         *actual_stream_name,
         extension,
         data_file_size,
-        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size));
+        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size, use_page_cache_lookahead));
 }
 
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
@@ -1602,7 +1624,8 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size)
+    std::optional<size_t> expected_buffer_size,
+    bool use_page_cache_lookahead)
 {
     const auto stream_name = index_file_name + substream.suffix;
     const auto & extension = substream.extension;
@@ -1617,7 +1640,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         *actual_stream_name,
         extension,
         data_part_storage->getFileSize(*actual_stream_name + extension),
-        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size));
+        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size, use_page_cache_lookahead));
 }
 
 }

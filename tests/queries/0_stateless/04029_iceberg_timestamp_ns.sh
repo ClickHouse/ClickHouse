@@ -32,6 +32,7 @@ mkdir -p "${TEST_DIR}/data"
 cat > "${TEST_DIR}/metadata/v1.metadata.json" << 'EOF'
 {
   "format-version": 3,
+  "last-sequence-number": 0,
   "table-uuid": "12345678-1234-1234-1234-123456789012",
   "location": "test_location",
   "last-updated-ms": 1700000000000,

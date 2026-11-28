@@ -6,7 +6,6 @@
 
 SET allow_experimental_time_time64_type = 1;
 SET session_timezone = 'UTC';
-SET enable_analyzer = 1;
 
 -- Europe/Moscow is UTC+3 at Unix epoch; toDateTime('1970-01-01 15:45:40', 'Europe/Moscow')
 -- = 15:45:40 − 3h = 12:45:40 UTC = 45940s.  Time('12:45:40') = 45940s → equal.

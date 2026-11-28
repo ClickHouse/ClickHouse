@@ -2,10 +2,13 @@
 #include <base/sort.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/DiskRoot.h>
+#include <Disks/DiskSelector.h>
 #include <Disks/createVolume.h>
 
 #include <Interpreters/Context.h>
 #include <Common/StringUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
@@ -117,8 +120,37 @@ StoragePolicy::StoragePolicy(
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
                         move_factor, backQuote(name));
 
+    backup_metadata_only = config.getBool(config_prefix + ".backup_metadata_only", false);
+    if (backup_metadata_only)
+        checkVolumesAreReadOnly();
+
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
+}
+
+
+bool StoragePolicy::isBackupMetadataOnly() const
+{
+    /// Rechecked on every call, because a disk can become writable while the policy is live: `DiskLocal` clears its
+    /// read-only flag itself once its periodic check writes to the root directory again, and a reload of the
+    /// configuration that makes a disk writable keeps this policy, since the policy built from the new configuration
+    /// fails the check in the constructor and is discarded. So the check cannot be left to where a policy is built.
+    if (backup_metadata_only)
+        checkVolumesAreReadOnly();
+    return backup_metadata_only;
+}
+
+void StoragePolicy::checkVolumesAreReadOnly() const
+{
+    /// The data of a table on such a policy is not backed up, so it must come from the storage, not from writes to it.
+    for (const auto & volume : volumes)
+    {
+        if (!volume->isReadOnly())
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "Storage policy {} is marked backup_metadata_only, but its volume {} is not read-only, "
+                            "so BACKUP would leave out the data written to it",
+                            backQuote(name), backQuote(volume->getName()));
+    }
 }
 
 
@@ -257,12 +289,12 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
     {
         auto volume_unreserved_space = volume->getMaxUnreservedFreeSpace();
         if (!volume_unreserved_space)
-            return -1ULL; /// There is at least one unlimited disk.
+            return std::numeric_limits<UInt64>::max(); /// There is at least one unlimited disk.
 
         if (!res || *volume_unreserved_space > *res)
             res = volume_unreserved_space;
     }
-    return res.value_or(-1ULL);
+    return res.value_or(std::numeric_limits<UInt64>::max());
 }
 
 
@@ -445,6 +477,8 @@ std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & 
 
 void StoragePolicy::buildVolumeIndices()
 {
+    VectorWithMemoryTracking<std::pair<DiskRoot, String>> policy_disk_roots;
+
     for (size_t index = 0; index < volumes.size(); ++index)
     {
         const VolumePtr & volume = volumes[index];
@@ -464,6 +498,19 @@ void StoragePolicy::buildVolumeIndices()
                 throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
                                 "Disk names must be unique in storage policy {} ({} "
                                 "is duplicated)" , backQuote(name), backQuote(disk_name));
+
+            if (auto root = getDiskRoot(disk))
+            {
+                for (const auto & [other_root, other_disk_name] : policy_disk_roots)
+                {
+                    if (*root == other_root)
+                        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                                        "Disks {} and {} in storage policy {} store data in the same place ({})",
+                                        backQuote(other_disk_name), backQuote(disk_name), backQuote(name), root->path);
+                }
+
+                policy_disk_roots.emplace_back(std::move(*root), disk_name);
+            }
 
             volume_index_by_disk_name[disk_name] = index;
         }

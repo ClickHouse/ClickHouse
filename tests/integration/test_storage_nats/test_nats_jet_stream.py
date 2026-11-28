@@ -73,14 +73,14 @@ async def receive_messages(cluster_inst, stream_name, consumer_name, subject, de
     return result
 
 
-async def add_stream(cluster_inst, stream_name, stream_subjects):
+async def add_stream(cluster_inst, stream_name, stream_subjects, **config):
     nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
     # Create JetStream context.
     js = nc.jetstream()
 
-    stream_info = await js.add_stream(name=stream_name, subjects=stream_subjects)
+    stream_info = await js.add_stream(name=stream_name, subjects=stream_subjects, **config)
     logging.debug("added NATS jet stream: " + str(stream_info))
 
     await nc.close()
@@ -723,6 +723,77 @@ def test_nats_insert(nats_cluster):
 
     result = "\n".join(insert_messages)
     nats_helpers.check_result(result, True)
+
+
+def test_nats_insert_into_missing_stream(nats_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'missing_stream',
+                     nats_subjects = 'missing_subject',
+                     nats_format = 'JSONEachRow';
+        """
+    )
+
+    # 5000 messages do not fit into the queue of the producer.
+    for rows in [1, 5000]:
+        error = instance.query_and_get_error(
+            f"INSERT INTO test.nats SELECT number, number FROM numbers({rows})", timeout=60
+        )
+        assert "there is no JetStream stream for this subject" in error, error
+
+    # The producer fails too, but the INSERT reports the error of its SELECT.
+    error = instance.query_and_get_error(
+        "INSERT INTO test.nats SELECT number, throwIf(number = 1) FROM numbers(2) "
+        "SETTINGS max_block_size = 1, min_insert_block_size_rows = 1",
+        timeout=60,
+    )
+    assert "Value passed to 'throwIf' function is non-zero" in error, error
+
+
+def test_nats_insert_message_over_max_payload(nats_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value String)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow';
+        """
+    )
+
+    # The first message is larger than the server's max_payload (1 MiB by default),
+    # and 5000 messages do not fit into the queue of the producer.
+    error = instance.query_and_get_error(
+        "INSERT INTO test.nats SELECT number, repeat('aa', if(number = 0, 1000000, 0)) FROM numbers(5000)",
+        timeout=60,
+    )
+    assert "Cannot publish to NATS subject test_subject: Maximum Payload Exceeded" in error, error
+
+    # The stream rejects a message over its max_msg_size.
+    asyncio.run(add_stream(cluster, "small_stream", ["small_subject"], max_msg_size=100))
+    try:
+        instance.query(
+            """
+            CREATE TABLE test.nats_small (key UInt64, value String)
+                ENGINE = NATS
+                SETTINGS nats_url = 'nats1:4444',
+                         nats_stream = 'small_stream',
+                         nats_subjects = 'small_subject',
+                         nats_format = 'JSONEachRow';
+            """
+        )
+        error = instance.query_and_get_error(
+            "INSERT INTO test.nats_small SELECT number, repeat('a', if(number = 0, 1000, 0)) FROM numbers(5000)",
+            timeout=60,
+        )
+        assert "Cannot publish to NATS subject small_subject" in error, error
+        assert "message size exceeds maximum allowed" in error, error
+    finally:
+        asyncio.run(delete_stream(cluster, "small_stream"))
 
 
 def test_fetching_messages_without_mv(nats_cluster):
@@ -1530,8 +1601,9 @@ def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconne
     # means the skip survived the reconnect, two mean it was handed back. Losing the recovery's
     # publish can only keep the count at one, so this is asked on both arms; only the
     # acknowledgement itself is asked where the guard below says. The ACK deadline is far beyond
-    # every wait here, so a redelivery cannot come from anywhere else, and the run holds the flush
-    # interval open so the reconnect lands inside a cycle.
+    # every wait here, so a redelivery cannot come from anywhere else. The flush interval keeps the
+    # cycle open across a broker restart, which `docker kill` alone can stretch past half a minute,
+    # and `nats_max_block_size = 1` ends the cycle at the first row instead.
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
 
     # Anchored before the table exists, so the first streaming cycle counts however quickly it
@@ -1551,7 +1623,8 @@ def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconne
                      nats_format = 'JSONEachRow',
                      nats_row_delimiter = '\\n',
                      nats_skip_broken_messages = 1000,
-                     nats_flush_interval_ms = 30000,
+                     nats_max_block_size = 1,
+                     nats_flush_interval_ms = 300000,
                      nats_wait_for_flush_interval = 1;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT * FROM test.consume;
@@ -1613,8 +1686,8 @@ def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconne
         "{} deliveries for one message".format(consumer_seq))
 
     # A stale subscription consumes nothing, so the view holding this row also means the recovery
-    # did happen - deferred to a cycle that holds nothing rather than skipped altogether. It waits
-    # out the rest of the current cycle and then a whole cycle of its own.
+    # did happen - deferred to a cycle that holds nothing rather than skipped altogether. The row
+    # ends the cycle that consumes it.
     messages = [json.dumps({"key": 42, "value": 42})]
     asyncio.run(publish_messages(cluster, "test_stream", "test_subject", messages))
     result = instance.query_with_retry(
@@ -1917,7 +1990,7 @@ def test_nats_jet_stream_keeps_buffered_backlog_across_broker_restart(nats_clust
         result, total_expected)
 
 
-UNSUBSCRIBED_LOG_LINE = "Consumer .* unsubscribed"
+UNSUBSCRIBED_LOG_LINE = "Consumer unsubscribed"
 
 
 def test_nats_jet_stream_returns_buffered_backlog_to_the_broker_when_unsubscribing(nats_cluster):

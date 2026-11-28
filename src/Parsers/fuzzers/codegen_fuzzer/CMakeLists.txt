@@ -33,9 +33,9 @@ file(GLOB_RECURSE CODEGEN_DICT_SCANNED_SOURCES CONFIGURE_DEPENDS
     "${ClickHouse_SOURCE_DIR}/src/TableFunctions/*"
     "${ClickHouse_SOURCE_DIR}/src/DataTypes/*"
     "${ClickHouse_SOURCE_DIR}/src/Formats/*"
+    "${ClickHouse_SOURCE_DIR}/src/WindowFunctions/*"
 )
 list(APPEND CODEGEN_DICT_SCANNED_SOURCES
-    "${ClickHouse_SOURCE_DIR}/src/Processors/Transforms/WindowTransform.cpp"
     "${ClickHouse_SOURCE_DIR}/src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h"
 )
 
@@ -86,6 +86,12 @@ set_source_files_properties("${PROTO_SRCS}" "out.cpp" PROPERTIES COMPILE_FLAGS "
 # contrib/libprotobuf-mutator/src/libfuzzer/libfuzzer_macro.h:143:44: error: no newline at end of file [-Werror,-Wnewline-eof]
 # The DEFINE_BINARY_PROTO_FUZZER macro expands to functions (LLVMFuzzerCustomMutator, etc.) without prior declarations.
 target_compile_options (codegen_select_fuzzer PRIVATE -Wno-newline-eof -Wno-missing-prototypes)
+
+# The generated out.pb.h trips the `lifetime-safety-*` lifetimebound diagnostics introduced in clang 23:
+# it returns references to fields from accessors whose declarations lack the `lifetimebound` attribute.
+if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
+    target_compile_options (codegen_select_fuzzer PRIVATE -Wno-lifetime-safety-lifetimebound-violation -Wno-lifetime-safety-intra-tu-misplaced-lifetimebound)
+endif ()
 
 target_link_libraries(protoc ch_contrib::fuzzer)
 

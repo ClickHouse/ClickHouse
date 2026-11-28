@@ -121,7 +121,7 @@ ${CLICKHOUSE_CLIENT} --query \
 # statement with a message that names the source table - which is what the arm below compares. The setting
 # is pinned so that the comparison stays about the disclosure and not about which rejection arrived.
 explain_as_user() {
-    ${CLICKHOUSE_CLIENT} --user="${username}" --enable_analyzer 1 --query \
+    ${CLICKHOUSE_CLIENT} --user="${username}" --query \
         "EXPLAIN $1 SELECT * FROM mergeTreeCodecBlockCounts(currentDatabase(), $2);" 2>&1 | sed "s/$2/SOURCE/g"
 }
 

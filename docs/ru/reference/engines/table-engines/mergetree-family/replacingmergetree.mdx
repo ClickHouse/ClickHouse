@@ -20,9 +20,7 @@ doc_type: 'reference'
   Подробное руководство по ReplacingMergeTree, включая рекомендации и способы оптимизации производительности, доступно [здесь](/ru/concepts/features/operations/update/replacing-merge-tree).
 </Note>
 
-<div id="creating-a-table">
-  ## Создание таблицы
-</div>
+## Создание таблицы {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -44,15 +42,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
   Уникальность строк определяется разделом таблицы `ORDER BY`, а не `PRIMARY KEY`.
 </Note>
 
-<div id="replacingmergetree-parameters">
-  ## Параметры ReplacingMergeTree
-</div>
+## Параметры ReplacingMergeTree {#replacingmergetree-parameters}
 
-<div id="ver">
-  ### `ver`
-</div>
+### `ver` {#ver}
 
-`ver` — столбец с номером версии. Тип: `UInt*`, `Date`, `DateTime` или `DateTime64`. Необязательный параметр.
+`ver` — столбец с номером версии. Тип: `UInt*`, `Date`, `DateTime` или `DateTime64`. Необязательный параметр. Также может быть подстолбцом другого столбца, например элементом `Tuple` или типизированным путём `JSON`: `ReplacingMergeTree(meta.ver)`.
 
 При слиянии `ReplacingMergeTree` из всех строк с одинаковым ключом сортировки оставляет только одну:
 
@@ -62,7 +56,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Пример:
 
 ```sql
--- без ver - побеждает последняя вставленная строка
+-- without ver - the last inserted 'wins'
 CREATE TABLE myFirstReplacingMT
 (
     `key` Int64,
@@ -81,7 +75,7 @@ SELECT * FROM myFirstReplacingMT FINAL;
 │   1 │ second  │ 2020-01-01 00:00:00 │
 └─────┴─────────┴─────────────────────┘
 
--- с ver - побеждает строка с наибольшим ver
+-- with ver - the row with the biggest ver 'wins'
 CREATE TABLE mySecondReplacingMT
 (
     `key` Int64,
@@ -101,26 +95,24 @@ SELECT * FROM mySecondReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 ```
 
-<div id="is_deleted">
-  ### `is_deleted`
-</div>
+### `is_deleted` {#is_deleted}
 
 `is_deleted` — имя столбца, используемого при слиянии для определения того, представляет ли данные в этой строке состояние или строка должна быть удалена; `1` — это строка &quot;удалена&quot;, `0` — строка &quot;состояние&quot;.
 
-Тип данных столбца — `UInt8`.
+Тип данных столбца — `UInt8`. Как и `ver`, он может быть подстолбцом другого столбца.
 
 <Note>
   `is_deleted` можно включить только при использовании `ver`.
 
   Независимо от операции с данными, версию следует увеличивать. Если две вставленные строки имеют одинаковый номер версии, сохраняется последняя вставленная строка.
 
-  По умолчанию ClickHouse сохраняет последнюю строку для ключа, даже если это строка удаления. Это сделано для того, чтобы любые будущие строки с меньшими версиями можно было
-  безопасно вставлять, и строка удаления всё равно применялась.
+  По умолчанию ClickHouse сохраняет последнюю строку для ключа, даже если это строка, помеченная как удалённая. Это сделано для того, чтобы любые будущие строки с меньшими версиями можно было
+  безопасно вставлять, и строка, помеченная как удалённая, всё равно применялась.
 
-  Чтобы навсегда удалить такие строки удаления, включите настройку таблицы `allow_experimental_replacing_merge_with_cleanup` и выполните одно из следующих действий:
+  Чтобы навсегда удалить такие строки, помеченные как удалённые, включите настройку таблицы `allow_experimental_replacing_merge_with_cleanup` и выполните одно из следующих действий:
 
   1. Установите настройки таблицы `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`, `min_age_to_force_merge_on_partition_only` и `min_age_to_force_merge_seconds`. Если все части в партиции старше `min_age_to_force_merge_seconds`, ClickHouse объединит их
-     в одну часть и удалит все строки удаления.
+     в одну часть и удалит все строки, помеченные как удалённые.
 
   2. Вручную выполните `OPTIMIZE TABLE table [PARTITION partition | PARTITION ID 'partition_id'] FINAL CLEANUP`.
 </Note>
@@ -128,7 +120,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 Пример:
 
 ```sql
--- с ver и is_deleted
+-- with ver and is_deleted
 CREATE OR REPLACE TABLE myThirdReplacingMT
 (
     `key` Int64,
@@ -147,7 +139,7 @@ select * from myThirdReplacingMT final;
 
 0 rows in set. Elapsed: 0.003 sec.
 
--- удалить строки с is_deleted
+-- delete rows with is_deleted
 OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP;
 
 INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
@@ -159,9 +151,7 @@ select * from myThirdReplacingMT final;
 └─────┴─────────┴─────────────────────┴────────────┘
 ```
 
-<div id="query-clauses">
-  ## Секции запроса
-</div>
+## Секции запроса {#query-clauses}
 
 При создании таблицы `ReplacingMergeTree` требуются те же [секции](/ru/reference/engines/table-engines/mergetree-family/mergetree), что и при создании таблицы `MergeTree`.
 
@@ -186,9 +176,7 @@ select * from myThirdReplacingMT final;
   * `ver` — столбец с версией. Необязательный параметр. Описание см. в тексте выше.
 </details>
 
-<div id="query-time-de-duplication--final">
-  ## Дедупликация во время выполнения запроса &amp; FINAL
-</div>
+## Дедупликация во время выполнения запроса &amp; FINAL {#query-time-de-duplication--final}
 
 Во время слияния ReplacingMergeTree выявляет повторяющиеся строки, используя значения столбцов `ORDER BY` (применяемых при создании таблицы) как уникальный идентификатор, и сохраняет только строку с наибольшей версией. Однако это обеспечивает лишь отложенную корректность: нет гарантии, что строки будут дедуплицированы, поэтому полагаться на это не следует. В результате запросы могут возвращать неверные результаты, поскольку при их выполнении могут учитываться строки обновления и удаления.
 

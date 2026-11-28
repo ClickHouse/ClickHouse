@@ -1,0 +1,4 @@
+--- SELECT ARRAY[f(1); 2]
+Syntax error: failed at position 18 (end of query): ;.
+--- SELECT ARRAY[f(1); SELECT 1, 2]
+Syntax error: failed at position 18 (end of query): ;.

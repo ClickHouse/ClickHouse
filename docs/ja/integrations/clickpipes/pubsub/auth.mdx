@@ -2,9 +2,9 @@
 slug: /integrations/clickpipes/pubsub/auth
 sidebarTitle: 'Pub/Sub IAM 権限'
 title: 'Pub/Sub IAM 権限'
-description: 'この記事では、ClickPipes が Google Cloud Pub/Sub に対して認証を行い、トピックからデータを読み取るために必要な GCP IAM 権限と、それらの権限だけを付与するサービスアカウントの設定方法について説明します。'
+description: 'この記事では、ClickPipes が Google Cloud Pub/Sub に対して認証を行い、トピックからデータを読み取るために必要な GCP IAM 権限と、それらの権限だけを付与する service account の設定方法について説明します。'
 doc_type: 'guide'
-keywords: ['Google Cloud Pub/Sub', 'GCP IAM', 'サービスアカウント']
+keywords: ['Google Cloud Pub/Sub', 'GCP IAM', 'service account']
 integration:
   - support_level: 'core'
   - category: 'clickpipes'
@@ -14,40 +14,36 @@ integration:
   プライベートプレビューのウェイトリストには、[こちら](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview)から登録できます。
 </Note>
 
-この記事では、ClickPipes が Google Cloud Pub/Sub に対して認証を行い、トピックからデータを読み取るために必要な GCP IAM 権限と、それらの権限だけを付与するサービスアカウントの設定方法について説明します。
+この記事では、ClickPipes が Google Cloud Pub/Sub に対して認証を行い、トピックからデータを読み取るため、また ClickPipes が使用する service account にアクセスを付与するために必要な GCP IAM 権限について説明します。
 
-<div id="prerequisite">
-  ## 前提条件
-</div>
+## 前提条件 {#prerequisite}
 
 このガイドに従うには、以下が必要です。
 
 * 有効な ClickHouse Cloud サービス
 * 取り込み元の Pub/Sub トピックを含む GCP プロジェクト
-* そのプロジェクトで サービスアカウント を作成し、ロールを付与するための IAM 権限
+* そのプロジェクトでロールを付与するための IAM 権限
+* service account キーによる認証を使用する場合は、service account とキーを作成するための IAM 権限
 
-<div id="authentication-model">
-  ## 認証モデル
-</div>
+## 認証モデル {#authentication-model}
 
-Pub/Sub 向け ClickPipes は、[サービスアカウント JSON キー](https://cloud.google.com/iam/docs/keys-create-delete)を使って GCP に認証します。パイプの作成時にキーファイルをアップロードすると、ClickPipes はそれを保存時に暗号化し、実行時には次の目的で使用します。
+Pub/Sub 向け ClickPipes は、次の 2 つの認証方式をサポートしています。
+
+* **サービスアカウントキー:** Google の service account を作成し、その [JSON キー](https://cloud.google.com/iam/docs/keys-create-delete)を ClickPipes UI でアップロードするか、API 経由で指定します。ClickPipes はキーを保存時に暗号化します。
+* **GCP Workload Identity (ベータ):** ClickPipes は、ClickPipes が管理する Google service account の有効期間の短い認証情報を使用します。お客様のサービスアカウントキーは保存されません。要件については [GCP Workload Identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)を参照してください。
+
+いずれの方式でも、service account は次の目的で使用されます。
 
 * プロジェクト内のトピックを一覧表示して読み取る
 * メッセージの消費に ClickPipes が使用する[管理対象サブスクリプション](/ja/integrations/clickpipes/pubsub/overview#managed-subscriptions)を作成および削除する
 * そのサブスクリプションからメッセージを消費する
 * (任意で) スキーマレジストリから Pub/Sub ネイティブのスキーマを読み取る
 
-現在のところ、Workload Identity や認証情報を直接貼り付けるオプションには対応していません。サポートされている認証方式は、サービスアカウント JSON キーのみです。
-
-<div id="required-permissions">
-  ## 必要な権限
-</div>
+## 必要な権限 {#required-permissions}
 
 ClickPipes では、トピックを所有する GCP プロジェクトに対して、以下の IAM 権限が必要です。これらの権限は、パイプのライフサイクル全体をカバーしており、検出 (トピックの一覧表示、検証、サンプリング) 、サブスクリプション管理、定常運用時のインジェスト、クリーンアップが含まれます。
 
-<div id="topic-access">
-  ### トピックへのアクセス (検出と検証)
-</div>
+### トピックへのアクセス (検出と検証) {#topic-access}
 
 | Permission                         | 目的                                 |
 | ---------------------------------- | ---------------------------------- |
@@ -55,9 +51,7 @@ ClickPipes では、トピックを所有する GCP プロジェクトに対し�
 | `pubsub.topics.get`                | トピックの存在を検証し、スキーマ設定を取得する            |
 | `pubsub.topics.attachSubscription` | その **トピック** に対するサブスクリプションを作成する際に必要 |
 
-<div id="subscription-lifecycle">
-  ### サブスクリプションのライフサイクル (検出とインジェスト)
-</div>
+### サブスクリプションのライフサイクル (検出とインジェスト) {#subscription-lifecycle}
 
 | Permission                     | Purpose                                                    |
 | ------------------------------ | ---------------------------------------------------------- |
@@ -66,17 +60,13 @@ ClickPipes では、トピックを所有する GCP プロジェクトに対し�
 | `pubsub.subscriptions.delete`  | 一時的な検出用サブスクリプションをクリーンアップし、パイプの削除時に管理対象サブスクリプションを削除         |
 | `pubsub.subscriptions.consume` | `Receive()`、`Ack()`、`Nack()`、およびタイムスタンプへのシーク操作             |
 
-<div id="schema-access">
-  ### スキーマへのアクセス (任意 — ネイティブ Avro/Protobuf トピックに限る)
-</div>
+### スキーマへのアクセス (任意 — ネイティブ Avro/Protobuf トピックに限る) {#schema-access}
 
 | Permission           | Purpose                               |
 | -------------------- | ------------------------------------- |
 | `pubsub.schemas.get` | Pub/Sub のスキーマレジストリからネイティブ スキーマ定義を取得する |
 
-<div id="predefined-roles">
-  ## 定義済みロール
-</div>
+## 定義済みロール {#predefined-roles}
 
 | ロール                                                                                                  | 十分か     | 備考                                                                                                              |
 | ---------------------------------------------------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------- |
@@ -85,13 +75,9 @@ ClickPipes では、トピックを所有する GCP プロジェクトに対し�
 | [`roles/pubsub.viewer`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.viewer)         | **いいえ** | 読み取り専用 — サブスクリプションの管理やメッセージの消費はできません。                                                                           |
 | カスタムロール *(推奨)*                                                                                       | はい      | 最小権限でアクセスするには、上記の 7 つの中核権限 (必要に応じて `schemas.get` を追加) を使用してください。                                                |
 
-<div id="setup">
-  ## セットアップ
-</div>
+## セットアップ {#setup}
 
-<div id="create-custom-role">
-  ### カスタム ロールを作成する (推奨)
-</div>
+### カスタム ロールを作成する (推奨) {#create-custom-role}
 
 最小権限の原則に従い、ClickPipes に必要な権限のみを含むカスタム ロールを作成します。
 
@@ -116,11 +102,23 @@ gcloud iam roles create clickpipes.pubsub.ingestion \
 
 カスタム ロールを作成しない場合は、代わりに `roles/pubsub.editor` を付与できます。
 
-<div id="create-service-account">
-  ### サービスアカウントを作成する
-</div>
+### GCP Workload Identity を使用する (ベータ) {#use-workload-identity}
 
-ClickPipe専用のサービスアカウントを作成します。
+[GCP Workload Identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)の手順に従って、サービスのコンテキストから ClickPipes が管理する service account を取得します。
+
+作成したカスタムロール、または `roles/pubsub.editor` を、その service account にバインドします。
+
+```bash
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:CLICKPIPES_SERVICE_ACCOUNT" \
+  --role="projects/YOUR_PROJECT_ID/roles/clickpipes.pubsub.ingestion"
+```
+
+[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi#create-pubsub) または [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform#pubsub) を使用し、`authentication` を `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` に設定して ClickPipe を作成します。この認証方式を使用する場合は、サービスアカウントキーを指定しないでください。
+
+### service account を作成する {#create-service-account}
+
+service account キー認証を使用する場合は、ClickPipe専用の service account を作成します。
 
 ```bash
 gcloud iam service-accounts create clickpipes-pubsub \
@@ -128,9 +126,7 @@ gcloud iam service-accounts create clickpipes-pubsub \
   --display-name="ClickPipes Pub/Sub Ingestion"
 ```
 
-<div id="grant-role">
-  ### サービスアカウントにロールを付与する
-</div>
+### サービスアカウントにロールを付与する {#grant-role}
 
 作成したロール (または `roles/pubsub.editor`) を、プロジェクトレベルでサービスアカウントにバインドします。
 
@@ -140,9 +136,7 @@ gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
   --role="projects/YOUR_PROJECT_ID/roles/clickpipes.pubsub.ingestion"
 ```
 
-<div id="create-key">
-  ### サービスアカウント キーを作成してダウンロードする
-</div>
+### サービスアカウント キーを作成してダウンロードする {#create-key}
 
 サービスアカウント用の JSON キーを作成し、ローカルにダウンロードします。
 
@@ -159,9 +153,7 @@ gcloud iam service-accounts keys create clickpipes-pubsub-key.json \
   サービスアカウントキーには、GCP プロジェクトへのアクセス権が付与されています。ファイルは安全に保管し、ソース管理にコミットせず、定期的にローテーションしてください。ClickPipes では、アップロード後、このキーは保存時に暗号化されます。
 </Info>
 
-<div id="notes">
-  ## 注意事項
-</div>
+## 注意事項 {#notes}
 
 * `pubsub.topics.attachSubscription` は、サブスクリプションではなく **トピックリソース** に対して必要です。サブスクリプション レベルの権限だけを付与している場合、これを見落とすことがよくあります。
 * トピックがネイティブな Pub/Sub スキーマ (Avro または Protobuf) を使用していない場合、`pubsub.schemas.get` 権限は不要です。

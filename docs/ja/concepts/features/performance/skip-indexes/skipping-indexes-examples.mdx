@@ -28,9 +28,7 @@ ClickHouse は 6 種類のスキップ索引をサポートしています。
 
 各セクションでは、サンプルデータを使った例を示し、クエリ実行時に索引が使用されていることを確認する方法を説明します。
 
-<div id="minmax-index">
-  ## MinMax索引
-</div>
+## MinMax索引 {#minmax-index}
 
 `minmax`索引は、大まかにソートされたデータや、`ORDER BY`と相関のあるカラムに対する範囲条件に最適です。
 
@@ -60,9 +58,7 @@ SELECT count() FROM events WHERE ts >= now() - 3600;
 
 `EXPLAIN` とプルーニングを用いた[実例](/ja/concepts/best-practices/using-data-skipping-indices#example)をご覧ください。
 
-<div id="set-index">
-  ## Set 索引
-</div>
+## Set 索引 {#set-index}
 
 ローカル (ブロック単位) のカーディナリティが低い場合は、`set` 索引を使用してください。各ブロックに異なる値が多数含まれる場合は、あまり効果がありません。
 
@@ -78,9 +74,7 @@ SELECT * FROM events WHERE user_id IN (101, 202);
 
 作成/マテリアライズのワークフローと、その前後の効果は、[基本操作ガイド](/ja/concepts/features/performance/skip-indexes/skipping-indexes#basic-operation)に示されています。
 
-<div id="textindex-for-full-text-search">
-  ## 全文検索向けのテキスト索引 (text)
-</div>
+## 全文検索向けのテキスト索引 (text) {#textindex-for-full-text-search}
 
 `text` は、トークン化されたテキストデータに対する転置索引です。
 全文検索ワークロード向けに設計されており、トークンや検索語の効率的かつ決定論的なルックアップを可能にします。
@@ -99,9 +93,7 @@ SELECT count() FROM logs WHERE hasAllTokens(msg, 'exception');
 
 テキスト索引は完全に決定論的で、トークン化やテキスト処理を全面的に調整できますが、bloom filter ベースの索引と比べると、その分ストレージ消費は増えます。
 
-<div id="generic-bloom-filter-scalar">
-  ## 汎用 Bloom filter (スカラー)
-</div>
+## 汎用 Bloom filter (スカラー) {#generic-bloom-filter-scalar}
 
 `bloom_filter` 索引は、&quot;干し草の山から針を探す&quot;ような等価比較や IN による存在確認に適しています。オプションのパラメータとして、偽陽性率 (デフォルトは 0.025) を指定できます。
 
@@ -115,9 +107,7 @@ EXPLAIN indexes = 1
 SELECT * FROM events WHERE value IN (7, 42, 99);
 ```
 
-<div id="n-gram-bloom-filter-ngrambf-v1-for-substring-search">
-  ## 部分文字列検索向け N-gram Bloom filter (ngrambf_v1) *(非推奨)*
-</div>
+## 部分文字列検索向け N-gram Bloom filter (ngrambf_v1) *(非推奨)* {#n-gram-bloom-filter-ngrambf-v1-for-substring-search}
 
 <Note>
   ClickHouse バージョン `>= 26.2` では、全文検索での `ngrambf_v1` 索引の使用は非推奨となっており、代わりに `text` 索引の使用が推奨されています (詳細は[こちら](/ja/reference/engines/table-engines/mergetree-family/textindexes)を参照してください) 。
@@ -157,9 +147,7 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) AS k; -- 約13
 
 チューニングの詳細については、[パラメータのドキュメント](/ja/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter)を参照してください。
 
-<div id="token-bloom-filter-tokenbf-v1-for-word-based-search">
-  ## 単語ベースの検索用 Token Bloom filter (`tokenbf_v1`) *(非推奨)*
-</div>
+## 単語ベースの検索用 Token Bloom filter (`tokenbf_v1`) *(非推奨)* {#token-bloom-filter-tokenbf-v1-for-word-based-search}
 
 <Note>
   全文検索での `tokenbf_v1` 索引の使用は、ClickHouse バージョン `>= 26.2` では `text` 索引の利用が推奨されるため非推奨となっています (詳細は[こちら](/ja/reference/engines/table-engines/mergetree-family/textindexes)を参照してください) 。
@@ -182,9 +170,7 @@ SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
 
 オブザーバビリティの例と、token と ngram の違いに関するガイダンスについては、[こちら](/ja/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search)を参照してください。
 
-<div id="add-indexes-during-create-table-multiple-examples">
-  ## CREATE TABLE時に索引を追加する (複数の例)
-</div>
+## CREATE TABLE時に索引を追加する (複数の例) {#add-indexes-during-create-table-multiple-examples}
 
 スキッピングインデックスは、複合式や `Map`/`Tuple`/`Nested` 型にも対応しています。これについては、以下の例で示します。
 
@@ -205,9 +191,7 @@ ENGINE = MergeTree
 ORDER BY u64;
 ```
 
-<div id="materializing-on-existing-data-and-verifying">
-  ## 既存データへのマテリアライズと検証
-</div>
+## 既存データへのマテリアライズと検証 {#materializing-on-existing-data-and-verifying}
 
 既存のデータパーツに対しては `MATERIALIZE` を使って索引を追加でき、以下のように `EXPLAIN` やトレースログでプルーニングの状況を確認できます。
 
@@ -223,9 +207,7 @@ SET send_logs_level = 'trace';
 
 この[minmax の実例](/ja/concepts/best-practices/using-data-skipping-indices#example)は、EXPLAIN の出力構造とプルーニング件数を示しています。
 
-<div id="when-use-and-when-to-avoid">
-  ## スキップ索引を使うべき場合と避けるべき場合
-</div>
+## スキップ索引を使うべき場合と避けるべき場合 {#when-use-and-when-to-avoid}
 
 **スキップ索引を使うべき場合:**
 
@@ -244,11 +226,9 @@ SET send_logs_level = 'trace';
   ある値がデータブロックに 1 回でも現れると、ClickHouse はそのブロック全体を読み込む必要があります。実際のデータに近いデータセットで索引をテストし、実際の性能測定に基づいて粒度や型固有のパラメータを調整してください。
 </Info>
 
-<div id="temporarily-ignore-or-force-indexes">
-  ## 一時的に索引を無視または強制する
-</div>
+## 一時的に索引を無視または強制する {#temporarily-ignore-or-force-indexes}
 
-テストやトラブルシューティングの際には、特定の索引を名前で指定して、クエリごとに無効化できます。必要に応じて索引の使用を強制するための設定も用意されています。詳細は [`ignore_data_skipping_indices`](/ja/reference/settings/session-settings/ignore#ignore_data_skipping_indices) を参照してください。
+テストやトラブルシューティングの際には、特定の索引を名前で指定して、クエリごとに無効化できます。必要に応じて索引の使用を強制するための設定も用意されています。詳細は [`ignore_data_skipping_indexes`](/ja/reference/settings/session-settings/ignore#ignore_data_skipping_indexes) を参照してください。
 
 ```sql
 -- Ignore an index by name
@@ -257,17 +237,13 @@ WHERE hasToken(lower(msg), 'exception')
 SETTINGS ignore_data_skipping_indices = 'msg_token';
 ```
 
-<div id="notes-and-caveats">
-  ## 注意事項と留意点
-</div>
+## 注意事項と留意点 {#notes-and-caveats}
 
 * スキッピングインデックスは [MergeTree ファミリーのテーブル](/ja/reference/engines/table-engines/mergetree-family/mergetree) でのみサポートされており、プルーニングは granule/block レベルで行われます。
 * ブルームフィルタベースの索引は確率的です (偽陽性により余分な読み取りが発生することはありますが、有効なデータがスキップされることはありません) 。
 * ブルームフィルタやその他のスキップ索引は `EXPLAIN` とトレーシングで検証し、プルーニング効果と索引サイズのバランスが取れるように granularity を調整してください。
 
-<div id="related-docs">
-  ## 関連ドキュメント
-</div>
+## 関連ドキュメント {#related-docs}
 
 * [データスキッピングインデックスのガイド](/ja/concepts/features/performance/skip-indexes/skipping-indexes)
 * [ベストプラクティスガイド](/ja/concepts/best-practices/using-data-skipping-indices)

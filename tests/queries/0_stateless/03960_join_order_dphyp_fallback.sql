@@ -1,7 +1,6 @@
 -- DPhyp fallback scenarios: when DPhyp alone cannot produce a plan,
 -- the fallback chain (dphyp,greedy or dphyp,dpsize,greedy) must succeed.
 
-SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;

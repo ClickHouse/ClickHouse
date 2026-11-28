@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Temporal', 'метрики', 'OTEL', 'ClickStack']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -26,13 +24,13 @@ Temporal предоставляет абстракцию для создания
 </Info>
 
 <div id="existing-temporal">
-  ## Интеграция с существующим Temporal Cloud
+  ## Интеграция с существующим Temporal Cloud {#existing-temporal}
 </div>
 
 В этом разделе описывается настройка ClickStack через конфигурирование коллектора ClickStack OTel с приёмником Prometheus.
 
 <div id="prerequisites">
-  ## Предварительные требования
+  ## Предварительные требования {#prerequisites}
 </div>
 
 * Работающий экземпляр ClickStack
@@ -51,7 +49,7 @@ Temporal предоставляет абстракцию для создания
   </Step>
 
   <Step title="Создайте пользовательскую конфигурацию OTel collector" id="custom-otel">
-    ClickStack позволяет расширить базовую конфигурацию OpenTelemetry Collector, подключив собственный файл конфигурации и задав переменную окружения. Эта конфигурация объединяется с базовой конфигурацией, которой HyperDX управляет через OpAMP.
+    ClickStack позволяет расширить базовую конфигурацию OpenTelemetry Collector, подключив собственный файл конфигурации и задав переменную окружения. Эта конфигурация объединяется с базовой конфигурацией, которой интерфейс ClickStack управляет через OpAMP.
 
     Создайте файл `temporal-metrics.yaml` со следующей конфигурацией:
 
@@ -117,7 +115,7 @@ Temporal предоставляет абстракцию для создания
 
     Во всех командах предполагается, что они выполняются из каталога sample, в котором хранятся `temporal-metrics.yaml` и `temporal.key`.
 
-    ##### Вариант 1: Docker Compose
+##### Вариант 1: Docker Compose {#docker-compose}
 
     Обновите конфигурацию развертывания ClickStack:
 
@@ -133,7 +131,7 @@ Temporal предоставляет абстракцию для создания
           # ... other volumes ...
     ```
 
-    ##### Вариант 2: Docker run (образ «всё в одном»)
+##### Вариант 2: Docker run (образ «всё в одном») {#all-in-one}
 
     Если вы используете образ «всё в одном» с `docker run`:
 
@@ -147,52 +145,66 @@ Temporal предоставляет абстракцию для создания
     ```
   </Step>
 
-  <Step title="Проверьте метрики в HyperDX" id="verifying-metrics">
-    После настройки войдите в HyperDX и убедитесь, что метрики поступают:
+  <Step title="Проверьте метрики в интерфейсе ClickStack" id="verifying-metrics">
+    После настройки войдите в интерфейс ClickStack и убедитесь, что метрики поступают:
 
     1. Перейдите в Metrics explorer
     2. Найдите метрики, начинающиеся с `temporal` (например, `temporal_cloud_v1_workflow_success_count`, `temporal_cloud_v1_poll_timeout_count`)
     3. Вы должны увидеть, как точки данных метрик появляются с заданным интервалом сбора
 
-    <Image img="/images/clickstack/temporal/temporal-metrics.webp" alt="Метрики Temporal" size="md" />
+    <div className="ch-image-md">
+      <Frame>
+        ![Метрики Temporal](/images/clickstack/temporal/temporal-metrics.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## Панели мониторинга и визуализация
-</div>
+## Панели мониторинга и визуализация {#dashboards}
 
 Чтобы вам было проще начать мониторинг Temporal Cloud с помощью ClickStack, мы подготовили несколько примеров визуализаций для метрик Temporal.
 
 <Steps>
   <Step title="Скачать конфигурацию панели мониторинга" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга.
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">Скачать файл конфигурации панели мониторинга</TrackedLink>.
   </Step>
 
   <Step title="Импортируйте преднастроенный дашборд" id="import-dashboard">
-    1. Откройте HyperDX и перейдите в раздел Dashboards
+    1. Откройте интерфейс ClickStack и перейдите в раздел Панели мониторинга
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Кнопка импорта панели мониторинга" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Кнопка импорта панели мониторинга](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
     3. Загрузите файл `temporal-metrics-dashboard.json` и нажмите **Finish Import**
 
-    <Image img="/images/clickstack/temporal/import-temporal-metrics-dashboard.webp" alt="Диалог завершения импорта" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Диалог завершения импорта](/images/clickstack/temporal/import-temporal-metrics-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Просмотрите панель мониторинга" id="created-dashboard">
     Панель мониторинга будет создана со всеми преднастроенными визуализациями:
 
-    <Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="Панель мониторинга метрик Temporal" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Панель мониторинга метрик Temporal](/images/clickstack/temporal/temporal-metrics-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## Устранение неполадок
+  ## Устранение неполадок {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### Пользовательский config не загружается
+  ### Пользовательский config не загружается {#troubleshooting-not-loading}
 </div>
 
 Убедитесь, что переменная окружения `CUSTOM_OTELCOL_CONFIG_FILE` указана правильно:
@@ -223,14 +235,12 @@ docker exec <container-name> cat /etc/otelcol-contrib/temporal.key
 # Эта команда должна вывести содержимое вашего temporal.key
 ```
 
-<div id="no-metrics">
-  ### В HyperDX не отображаются метрики
-</div>
+### В интерфейсе ClickStack не отображаются метрики {#no-metrics}
 
 Убедитесь, что Temporal Cloud доступен для коллектора:
 
 ```bash
-# Из контейнера ClickStack
+# From the ClickStack container
 docker exec <container-name> curl -H "Authorization: Bearer <API_KEY>" https://metrics.temporal.io/v1/metrics
 ```
 
@@ -244,14 +254,14 @@ temporal_cloud_v1_workflow_success_count{operation="CompletionStats",region="aws
 
 ```bash
 docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 "Prometheus:"
-## обычно: docker exec clickstack cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 "prometheus:"
+## usually, docker exec clickstack cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 "prometheus:"
 ```
 
-Проверьте журналы collector agent на наличие ошибок:
+Проверьте журналы агента коллектора на наличие ошибок:
 
 ```bash
 docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i Prometheus
-# Ищите ошибки подключения или сбои аутентификации
+# Look for connection errors or authentication failures
 # docker exec clickstack cat /etc/otel/supervisor-data/agent.log | grep -i Prometheus
 ```
 
@@ -259,32 +269,30 @@ docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i Promet
 
 ```bash
 docker exec <container> cat /var/log/otel-collector.log | grep -i error
-# Ищите ошибки разбора конфигурации — ранние ошибки supervisor.opamp-client можно игнорировать 
+# Look for config parsing errors - early supervisor.opamp-client can be ignored 
 # docker exec clickstack cat /var/log/otel-collector.log | grep -i error
 ```
 
 <div id="auth-errors">
-  ### Ошибки аутентификации
+  ### Ошибки аутентификации {#auth-errors}
 </div>
 
 Если в журналах появляются ошибки аутентификации, проверьте API-ключ.
 
 <div id="network-issues">
-  ### Проблемы с сетевым подключением
+  ### Проблемы с сетевым подключением {#network-issues}
 </div>
 
 Если ClickStack не удаётся подключиться к Temporal Cloud, убедитесь, что в вашем файле Docker Compose или командах `docker run` разрешён [доступ к внешней сети](https://docs.docker.com/engine/network/#drivers).
 
 <div id="next-steps">
-  ## Следующие шаги
+  ## Следующие шаги {#next-steps}
 </div>
 
 * Настройте [оповещения](/ru/clickstack/features/alerts) для критически важных метрик (частота сбоев workflow, рост очереди задач, задержка от планирования до запуска)
 * Создайте дополнительные панели мониторинга для конкретных сценариев использования (мониторинг на уровне пространства имен, производительность разных типов workflow)
 * Отслеживайте несколько аккаунтов Temporal Cloud, дублируя конфигурацию приёмника с разными конечными точками и именами сервисов
 
-<div id="going-to-production">
-  ## Переход в продакшн
-</div>
+## Переход в продакшн {#going-to-production}
 
 В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Конфигурация для продакшна описана в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).

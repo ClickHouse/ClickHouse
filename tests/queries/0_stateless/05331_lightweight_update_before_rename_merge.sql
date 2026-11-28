@@ -94,6 +94,8 @@ SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_p
 
 INSERT INTO t_lwu_rename_stale VALUES (1, 1);
 ALTER TABLE t_lwu_rename_stale ADD COLUMN z UInt8;
+-- The UPDATE below waits for queued GET_PART entries, so the INSERT's one must run before the queues stop.
+SYSTEM SYNC REPLICA t_lwu_rename_stale;
 SYSTEM STOP REPLICATION QUEUES t_lwu_rename_stale;
 ALTER TABLE t_lwu_rename_stale RENAME COLUMN v TO w SETTINGS alter_sync = 0;
 UPDATE t_lwu_rename_stale SET v = 5 WHERE 1;

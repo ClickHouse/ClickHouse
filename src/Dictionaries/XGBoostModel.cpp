@@ -287,33 +287,29 @@ ColumnPtr XGBoostModel::predict(const Block & batch, const PredictParameters & p
 
     auto result = ColumnFloat64::create(rows);
 
-    {
-        std::lock_guard lock(predict_mutex);
+    /* Shape of output prediction */
+    bst_ulong const * out_shape{nullptr};
+    /* Dimension of output prediction */
+    bst_ulong out_dim{0};
+    /* Pointer to a thread local contiguous array, assigned in prediction function. */
+    float const * out_result{nullptr};
 
-        /* Shape of output prediction */
-        bst_ulong const * out_shape{nullptr};
-        /* Dimension of output prediction */
-        bst_ulong out_dim{0};
-        /* Pointer to a thread local contiguous array, assigned in prediction function. */
-        float const * out_result{nullptr};
+    String config = sanitizePredictParams(params);
 
-        String config = sanitizePredictParams(params);
+    throwOnError(
+        XGBoosterPredictFromDMatrix(booster, predict_dmatrix, config.c_str(), &out_shape, &out_dim, &out_result),
+        "XGBoosterPredictFromDMatrix");
 
-        throwOnError(
-            XGBoosterPredictFromDMatrix(booster, predict_dmatrix, config.c_str(), &out_shape, &out_dim, &out_result),
-            "XGBoosterPredictFromDMatrix");
+    if (out_dim != 1 || out_shape[0] != rows)
+        throw Exception(
+            ErrorCodes::XGBOOST_ERROR,
+            "XGBoost returned a {}-dimensional prediction result for {} row(s), expected one value per row",
+            out_dim,
+            rows);
 
-        if (out_dim != 1 || out_shape[0] != rows)
-            throw Exception(
-                ErrorCodes::XGBOOST_ERROR,
-                "XGBoost returned a {}-dimensional prediction result for {} row(s), expected one value per row",
-                out_dim,
-                rows);
-
-        auto & data = result->getData();
-        for (std::size_t i = 0; i < rows; ++i)
-            data[i] = static_cast<Float64>(out_result[i]);
-    }
+    auto & data = result->getData();
+    for (std::size_t i = 0; i < rows; ++i)
+        data[i] = static_cast<Float64>(out_result[i]);
 
     return result;
 }
@@ -361,6 +357,19 @@ UnorderedMapWithMemoryTracking<String, String> XGBoostModel::sanitizeTrainingPar
                 "dictionary does not accept, because it predicts exactly one Float64 per row. Use a regression objective, or "
                 "'binary:logistic' for two-class classification",
                 value);
+
+        /// Debug verbosity turns on the timing monitors of XGBoost, which a booster updates without locking, and
+        /// for `gblinear` also on prediction, which runs concurrently. The verbosity of XGBoost is per thread, so
+        /// a thread that once trained a model with debug verbosity would keep it for the queries it runs later.
+        if (key == "verbosity")
+        {
+            UInt64 parsed_verbosity = 0;
+            if (!tryParse(parsed_verbosity, value) || parsed_verbosity > 2)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Parameter 'verbosity' must be 0 (silent), 1 (warning) or 2 (info), got '{}'. Debug verbosity is not supported",
+                    value);
+        }
 
         // If we found num_iterations, record this value and do not add it to the final map
         if (key == "num_iterations")

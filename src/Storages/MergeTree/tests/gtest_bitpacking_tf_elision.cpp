@@ -65,31 +65,32 @@ std::string encodeWith(
     info.cardinality = static_cast<UInt32>(row_ids.size());
     info.header = PostingsSerialization::Flags::IsCompressed | PostingsSerialization::Flags::HasBlockIndex;
     if (tfs != nullptr)
-        info.header |= PostingsSerialization::Flags::HasTermFrequencies;
+        info.header |= PostingsSerialization::Flags::HasWeights;
 
-    /// When scoring, gather the per-row `(tf - 1)` parallel to the row ids and hand over the
+    /// When scoring, gather the per-row term frequencies (the BM25 weights) parallel to the row ids and hand over the
     /// granule-wide doc lengths — exactly what the build/merge paths pass into the accumulator.
-    std::vector<uint32_t> tf_minus_one;
+    std::vector<uint32_t> weights;
     if (tfs != nullptr)
     {
-        tf_minus_one.reserve(row_ids.size());
+        weights.reserve(row_ids.size());
         for (auto id : row_ids)
-            tf_minus_one.push_back(tfs->tf(id) - 1);
+            weights.push_back(tfs->tf(id));
     }
 
+    const auto scoring = tfs != nullptr ? TextIndexScoringKind::BM25 : TextIndexScoringKind::None;
     const PostingListCodecBitpacking codec_for_context;
     const PostingListBuildContext context
     {
         codec_for_context,
         row_ids.size() + BLOCK_SIZE,
         /*enable_positions=*/false,
-        /*enable_scoring=*/tfs != nullptr,
+        /*scoring=*/scoring,
         tfs != nullptr ? &tfs->doc_lengths : nullptr,
     };
 
     /// One large segment so all docs land in a single segment (matches the cursor-test harness).
-    SegmentedPostingListCodec codec(IPostingListCodec::Type::Bitpacking, row_ids.size() + BLOCK_SIZE);
-    codec.append(row_ids, tf_minus_one, context);
+    SegmentedPostingListCodec codec(IPostingListCodec::Type::Bitpacking, row_ids.size() + BLOCK_SIZE, scoring);
+    codec.append(row_ids, weights, context);
     WriteBufferFromOwnString out;
     codec.serializeTo(out, info);
     out.finalize();

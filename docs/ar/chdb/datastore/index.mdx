@@ -7,12 +7,10 @@ keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'lazy evaluation']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 DataStore هي واجهة برمجة تطبيقات chDB المتوافقة مع pandas، وتجمع بين واجهة pandas DataFrame المألوفة وقوة تحسين استعلامات SQL، ما يتيح لك كتابة شيفرة بأسلوب pandas مع الحصول على أداء ClickHouse.
 
 <div id="key-features">
-  ## الميزات الرئيسية
+  ## الميزات الرئيسية {#key-features}
 </div>
 
 * **التوافق مع pandas**: ‏209 طريقة في pandas DataFrame، و56 طريقة لـ `.str`، وأكثر من 42 طريقة لـ `.dt`
@@ -21,22 +19,24 @@ DataStore هي واجهة برمجة تطبيقات chDB المتوافقة مع
 * **أكثر من 630 طريقة في واجهة برمجة تطبيقات**: واجهة برمجة تطبيقات شاملة لمعالجة البيانات
 * **امتدادات ClickHouse**: ملحقات إضافية (`.arr`, `.json`, `.url`, `.ip`, `.geo`) غير متوفرة في pandas
 
-<div id="architecture">
-  ## معمارية
-</div>
+## معمارية {#architecture}
 
-<Image size="md" img="/images/chdb/datastore_architecture.png" alt="معمارية DataStore" />
+<div className="ch-image-md">
+  <Frame>
+    ![معمارية DataStore](/images/chdb/datastore_architecture.png)
+  </Frame>
+</div>
 
 يستخدم DataStore **التقييم الكسول** مع **تنفيذ ثنائي المحرك**:
 
-1. **سلسلة عمليات كسولة**: تُسجَّل العمليات ولا تُنفَّذ فورًا
+1. **سلسلة عمليات كسولة**: تُسجَّل العمليات ولا تُنفَّذ فورًا
 2. **اختيار ذكي للمحرك**: يوجّه QueryPlanner كل جزء إلى المحرك الأنسب (chDB لـ SQL، وPandas للعمليات المعقدة)
-3. **تخزين مؤقت وسيط**: تُخزَّن النتائج مؤقتًا عند كل خطوة لتسريع الاستكشاف التكراري
+3. **تخزين مؤقت وسيط**: تُخزَّن النتائج مؤقتًا عند كل خطوة لتسريع الاستكشاف التكراري
 
 راجع [نموذج التنفيذ](/ar/chdb/datastore/execution-model) لمزيد من التفاصيل.
 
 <div id="migration">
-  ## الترحيل من Pandas بسطر واحد
+  ## الترحيل من Pandas بسطر واحد {#migration}
 </div>
 
 ```python
@@ -54,7 +54,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 تعمل شيفرة pandas الحالية لديك كما هي، لكنها تعمل الآن على محرك ClickHouse.
 
 <div id="performance">
-  ## مقارنة الأداء
+  ## مقارنة الأداء {#performance}
 </div>
 
 يوفّر DataStore تحسينات ملحوظة في الأداء مقارنةً بـ pandas، لا سيما في عمليات التجميع ومسارات المعالجة المعقّدة:
@@ -69,7 +69,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 *اختبار قياس أداء على 10M صف. راجع [برنامج نصي لقياس الأداء](https://github.com/chdb-io/chdb/blob/main/refs/benchmark_datastore_vs_pandas.py) و[دليل الأداء](/ar/chdb/guides/pandas-performance) للاطلاع على التفاصيل.*
 
 <div id="when-to-use">
-  ## متى تستخدم DataStore
+  ## متى تستخدم DataStore {#when-to-use}
 </div>
 
 **استخدم DataStore عندما:**
@@ -87,7 +87,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 * تعمل مع ميزات خاصة بـ ClickHouse غير المتاحة في واجهة pandas البرمجية
 
 <div id="comparison">
-  ## مقارنة الميزات
+  ## مقارنة الميزات {#comparison}
 </div>
 
 | الميزة                               | Pandas | Polars | DuckDB | DataStore        |
@@ -102,7 +102,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 | دعم التخزين السحابي                  | لا     | محدود  | نعم    | **نعم**          |
 
 <div id="api-stats">
-  ## إحصاءات واجهة برمجة التطبيقات
+  ## إحصاءات واجهة برمجة التطبيقات {#api-stats}
 </div>
 
 | الفئة                                | العدد    | التغطية                         |
@@ -118,18 +118,18 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 | **إجمالي طرق واجهة برمجة التطبيقات** | **630+** | -                               |
 
 <div id="navigation">
-  ## التنقّل في الوثائق
+  ## التنقّل في الوثائق {#navigation}
 </div>
 
 <div id="getting-started">
-  ### البدء
+  ### البدء {#getting-started}
 </div>
 
 * [البدء السريع](/ar/chdb/datastore/quickstart) - التثبيت والاستخدام الأساسي
 * [الترحيل من Pandas](/ar/chdb/guides/migration-from-pandas) - دليل الترحيل خطوة بخطوة
 
 <div id="api-reference">
-  ### مرجع واجهة برمجة التطبيقات
+  ### مرجع واجهة برمجة التطبيقات {#api-reference}
 </div>
 
 * [دوال المصنع](/ar/chdb/datastore/factory-methods) - إنشاء DataStore من مصادر متنوعة
@@ -140,14 +140,14 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 * [عمليات الإدخال والإخراج](/ar/chdb/datastore/io) - قراءة البيانات وكتابتها
 
 <div id="advanced-topics">
-  ### موضوعات متقدمة
+  ### موضوعات متقدمة {#advanced-topics}
 </div>
 
 * [نموذج التنفيذ](/ar/chdb/datastore/execution-model) - التقييم الكسول والتخزين المؤقت
 * [مرجع الفئة](/ar/chdb/datastore/class-reference) - المرجع الكامل لواجهة برمجة التطبيقات
 
 <div id="configuration-debugging">
-  ### الإعداد واستكشاف الأخطاء وإصلاحها
+  ### الإعداد واستكشاف الأخطاء وإصلاحها {#configuration-debugging}
 </div>
 
 * [الإعداد](/ar/chdb/configuration/index) - جميع خيارات الإعداد
@@ -155,7 +155,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 * [استكشاف الأخطاء وإصلاحها](/ar/chdb/debugging/index) - Explain، وتحليل الأداء، والتسجيل
 
 <div id="pandas-user-guides">
-  ### أدلة مستخدمي Pandas
+  ### أدلة مستخدمي Pandas {#pandas-user-guides}
 </div>
 
 * [دليل وصفات Pandas](/ar/chdb/guides/pandas-cookbook) - الأنماط الشائعة
@@ -164,7 +164,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 * [SQL لمستخدمي Pandas](/ar/chdb/guides/pandas-to-sql) - فهم SQL وراء عمليات pandas
 
 <div id="quick-example">
-  ## مثال سريع
+  ## مثال سريع {#quick-example}
 </div>
 
 ```python
@@ -191,10 +191,8 @@ print(result.to_sql())
 df = result.to_df()  # Returns pandas DataFrame
 ```
 
-<div id="next-steps">
-  ## الخطوات التالية
-</div>
+## الخطوات التالية {#next-steps}
 
-* **هل تستخدم DataStore للمرة الأولى؟** ابدأ بـ[دليل البدء السريع](/ar/chdb/datastore/quickstart)
-* **هل تنتقل من pandas؟** اقرأ [دليل الترحيل](/ar/chdb/guides/migration-from-pandas)
-* **هل تريد معرفة المزيد؟** اطّلع على [مرجع واجهة برمجة التطبيقات](/ar/chdb/datastore/class-reference)
+* **هل أنت جديد على DataStore؟** ابدأ بـ[دليل البدء السريع](/ar/chdb/datastore/quickstart)
+* **هل تنتقل من pandas؟** اطّلع على [دليل الترحيل](/ar/chdb/guides/migration-from-pandas)
+* **هل تريد معرفة المزيد؟** تصفّح [مرجع API](/ar/chdb/datastore/class-reference)

@@ -1,0 +1,30 @@
+<test>
+    <!-- With compress_per_substream_in_compact_parts (default true) each column substream in a Compact
+         part starts its own compressed block, so reading a single subcolumn (Tuple element, Array size,
+         JSON path) decompresses only that substream instead of the whole column's block. -->
+    <create_query>
+        create table compress_per_substream_compact
+        (
+            t Tuple(big String, small String),
+            arr Array(String),
+            json JSON
+        )
+        engine=MergeTree order by tuple()
+        settings min_bytes_for_wide_part='10G', min_rows_for_wide_part=100000000
+    </create_query>
+
+    <fill_query>
+        insert into compress_per_substream_compact
+        select
+            (hex(randomString(2000)), toString(number % 100)),
+            arrayMap(i -> hex(randomString(100)), range(20)),
+            map('small', toString(number % 100), 'big', hex(randomString(2000)))
+        from numbers(1000000)
+    </fill_query>
+
+    <query>select t.small from compress_per_substream_compact format Null</query>
+    <query>select arr.size0 from compress_per_substream_compact format Null</query>
+    <query>select json.small from compress_per_substream_compact format Null</query>
+
+    <drop_query>drop table if exists compress_per_substream_compact</drop_query>
+</test>

@@ -1,6 +1,6 @@
 -- The hash-table-stats cache key hashes the actions DAGs below the aggregation without the values
--- of their variable-size constants, so that a large folded constant is not hashed on every execution.
--- Fixed-size values are still hashed, so the key tells apart expressions that differ only in a
+-- of their large constants, so that a large folded constant is not hashed on every execution.
+-- Short values are still hashed, so the key tells apart expressions that differ only in a
 -- literal: seen through a subquery the aggregation key is named `__table1.k` in both queries below,
 -- so only the expression step separates them. A query over a large folded scalar must keep a stable
 -- key, so its second run preallocates.
@@ -8,8 +8,9 @@
 -- Each run is checked through the `AggregationPreallocatedElementsInHashTables` profile event. The
 -- group counts stay above the 500e3 lower bound under which `getSizeHint` does not preallocate.
 
-SET enable_analyzer = 1;
 SET max_threads = 1;
+-- The adaptive aggregator also takes one thread and records no table sizes in the statistics.
+SET enable_adaptive_aggregator = 0;
 -- Checks the aggregation of this node; with parallel replicas it would run on the replicas.
 SET enable_parallel_replicas = 0;
 SET collect_hash_table_stats_during_aggregation = 1;

@@ -8,32 +8,34 @@ sidebarTitle: 'Guía de migración'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
-<div id="why-use-clickhouse-cloud-over-bigquery">
-  ## ¿Por qué usar ClickHouse Cloud en lugar de BigQuery?
-</div>
+## ¿Por qué usar ClickHouse Cloud en lugar de BigQuery? {#why-use-clickhouse-cloud-over-bigquery}
 
 TLDR: Porque ClickHouse es más rápido, más económico y más potente que BigQuery para el análisis de datos actual:
 
-<Image img="/images/migrations/bigquery-2.webp" size="md" alt="ClickHouse vs BigQuery" />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse vs BigQuery](/images/migrations/bigquery-2.webp)
+  </Frame>
+</div>
 
 <div id="loading-data-from-bigquery-to-clickhouse-cloud">
-  ## Carga de datos desde BigQuery a ClickHouse Cloud
+  ## Carga de datos desde BigQuery a ClickHouse Cloud {#loading-data-from-bigquery-to-clickhouse-cloud}
 </div>
 
-<div id="dataset">
-  ### Conjunto de datos
-</div>
+### Conjunto de datos {#dataset}
 
 Como conjunto de datos de ejemplo para mostrar una migración típica de BigQuery a ClickHouse Cloud, usamos el conjunto de datos de Stack Overflow documentado [aquí](/es/get-started/sample-datasets/stackoverflow). Incluye todos los registros de `post`, `vote`, `user`, `comment` y `badge` de Stack Overflow desde 2008 hasta abril de 2024. El esquema de BigQuery para estos datos se muestra a continuación:
 
-<Image img="/images/migrations/bigquery-3.webp" size="lg" alt="Esquema" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Esquema](/images/migrations/bigquery-3.webp)
+  </Frame>
+</div>
 
-Para los usuarios que deseen cargar este conjunto de datos en una instancia de BigQuery para probar los pasos de migración, hemos proporcionado los datos de estas tablas en formato Parquet en un bucket de GCS, y los comandos DDL para crear y cargar las tablas en BigQuery están disponibles [aquí](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==).
+Para los usuarios que deseen poblar este conjunto de datos en una instancia de BigQuery para probar los pasos de migración, hemos proporcionado los datos de estas tablas en formato Parquet en un bucket de GCS, y los comandos DDL para crear y cargar las tablas en BigQuery están disponibles [aquí](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==).
 
 <div id="migrating-data">
-  ### Migración de datos
+  ### Migración de datos {#migrating-data}
 </div>
 
 La migración de datos entre BigQuery y ClickHouse Cloud se divide en dos tipos principales de cargas de trabajo:
@@ -41,36 +43,38 @@ La migración de datos entre BigQuery y ClickHouse Cloud se divide en dos tipos 
 * **Carga masiva inicial con actualizaciones periódicas**: se debe migrar un conjunto de datos inicial junto con actualizaciones periódicas en intervalos definidos, por ejemplo, diariamente. Aquí, las actualizaciones se gestionan reenviando las filas que han cambiado, identificadas mediante una columna que pueda usarse para comparaciones (p. ej., una fecha). Las eliminaciones se gestionan mediante una recarga periódica completa del conjunto de datos.
 * **Replicación en tiempo real o CDC**: se debe migrar un conjunto de datos inicial. Los cambios en este conjunto de datos deben reflejarse en ClickHouse casi en tiempo real, con un retraso aceptable de solo unos segundos. En la práctica, se trata de un proceso de [captura de datos modificados (CDC)](https://en.wikipedia.org/wiki/Change_data_capture), en el que las tablas de BigQuery deben sincronizarse con ClickHouse; es decir, las inserciones, actualizaciones y eliminaciones en la tabla de BigQuery deben aplicarse a una tabla equivalente en ClickHouse.
 
-<div id="bulk-loading-via-google-cloud-storage-gcs">
-  #### Carga masiva mediante Google Cloud Storage (GCS)
-</div>
+#### Carga masiva mediante Google Cloud Storage (GCS) {#bulk-loading-via-google-cloud-storage-gcs}
 
 BigQuery permite exportar datos al almacenamiento de objetos de Google (GCS). Para nuestro conjunto de datos de ejemplo:
 
 1. Exporte las 7 tablas a GCS. Los comandos para hacerlo están disponibles [aquí](https://pastila.nl/?014e1ae9/cb9b07d89e9bb2c56954102fd0c37abd#0Pzj52uPYeu1jG35nmMqRQ==).
 
-2. Importe los datos a ClickHouse Cloud. Para ello, podemos usar la [función de tabla gcs](/es/reference/functions/table-functions/gcs). El DDL y las consultas de importación están disponibles [aquí](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==). Tenga en cuenta que, como una instancia de ClickHouse Cloud consta de varios nodos de compute, en lugar de la `función de tabla` `gcs`, usamos la [función de tabla s3Cluster](/es/reference/functions/table-functions/s3Cluster). Esta función también funciona con buckets de GCS y [utiliza todos los nodos de un servicio de ClickHouse Cloud](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers) para cargar los datos en paralelo.
+2. Importe los datos a ClickHouse Cloud. Para ello, podemos usar la [función de tabla gcs](/es/reference/functions/table-functions/gcs). El DDL y las consultas de importación están disponibles [aquí](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==). Tenga en cuenta que, como una instancia de ClickHouse Cloud consta de varios nodos de compute, en lugar de la función de tabla `gcs`, usamos la [función de tabla s3Cluster](/es/reference/functions/table-functions/s3Cluster). Esta función también funciona con buckets de GCS y [utiliza todos los nodos de un servicio de ClickHouse Cloud](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers) para cargar los datos en paralelo.
 
-<Image img="/images/migrations/bigquery-4.webp" size="md" alt="Carga masiva" />
+<div className="ch-image-md">
+  <Frame>
+    ![Carga masiva](/images/migrations/bigquery-4.webp)
+  </Frame>
+</div>
 
 Este enfoque ofrece varias ventajas:
 
 * La funcionalidad de exportación de BigQuery admite un filtro para exportar un subconjunto de los datos.
 * BigQuery permite exportar en formatos [Parquet, Avro, JSON y CSV](https://cloud.google.com/bigquery/docs/exporting-data), así como con varios [tipos de compresión](https://cloud.google.com/bigquery/docs/exporting-data), todos ellos compatibles con ClickHouse.
 * GCS admite la [gestión del ciclo de vida de los objetos](https://cloud.google.com/storage/docs/lifecycle), lo que permite eliminar, después de un período especificado, los datos que ya se hayan exportado e importado en ClickHouse.
-* [Google permite exportar hasta 50 TB al día a GCS de forma gratuita](https://cloud.google.com/bigquery/quotas#export_jobs). Los usuarios solo pagan por el almacenamiento en GCS.
-* Las exportaciones generan varios archivos automáticamente y limitan cada uno a un máximo de 1 GB de datos de tabla. Esto beneficia a ClickHouse, ya que permite paralelizar las importaciones.
+* [Google permite exportar hasta 50TB al día a GCS de forma gratuita](https://cloud.google.com/bigquery/quotas#export_jobs). Los usuarios solo pagan por el almacenamiento en GCS.
+* Las exportaciones generan varios archivos automáticamente y limitan cada uno a un máximo de 1GB de datos de tabla. Esto beneficia a ClickHouse, ya que permite paralelizar las importaciones.
 
 Antes de probar los ejemplos siguientes, recomendamos a los usuarios revisar los [permisos necesarios para la exportación](https://cloud.google.com/bigquery/docs/exporting-data#required_permissions) y las [recomendaciones sobre la ubicación de los datos](https://cloud.google.com/bigquery/docs/exporting-data#data-locations) para maximizar el rendimiento de la exportación y la importación.
 
 <div id="real-time-replication-or-cdc-via-scheduled-queries">
-  ### Replicación en tiempo real o CDC mediante consultas programadas
+  ### Replicación en tiempo real o CDC mediante consultas programadas {#real-time-replication-or-cdc-via-scheduled-queries}
 </div>
 
 La captura de datos modificado (CDC) es el proceso mediante el cual las tablas se mantienen sincronizadas entre dos bases de datos. Esto es considerablemente más complejo si las actualizaciones y eliminaciones deben gestionarse casi en tiempo real. Un enfoque consiste simplemente en programar una exportación periódica mediante la [funcionalidad de consultas programadas](https://cloud.google.com/bigquery/docs/scheduling-queries) de BigQuery. Si puede aceptar cierto retraso antes de que los datos se inserten en ClickHouse, este enfoque es fácil de implementar y mantener. Puede ver un ejemplo en [esta entrada del blog](https://clickhouse.com/blog/clickhouse-bigquery-migrating-data-for-realtime-queries#using-scheduled-queries).
 
 <div id="designing-schemas">
-  ## Diseño de esquemas
+  ## Diseño de esquemas {#designing-schemas}
 </div>
 
 El conjunto de datos de Stack Overflow contiene varias tablas relacionadas. Recomendamos centrarse primero en migrar la tabla principal. No tiene por qué ser necesariamente la tabla más grande, sino aquella sobre la que prevé realizar más consultas analíticas. Esto le permitirá familiarizarse con los conceptos principales de ClickHouse. Es posible que esta tabla deba remodelarse a medida que se añadan tablas adicionales, para aprovechar al máximo las funcionalidades de ClickHouse y obtener un rendimiento óptimo. Exploramos este proceso de modelado en nuestra [documentación sobre modelado de datos](/es/guides/clickhouse/data-modelling/schema-design#next-data-modeling-techniques).
@@ -105,7 +109,7 @@ CREATE TABLE stackoverflow.posts (
 ```
 
 <div id="optimizing-types">
-  ### Optimización de los tipos
+  ### Optimización de los tipos {#optimizing-types}
 </div>
 
 Al aplicar el proceso [descrito aquí](/es/guides/clickhouse/data-modelling/schema-design), se obtiene el siguiente esquema:
@@ -149,9 +153,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
 
 No conservamos ningún valor NULL en nuestro nuevo esquema. La inserción anterior los convierte implícitamente en valores predeterminados para sus respectivos tipos: 0 para los enteros y un valor vacío para las cadenas. ClickHouse también convierte automáticamente cualquier valor numérico a la precisión de destino.
 
-<div id="how-are-clickhouse-primary-keys-different">
-  ## ¿En qué se diferencian las claves primarias de ClickHouse?
-</div>
+## ¿En qué se diferencian las claves primarias de ClickHouse? {#how-are-clickhouse-primary-keys-different}
 
 Como se describe [aquí](/es/get-started/migrate/bigquery/overview), al igual que en BigQuery, ClickHouse no impone unicidad sobre los valores de la columna de clave primaria de una tabla.
 
@@ -161,27 +163,29 @@ A diferencia de BigQuery, ClickHouse crea automáticamente [un índice primario 
 * La eficiencia de la memoria y del disco es fundamental a la escala a la que suele utilizarse ClickHouse. Los datos se escriben en las tablas de ClickHouse en fragmentos conocidos como partes, y se aplican reglas para fusionar esas partes en segundo plano. En ClickHouse, cada parte tiene su propio índice primario. Cuando las partes se fusionan, los índices primarios de la parte fusionada también se fusionan. Cabe señalar que estos índices no se construyen para cada fila. En su lugar, el índice primario de una parte tiene una entrada de índice por grupo de filas; esta técnica se denomina indexación dispersa.
 * La indexación dispersa es posible porque ClickHouse almacena en disco las filas de una parte ordenadas por una clave especificada. En lugar de localizar directamente filas individuales (como un índice basado en B-Tree), el índice primario disperso le permite identificar rápidamente (mediante una búsqueda binaria sobre las entradas del índice) grupos de filas que podrían coincidir con la consulta. Los grupos localizados de filas potencialmente coincidentes se transmiten después, en paralelo, al motor de ClickHouse para encontrar las coincidencias. Este diseño de índices permite que el índice primario sea pequeño (cabe por completo en la memoria principal) y, aun así, acelere significativamente los tiempos de ejecución de las consultas, especialmente en las consultas de rango típicas de los casos de uso de analítica de datos. Para más detalles, recomendamos [esta guía detallada](/es/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
-<Image img="/images/migrations/bigquery-5.webp" size="md" alt="Claves primarias de ClickHouse" />
+<div className="ch-image-md">
+  <Frame>
+    ![Claves primarias de ClickHouse](/images/migrations/bigquery-5.webp)
+  </Frame>
+</div>
 
 La clave primaria seleccionada en ClickHouse determinará no solo el índice, sino también el orden en que los datos se escriben en disco. Por ello, puede influir drásticamente en los niveles de compresión, lo que, a su vez, puede afectar al rendimiento de las consultas. Una clave de ordenación que haga que los valores de la mayoría de las columnas se escriban en un orden contiguo permitirá que el algoritmo de compresión seleccionado (y los códecs) comprima los datos de forma más eficaz.
 
 > Todas las columnas de una tabla se ordenarán según el valor de la clave de ordenación especificada, independientemente de si están incluidas en la propia clave. Por ejemplo, si `CreationDate` se usa como clave, el orden de los valores en todas las demás columnas corresponderá al orden de los valores de la columna `CreationDate`. Se pueden especificar varias claves de ordenación; esto ordenará con la misma semántica que una cláusula `ORDER BY` en una consulta `SELECT`.
 
 <div id="choosing-an-ordering-key">
-  ### Elegir una clave de ordenación
+  ### Elegir una clave de ordenación {#choosing-an-ordering-key}
 </div>
 
 Para consultar las consideraciones y los pasos para elegir una clave de ordenación usando la tabla Posts como ejemplo, consulte [aquí](/es/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key).
 
 <div id="data-modeling-techniques">
-  ## Técnicas de modelado de datos
+  ## Técnicas de modelado de datos {#data-modeling-techniques}
 </div>
 
 Recomendamos a quienes migran desde BigQuery que lean [la guía para modelar datos en ClickHouse](/es/guides/clickhouse/data-modelling/schema-design). Esta guía utiliza el mismo conjunto de datos de Stack Overflow y explora varios enfoques con funciones de ClickHouse.
 
-<div id="partitions">
-  ### Particiones
-</div>
+### Particiones {#partitions}
 
 Si vienes de BigQuery, te resultará familiar el concepto de particionado de tablas para mejorar el rendimiento y la facilidad de administración en bases de datos grandes, dividiendo las tablas en partes más pequeñas y manejables llamadas particiones. Este particionado puede lograrse usando un rango sobre una columna específica (p. ej., fechas), listas definidas o mediante un hash sobre una clave. Esto permite a los administradores organizar los datos según criterios concretos, como rangos de fechas o ubicaciones geográficas.
 
@@ -189,14 +193,18 @@ El particionado ayuda a mejorar el rendimiento de las consultas al permitir un a
 
 En ClickHouse, el particionado se especifica en una tabla cuando se define inicialmente mediante la cláusula [`PARTITION BY`](/es/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Esta cláusula puede contener una expresión SQL sobre cualquier columna, y sus resultados definirán a qué partición se envía una fila.
 
-<Image img="/images/migrations/bigquery-6.webp" size="md" alt="Particiones" />
+<div className="ch-image-md">
+  <Frame>
+    ![Particiones](/images/migrations/bigquery-6.webp)
+  </Frame>
+</div>
 
 Las partes de datos se asocian lógicamente con cada partición en disco y pueden consultarse de forma aislada. En el ejemplo siguiente, particionamos la tabla posts por año usando la expresión [`toYear(CreationDate)`](/es/reference/functions/regular-functions/date-time-functions#toYear). A medida que se insertan filas en ClickHouse, esta expresión se evaluará para cada fila; después, las filas se dirigirán a la partición resultante en forma de nuevas partes de datos pertenecientes a esa partición.
 
 ```sql
 CREATE TABLE posts
 (
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
         `AcceptedAnswerId` UInt32,
         `CreationDate` DateTime64(3, 'UTC'),
@@ -209,7 +217,7 @@ PARTITION BY toYear(CreationDate)
 ```
 
 <div id="applications">
-  #### Aplicaciones
+  #### Aplicaciones {#applications}
 </div>
 
 El particionado en ClickHouse tiene aplicaciones similares a las de BigQuery, aunque con algunas diferencias sutiles. Más concretamente:
@@ -260,7 +268,7 @@ Ok.
 * **Optimización de consultas** - Aunque las particiones pueden ayudar a mejorar el rendimiento de las consultas, esto depende en gran medida de los patrones de acceso. Si las consultas se dirigen solo a unas pocas particiones (idealmente, una sola), el rendimiento puede mejorar. Normalmente, esto solo es útil si la clave de partición no forma parte de la clave primaria y se está filtrando por ella. Sin embargo, las consultas que necesitan abarcar muchas particiones pueden tener peor rendimiento que si no se usara particionado (ya que el particionado puede dar lugar a un mayor número de partes). La ventaja de dirigirse a una sola partición será aún menos apreciable, o incluso inexistente, si la clave de partición ya aparece entre las primeras entradas de la clave primaria. El particionado también puede usarse para [optimizar consultas `GROUP BY`](/es/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key) si los valores de cada partición son únicos. Sin embargo, en general, debes asegurarte de que la clave primaria esté optimizada y considerar el particionado como una técnica de optimización de consultas solo en casos excepcionales en los que los patrones de acceso se limiten a un subconjunto específico y predecible del tiempo, por ejemplo, particionar por día cuando la mayoría de las consultas se centran en el último día.
 
 <div id="recommendations">
-  #### Recomendaciones
+  #### Recomendaciones {#recommendations}
 </div>
 
 Conviene considerar el particionado como una técnica de gestión de datos. Es ideal cuando es necesario expirar datos del clúster al trabajar con series temporales; por ejemplo, la partición más antigua puede [simplemente eliminarse](/es/reference/statements/alter/partition#drop-partitionpart).
@@ -270,7 +278,7 @@ Importante: Asegúrese de que la expresión de su clave de partición no produzc
 > Internamente, ClickHouse [crea partes](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design) para los datos insertados. A medida que se insertan más datos, el número de partes aumenta. Para evitar un número excesivamente alto de partes, lo que degradará el rendimiento de las consultas (porque habrá más archivos que leer), las partes se fusionan en un proceso asíncrono en segundo plano. Si el número de partes supera un [límite preconfigurado](/es/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert), ClickHouse lanzará una excepción durante la inserción con el error [&quot;too many parts&quot;](/es/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts). Esto no debería ocurrir en condiciones normales de funcionamiento y solo sucede si ClickHouse está mal configurado o se utiliza incorrectamente; por ejemplo, con muchas inserciones pequeñas. Dado que las partes se crean por partición de forma aislada, aumentar el número de particiones hace que aumente el número de partes; es decir, el total es un múltiplo del número de particiones. Por lo tanto, las claves de partición de alta cardinalidad pueden provocar este error y deben evitarse.
 
 <div id="materialized-views-vs-projections">
-  ## Vistas materializadas vs proyecciones
+  ## Vistas materializadas vs proyecciones {#materialized-views-vs-projections}
 </div>
 
 El concepto de proyecciones de ClickHouse le permite especificar varias cláusulas `ORDER BY` para una tabla.
@@ -396,16 +404,18 @@ WHERE UserId = 8592047
 11 rows in set. Elapsed: 0.004 sec.
 ```
 
-<div id="when-to-use-projections">
-  ### Cuándo usar proyecciones
-</div>
+### Cuándo usar proyecciones {#when-to-use-projections}
 
 Las proyecciones son una funcionalidad atractiva para los usuarios nuevos, ya que se mantienen automáticamente
 a medida que se insertan los datos. Además, las consultas pueden enviarse simplemente a una sola
 tabla, donde las proyecciones se aprovechan, cuando es posible, para acelerar el tiempo
 de respuesta.
 
-<Image img="/images/migrations/bigquery-7.webp" size="md" alt="Proyecciones" />
+<div className="ch-image-md">
+  <Frame>
+    ![Proyecciones](/images/migrations/bigquery-7.webp)
+  </Frame>
+</div>
 
 Esto contrasta con las vistas materializadas, donde el usuario debe seleccionar la
 tabla de destino optimizada adecuada o reescribir la consulta, según los filtros.
@@ -421,17 +431,19 @@ Recomendamos usar proyecciones cuando:
 * Se requiere una reordenación completa de los datos. Aunque la expresión de la proyección puede, en teoría, usar un `GROUP BY,` las vistas materializadas son más eficaces para mantener agregados. También es más probable que el optimizador de consultas aproveche las proyecciones que usan una reordenación simple; es decir, `SELECT * ORDER BY x`. Puede seleccionar un subconjunto de columnas en esta expresión para reducir el espacio de almacenamiento.
 * Los usuarios aceptan el aumento correspondiente en el espacio de almacenamiento y la sobrecarga que supone escribir los datos dos veces. Pruebe el impacto en la velocidad de inserción y [evalúe la sobrecarga de almacenamiento](/es/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
-<div id="rewriting-bigquery-queries-in-clickhouse">
-  ## Reescritura de consultas de BigQuery en ClickHouse
-</div>
+## Reescritura de consultas de BigQuery en ClickHouse {#rewriting-bigquery-queries-in-clickhouse}
 
-A continuación se muestran consultas de ejemplo que comparan BigQuery con ClickHouse. Esta lista pretende demostrar cómo aprovechar las capacidades de ClickHouse para simplificar considerablemente las consultas. Los ejemplos aquí utilizan el conjunto de datos completo de Stack Overflow (hasta abril de 2024).
+A continuación se muestran consultas de ejemplo que comparan BigQuery con ClickHouse. Esta lista pretende demostrar cómo aprovechar las funcionalidades de ClickHouse para simplificar considerablemente las consultas. Los ejemplos aquí utilizan el conjunto de datos completo de Stack Overflow (hasta abril de 2024).
 
 **Users (con más de 10 preguntas) que reciben más visualizaciones:**
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-8.webp" size="sm" alt="Reescritura de consultas de BigQuery" border />
+<div className="ch-image-sm">
+  <Frame>
+    ![Reescritura de consultas de BigQuery](/images/migrations/bigquery-8.webp)
+  </Frame>
+</div>
 
 *ClickHouse*
 
@@ -466,7 +478,11 @@ Peak memory usage: 323.37 MiB.
 
 <br />
 
-<Image img="/images/migrations/bigquery-9.webp" size="sm" alt="BigQuery 1" border />
+<div className="ch-image-sm">
+  <Frame>
+    ![BigQuery 1](/images/migrations/bigquery-9.webp)
+  </Frame>
+</div>
 
 *ClickHouse*
 
@@ -494,17 +510,23 @@ LIMIT 5
 Peak memory usage: 567.41 MiB.
 ```
 
-<div id="aggregate-functions">
-  ## Funciones de agregación
-</div>
+## Funciones de agregación {#aggregate-functions}
 
 Siempre que sea posible, debe aprovechar las funciones de agregación de ClickHouse. A continuación, mostramos el uso de la [función `argMax`](/es/reference/functions/aggregate-functions/argMax) para calcular la pregunta más vista de cada año.
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-10.webp" border size="sm" alt="Funciones de agregación 1" />
+<div className="ch-image-sm">
+  <Frame>
+    ![Funciones de agregación 1](/images/migrations/bigquery-10.webp)
+  </Frame>
+</div>
 
-<Image img="/images/migrations/bigquery-11.webp" border size="sm" alt="Funciones de agregación 2" />
+<div className="ch-image-sm">
+  <Frame>
+    ![Funciones de agregación 2](/images/migrations/bigquery-11.webp)
+  </Frame>
+</div>
 
 *ClickHouse*
 
@@ -552,15 +574,17 @@ MaxViewCount:            66975
 Peak memory usage: 377.26 MiB.
 ```
 
-<div id="conditionals-and-arrays">
-  ## Condicionales y arrays
-</div>
+## Condicionales y arrays {#conditionals-and-arrays}
 
 Las funciones condicionales y de arrays simplifican considerablemente las consultas. La siguiente consulta calcula las etiquetas (con más de 10000 apariciones) con el mayor incremento porcentual entre 2022 y 2023. Observa cómo la siguiente consulta de ClickHouse resulta concisa gracias a los condicionales, las funciones de arrays y la posibilidad de reutilizar alias en las cláusulas `HAVING` y `SELECT`.
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-12.webp" size="sm" border alt="Condicionales y Arrays" />
+<div className="ch-image-sm">
+  <Frame>
+    ![Condicionales y Arrays](/images/migrations/bigquery-12.webp)
+  </Frame>
+</div>
 
 *ClickHouse*
 
@@ -591,4 +615,4 @@ LIMIT 5
 Peak memory usage: 410.37 MiB.
 ```
 
-Con esto concluye nuestra guía básica si estás migrando de BigQuery a ClickHouse. Te recomendamos leer la guía sobre [modelado de datos en ClickHouse](/es/guides/clickhouse/data-modelling/schema-design) para obtener más información sobre las funciones avanzadas de ClickHouse.
+Con esto concluye nuestra guía básica si estás migrando de BigQuery a ClickHouse. Te recomendamos leer la guía sobre [modelado de datos en ClickHouse](/es/guides/clickhouse/data-modelling/schema-design) para obtener más información sobre las funcionalidades avanzadas de ClickHouse.

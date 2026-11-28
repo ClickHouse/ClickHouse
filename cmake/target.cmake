@@ -17,6 +17,18 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "Darwin")
 elseif (CMAKE_SYSTEM_NAME MATCHES "SunOS")
     set (OS_SUNOS 1)
     add_definitions(-D OS_SUNOS)
+
+    # Disable features that aren't currently supported on illumos.
+    # `CACHE INTERNAL` forces the value, so it also applies on reconfigure of an existing build directory.
+    set (ENABLE_AZURE_BLOB_STORAGE OFF CACHE INTERNAL "")
+    set (ENABLE_HDFS OFF CACHE INTERNAL "")
+    set (ENABLE_LDAP OFF CACHE INTERNAL "")
+    set (ENABLE_LIBPQXX OFF CACHE INTERNAL "")
+    set (USE_MONGODB OFF CACHE INTERNAL "")
+    set (ENABLE_PARQUET OFF CACHE INTERNAL "")
+    set (ENABLE_ROCKSDB OFF CACHE INTERNAL "")
+    set (ENABLE_SSH OFF CACHE INTERNAL "")
+    set (ENABLE_RUST OFF CACHE INTERNAL "")
 elseif (CMAKE_SYSTEM_NAME MATCHES "Emscripten")
     # WebAssembly, through the Emscripten toolchain. Configure with `emcmake cmake ...`, which
     # sets CMAKE_SYSTEM_NAME and points CMAKE_TOOLCHAIN_FILE at Emscripten's own toolchain file.
@@ -56,7 +68,7 @@ if (OS_WASM)
     set (ENABLE_GRPC OFF CACHE INTERNAL "")
     # Protobuf needs a `protoc` that runs on the host, and the nested native configure at the
     # bottom of the top-level `CMakeLists.txt` would be handed `emcc` as its host compiler.
-    # Arrow, Parquet and ORC hard-depend on it, so they go with it.
+    # Arrow and Parquet hard-depend on it, so they go with it.
     set (ENABLE_PROTOBUF OFF CACHE INTERNAL "")
     # Its `kj` library uses `fallocate` and friends unconditionally in its POSIX branch,
     # which the Emscripten libc does not provide.
@@ -171,8 +183,16 @@ if (CMAKE_CROSSCOMPILING)
             set (ENABLE_RUST OFF CACHE INTERNAL "")
         elseif (ARCH_S390X)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
+            set (ENABLE_PARQUET OFF CACHE INTERNAL "")
+            set (ENABLE_HDFS OFF CACHE INTERNAL "")
+            set (ENABLE_HIVE OFF CACHE INTERNAL "")
             set (ENABLE_ARROW_FLIGHT OFF CACHE INTERNAL "")
-            set (ENABLE_RUST OFF CACHE INTERNAL "")
+            set (ENABLE_AZURE_BLOB_STORAGE OFF CACHE INTERNAL "")
+            set (ENABLE_SZ3 OFF CACHE INTERNAL "")
+            set (ENABLE_VECTORSCAN OFF CACHE INTERNAL "")
+            set (ENABLE_MYSQL OFF CACHE INTERNAL "")
+            set (ENABLE_NLP OFF CACHE INTERNAL "")
+            set (ENABLE_DATASKETCHES OFF CACHE INTERNAL "")
     elseif (ARCH_LOONGARCH64)
             set (GLIBC_COMPATIBILITY OFF CACHE INTERNAL "")
             set (ENABLE_LDAP OFF CACHE INTERNAL "")
@@ -195,6 +215,8 @@ if (CMAKE_CROSSCOMPILING)
         # FIXME: broken dependencies
         set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
         set (ENABLE_DWARF_PARSER OFF CACHE INTERNAL "")
+    elseif (OS_SUNOS)
+        # The SunOS toolchain supplies the cross compiler and sysroot.
     elseif (OS_WASM)
         # Handled in the OS_WASM block above: it has to run before this one, because the
         # `CMAKE_CROSSCOMPILING` check below it needs `OS_WASM` to already be set.

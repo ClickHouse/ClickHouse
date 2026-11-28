@@ -28,9 +28,7 @@ SET force_index_by_date = 1
 SET force_index_by_date
 ```
 
-<div id="set-time-zone">
-  ## SET TIME ZONE
-</div>
+## SET TIME ZONE {#set-time-zone}
 
 ```sql
 SET TIME ZONE [=] 'timezone'
@@ -49,13 +47,11 @@ SET TIME ZONE 'America/New_York';
 SELECT getSetting('session_timezone');
 ```
 
-يجب أن تكون قيمة timezone اسمًا صحيحًا من [قاعدة بيانات المناطق الزمنية لـ IANA](https://www.iana.org/time-zones). وسيؤدي استخدام اسم timezone غير صحيح إلى حدوث خطأ.
+يجب أن تكون قيمة المنطقة الزمنية اسمًا مدرجًا في `system.time_zones`، أي في [قاعدة بيانات المناطق الزمنية لـ IANA](https://www.iana.org/time-zones) المضمّنة مع الخادم، أو إزاحة ثابتة بالصيغة `Fixed/UTC±HH:MM:SS`. وتؤدي أي قيمة أخرى إلى حدوث خطأ، بما في ذلك الأسماء التي لا توجد إلا في قاعدة بيانات المناطق الزمنية الخاصة بنظام التشغيل.
 
 لمزيد من المعلومات حول الإعداد `session_timezone`، راجع [session&#95;timezone](/ar/reference/settings/session-settings/other#session_timezone).
 
-<div id="setting-query-parameters">
-  ## تعيين معلمات الاستعلام
-</div>
+## تعيين معلمات الاستعلام {#setting-query-parameters}
 
 يمكن أيضًا استخدام عبارة `SET` لتعريف معلمات الاستعلام بإضافة السابقة `param_` قبل اسم المعلمة.
 تتيح لك معلمات الاستعلام كتابة استعلامات عامة باستخدام عناصر نائبة تُستبدل بالقيم الفعلية وقت التنفيذ.

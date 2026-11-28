@@ -20,7 +20,7 @@ ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] 
 
 如果某个表此前已被分离 ([DETACH](/zh/reference/statements/detach) 查询) ，也就是说其结构已知，则可以使用简写形式，而无需定义结构。
 
-## 附加现有表
+## 附加现有表 {#attach-existing-table}
 
 **语法**
 
@@ -32,9 +32,9 @@ ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 如果该表已被永久分离，服务器启动时就不会重新附加它，因此你需要显式使用 `ATTACH` 查询。
 
-## 创建新表并附加数据
+## 创建新表并附加数据 {#create-new-table-and-attach-data}
 
-### 使用指定的表数据路径
+### 使用指定的表数据路径 {#with-specified-path-to-table-data}
 
 该查询会使用给定的结构创建一个新表，并将 `user_files` 中指定目录里的表数据附加到该表。
 执行此查询需要用户拥有 `READ ON FILE` 和 `WRITE ON FILE` 特权：它会读取该目录并将其移动到新表的数据路径下。
@@ -60,7 +60,7 @@ SELECT * FROM test;
 └──────┴────┘
 ```
 
-### 使用指定表 UUID
+### 使用指定表 UUID {#with-specified-table-uuid}
 
 此查询会使用给定的结构创建一个新表，并附加具有指定 UUID 的表中的数据。
 该功能由 [Atomic](/zh/reference/engines/database-engines/atomic) 数据库引擎支持。
@@ -71,13 +71,15 @@ SELECT * FROM test;
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-## 将 MergeTree 表附加为 ReplicatedMergeTree
+## 将 MergeTree 表附加为 ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
 
 允许将非复制的 MergeTree 表附加为 ReplicatedMergeTree。创建的 ReplicatedMergeTree 表将使用 `default_replica_path` 和 `default_replica_name` 设置的值。也可以将复制表附加为普通 MergeTree 表。
 
-请注意，此查询不会影响 ZooKeeper 中该表的数据。这意味着在执行 attach 后，你必须使用 `SYSTEM RESTORE REPLICA` 在 ZooKeeper 中添加元数据，或者使用 `SYSTEM DROP REPLICA ... FROM ZKPATH ...` 将其清除。
+`Atomic` 和 `Ordinary` 数据库中的表均支持此转换。`Ordinary` 数据库中的表没有 UUID，因此转换时会生成一个 UUID，用它对 `default_replica_path` 进行一次展开，并将展开后的路径显式存储在转换后表的引擎参数中。若要为此类表添加更多副本，请在 `ReplicatedMergeTree` 引擎的第一个参数中显式指定该路径；该路径可在 `system.replicas` 的 `zookeeper_path` 列中查到。由于存储的路径中已不再包含 `{uuid}` 宏，每次加载时都需要将该路径重新与 `default_replica_path` 进行匹配，以确定此类表所属的 znode；如果无法将路径反向匹配回该模板 (例如模板中多次展开 `{uuid}`) ，则会拒绝转换。对于任何转换，都不支持在 `default_replica_name` 中使用 `{uuid}`。
 
-如果你尝试为现有的 ReplicatedMergeTree 表添加副本，请注意，转换后的 MergeTree 表中的所有本地数据都会变为 detached 状态。
+请注意，此查询不会影响 ZooKeeper 中该表的数据。这意味着在执行附加后，你必须使用 `SYSTEM RESTORE REPLICA` 在 ZooKeeper 中添加元数据，或者使用 `SYSTEM DROP REPLICA ... FROM ZKPATH ...` 将其清除。
+
+如果你尝试为现有的 ReplicatedMergeTree 表添加副本，请注意，转换后的 MergeTree 表中的所有本地数据都会变为分离状态。
 
 **语法**
 
@@ -115,7 +117,7 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-## 附加现有字典
+## 附加现有字典 {#attach-existing-dictionary}
 
 将先前处于 `分离` 状态的字典重新附加。
 
@@ -125,7 +127,7 @@ SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## 附加现有数据库
+## 附加现有数据库 {#attach-existing-database}
 
 将先前已分离的数据库重新附加。
 

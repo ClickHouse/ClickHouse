@@ -7,7 +7,6 @@
 -- lift the expression to a lambda: partial application.
 
 -- The placeholders are resolved only in the analyzer.
-SET enable_analyzer = 1;
 
 SELECT arrayMap(plus(_1, _2), [1, 2, 3], [4, 5, 6]);
 SELECT arrayMap(plus(5, _), [1, 3, 5]);

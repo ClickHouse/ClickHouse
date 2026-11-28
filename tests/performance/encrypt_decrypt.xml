@@ -18,21 +18,29 @@
               <value>decrypt('aes-128-cbc', encrypt('aes-128-cbc', materialize(plaintext), key16, iv16), key16, iv16)</value>
               <value>decrypt('aes-128-gcm', encrypt('aes-128-gcm', materialize(plaintext), key16, iv12), key16, iv12)</value>
 
+              <!-- Constant key + constant IV + AAD: GCM encrypt -->
+              <value>encrypt('aes-128-gcm', materialize(plaintext), key16, iv12, 'some aad')</value>
+
               <!-- Variable key, constant IV: encrypt (key changes per row, full init per row) -->
               <value>encrypt('aes-128-cbc', materialize(plaintext), randomString(16), iv16)</value>
               <value>encrypt('aes-128-ecb', materialize(plaintext), randomString(16))</value>
+              <value>encrypt('aes-128-gcm', materialize(plaintext), randomString(16), iv12)</value>
 
               <!-- Alternating keys: every row misses the key schedule cache -->
               <value>encrypt('aes-128-cbc', materialize(plaintext), concat(repeat('k', 15), toString(number % 2)), iv16)</value>
+              <value>encrypt('aes-128-gcm', materialize(plaintext), concat(repeat('k', 15), toString(number % 2)), iv12)</value>
 
               <!-- Constant key, variable IV: encrypt (IV changes per row, only the IV is reset) -->
               <value>encrypt('aes-128-cbc', materialize(plaintext), key16, randomString(16))</value>
+              <value>encrypt('aes-128-gcm', materialize(plaintext), key16, randomString(12))</value>
 
               <!-- Variable key / variable IV round trips (deterministic per-row values,
                    so decrypt sees the same key/IV as encrypt) -->
               <value>decrypt('aes-128-cbc', encrypt('aes-128-cbc', materialize(plaintext), vkey16, iv16), vkey16, iv16)</value>
               <value>decrypt('aes-128-ecb', encrypt('aes-128-ecb', materialize(plaintext), vkey16), vkey16)</value>
               <value>decrypt('aes-128-cbc', encrypt('aes-128-cbc', materialize(plaintext), key16, viv16), key16, viv16)</value>
+              <value>decrypt('aes-128-gcm', encrypt('aes-128-gcm', materialize(plaintext), vkey16, iv12), vkey16, iv12)</value>
+              <value>decrypt('aes-128-gcm', encrypt('aes-128-gcm', materialize(plaintext), key16, viv16), key16, viv16)</value>
            </values>
         </substitution>
         <substitution>

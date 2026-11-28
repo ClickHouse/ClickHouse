@@ -11,15 +11,16 @@ doc_type: 'reference'
 
 지정된 스키마로 무작위 데이터를 생성합니다.
 이 데이터로 테스트 테이블을 채울 수 있습니다.
-모든 타입이 지원되는 것은 아닙니다.
+`JSON`, `Dynamic`, `Variant`, `BFloat16`, `Time`, `Time64`를 포함하여 테이블에 저장할 수 있는 모든 데이터 타입을 지원합니다.
+`AggregateFunction`, `Interval`, `Nothing`, `QBit` 타입은 지원하지 않습니다.
 
-## 구문
+## 구문 {#syntax}
 
 ```sql
-generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]])
+generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]][, SETTINGS setting = value[, ...]])
 ```
 
-## 인수
+## 인수 {#arguments}
 
 | 인수                  | 설명                                                      |
 | ------------------- | ------------------------------------------------------- |
@@ -29,11 +30,37 @@ generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_str
 | `max_string_length` | 생성되는 모든 문자열의 최대 길이입니다. 기본값은 `10`입니다.                    |
 | `max_array_length`  | 생성되는 모든 배열 또는 맵의 최대 요소 수입니다. 기본값은 `10`입니다.              |
 
-## 반환 값
+## 설정 {#settings}
+
+`SETTINGS`는 호출의 마지막 인수로, `Nullable`, `Variant`, `Dynamic`, `JSON` 값이 생성되는 방식을 제어합니다.
+
+| 설정                         | 유형       | 기본값      | 설명                                                                                                                                  |
+| -------------------------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `null_ratio`               | `Float`  | `0.0625` | `Nullable`, `Variant`, `Dynamic` 값이 `NULL`일 확률이자 `JSON` 키가 행에 존재하지 않을 기본 확률입니다. 일부 희소 키는 이보다 몇 배 더 자주 누락됩니다. `[0, 1]` 범위의 값이어야 합니다. |
+| `max_json_depth`           | `UInt64` | `3`      | 생성되는 `JSON` 객체의 최대 중첩 깊이입니다. `1`은 중첩되지 않은 객체를 뜻하며, 배열 안의 객체도 깊이를 계산할 때 하나의 수준으로 셉니다. `[1, 32]` 범위의 값이어야 합니다.                        |
+| `max_json_keys_per_object` | `UInt64` | `8`      | `JSON` 객체의 한 수준에서 생성되는 키의 최대 개수입니다. 루트 객체에는 이 값의 절반 이상의 키가 생성됩니다. `0`이면 타입이 지정된 경로만 생성됩니다. 최대 `1000`입니다.                            |
+
+```sql
+SELECT * FROM generateRandom('x JSON', 3, 4, 2, SETTINGS max_json_depth = 1, max_json_keys_per_object = 3) LIMIT 3 FORMAT JSONEachRow;
+```
+
+```text
+{"x":{"cursor":"","id":[],"parent":-3723905664592977020}}
+{"x":{"cursor":"","id":[7037090064212902336]}}
+{"x":{"id":[287913403506346525],"parent":-4417942528676528098}}
+```
+
+`SETTINGS`만 인수로 지정하면 삽입 테이블의 구조가 유지됩니다.
+
+```sql
+INSERT INTO test_table SELECT * FROM generateRandom(SETTINGS null_ratio = 0.5) LIMIT 10;
+```
+
+## 반환 값 {#returned-value}
 
 요청한 스키마의 테이블 객체입니다.
 
-## 사용 예시
+## 사용 예시 {#usage-example}
 
 ```sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
@@ -106,7 +133,40 @@ SELECT * FROM generateRandom(11) LIMIT 3;
   충분히 큰 `max_array_length`를 사용하는 `generateRandom(generateRandomStructure(), [random seed], max_string_length, max_array_length)`는 복합 타입(`Array`, `Tuple`, `Map`, `Nested`)의 중첩 깊이가 커질 수 있어(최대 16) 매우 큰 출력을 생성할 수 있습니다.
 </Note>
 
-## 관련 콘텐츠
+## JSON 생성 {#generating-json}
+
+생성된 `JSON` 컬럼은 단일 스키마를 따르는 문서 스트림처럼 읽힙니다. 키의 집합과 각 키의 타입은
+랜덤 시드에 따라 결정되어 컬럼 전체에서 동일하게 유지되지만, 값과 누락되는 키, 배열 길이는
+행마다 달라집니다. 객체의 깊이는 `max_json_depth`, 각 계층의 키 수는
+`max_json_keys_per_object`로 제한되며, 각 키는 `null_ratio`의 확률로 행에서 누락됩니다.
+최하위 값에는 JSON 파서가 실제 문서에서 추론하는 타입이 사용됩니다. 여기에는 `Int64`, `UInt64`,
+`Float64`, `Bool`, `String`, `Date`, `DateTime`, 이러한 타입의 배열, 객체 배열, 혼합 배열이
+포함됩니다. 애플리케이션에서 수집한 데이터와 마찬가지로 일부 키는 소수의 행에서 다른 타입을 가집니다.
+
+타입 선언에 따라 생성되는 스키마가 달라집니다. 타입이 지정된 경로는 선언된 타입으로 항상
+존재하고, `SKIP`과 `SKIP REGEXP`로 제외된 경로는 생성되지 않습니다. 또한 `max_dynamic_paths`와
+`max_dynamic_types` 제한이 모두 적용되므로 `max_dynamic_paths`를 초과하는 경로는 컬럼의
+공유 데이터에 저장됩니다.
+
+```sql
+SELECT * FROM generateRandom('x JSON', 1) LIMIT 3 FORMAT JSONEachRow;
+```
+
+```text
+{"x":{"product_id":"2050-12-17 01:46:35","stage":"g|(&Ql","started":{"group":-80611897324989285}}}
+{"x":{"product_id":"2013-10-17 22:35:26","stage":"^ipx|,=a5N","started":{"group":-1326235429680389454}}}
+{"x":{"product_id":"1974-11-17 22:22:46","stage":"(U]p'l`","started":{"group":-344141642787805595}}}
+```
+
+데이터 구조를 삽입 테이블의 스키마에 맡길 수도 있습니다. `JSON`, `Dynamic`, `Variant` 컬럼이 있는 테이블에
+데이터를 삽입할 때 유용합니다.
+
+```sql
+CREATE TABLE t (x JSON) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t SELECT * FROM generateRandom() LIMIT 10;
+```
+
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [ClickHouse에서 무작위 데이터 생성](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)
 

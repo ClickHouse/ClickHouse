@@ -19,7 +19,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 构建容错存储。
 * 在流可用时立即处理。
 
-## 创建表
+## 创建表 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -61,10 +61,12 @@ SETTINGS
 
 必需参数：
 
-* `kafka_broker_list` — 以逗号分隔的 broker 列表 (例如 `localhost:9092`) 。
+* `kafka_broker_list` — 以逗号分隔的消息代理列表 (例如 `localhost:9092`) 。
 * `kafka_topic_list` — topic 列表。
-* `kafka_group_name` — 一组 Kafka 消费者。系统会分别跟踪每个组的读取偏移量。如果不希望消息在集群中重复，请在所有地方使用相同的组名。
+* `kafka_group_name` — 一组 Kafka 消费者。系统会分别跟踪每个组的读取偏移量。如果不希望消息在集群中重复，请在所有地方使用相同的组名。支持宏展开 (例如 `'consumers_{replica}'`) ，从而让每个副本使用各自的消费者组，并读取全部消息。
 * `kafka_format` — 消息格式。使用与 SQL `FORMAT` 函数相同的表示法，例如 `JSONEachRow`。更多信息，请参见 [格式](/zh/reference/formats/index) 部分。
+
+`kafka_broker_list`、`kafka_topic_list`、`kafka_group_name`、`kafka_client_id` 和 `kafka_schema` 的值均支持宏展开：`{database}` 和 `{table}` 会分别替换为该表所在的数据库名和表名，其他宏 (如 `{shard}` 和 `{replica}`) 则取自服务器的 `macros` 配置。
 
 可选参数：
 
@@ -105,6 +107,72 @@ SETTINGS
 * `kafka_partition_shard_num` — 用于静态分区与分片关联的当前分片编号。必须介于 1 和 `kafka_shard_count` 之间 (含两端) 。分区按公式 `partition_id % kafka_shard_count == kafka_partition_shard_num - 1` 分配。支持宏展开 (例如 `'{shard}'`) 。必须与 `kafka_shard_count` 一起使用。仅 StorageKafka2 支持 (需要 `kafka_keeper_path` 和 `kafka_replica_name`) 。默认值：`''` (禁用) 。
 * `kafka_shard_count` — 参与消费的分片总数。与 `kafka_partition_shard_num` 一起使用以静态分配分区。必须与 `kafka_partition_shard_num` 一起使用。仅 StorageKafka2 支持。默认值：`0` (禁用) 。
 
+## 结合命名集合使用 TLS 和 SASL {#kafka-tls-sasl-named-collections}
+
+Kafka 表引擎仅将 [librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) 设置中的一部分公开为表级 `kafka_*` 参数(例如 `kafka_security_protocol`、`kafka_sasl_mechanism`、`kafka_sasl_username` 和 `kafka_sasl_password`)。**TLS 证书路径、私钥以及私钥密码都不属于表设置**;请将它们作为 `librdkafka` 扩展属性进行配置。
+
+对于 `ENGINE = Kafka(named_collection)`:
+
+* 命名集合中的顶层 `kafka_*` 键属于 Kafka 表引擎设置(消息代理、topic、格式,以及上文列出的协议/SASL 设置)。
+* 在 `CREATE NAMED COLLECTION` 中带有 `kafka.` 前缀的键,或在 XML 中嵌套于 `<kafka>` 下的键,会被转发给 `librdkafka`。键名中的下划线会被转换为点号(例如 `kafka.ssl_ca_location` → `ssl.ca.location`,或 `<kafka>` 下的 `<ssl_ca_location>` → `ssl.ca.location`)。
+
+使用命名集合时,**`config.xml` 中服务器全局的 `<kafka>` 块不会被合并**。每个集合都必须包含该表所需的全部扩展属性(包括 TLS 文件;若未通过非空的表 `SETTINGS` 设置 `security.protocol`,则还需包含该属性)。
+
+对于使用客户端证书的 `SASL_SSL`,常见的做法是:将 TLS 路径和 `ssl.key.password` 存储在命名集合中;在表的 `SETTINGS` 子句中设置 `kafka_broker_list`、`kafka_topic_list`、`kafka_group_name`、`kafka_format`,并视需要设置 `kafka_sasl_username` / `kafka_sasl_password`。`kafka.security_protocol` 和 `kafka_security_protocol` 都会设置 `security.protocol`,两者同时存在时以非空的表设置为准。如果集合中已存储该属性,则表设置即构成对命名集合的覆盖:这需要对该集合拥有 `SHOW NAMED COLLECTIONS SECRETS` 权限;若该键被标记为 `NOT OVERRIDABLE`,则会报错 `Override not allowed`。`kafka_sasl_mechanism`、`kafka_sasl_username` 和 `kafka_sasl_password` 同样遵循此规则。
+
+示例(证书路径必须存在于每台为该表运行消费者的 ClickHouse 服务器上):
+
+```sql
+CREATE NAMED COLLECTION kafka_mtls AS
+    kafka.security_protocol = 'SASL_SSL',
+    kafka.sasl_mechanism = 'PLAIN',
+    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
+    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
+    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_key_password = 'secret';
+
+CREATE TABLE queue (
+    id UInt64,
+    payload String
+) ENGINE = Kafka(kafka_mtls)
+SETTINGS
+    kafka_broker_list = 'broker:9092',
+    kafka_topic_list = 'topic',
+    kafka_group_name = 'group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_username = 'user',
+    kafka_sasl_password = 'password';
+```
+
+在 XML 中定义的命名集合里配置相同的扩展设置：
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
+```
+
+所有与 TLS 相关的属性，请参阅 [librdkafka 配置参考文档](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)。如需在不使用命名集合的情况下设置服务器级默认值，请参阅下文的[配置](#configuration)部分。
+
+## OAUTHBEARER/OIDC 身份验证 {#oauthbearer-oidc-authentication}
+
+`OAUTHBEARER` 身份验证使用 [librdkafka 配置属性](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)。如需使用 OIDC 客户端凭证流程，请配置 `sasl.oauthbearer.method`、`sasl.oauthbearer.client.id`、`sasl.oauthbearer.client.secret`、`sasl.oauthbearer.token.endpoint.url` 和 `sasl.oauthbearer.scope`。
+
+在 ClickHouse XML 中定义这些属性时，需将属性名中的句点替换为下划线。例如，`sasl.oauthbearer.client.id` 应写作 `<sasl_oauthbearer_client_id>`。
+
+对于 `ENGINE = Kafka(named_collection)`，扩展的 `librdkafka` 设置 (包括 OIDC) 使用的 `kafka.` / `<kafka>` 命名空间与[通过命名集合配置 TLS 和 SASL](#kafka-tls-sasl-named-collections) 中所述相同。使用命名集合时，服务器的全局 `<kafka>` 配置不会被合并进来，因此每个 collection 都必须包含所有必需的 OIDC 属性。完整示例请参阅 [Kafka 命名集合](/zh/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication)。
+
 示例：
 
 ```sql
@@ -144,7 +212,7 @@ CREATE TABLE queue3 (
 
   ```sql
   Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
-        [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_consumer_reschedule_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
+        [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size, kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_consumer_reschedule_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
   ```
 </details>
 
@@ -152,7 +220,7 @@ CREATE TABLE queue3 (
   Kafka 表引擎不支持带有[默认值](/zh/reference/statements/create/table#default_values)的列。如果需要带默认值的列，可以在 materialized view 层添加它们 (见下文) 。
 </Info>
 
-## 说明
+## 说明 {#description}
 
 已传递的消息会被自动跟踪，因此组中的每条消息只会被计数一次。如果你希望将数据获取两次，请使用另一个组名创建一个表副本。
 
@@ -210,7 +278,7 @@ ATTACH TABLE consumer;
 
 如果你想使用 `ALTER` 修改目标表，我们建议先禁用materialized view，以避免目标表与视图数据之间出现不一致。
 
-## 配置
+## 配置 {#configuration}
 
 与 GraphiteMergeTree 类似，Kafka 引擎支持通过 ClickHouse 配置文件进行扩展配置。可使用两类配置键：全局级别 (位于 `<kafka>` 下) 和 topic 级别 (位于 `<kafka><kafka_topic>` 下) 。系统会先应用全局配置，再应用 topic 级别的配置 (如果存在) 。
 
@@ -256,7 +324,7 @@ ATTACH TABLE consumer;
 
 有关可用配置项的完整列表，请参阅 [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)。在 ClickHouse 配置中，请使用下划线 (`_`) 而非点号 (`.`) 。例如，`check.crcs=true` 应写为 `<check_crcs>true</check_crcs>`。
 
-### AWS MSK IAM 身份验证
+### AWS MSK IAM 身份验证 {#kafka-aws-msk-iam}
 
 <Note>
   AWS MSK IAM 身份验证要求 ClickHouse 在构建时启用 AWS S3 支持。
@@ -290,7 +358,7 @@ AWS 区域会通过模式匹配从 broker 端点中自动提取：
 
 **AWS 凭证：**
 
-如果存在，凭证始终会从 `~/.aws/credentials` 和 `~/.aws/config` (AWS profile 文件) 中加载。若还要启用 EC2 实例 profile、环境变量 (`AWS_ACCESS_KEY_ID` 等) 、ECS 任务角色以及其他自动凭证来源，请在服务器配置中添加：
+默认情况下，服务器不会为 `AWS_MSK_IAM` 解析任何 AWS 凭证，身份验证将失败并报错 `AWS credentials are empty or expired`。如需让服务器使用由运行环境提供的 AWS 身份进行身份验证，请在服务器配置中添加：
 
 ```xml
 <kafka>
@@ -298,7 +366,15 @@ AWS 区域会通过模式匹配从 broker 端点中自动提取：
 </kafka>
 ```
 
+由运行环境提供的凭证来源包括：环境变量 (`AWS_ACCESS_KEY_ID` 等) 、EC2 实例配置文件 (IMDS) 、服务账号的 IAM 角色 (IRSA) 、ECS 任务角色、SSO，以及 `~/.aws/credentials` 和 `~/.aws/config` profile 文件。
+
 此设置只能由服务器管理员进行配置。默认值：`false`。
+
+<Warning>
+  此设置存在安全风险。启用后，任何拥有 `KAFKA` 数据源授权和 `CREATE TABLE` 权限的用户都可以在表设置中指定 `AWS_MSK_IAM` 机制、broker 列表和 AWS 区域。随后，服务器会使用自身的 AWS 身份对 `kafka-cluster:Connect` 令牌进行签名，并将该令牌发送到用户指定的 broker。该令牌包含 AWS 访问密钥 ID 和完整的 STS 会话令牌，接收方主机可以冒用该服务器的身份，对该区域内的 MSK 集群重放此令牌。
+
+  仅当您信任所有能够创建 Kafka 表的用户、愿意让其使用服务器的 AWS 身份时，才应启用此设置。请使用 [remote&#95;url&#95;allow&#95;hosts](/zh/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) 限制 Kafka 表可连接的主机；该设置默认为空 (即允许所有主机) 。
+</Warning>
 
 **PrivateLink 和自定义 DNS：**
 
@@ -364,7 +440,7 @@ SETTINGS
 }
 ```
 
-### Kerberos 支持
+### Kerberos 支持 {#kafka-kerberos-support}
 
 要处理支持 Kerberos 的 Kafka，请添加值为 `sasl_plaintext` 的 `security_protocol` 子元素。只要操作系统机制已获取并缓存 Kerberos ticket-granting ticket 即可。
 ClickHouse 还可以使用 keytab 文件维护 Kerberos 凭据。请考虑使用 `sasl_kerberos_service_name`、`sasl_kerberos_keytab` 和 `sasl_kerberos_principal` 子元素。
@@ -380,7 +456,7 @@ ClickHouse 还可以使用 keytab 文件维护 Kerberos 凭据。请考虑使用
 </kafka>
 ```
 
-## 虚拟列
+## 虚拟列 {#virtual-columns}
 
 * `_topic` — Kafka topic。数据类型：`LowCardinality(String)`。
 * `_key` — 消息的键。数据类型：`String`。
@@ -398,7 +474,7 @@ ClickHouse 还可以使用 keytab 文件维护 Kerberos 凭据。请考虑使用
 
 注意：`_raw_message` 和 `_error` 这两个虚拟列仅在解析过程中发生异常时才会填充；消息成功解析时，它们始终为空。
 
-## 将列映射到 Kafka 消息元数据
+## 将列映射到 Kafka 消息元数据 {#mapping-columns-to-kafka-message-metadata}
 
 使用 `INSERT INTO` 生成消息时，如果表中存在名为 `_key` (类型为 `String`) 的列，Kafka 引擎始终会将其用作 Kafka 消息键；如果存在名为 `_timestamp` (类型为 `DateTime`) 的列，则会将其用作 Kafka 消息时间戳。默认情况下，这些列也会和其他列一起出现在生成的消息载荷中。
 
@@ -435,7 +511,7 @@ INSERT INTO kafka_out VALUES
 
 生成的 Kafka 消息包含载荷 `{"event_json":"{\"a\":1}"}`、键 `session-42`、当前时间戳，以及两个请求头 `source=api` 和 `trace_id=abc-123`。
 
-## 数据格式支持
+## 数据格式支持 {#data-formats-support}
 
 Kafka 引擎支持 ClickHouse 支持的所有[格式](/zh/reference/formats/index)。
 单条 Kafka 消息中的行数取决于所用格式是基于行还是基于块：
@@ -443,7 +519,7 @@ Kafka 引擎支持 ClickHouse 支持的所有[格式](/zh/reference/formats/inde
 * 对于基于行的格式，单条 Kafka 消息中的行数可通过设置 `kafka_max_rows_per_message` 进行控制。
 * 对于基于块的格式，我们无法将块拆分为更小的部分，但单个块中的行数可通过通用设置 [max&#95;block&#95;size](/zh/reference/settings/session-settings/max#max_block_size) 进行控制。
 
-## 在 ClickHouse Keeper 中存储已提交偏移量的引擎
+## 在 ClickHouse Keeper 中存储已提交偏移量的引擎 {#engine-to-store-committed-offsets-in-clickhouse-keeper}
 
 <ExperimentalBadge />
 
@@ -454,7 +530,7 @@ Kafka 引擎支持 ClickHouse 支持的所有[格式](/zh/reference/formats/inde
 
 这两个设置要么都指定，要么都不指定。当两者都指定时，将使用一个新的 Experimental Kafka 引擎。这个新引擎不依赖将已提交偏移量存储在 Kafka 中，而是将其存储在 ClickHouse Keeper 中。它仍会尝试将偏移量提交到 Kafka，但只有在创建表时才会依赖这些偏移量。在其他任何情况下 (例如表重启，或在发生错误后恢复) ，都会使用存储在 ClickHouse Keeper 中的偏移量继续消费消息。除了已提交偏移量外，它还会存储上一批次消费的消息数量，因此如果插入失败，就会再次消费相同数量的消息，从而在需要时实现去重。
 
-### 静态分区与分片亲和性
+### 静态分区与分片亲和性 {#static-partition-to-shard-affinity}
 
 使用 `StorageKafka2` 时，可通过指定 `kafka_partition_shard_num` 和 `kafka_shard_count` 选择性启用静态分区与分片亲和性。这样，多个 ClickHouse 实例 (分片) 可以从同一 topic 消费数据，并且每个分片仅根据以下公式处理确定的分区子集：
 
@@ -503,7 +579,7 @@ kafka_replica_name = '{replica}'
 SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 ```
 
-### 已知限制
+### 已知限制 {#known-limitations}
 
 由于这个新引擎仍处于 Experimental 阶段，因此尚未准备好用于生产环境。目前该实现存在一些已知限制：
 
@@ -511,7 +587,7 @@ SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 * 为了实现可重复读取，单个线程不能从多个分区消费消息。另一方面，Kafka 消费者又必须定期执行 poll 才能保持存活。基于这两个目标，我们决定只有在启用 `kafka_thread_per_consumer` 时才允许创建多个消费者，否则很难避免与定期 poll 消费者相关的问题。
 * 使用分区亲和性时，所有分片必须使用相同的 `kafka_shard_count`；否则，某些分区可能被多个分片消费，或始终未被消费。
 
-## 数据持久性
+## 数据持久性 {#data-durability}
 
 如果已插入的数据尚未写入磁盘，OS 页面缓存就被丢弃，`Kafka` 引擎可能会静默丢失已消费的行。批次推送到依赖的 materialized view 后，已消费的偏移量会被提交 (提交到 broker，或者在设置了 `kafka_keeper_path` 时提交到 ClickHouse Keeper) ，消费者因此会从这些消息之后继续消费。但是，只有目标 part 完成 fsync 后，插入的行才会持久化；默认情况下，此操作不会同步执行 (`fsync_after_insert = 0`) 。如果偏移量已提交但目标 part 尚未完成 fsync 时页面缓存丢失，消费者重启后会跳过这些消息继续消费，因此这些行会在不报错的情况下丢失，`count()` 的结果只会变小。普通的进程终止不会暴露此问题，因为内核会保留页面缓存并最终将其写回。页面缓存丢失则会暴露此问题，例如设备级断电、主机或内核异常重置。
 

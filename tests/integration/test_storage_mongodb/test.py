@@ -911,6 +911,7 @@ def test_where(started_cluster):
                     "keyDateTime": datetime.datetime(1999, d, i, 11, 23, 16),
                     "keyDate": datetime.datetime(1999, d, i, 11, 23, 16),
                     "keyNull": None,
+                    "keyBool": d == 1,
                     "keyUuid": bson.Binary(
                         uuid.UUID("8d9c5028-3371-4941-943f-84a0c90c5149").bytes,
                         subtype=4,
@@ -930,6 +931,7 @@ def test_where(started_cluster):
              keyDate      Date,
              keyNull      Nullable(UInt8),
              keyNotExists Nullable(Int),
+             keyBool      Nullable(Bool),
              keyUuid      UUID
         ) ENGINE = MongoDB('mongo1:27017', 'test', 'where_table', 'root', '{mongo_pass}')"""
     )
@@ -987,6 +989,8 @@ def test_where(started_cluster):
     assert node.query("SELECT count() FROM where_table WHERE isNull(keyNotExists)") == "4\n"
     assert node.query("SELECT count() FROM where_table WHERE keyNotExists = 0") == "0\n"
     assert node.query("SELECT count() FROM where_table WHERE keyNotExists != 0") == "0\n"
+    assert node.query("SELECT count() FROM where_table WHERE keyBool = true") == "2\n"
+    assert node.query("SELECT count() FROM where_table WHERE keyBool IN (false)") == "2\n"
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM where_table WHERE keyInt = keyFloat")

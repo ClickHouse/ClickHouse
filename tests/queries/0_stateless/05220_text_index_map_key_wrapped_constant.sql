@@ -4,7 +4,6 @@
 -- The `arrayElement(m, key)` form is exercised with `materialize` on the key, which defeats the rewrite
 -- to a map subcolumn; without it the analyzer produces `_CAST(m.key_<key>, 'Nullable(String)')`.
 
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 -- Keep a `ReadFromMergeTree` step in the plan so the granule count is reported.
 SET query_plan_optimize_count_from_text_index = 0;

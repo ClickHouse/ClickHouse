@@ -84,6 +84,9 @@ struct KeyDescription
     /// additional initializations.
     static KeyDescription buildEmptyKey();
 
+    /// Throws BAD_ARGUMENTS if the definition has an alias at any depth outside a subquery.
+    static void checkNoAlias(const IAST * definition_ast, std::string_view clause);
+
     /// Recalculate all expressions and fields for key with new columns without
     /// changes in constant fields. Just wrapper for static methods.
     void recalculateWithNewColumns(
@@ -100,7 +103,7 @@ struct KeyDescription
         const ContextPtr & context,
         const std::optional<Names> & hint_columns = {});
 
-    ASTPtr getOriginalExpressionList() const;
+    [[nodiscard]] ASTPtr getOriginalExpressionList() const;
 
     KeyDescription() = default;
 

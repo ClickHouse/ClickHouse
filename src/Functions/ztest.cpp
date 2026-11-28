@@ -16,7 +16,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -31,14 +30,14 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTwoSampleProportionsZTest>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 6; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {5}; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 6; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {5}; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     static DataTypePtr getReturnType()
     {
@@ -50,42 +49,15 @@ public:
         return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        for (size_t i = 0; i < 4; ++i)
-        {
-            if (!isUInt(arguments[i].type))
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The {}th Argument of function {} must be an unsigned integer.",
-                    i + 1,
-                    getName());
-            }
-        }
-
-        if (!isFloat(arguments[4].type))
-        {
-            throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The fifth argument {} of function {} should be a float,",
-                arguments[4].type->getName(),
-                getName()};
-        }
-
-        /// There is an additional check for constancy in ExecuteImpl
-        if (!isString(arguments[5].type) || !arguments[5].column)
-        {
-            throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The sixth argument {} of function {} should be a constant string",
-                arguments[5].type->getName(),
-                getName()};
-        }
-
-        return getReturnType();
+        return "(UInt, UInt, UInt, UInt, Float, const String) -> "
+               "Tuple(z_statistic Float64, p_value Float64, "
+               "confidence_interval_low Float64, confidence_interval_high Float64)";
     }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & const_arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & const_arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto arguments = const_arguments;
         /// Only last argument have to be constant
@@ -161,7 +133,8 @@ public:
             const Float64 props_x = static_cast<Float64>(successes_x) / static_cast<Float64>(trials_x);
             const Float64 props_y = static_cast<Float64>(successes_y) / static_cast<Float64>(trials_y);
             const Float64 diff = props_x - props_y;
-            const UInt64 trials_total = trials_x + trials_y;
+            /// The sums are in `Float64`, because the sums of `UInt64` counts can overflow.
+            const Float64 trials_total = static_cast<Float64>(trials_x) + static_cast<Float64>(trials_y);
 
             if (successes_x == 0 || successes_y == 0 || successes_x > trials_x || successes_y > trials_y || trials_total == 0
                 || !std::isfinite(confidence_level) || confidence_level < 0.0 || confidence_level > 1.0)
@@ -181,8 +154,8 @@ public:
             }
             else
             {
-                UInt64 successes_total = successes_x + successes_y;
-                Float64 p_pooled = static_cast<Float64>(successes_total) / static_cast<Float64>(trials_total);
+                Float64 successes_total = static_cast<Float64>(successes_x) + static_cast<Float64>(successes_y);
+                Float64 p_pooled = successes_total / trials_total;
                 Float64 trials_fact = 1.0 / static_cast<Float64>(trials_x) + 1.0 / static_cast<Float64>(trials_y);
                 zstat = diff / std::sqrt(p_pooled * (1.0 - p_pooled) * trials_fact);
             }

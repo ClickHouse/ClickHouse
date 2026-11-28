@@ -34,7 +34,7 @@ public:
         MergeTreeWriterSettings writer_settings_,
         CompressionCodecPtr default_codec_,
         String marks_file_extension_,
-        const MergeTreeSettings & storage_settings);
+        MergeTreeSettingsPtr storage_settings_);
 
     String getName() const override { return "BuildTextIndexTransform"; }
 
@@ -62,6 +62,7 @@ private:
     MergeTreeWriterSettings writer_settings;
     CompressionCodecPtr default_codec;
     String marks_file_extension;
+    MergeTreeSettingsPtr storage_settings;
 
     /// Number of rows in blocks processed by the transform.
     size_t num_processed_rows = 0;
@@ -106,14 +107,14 @@ public:
 private:
     void finalize();
     void cancelImpl() noexcept;
-    Block getHeader() const;
+    [[nodiscard]] Block getHeader() const;
     void initializeTokensQueue();
 
     /// Cursor over the single String sort column with statically dispatched comparisons.
     using TokenSortCursor = SpecializedSingleColumnSortCursor<ColumnString>;
 
     /// Returns true if the given cursor points to a new token.
-    bool isNewToken(const TokenSortCursor & cursor) const;
+    [[nodiscard]] bool isNewToken(const TokenSortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
     /// Builds the merged per-row document lengths and the per-part BM25 collection statistics once,
@@ -143,14 +144,14 @@ private:
     /// Points the cursor at a source and decodes its first postings.
     void initPostingsCursor(PostingsMergeCursor & cursor, const TokenSource & source);
     /// Decodes one posting list segment of the source into the row ids (in pre-remap order) and,
-    /// on the scoring path, into the exact per-row term frequencies if the source stores them.
-    void readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & tfs);
+    /// on the scoring path, into the exact per-row weights (1 for every row if the source stores none).
+    void readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights);
     /// Decodes the source's next segment; returns false when the source is exhausted.
     bool advancePostingsCursor(PostingsMergeCursor & cursor);
 
     /// Merges the postings of current_token_sources and passes sorted non-empty chunks of row ids to the sink in the globally sorted order.
     /// Every chunk but the last holds a multiple of IPostingListEncoder::append_granularity row ids, as the posting list encoder requires.
-    /// On the scoring path every chunk comes with the per-row `(tf - 1)` parallel to its row ids, otherwise with an empty span.
+    /// On the scoring path every chunk comes with the per-row weights parallel to its row ids, otherwise with an empty span.
     /// If the token has positions, they are re-encoded by positions_merge in the same order.
     template <typename Sink> void mergePostings(Sink && sink);
 
@@ -222,12 +223,16 @@ MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, 
 
 /// Opens a substream of a text index.
 /// If `expected_buffer_size` is set, the read buffer of the dictionary or postings is limited to it.
+/// Callers that use `seekToMark` out of file order (e.g. by token cardinality) must pass
+/// `use_page_cache_lookahead = false`, so the page cache looks ahead by one block instead of
+/// abandoning a wider request.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const IMergeTreeDataPartInfoForReader & data_part_info,
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size);
+    std::optional<size_t> expected_buffer_size,
+    bool use_page_cache_lookahead = true);
 
 /// For a caller with no part: the index merge reads segments from a temporary storage.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
@@ -235,7 +240,8 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size);
+    std::optional<size_t> expected_buffer_size,
+    bool use_page_cache_lookahead = true);
 
 /// Estimates the read buffer size for the posting list of a token based on max estimated segment size.
 size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info);

@@ -1,0 +1,8 @@
+-- the sort below the join gets the top-K filter
+1
+-- a chain of LEFT JOIN: the sort reaches the read
+1
+-- same rows as without the rewrite
+1
+1
+1

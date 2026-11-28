@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "はじめる",
+      "group": "Get started",
       "pages": [
         "ja/products/managed-postgres/overview",
         "ja/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "機能",
+      "group": "Features",
       "pages": [
         "ja/products/managed-postgres/connection",
         "ja/products/managed-postgres/settings",
@@ -43,20 +43,40 @@
       ]
     },
     {
-      "group": "料金",
+      "group": "Guides",
+      "pages": [
+        "ja/products/managed-postgres/guides/bun",
+        "ja/products/managed-postgres/guides/cloudflare-workers",
+        "ja/products/managed-postgres/guides/django",
+        "ja/products/managed-postgres/guides/dotnet",
+        "ja/products/managed-postgres/guides/drizzle",
+        "ja/products/managed-postgres/guides/fastapi",
+        "ja/products/managed-postgres/guides/go",
+        "ja/products/managed-postgres/guides/kysely",
+        "ja/products/managed-postgres/guides/laravel",
+        "ja/products/managed-postgres/guides/nodejs",
+        "ja/products/managed-postgres/guides/phoenix",
+        "ja/products/managed-postgres/guides/prisma",
+        "ja/products/managed-postgres/guides/ruby-on-rails",
+        "ja/products/managed-postgres/guides/rust",
+        "ja/products/managed-postgres/guides/spring-boot"
+      ]
+    },
+    {
+      "group": "Pricing",
       "pages": [
         "ja/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "ClickHouse 連携",
+      "group": "ClickHouse Integration",
       "pages": [
         "ja/products/managed-postgres/sync-to-clickhouse/clickpipes",
         "ja/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
-      "group": "移行",
+      "group": "Migrations",
       "pages": [
         "ja/products/managed-postgres/migrations/overview",
         "ja/products/managed-postgres/migrations/clickpipes",
@@ -69,7 +89,7 @@
       ]
     },
     {
-      "group": "監視",
+      "group": "Monitoring",
       "pages": [
         "ja/products/managed-postgres/monitoring/overview",
         "ja/products/managed-postgres/monitoring/dashboard",
@@ -80,7 +100,7 @@
       ]
     },
     {
-      "group": "よくある質問",
+      "group": "FAQ",
       "pages": [
         "ja/products/managed-postgres/faq"
       ]

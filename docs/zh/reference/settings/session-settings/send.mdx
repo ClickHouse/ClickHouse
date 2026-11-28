@@ -13,26 +13,22 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="send_profile_events">
-  ## send_profile_events
-</div>
+## send_profile_events {#send_profile_events}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "新设置。是否将 profile events 发送给客户端。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "新增设置。是否将 profile events 发送给客户端。"}]}]} />
 
 启用或禁用向客户端发送 [ProfileEvents](/zh/resources/develop-contribute/native-protocol/protocol#profileevents) 数据包。
 
 对于不需要 profile events 的客户端，可以禁用此设置以减少网络流量。
 
-可能的值：
+可选值：
 
 * 0 — 已禁用。
 * 1 — 已启用。
 
-<div id="send_progress_in_http_headers">
-  ## send_progress_in_http_headers
-</div>
+## send_progress_in_http_headers {#send_progress_in_http_headers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -45,9 +41,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 已禁用。
 * 1 — 已启用。
 
-<div id="send_table_structure_on_insert_with_inline_data">
-  ## send_table_structure_on_insert_with_inline_data
-</div>
+## send_table_structure_on_insert_with_inline_data {#send_table_structure_on_insert_with_inline_data}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,9 +49,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 如果禁用此设置，且 INSERT 查询包含内联数据，服务端将不会通过原生协议向客户端回发表结构和列默认值。相反，服务端会自行解析内联数据。这可以提升通过原生协议执行大量小规模插入时的性能。
 
-<div id="send_timeout">
-  ## send_timeout
-</div>
+## send_timeout {#send_timeout}
 
 <SettingsInfoBlock type="秒" default_value="300" />
 

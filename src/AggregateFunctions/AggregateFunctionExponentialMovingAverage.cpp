@@ -238,8 +238,8 @@ ORDER BY time ASC
                         "Both arguments for aggregate function {} must have numeric type, got {}", name, type->getName());
             return std::make_shared<AggregateFunctionExponentialMovingAverage>(argument_types, params);
         },
-        documentation
-    });
+        documentation,
+        {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 }
 
 }

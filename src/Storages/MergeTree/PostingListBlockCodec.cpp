@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 
-#include <array>
+#include <numeric>
 
 namespace DB
 {
@@ -67,7 +67,7 @@ namespace
             return needed_bytes_with_header;
         }
 
-        size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out) override
+        size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, uint32_t base) override
         {
             if (in.empty())
                 throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected at least {} bytes, but got {}", 1, in.size());
@@ -89,45 +89,20 @@ namespace
                 bits,
                 consumed_size);
 
+            std::inclusive_scan(out.begin(), out.begin() + count, out.begin(), std::plus<uint32_t>{}, base);
+
             /// Total bytes consumed from `in`: the bits byte plus the bit-packed payload.
             return 1 + consumed_size;
         }
 
-        size_t encodeZeros(size_t /*count*/, PODArray<char> & out) override
-        {
-            /// A zero-width block: the bits byte alone, with no payload after it. Identical to what
-            /// `encodeBlock` emits for all-zero input, and independent of `count`.
-            out.push_back('\0');
-            return 1;
-        }
-
-        size_t skipBlock(std::span<const std::byte> & in, size_t count) override
-        {
-            if (in.empty())
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected at least {} bytes, but got {}", 1, in.size());
-
-            uint8_t bits = readByte(in);
-            if (bits > 32)
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
-
-            /// `bits == 0` means every value in the block is 0 and no payload was written.
-            size_t required_size = BitpackingBlockCodec::bitpackingCompressedBytes(count, bits);
-            if (in.size() < required_size)
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected data size {}, but got {}", required_size, in.size());
-
-            in = in.subspan(required_size);
-
-            /// Total bytes skipped in `in`: the bits byte plus the bit-packed payload.
-            return 1 + required_size;
-        }
-
         /// `1` (bits header) + `4 * BLOCK_SIZE` (bit-pure max at `bits = 32`) + 16 (SIMD alignment slack).
-        size_t maxBlockBytes() const override { return 1 + sizeof(uint32_t) * BLOCK_SIZE + 16; }
-        IPostingListCodec::Type type() const override { return IPostingListCodec::Type::Bitpacking; }
+        [[nodiscard]] size_t maxBlockBytes() const override { return 1 + sizeof(uint32_t) * BLOCK_SIZE + 16; }
+
+        [[nodiscard]] IPostingListCodec::Type type() const override { return IPostingListCodec::Type::Bitpacking; }
     };
 
-    /// One PFor block over gaps `SegmentedPostingListCodec` already computed, hence `Delta::none`.
-    /// TODO(ahmadov): move delta into PFor once `deltaApply` stops spilling, today `d0` is slower on exception blocks.
+    /// One PFor block. It encodes the deltas `SegmentedPostingListCodec` already computed with `Delta::none`, and decodes
+    /// them with `Delta::d0` from `base`, which gives the same bytes and restores the row ids inside PFor's decode.
     class PForPostingListBlockCodec : public IPostingListBlockCodec
     {
     public:
@@ -147,13 +122,13 @@ namespace
             return written;
         }
 
-        size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out) override
+        size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, uint32_t base) override
         {
             chassert(count > 0 && count <= out.size());
             const auto * data = reinterpret_cast<const uint8_t *>(in.data());
 
             /// `count` is never zero here, so a zero return means malformed input, not an empty block.
-            const size_t consumed = PFor::decodeBlocks<uint32_t>(data, count, PFor::Delta::none, out.data(), data + in.size());
+            const size_t consumed = PFor::decodeBlocks<uint32_t>(data, count, PFor::Delta::d0, out.data(), data + in.size(), base);
             if (consumed == 0)
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Corrupted data: malformed PFor block of {} values in {} available bytes", count, in.size());
@@ -162,31 +137,9 @@ namespace
             return consumed;
         }
 
-        size_t encodeZeros(size_t count, PODArray<char> & out) override
-        {
-            /// PFor has no dedicated all-zero form, so the block is encoded like any other block of `count` zeros.
-            static constexpr std::array<uint32_t, BLOCK_SIZE> zeros{};
-            chassert(count > 0 && count <= BLOCK_SIZE);
-            return encodeBlock(std::span<const uint32_t>(zeros.data(), count), out);
-        }
+        [[nodiscard]] size_t maxBlockBytes() const override { return MAX_BLOCK_BYTES; }
 
-        size_t skipBlock(std::span<const std::byte> & in, size_t count) override
-        {
-            chassert(count > 0 && count <= BLOCK_SIZE);
-            const auto * data = reinterpret_cast<const uint8_t *>(in.data());
-
-            /// The block size follows from its header, so the values are not decoded.
-            const size_t skipped = PFor::skipBlocks<uint32_t>(data, count, data + in.size());
-            if (skipped == 0)
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupted data: malformed PFor block of {} values in {} available bytes", count, in.size());
-
-            in = in.subspan(skipped);
-            return skipped;
-        }
-
-        size_t maxBlockBytes() const override { return MAX_BLOCK_BYTES; }
-        IPostingListCodec::Type type() const override { return IPostingListCodec::Type::PFor; }
+        [[nodiscard]] IPostingListCodec::Type type() const override { return IPostingListCodec::Type::PFor; }
 
     private:
         static constexpr size_t MAX_BLOCK_BYTES = PFor::maxCompressedBytes<uint32_t>(BLOCK_SIZE);

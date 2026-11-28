@@ -1,0 +1,3 @@
+{"add":{"path":"part-00001-e0753c49-6576-471c-85ca-923c138e6c9e-c000.snappy.parquet","partitionValues":{},"size":809,"modificationTime":1748108450647,"dataChange":true,"stats":"{\"numRecords\":2,\"minValues\":{\"a\":1,\"b\":3},\"maxValues\":{\"b\":4,\"a\":2},\"nullCount\":{\"a\":0,\"b\":0}}","tags":null,"deletionVector":null,"baseRowId":null,"defaultRowCommitVersion":null,"clusteringProvider":null}}
+{"commitInfo":{"timestamp":1748108450647,"operation":"WRITE","operationParameters":{"mode":"Append"},"clientVersion":"delta-rs.py-0.25.5","operationMetrics":{"execution_time_ms":1,"num_added_files":1,"num_added_rows":2,"num_partitions":0,"num_removed_files":0}}}
+{"txn":{"appId":"new_app_2","version":1,"lastUpdated":1002}}

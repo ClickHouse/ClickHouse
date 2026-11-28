@@ -1,0 +1,11 @@
+<clickhouse>
+    <!-- A different key and a different Keeper path than configs/named_collections_storage.xml:
+         node3 models a restore target which does not hold the key the named collections in the
+         backup were encrypted with, see test_system_named_collections_key_mismatch. -->
+    <named_collections_storage>
+        <type>zookeeper_encrypted</type>
+        <key_hex>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</key_hex>
+        <path>/named_collections_path_other/</path>
+        <update_timeout_ms>1000</update_timeout_ms>
+    </named_collections_storage>
+</clickhouse>

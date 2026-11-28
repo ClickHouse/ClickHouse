@@ -29,6 +29,7 @@ namespace DB
 
 struct Settings;
 struct ConstraintsDescription;
+class ColumnsDescription;
 struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
@@ -89,7 +90,7 @@ struct TablesFilter
     /// A `filter_by_table_name` predicate accepting only the names the query can ask for, or
     /// an empty function when this filter cannot decide by name alone (`None`, and `Like`,
     /// whose pattern is only a listing hint and is not matched here).
-    std::function<bool(const String &)> getFilterByTableName() const
+    [[nodiscard]] std::function<bool(const String &)> getFilterByTableName() const
     {
         if (kind != Kind::In)
             return {};
@@ -101,22 +102,22 @@ class IDatabaseTablesIterator
 {
 public:
     virtual void next() = 0;
-    virtual bool isValid() const = 0;
+    [[nodiscard]] virtual bool isValid() const = 0;
 
-    virtual const String & name() const = 0;
+    [[nodiscard]] virtual const String & name() const = 0;
 
     /// This method can return nullptr if table metadata could not be loaded
     /// (e.g. DataLake database where individual table metadata fetch fails).
-    virtual const StoragePtr & table() const = 0;
+    [[nodiscard]] virtual const StoragePtr & table() const = 0;
 
     explicit IDatabaseTablesIterator(const String & database_name_) : database_name(database_name_) { }
     explicit IDatabaseTablesIterator(String && database_name_) : database_name(std::move(database_name_)) { }
 
     virtual ~IDatabaseTablesIterator() = default;
 
-    virtual UUID uuid() const { return UUIDHelpers::Nil; }
+    [[nodiscard]] virtual UUID uuid() const { return UUIDHelpers::Nil; }
 
-    const String & databaseName() const { chassert(!database_name.empty()); return database_name; }
+    [[nodiscard]] const String & databaseName() const { chassert(!database_name.empty()); return database_name; }
 
 protected:
     String database_name;
@@ -153,11 +154,11 @@ public:
 
     void next() override { ++it; }
 
-    bool isValid() const override { return it != tables.end(); }
+    [[nodiscard]] bool isValid() const override { return it != tables.end(); }
 
-    const String & name() const override { return it->first; }
+    [[nodiscard]] const String & name() const override { return it->first; }
 
-    const StoragePtr & table() const override { return it->second; }
+    [[nodiscard]] const StoragePtr & table() const override { return it->second; }
 };
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
@@ -198,17 +199,17 @@ public:
 
     void next() { ++it; }
 
-    bool isValid() const { return it != snapshot.end(); }
+    [[nodiscard]] bool isValid() const { return it != snapshot.end(); }
 
-    String database() const { return it->second.database; }
+    [[nodiscard]] String database() const { return it->second.database; }
 
-    String table() const { return it->second.table; }
+    [[nodiscard]] String table() const { return it->second.table; }
 
-    UUID uuid() const { return it->second.uuid; }
+    [[nodiscard]] UUID uuid() const { return it->second.uuid; }
 
-    String metadataPath() const { return it->second.metadata_path; }
+    [[nodiscard]] String metadataPath() const { return it->second.metadata_path; }
 
-    bool isPermanently() const { return it->second.is_permanently; }
+    [[nodiscard]] bool isPermanently() const { return it->second.is_permanently; }
 };
 
 using DatabaseDetachedTablesSnapshotIteratorPtr = std::unique_ptr<DatabaseDetachedTablesSnapshotIterator>;
@@ -244,6 +245,10 @@ public:
     /// True for databases such as `MySQL`/`PostgreSQL` whose table list lives on a remote service.
     /// This is distinct from `isExternal`, which classifies whether the engine supports ClickHouse internal table types.
     virtual bool isRemoteDatabase() const { return false; }
+
+    /// False for a database that only exposes the tables of other databases, such as `Overlay`:
+    /// listing its tables lists the tables of its sources, and the storages it returns are not the source tables themselves.
+    virtual bool ownsTables() const { return true; }
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
@@ -313,6 +318,9 @@ public:
     /// Check the existence of the table in any state (in active / detached / detached permanently state).
     /// Throws exception when table exists.
     virtual void checkMetadataFilenameAvailability(const String & /*table_name*/) const {}
+
+    /// Whether a full-definition `ATTACH` may take a detached table's name, i.e. skip `checkMetadataFilenameAvailability`.
+    virtual bool canReattachTableWithFullDefinition() const { return true; }
 
     /// Check if the table name exceeds the max allowed length
     virtual void checkTableNameLength(const String & /*table_name*/) const {}
@@ -540,6 +548,13 @@ public:
     virtual String getTableDataPath(const ASTCreateQuery & /*query*/) const { return {}; }
 
     virtual String getDefaultTableEngineName(const String & /*table_name*/) const { return {}; }
+
+    /// Creates the table in the external catalog of the database, and returns the table loaded from the catalog.
+    /// Returns nullptr if the database does not create tables this way. In such cases the storage factory creates the table.
+    virtual StoragePtr maybeCreateTableInExternalCatalog(ContextPtr /*context*/, const ASTCreateQuery & /*create*/, const ColumnsDescription & /*columns*/) const
+    {
+        return nullptr;
+    }
     /// Returns metadata path if the database supports it, empty string otherwise
     virtual String getMetadataPath() const { return {}; }
     /// Returns metadata path of a concrete table if the database supports it, empty string otherwise
