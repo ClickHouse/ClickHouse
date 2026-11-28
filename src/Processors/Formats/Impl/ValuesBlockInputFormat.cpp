@@ -1,5 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/normalizeDivision.h>
 #include <Interpreters/convertFieldToType.h>
@@ -26,6 +27,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <IO/ReadBufferFromString.h>
 
 namespace DB
@@ -671,7 +673,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Try to evaluate single expression if other parsers don't work
     buf->position() = const_cast<char *>((*token_iterator)->begin);
 
-    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
+    const auto * variant_type = typeid_cast<const DataTypeVariant *>(&type);
+    auto value_raw = evaluateConstantExpression(ast, context);
 
     Field & expression_value = value_raw.first;
 
@@ -701,9 +704,15 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Insert value into the column.
     /// For Dynamic type we cannot just insert Field as we lose information about the data type.
     /// Instead try to create a column with single element and cast it to the destination type.
-    if (type.hasDynamicStructure())
+    /// The same applies to a Variant with an alternative of exactly the type of the value: inserting the Field
+    /// would put it into the first alternative that accepts it, for example Array(Date) for an Array(UInt64).
+    if (type.hasDynamicStructure() || (variant_type && variant_type->tryGetVariantDiscriminator(value_raw.second->getName())))
     {
-        ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
+        /// A `Field` does not keep the discriminators of a `Variant` nested in the value, so for a `Variant` column
+        /// the expression is evaluated as a column. A literal has no nested `Variant`, and a `Field` keeps its `Bool`.
+        ColumnPtr const_column = variant_type && !type.hasDynamicStructure() && !ast->as<ASTLiteral>()
+            ? evaluateConstantExpressionAsColumn(ast, context).getColumn()
+            : value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
     }
