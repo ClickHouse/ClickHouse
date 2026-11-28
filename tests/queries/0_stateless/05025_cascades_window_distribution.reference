@@ -44,9 +44,9 @@ Expression (Project names)
 GatherExchange
   Expression ((Project names + Projection))
     Window (Partitioned Window step for window \'PARTITION BY __table1.k\')
-      Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + Projection))))
-        Sorting
-          ShuffleExchange
+      Sorting
+        ShuffleExchange
+          Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + Projection))))
             Window (Partitioned Window step for window \'PARTITION BY __table2.k, __table2.v\')
               Expression ((Before WINDOW + Change column names to column identifiers))
                 Sorting

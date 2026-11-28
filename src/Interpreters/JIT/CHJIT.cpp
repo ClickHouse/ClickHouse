@@ -340,6 +340,8 @@ private:
 
 #ifdef PRINT_ASSEMBLY
 
+/// Needs a build with `-DLLVM_TRIM_FOR_JIT=0`: by default LLVM is built without the assembly printer
+/// (see `contrib/llvm-project-cmake/CMakeLists.txt`).
 class AssemblyPrinter
 {
 public:

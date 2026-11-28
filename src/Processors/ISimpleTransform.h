@@ -37,6 +37,9 @@ protected:
     virtual bool needInputData() const { return true; }
     void stopReading() { no_more_data_needed = true; }
 
+    /// Called by `prepare` when the output is finished. By default, stops reading the input.
+    virtual Status prepareOnOutputFinished();
+
 public:
     ISimpleTransform(Block input_header_, Block output_header_, bool skip_empty_chunks_);
     ISimpleTransform(SharedHeader input_header_, SharedHeader output_header_, bool skip_empty_chunks_);
