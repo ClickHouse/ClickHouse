@@ -15,6 +15,7 @@ namespace zkutil
 /// This class allows querying the contents of ZooKeeper nodes and caching the results.
 /// Watches are set for cached nodes and for nodes that were nonexistent at the time of query.
 /// After a watch fires, the callback or event that was passed by the user is notified.
+/// A get() without an event reads the node directly: nothing is cached and no watch is set.
 ///
 /// NOTE: methods of this class are not thread-safe.
 ///
@@ -51,6 +52,10 @@ private:
     };
 
     std::shared_ptr<Context> context;
+
+    /// Shared by all watches of this cache, so the client registers each path once.
+    Coordination::WatchCallbackPtr watch_callback;
+    Coordination::EventPtr watch_callback_event;
 
     std::unordered_map<std::string, ZNode> path_to_cached_znode;
 };

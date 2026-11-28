@@ -392,6 +392,21 @@ The writing side is parallelized only when it is safe to do so; otherwise it sta
 Higher values will lead to higher memory usage.
 )", 0, \
         {"26.8", 1, 0, "Changed the default from 1 (no parallel execution) to auto (0), which resolves to the number of CPU cores available to the server, reduced under memory pressure via `max_insert_threads_min_free_memory_per_thread`. This parallelizes `INSERT SELECT` by default. Set to 1 to restore the previous single-threaded behavior."}) \
+    DECLARE(UInt64, max_generic_compression_threads, 1, R"(
+The maximum number of threads used to compress generic stream-compressed output (currently `gzip`) when writing to output formats, files or storage, and when compressing HTTP query responses - both with `Content-Encoding: gzip` and with the response body codec selected by the `compression` setting.
+
+The output stays in the standard `gzip` format and can be read by any decompressor; only the writing side is parallelized. Independent blocks are compressed in parallel on the shared IO thread pool. The setting is named generically so that other stream-compression methods can adopt it in the future.
+
+Possible values:
+
+- 0 or 1 — single-threaded compression (default).
+- Positive integer greater than 1 — compress on up to this many threads.
+
+Higher values will lead to higher memory usage.
+
+For HTTP query responses, the compressing buffer is set up before the query is executed, like the other HTTP response-shaping settings (`enable_http_compression`, `http_zlib_compression_level`, `compression`). There the setting must be supplied via the HTTP URL parameter or a user profile; an in-query `SETTINGS` clause does not affect the compression of the HTTP response itself (it still applies to files and storage written by the query, e.g. `INSERT INTO FUNCTION file(...)` or `SELECT ... INTO OUTFILE`).
+)", 0, \
+        {"26.12", 1, 1, "New setting to control the number of threads used for parallel gzip compression of output streams."}) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
 The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
 
@@ -4732,7 +4747,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
         {"26.12", "direct,hash,ie_join", "direct,hash,inequality", "Renamed `ie_join` to `inequality`. The former name `ie_join` is still accepted as an alias."}, \
         {"26.11", "direct,parallel_hash,hash,ie_join", "direct,hash,ie_join", "`parallel_hash` is an obsolete alias of `hash` and was dropped from the default list; it is still accepted. Listing `hash` or `parallel_hash` does not control how parallel the join is."}, \
         {"26.8", "direct,parallel_hash,hash", "direct,parallel_hash,hash,ie_join", "Appended `ie_join` (now named `inequality`) to the default list, so a join whose `ON` section has only inequality conditions is executed with the inequality join algorithm instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."}, \
-        {"24.12", "default", "direct,parallel_hash,hash", "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"}) \
+        {"24.12", "default", "direct,parallel_hash,hash", "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash. `compatibility` does not restore 'default': with a version before 24.12 it gives 'direct,parallel_hash,hash'.", CompatibilitySetting::Ignore}) \
     DECLARE(Bool, allow_block_nested_loop_join, true, R"(
 Allow executing a `JOIN` with an arbitrary `ON` condition, one with no equality between the joined tables, as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
 
@@ -7832,6 +7847,17 @@ Maximal number of partitions in table to apply independent `DISTINCT` per partit
 Maximal number of partitions in table to apply independent evaluation of window functions per partition. Part of the cost heuristic of [allow_window_partitions_independently](#allow_window_partitions_independently).
 )", 0, \
         {"26.8", 128, 128, "New setting: maximal number of partitions to apply independent per-partition evaluation of window functions."}) \
+    DECLARE(UInt64, window_sliding_aggregation_min_frame_rows, 1000, R"(
+The smallest window frame, in rows, for which an aggregate function over a frame with a moving start, for example `sum(x) OVER (ORDER BY t ROWS BETWEEN 10000 PRECEDING AND CURRENT ROW)`, is calculated from merged partial aggregation states instead of adding all rows of the frame again for every row. With it the cost per row does not grow with the frame size.
+
+It is used for aggregate functions with a small state of a fixed size, such as `sum`, `avg`, `min`, `max` or `stddevPop` of numbers. Other functions, frames that start at `UNBOUNDED PRECEDING` and shorter frames are calculated as before. The results of functions over floating-point values can differ in the last digits, as between `GROUP BY` on one thread and on several threads.
+
+Possible values:
+
+- 0 — Disabled.
+- A positive integer — The smallest frame, in rows, that is calculated from partial aggregation states.
+)", 0, \
+        {"26.12", 0, 1000, "New setting. Aggregate functions over long sliding window frames are calculated from merged partial aggregation states."}) \
     DECLARE(Float, min_hit_rate_to_use_consecutive_keys_optimization, 0.5, R"(
 Minimal hit rate of a cache which is used for consecutive keys optimization in aggregation to keep it enabled
 )", 0) \
@@ -11858,7 +11884,7 @@ For a read from object storage, the setting also allows skipping the Parquet row
 
 Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes the granules it reads with the filter it built itself. That filter can be partial - for a `RIGHT` join the build side is the one split among the replicas, so each replica's filter covers only its own share of it - but the result stays correct, because exactly one side of the join is split, every matching pair of rows meets on exactly one replica, and each replica emits a disjoint share of the result.
 
-The granule pruning does not happen with a distributed query plan (`make_distributed_plan = 1`). There the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
+With a distributed query plan (`make_distributed_plan = 1`), the granule pruning happens only if the runtime filter reaches the stage that reads the probe side: that stage also executes the JOIN (as with a broadcast join), or `distributed_plan_join_runtime_filters` sends the filter there. Otherwise the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost. A probe side read that finishes before its filter is ready is not pruned either.
 
 With `FINAL` on the probe side, granules are pruned only by a join key that is a sorting key column of the table; a skip index is used for that only if `use_skip_indexes_if_final = 1`.
 

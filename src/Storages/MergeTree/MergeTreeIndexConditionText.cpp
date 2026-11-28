@@ -237,15 +237,6 @@ static bool tokenizerSplitsAtZeroByte(ITokenizer::Type type)
         ;
 }
 
-/// The token stream an `Array` column stores differs from the one the row-level function sees, per element.
-static bool isIndexedColumnArray(const Block & header)
-{
-    if (header.columns() != 1)
-        return false;
-
-    return isArray(removeNullableOrLowCardinalityNullable(header.getByPosition(0).type));
-}
-
 static std::optional<size_t> tryGetIndexedFixedStringSize(const Block & header)
 {
     /// A text index is always defined on a single expression.
@@ -274,7 +265,6 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     : WithContext(context_)
     , header(index_sample_block)
     , json_argument_types(std::move(json_argument_types_))
-    , indexed_column_is_array(isIndexedColumnArray(header))
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
     , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
@@ -466,7 +456,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     }
 
     if (function_name == "hasPhrase")
-        return has_positions && !indexed_column_is_array ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+        return has_positions ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
 
     /// Exact mode requires array tokenizer with neither pre- nor postprocessor.
     const bool can_be_exact_read_mode = is_array_tokenizer && !has_preprocessor && !has_postprocessor;
@@ -531,6 +521,11 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
     const auto function_node = rpn_node.toFunctionNode();
 
     return tokenizerArgumentMatchesIndex(function_name, function_node.getArgumentAt(2));
+}
+
+bool MergeTreeIndexConditionText::isIndexExpression(const ActionsDAG::Node & node) const
+{
+    return hasIndexForColumn(unwrapLosslessConversion(RPNBuilderTreeNode(&node, getContext())).getColumnName());
 }
 
 std::optional<String> MergeTreeIndexConditionText::tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const
@@ -1651,8 +1646,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
 
-        /// The two sides number an element's tokens differently, so the row-level function decides alone.
-        const bool use_positions = has_positions && !indexed_column_is_array;
+        /// Positions of the elements of an `Array` row are separated by the position increment gap,
+        /// so a phrase matched by positions lies within one element, as the function requires.
+        const bool use_positions = has_positions;
 
         /// An Array phrase carries the tokens verbatim: neither the tokenizer nor the preprocessor applies.
         if (value_field.getType() == Field::Types::Array)

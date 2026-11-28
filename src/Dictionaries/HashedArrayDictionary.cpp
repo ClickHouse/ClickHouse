@@ -1159,25 +1159,59 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 Pipe HashedArrayDictionary<dictionary_key_type, sharded>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
-    PaddedPODArray<HashedArrayDictionary::KeyType> keys;
-    keys.reserve(total_element_count);
-
-    for (const auto & container : key_attribute.containers)
-        for (auto & [key, _] : container)
-            keys.emplace_back(key);
-
-    ColumnsWithTypeAndName key_columns;
+    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, ColumnsWithTypeAndName{}, max_block_size);
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        auto keys_column = getColumnFromPODArray(std::move(keys));
-        key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+        /// Each container is split into equal ranges of its cell offsets, one block per about `max_block_size` keys.
+        VectorWithMemoryTracking<size_t> container_blocks;
+        container_blocks.reserve(key_attribute.containers.size());
+        size_t num_blocks = 0;
+        for (const auto & container : key_attribute.containers)
+        {
+            size_t blocks = container.empty() ? 0 : (max_block_size ? (container.size() - 1) / max_block_size + 1 : 1);
+            container_blocks.push_back(blocks);
+            num_blocks += blocks;
+        }
+
+        coordinator->setKeysPerBlock(
+            num_blocks,
+            [this, container_blocks, key_type = std::make_shared<DataTypeUInt64>()](size_t block)
+            {
+                size_t container_index = 0;
+                while (block >= container_blocks[container_index])
+                    block -= container_blocks[container_index++];
+
+                const auto & container = key_attribute.containers[container_index];
+                const size_t blocks = container_blocks[container_index];
+                const size_t offsets = container.getBufferSizeInCells() + 1;
+                const size_t cells_per_block = offsets / blocks;
+                const size_t extra_cells = offsets % blocks;
+                const size_t range_begin = block * cells_per_block + std::min(block, extra_cells);
+                const size_t range_end = range_begin + cells_per_block + (block < extra_cells ? 1 : 0);
+
+                auto keys_column = ColumnUInt64::create();
+                auto & keys = keys_column->getData();
+                /// A range holds about the average number of keys; the headroom avoids reallocating for most ranges.
+                keys.reserve(container.size() / blocks * 17 / 16 + 1);
+                container.forEachCellInOffsetRange(range_begin, range_end, [&](const auto & cell) { keys.push_back(cell.getKey()); });
+
+                return ColumnsWithTypeAndName{ColumnWithTypeAndName(std::move(keys_column), key_type, dict_struct.id->name)};
+            });
+    }
+    else
+    {
+        PaddedPODArray<HashedArrayDictionary::KeyType> keys;
+        keys.reserve(total_element_count);
+
+        for (const auto & container : key_attribute.containers)
+            for (auto & [key, _] : container)
+                keys.emplace_back(key);
+
+        coordinator->setSerializedKeys(std::move(keys));
     }
 
-    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
-    if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
-        coordinator->setSerializedKeys(std::move(keys));
     auto result = coordinator->read(num_streams);
 
     return result;

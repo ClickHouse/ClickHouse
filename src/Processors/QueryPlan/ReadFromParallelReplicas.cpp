@@ -262,6 +262,7 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
                 scalars.emplace(name, context->getQueryContext()->getScalar(name));
     }
 
+    const size_t replica_number = replica_info.number_of_current_replica;
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
         dumpQueryPlanShape(*query_plan),
@@ -275,6 +276,8 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
         connection_pool_with_failover,
         query_plan);
 
+    /// For the attributes of the fragment span, as `ReadFromParallelRemoteReplicasStep` does.
+    remote_query_executor->setShardScope({.cluster = cluster->getName(), .replica_num = replica_number});
     remote_query_executor->setLogger(log);
     remote_query_executor->setDistributedFanout(pools_to_use.size() - (exclude_pool_index.has_value() ? 1 : 0));
 

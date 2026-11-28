@@ -31,6 +31,10 @@
     "2026-11-12": [
       "mcp-server-connections-without-custom-headers",
       "datadog-agent-setup-in-getting-started"
+    ],
+    "2026-11-20": [
+      "version-aware-app-builder",
+      "faster-app-builds-with-fewer-tokens"
     ]
   },
   "openSourceOnly": {
