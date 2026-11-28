@@ -73,3 +73,18 @@ Compact
 Wide
 1	[0,0]	[3,4]	[1,1]	1
 1	[0,0]	[3,4]	[1,1]	1
+-- 10. the sibling is resized by an UPDATE in the same ALTER
+Compact
+Wide
+1	[0,0,0]	[4,5,6]	[1,1,1]	1
+1	[0,0,0]	[4,5,6]	[1,1,1]	1
+-- 11. a scalar MATERIALIZED column with the prefix of the nested table
+Compact
+Wide
+1	[0,0]	[3,4]	2	[1,1]	1	1
+1	[0,0]	[3,4]	2	[1,1]	1	1
+-- 12. a column TTL of a scalar column with the prefix of the nested table
+Compact
+Wide
+1	[0,0]	[3,4]	[1,1]	1
+1	[0,0]	[3,4]	[1,1]	1

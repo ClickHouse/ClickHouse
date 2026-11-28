@@ -1823,15 +1823,24 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (table == name)
             return {};
 
+        /// Only Array and Map columns share the offsets of their nested table.
+        auto shares_offsets_of_table = [&](const String & column)
+        {
+            if (Nested::extractTableName(column) != table)
+                return false;
+            auto column_in_metadata = metadata_snapshot->getColumns().tryGetPhysical(column);
+            return !column_in_metadata || isArray(column_in_metadata->type) || isMap(column_in_metadata->type);
+        };
+
         /// `TTLTransform` runs after every stage and may rewrite members through a GROUP BY TTL or a column TTL of a member.
         if (std::ranges::any_of(dependencies, is_ttl_target)
             && (metadata_snapshot->hasAnyGroupByTTL()
                 || std::ranges::any_of(metadata_snapshot->getColumnTTLs(),
-                    [&](const auto & column_ttl) { return Nested::extractTableName(column_ttl.first) == table; })))
+                    [&](const auto & column_ttl) { return shares_offsets_of_table(column_ttl.first); })))
             return {};
 
         /// A member recomputed after the readonly stage rewrites the sizes of the whole group.
-        if (std::ranges::any_of(clear_affected_materialized, [&](const String & column) { return Nested::extractTableName(column) == table; }))
+        if (std::ranges::any_of(clear_affected_materialized, shares_offsets_of_table))
             return {};
 
         const auto & alter_conversions = source.getAlterConversions();
