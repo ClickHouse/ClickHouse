@@ -544,6 +544,12 @@ public:
     /// such storages instead of failing close at read time.
     [[nodiscard]] virtual bool supportsObjectGenerationComparison() const { return true; }
 
+    /// Whether every `ObjectMetadata` this storage returns for an existing object carries a non-empty
+    /// `etag`. `ETag` is an optional response header for remote storages, so by default it is not
+    /// guaranteed; callers that would otherwise have to check for an absent tag can skip the check
+    /// (and the request it needs) when this holds.
+    [[nodiscard]] virtual bool alwaysReportsETag() const { return false; }
+
     void setIOSchedulingResourceNames(const String & read_resource_name_, const String & write_resource_name_);
     [[nodiscard]] std::pair<String, String> getIOSchedulingResourceNames() const;
 

@@ -91,7 +91,77 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_IS_BEING_RESTARTED;
     extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
+    extern const int UNSUPPORTED_METHOD;
 }
+
+namespace
+{
+
+/// `ETag` is quoted for some reason.
+std::string unquoteETag(const std::string & etag)
+{
+    if (etag.size() >= 2 && etag.front() == '"' && etag.back() == '"')
+        return etag.substr(1, etag.size() - 2);
+    return etag;
+}
+
+}
+
+bool ObjectStorageQueueSource::hasStrongETag(const std::optional<ObjectMetadata> & object_metadata)
+{
+    return object_metadata && object_metadata->etag_is_strong && !unquoteETag(object_metadata->etag).empty();
+}
+
+std::string ObjectStorageQueueSource::makeDeduplicationToken(
+    const std::optional<ObjectMetadata> & object_metadata, const std::string & path, size_t row_offset, UInt64 token_version)
+{
+    if (token_version != ObjectStorageQueueTableMetadata::DEDUPLICATION_TOKEN_VERSION_ETAG
+        && token_version != ObjectStorageQueueTableMetadata::DEDUPLICATION_TOKEN_VERSION_PATH_AND_ETAG)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "The queue uses the version {} of the deduplication token, which this server does not know. "
+            "It was created by a newer server",
+            token_version);
+
+    /// A unique token per chunk: the path, the `ETag` and the row offset. The `ETag` identifies the
+    /// content of an object, not the object: for an ordinary single-part S3 upload it is the MD5 of
+    /// the bytes, so two files with identical bytes at different paths have the same tag, and without
+    /// the path the rows of the second file would be deduplicated away. The path is prefixed with its
+    /// length, and the offset is what follows the last `:`, so the three parts cannot be confused.
+    ///
+    /// The path was not always a part of the token, and a token is the identity of a chunk in the
+    /// deduplication logs of the dependent targets. A queue created before that keeps the old scheme:
+    /// its files may have been inserted partially under it (a batch aborted on shutdown is replayed
+    /// from offset `0`, also by another replica or after an upgrade), and under another token the
+    /// rows already inserted would be inserted again.
+    if (hasStrongETag(object_metadata))
+    {
+        if (token_version == ObjectStorageQueueTableMetadata::DEDUPLICATION_TOKEN_VERSION_ETAG)
+            return fmt::format("{}:{}", unquoteETag(object_metadata->etag), row_offset);
+        return fmt::format("{}:{}:{}:{}", path.size(), path, unquoteETag(object_metadata->etag), row_offset);
+    }
+
+    /// `ETag` is an optional response header, and not every tag that is reported is a strong
+    /// content identifier (see `ObjectMetadata::etag_is_strong`). Without a strong one there is
+    /// nothing left that identifies a chunk exactly, and every surrogate is a wrong-results path:
+    /// a token built from the row offset alone would give the first chunk of every file `:0`, an
+    /// empty token would send the chunk down the data-hash path of `DeduplicationInfo` so that two
+    /// files holding an identical chunk collapse into one, the path alone does not survive the
+    /// re-import that `tracked_file_ttl_sec` and `tracked_files_limit` allow, and a
+    /// `(path, size, modification time)` surrogate is not enough either, because listings report
+    /// the modification time with a one-second resolution (`AzureObjectStorage::iterate`
+    /// truncates it), so a same-size rewrite within one second would still collide.
+    /// `DeduplicationInfo::getBlockUnifiedHash` takes a non-empty user token as exact identity, so
+    /// any such collision makes the rows of one of the two files disappear from the dependent
+    /// materialized views. Fail instead of dropping rows.
+    throw Exception(
+        ErrorCodes::UNSUPPORTED_METHOD,
+        "The object storage reported no strong ETag for {}, so a deduplication token that tells one file - and one "
+        "generation of the same file - from another cannot be built. Set `deduplication_v2 = 0` for this table to "
+        "read it all the same.",
+        path);
+}
+
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
     const ObjectInfo & object_info, ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
@@ -1075,7 +1145,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     bool commit_once_processed_,
     bool is_direct_select_,
     bool add_deduplication_info_,
-    bool is_deduplication_v2_,
+    bool replay_after_abort_is_safe_,
     IStreamingStorage & streaming_storage_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
@@ -1102,7 +1172,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , streaming_storage(streaming_storage_)
     , cancel_epoch(streaming_storage_.currentCancelEpoch())
     , add_deduplication_info(add_deduplication_info_)
-    , is_deduplication_v2(is_deduplication_v2_)
+    , replay_after_abort_is_safe(replay_after_abort_is_safe_)
     , log(log_)
 {
     if (commit_once_processed)
@@ -1201,9 +1271,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             auto started_file = processed_files.back().metadata;
             /// Aborting re-reads the file from offset 0 on next start, duplicating
-            /// any rows already inserted. Only safe when dedup will drop those rows,
-            /// or when the table is being dropped (no retry).
-            if (table_is_being_dropped || is_deduplication_v2)
+            /// any rows already inserted. Only safe when dedup will certainly drop those
+            /// rows, or when the table is being dropped (no retry).
+            if (table_is_being_dropped || replay_after_abort_is_safe)
             {
                 chassert(started_file->getFileStatus()->processed_rows > 0);
                 processed_files.back().state = FileState::Cancelled;
@@ -1295,6 +1365,36 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 object_metadata && object_metadata->is_last_modified_known)
             {
                 processed_files.back().last_modified = object_metadata->last_modified.epochTime();
+            }
+
+            /// Check the precondition of `makeDeduplicationToken` before the first pull. The token
+            /// must be built from the same metadata the reader was constructed with: the read buffer
+            /// takes the size and the `ETag` of the object from it (see `createReadBuffer`), so a
+            /// refresh of the metadata at this point would no longer pin the reader to the generation
+            /// the token names, and a concurrent overwrite could be read under the token of the
+            /// previous generation. `StorageObjectStorageSource::createReader` already fetches the
+            /// metadata with a per-object request when the iterator left it out. A file that has no
+            /// strong tag can never be read with deduplication, so this is a
+            /// read-path failure of this file like the fetches around it, which burns its retry
+            /// budget, not an insert failure, which would send the whole batch down the
+            /// reset-for-retry path again and again.
+            if (add_deduplication_info && !hasStrongETag(reader.getObjectInfo()->getObjectMetadata()))
+            {
+                try
+                {
+                    makeDeduplicationToken(
+                        reader.getObjectInfo()->getObjectMetadata(),
+                        file_metadata->getPath(),
+                        /*row_offset=*/ 0,
+                        files_metadata->getTableMetadata().deduplication_token_version);
+                }
+                catch (...)
+                {
+                    processed_files.back().state = FileState::ErrorOnRead;
+                    processed_files.back().exception_during_read = getCurrentExceptionMessage(true);
+                    processed_files.back().exception_during_read_code = getCurrentExceptionCode();
+                    throw;
+                }
             }
 
             /// Tags are not fetched during listing (it lists with with_tags = false), so populate
@@ -1425,13 +1525,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
             std::string dedup_token;
             if (add_deduplication_info)
             {
-                /// Etag is quoted for some reason.
-                std::string etag = object_metadata->etag;
-                if (etag.size() > 2 && etag.front() == '\"' && etag.back() == '\"')
-                    etag = etag.substr(1, etag.size() - 2);
-
-                /// Create unique token per chunk: etag + row offset
-                dedup_token = fmt::format("{}:{}", etag, row_offset);
+                dedup_token = makeDeduplicationToken(
+                    object_metadata, path, row_offset, files_metadata->getTableMetadata().deduplication_token_version);
 
                 auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
                 deduplication_info->setUserToken(dedup_token, chunk.getNumRows());

@@ -1,0 +1,11 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Legacy deduplication settings: whether an insert deduplicates depends on the insert mode, so
+                 the queue's insert deduplicates only when it enables `async_insert_deduplicate` for it. -->
+            <deduplicate_insert>backward_compatible_choice</deduplicate_insert>
+            <insert_deduplicate>0</insert_deduplicate>
+            <async_insert_deduplicate>0</async_insert_deduplicate>
+        </default>
+    </profiles>
+</clickhouse>

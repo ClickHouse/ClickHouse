@@ -141,6 +141,10 @@ public:
     /// the destination file first and then appends to it, which is not atomic.
     bool supportsAtomicWrite() const override;
 
+    /// `AzureBlobStorage::getETag` refuses an answer without a non-empty `ETag`, so every `ObjectMetadata`
+    /// returned from here carries one.
+    [[nodiscard]] bool alwaysReportsETag() const override { return true; }
+
     AzureBlobStorage::ConnectionParams getConnectionParameters() const
     {
         return *connection_params.get();

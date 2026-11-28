@@ -120,7 +120,14 @@ public:
 
     [[nodiscard]] bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
 
+    [[nodiscard]] bool alwaysReportsETag() const override { return object_storage->alwaysReportsETag(); }
+
     [[nodiscard]] const FileCacheSettings & getCacheSettings() const { return cache_settings; }
+
+    /// The object storage under this cache layer. `removeObjectIfExists` and `removeObjectsIfExist` only drop the
+    /// cached copy, because a disk removes the underlying objects through its metadata storage; a caller that works
+    /// on the object storage directly has to remove them from here.
+    [[nodiscard]] const ObjectStoragePtr & getWrappedObjectStorage() const { return object_storage; }
 
 #if USE_AZURE_BLOB_STORAGE
     [[nodiscard]] std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override

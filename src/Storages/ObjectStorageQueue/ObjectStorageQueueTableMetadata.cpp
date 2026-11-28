@@ -125,6 +125,7 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("partition_regex", partition_regex);
     json.set("partition_component", partition_component);
     json.set("source_hash", source_hash);
+    json.set("deduplication_token_version", deduplication_token_version);
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -217,6 +218,8 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0ULL)))
     , buckets(getOrDefault(json, "buckets", "", 0ULL))
     , source_hash(getOrDefault<String>(json, "source_hash", "", ""))
+    /// Metadata written before the scheme was recorded belongs to a queue that uses the first one.
+    , deduplication_token_version(getOrDefault<UInt64>(json, "deduplication_token_version", "", DEDUPLICATION_TOKEN_VERSION_ETAG))
 {
     validateMode(mode);
 }
@@ -245,6 +248,9 @@ String ObjectStorageQueueTableMetadata::Source::getHash() const
 
 void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk)
 {
+    /// The scheme of the deduplication token belongs to the queue, not to the table: keep the one it was created with.
+    deduplication_token_version = from_zk.deduplication_token_version;
+
     if (processing_threads_num != from_zk.processing_threads_num)
     {
         auto log = getLogger("ObjectStorageQueueTableMetadata");

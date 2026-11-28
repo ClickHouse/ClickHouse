@@ -32,6 +32,22 @@ public:
     using PartitionLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::PartitionLastProcessedFileInfoMap;
     using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
 
+    /// The per-chunk deduplication token: the path of the file, its `ETag` (unquoted) and the offset
+    /// of the chunk in it. The path is a part of it because an `ETag` identifies content, not an
+    /// object: two files with identical bytes may have the same tag. A queue created before the path
+    /// was added keeps the token without it (`token_version`, see
+    /// `ObjectStorageQueueTableMetadata::deduplication_token_version`), so that a file replayed across
+    /// an upgrade gets the tokens of its first pass. `ETag` is an optional response header and is not always a strong content
+    /// identifier; without a strong one nothing left identifies a chunk exactly, and a surrogate
+    /// built from the path, the size and the (second-precision) modification time would deduplicate
+    /// away the rows of a file it cannot tell apart, so this throws instead.
+    static std::string makeDeduplicationToken(
+        const std::optional<ObjectMetadata> & object_metadata, const std::string & path, size_t row_offset, UInt64 token_version);
+
+    /// Whether the metadata carries an `ETag` that `makeDeduplicationToken` can use: present
+    /// (an `ETag` of just `""` counts as absent) and a strong content identifier.
+    static bool hasStrongETag(const std::optional<ObjectMetadata> & object_metadata);
+
     struct ObjectStorageQueueObjectInfo : public ObjectInfo
     {
         ObjectStorageQueueObjectInfo(
@@ -206,7 +222,7 @@ public:
         bool commit_once_processed_,
         bool is_direct_select_,
         bool add_deduplication_info_,
-        bool is_deduplication_v2_,
+        bool replay_after_abort_is_safe_,
         IStreamingStorage & streaming_storage_);
 
     static Block getHeader(Block sample_block, const NamesAndTypes & requested_virtual_columns);
@@ -285,8 +301,9 @@ private:
     IStreamingStorage & streaming_storage;
     const UInt64 cancel_epoch;
     const bool add_deduplication_info;
-    /// Effective dedup: gates whether shutdown can abort mid-file.
-    const bool is_deduplication_v2;
+    /// Whether shutdown can abort mid-file: the file is replayed from offset 0 on the next start, which
+    /// is safe only when every dependent target certainly drops the rows already inserted.
+    const bool replay_after_abort_is_safe;
     time_t transaction_start_time;
 
     LoggerPtr log;
