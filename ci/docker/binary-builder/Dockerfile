@@ -35,6 +35,7 @@ RUN apt-get update \
         yasm \
         zstd \
         zip \
+        qemu-user-static \
         bolt-${LLVM_VERSION} \
     && ln -sf /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
     && ln -sf /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
