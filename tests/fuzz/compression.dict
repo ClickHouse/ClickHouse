@@ -34,6 +34,8 @@
 "\x9E"
 # ZXC
 "\x9F"
+# ByteStreamSplit
+"\xA2"
 # 0x99 (DeflateQpl) and 0x9B (ZSTD_QPL) were removed from the enum and are
 # rejected by `CompressionCodecFactory::get` before any codec code runs, so they
 # are deliberately not listed here.
