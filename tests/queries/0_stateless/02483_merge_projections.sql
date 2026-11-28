@@ -15,13 +15,13 @@ PROJECTION p_agg (SELECT toStartOfHour(datetime) AS hour, domain, sum(bytes), av
 )
 ENGINE = MergeTree
 ORDER BY (user_id, device_id, video_id) -- Can only favor one column here
-SETTINGS index_granularity = 1000;
+SETTINGS index_granularity = 1000,
+    max_bytes_to_merge_at_max_space_in_pool = 1, -- only the OPTIMIZE below may merge these parts
+    shared_merge_tree_disable_merges_and_mutations_assignment = 1;
 
 SET max_block_size = 5000;
 SET max_insert_block_size = 5000;
 SET min_insert_block_size_rows = 5000;
-
-SYSTEM STOP MERGES t_merge_projections;
 
 CREATE TABLE t_rng (`user_id_raw` UInt64, `device_id_raw` UInt64, `video_id_raw` UInt64, `domain_raw` UInt64, `bytes_raw` UInt64, `duration_raw` UInt64) ENGINE = GenerateRandom(1024);
 INSERT INTO t_merge_projections SELECT toUnixTimestamp(toDateTime(today())) + (rowNumberInAllBlocks() / 20000), user_id_raw % 100000000 AS user_id, device_id_raw % 200000000 AS device_id, video_id_raw % 100000000 AS video_id, domain_raw % 100, (bytes_raw % 1024) + 128, (duration_raw % 300) + 100 FROM t_rng LIMIT 50000;
@@ -29,8 +29,7 @@ INSERT INTO t_merge_projections SELECT toUnixTimestamp(toDateTime(today())) + (r
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_merge_projections' AND active;
 SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_merge_projections' AND active;
 
-SYSTEM START MERGES t_merge_projections;
-OPTIMIZE TABLE t_merge_projections FINAL;
+OPTIMIZE TABLE t_merge_projections FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_merge_projections' AND active;
 SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_merge_projections' AND active;
