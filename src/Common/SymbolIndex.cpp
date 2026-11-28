@@ -8,6 +8,7 @@
 #endif
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/SymbolIndex.h>
 
@@ -1517,7 +1518,7 @@ const SymbolIndex & SymbolIndex::instance()
     static const SymbolIndex & instance = []() -> const SymbolIndex &
     {
         /// Lives as long as the process, not the query that first needs it.
-        MemoryTrackerBlockerInThread not_charged_to_the_query;
+        ServerOwnedMemoryScope not_charged_to_the_query;
         return *new SymbolIndex;
     }();
     /// Published only after the constructor has finished, which is what lets `instanceIfInitialized`

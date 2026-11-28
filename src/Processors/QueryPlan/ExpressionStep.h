@@ -19,6 +19,7 @@ public:
     ExpressionStep(const ExpressionStep & other)
         : ITransformingStep(other)
         , actions_dag(other.actions_dag.clone())
+        , can_compile_expressions(other.can_compile_expressions)
     {}
 
     [[nodiscard]] String getName() const override { return "Expression"; }
@@ -29,6 +30,8 @@ public:
 
     ActionsDAG & getExpression() { return actions_dag; }
     [[nodiscard]] const ActionsDAG & getExpression() const { return actions_dag; }
+
+    void disableCompilation() { can_compile_expressions = false; }
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
@@ -75,6 +78,7 @@ private:
     [[nodiscard]] UnneededColumnsPlan analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const;
 
     ActionsDAG actions_dag;
+    bool can_compile_expressions = true;
 };
 
 }

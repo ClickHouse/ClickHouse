@@ -1,0 +1,339 @@
+---
+slug: /clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless
+title: 'جمع سجلات AWS CloudWatch باستخدام OpenTelemetry'
+sidebarTitle: 'جمع سجلات CloudWatch'
+description: 'شغّل مُجمِّع OpenTelemetry واحدًا خفيفًا يستطلع مجموعات سجلات CloudWatch لديك ويرسل الأحداث مباشرةً إلى ClickHouse Observability، ثم ابحث فيها حسب مجموعة السجلات والدفق.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'AWS', 'CloudWatch', 'CloudWatch Logs', 'OpenTelemetry collector', 'aws_cloudwatch', 'OTLP', 'Lambda logs']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import { TrackedLink } from '/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx';
+
+<Info>
+  **الخلاصة**
+
+  اختر مجموعات سجلات CloudWatch التي تريدها، ثم الصق كتلة المُصدِّر من علامة التبويب **Collector config** الخاصة بخدمتك في ملف تهيئة صغير لمُجمِّع OpenTelemetry، وشغّله باستخدام Docker Compose. يستطلع جامع البيانات مجموعات السجلات ويرسل كل حدث مباشرةً إلى ClickHouse Observability، موسومًا باسم مجموعة السجلات والدفق اللذين ينتمي إليهما.
+
+  الوقت المطلوب: 15 دقيقة تقريبًا
+</Info>
+
+لقد أنشأت خدمة ClickHouse Observability الخاصة بك. هذا الدليل مخصص للحالات التي تكون فيها السجلات المطلوبة موجودة أصلًا في CloudWatch، مثل دوال Lambda، أو مهام ECS، أو RDS، أو سجلات تدفق شبكة VPC، أو أي مصدر آخر يكتب إلى مجموعة سجلات.
+
+يعتمد هذا الأسلوب على نمط OpenTelemetry القياسي، إذ يستطلع جامع بيانات واحد مزوّد بـ [المستقبِل `aws_cloudwatch`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) مجموعات السجلات لديك عبر واجهة برمجة تطبيقات CloudWatch Logs، ثم يرسل الأحداث مباشرةً إلى نقطة نهاية OTLP الخاصة بخدمتك. ويمكن تشغيله في أي بيئة يتوفر فيها Docker وصلاحية الوصول إلى واجهة برمجة تطبيقات AWS. ويُفضَّل استخدام مثيل EC2 في المنطقة نفسها التي توجد فيها مجموعات السجلات، إذ يساعد ذلك على خفض زمن الانتقال لواجهة برمجة التطبيقات وتكاليف نقل البيانات.
+
+## المتطلبات المسبقة {#prerequisites}
+
+* خدمة ClickHouse Observability. إذا لم تكن لديك خدمة بعد، فاتبع [دليل بدء الاستخدام](/ar/clickstack/observability/getting-started).
+* حساب AWS يضم مجموعة واحدة أو أكثر من مجموعات سجلات CloudWatch، مع صلاحية إنشاء بيانات اعتماد قادرة على قراءتها أو استخدام بيانات اعتماد موجودة.
+* مضيف مثبَّت عليه Docker و[AWS CLI](https://aws.amazon.com/cli/)، ويتيح وصول HTTPS صادرًا عبر المنفذ `4318` إلى نقطة نهاية بيانات القياس عن بُعد الخاصة بخدمتك.
+
+شغّل أوامر AWS وDocker من جلسة shell واحدة على ذلك المضيف، إذ يستمد جامع البيانات بيانات اعتماد AWS من بيئة جلسة shell هذه.
+
+## إعداد جامع البيانات {#set-up-the-collector}
+
+<Steps>
+  <Step title="إعداد بيانات اعتماد AWS" id="set-up-aws-credentials">
+    يستخدم المستقبِل سلسلة بيانات الاعتماد القياسية في AWS SDK، لذا فإن أي إعداد يعمل مع واجهة سطر الأوامر الخاصة بـ AWS يعمل كذلك مع جامع البيانات. ويجب أن تمتلك بيانات الاعتماد صلاحية استعراض مجموعات السجلات وقراءة أحداثها:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "CloudWatchLogsList",
+          "Effect": "Allow",
+          "Action": "logs:DescribeLogGroups",
+          "Resource": "*"
+        },
+        {
+          "Sid": "CloudWatchLogsRead",
+          "Effect": "Allow",
+          "Action": "logs:FilterLogEvents",
+          "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
+        }
+      ]
+    }
+    ```
+
+    استبدل `YOUR_ACCOUNT_ID` بمعرّف حساب AWS الخاص بك. صدّر بيانات الاعتماد، ثم تحقّق من أنها تعمل:
+
+    <Tabs>
+      <Tab title="AWS SSO" id="aws-sso">
+        ```shell
+        aws sso login --profile YOUR_PROFILE_NAME
+        eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
+        aws sts get-caller-identity
+        ```
+
+        تنتهي صلاحية بيانات اعتماد SSO عادةً بعد 8 إلى 12 ساعة. نفّذ هذه الأوامر مجددًا لتحديث بيانات الاعتماد وتصديرها، ثم شغّل `docker compose up -d --force-recreate otel-collector` من دليل Compose. فإعادة إنشاء الحاوية تطبّق متغيرات البيئة الجديدة، أما إعادة تشغيلها فتُبقي على بيانات الاعتماد منتهية الصلاحية. ولتجنّب هذا الانقطاع، استخدم مفاتيح الوصول أو دور المثيل.
+      </Tab>
+
+      <Tab title="مفاتيح الوصول في IAM" id="iam-access-keys">
+        ```shell
+        export AWS_ACCESS_KEY_ID="your-access-key-id"
+        export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+        export AWS_REGION="us-east-1"
+        aws sts get-caller-identity
+        ```
+      </Tab>
+    </Tabs>
+
+    <Info>
+      **بيانات الاعتماد في بيئة الإنتاج**
+
+      في بيئة الإنتاج، أرفق السياسة بالمضيف بدلاً من تصدير المفاتيح: دور IAM على EC2، أو IRSA على EKS، أو دور المهمة على ECS. وبذلك يحصل جامع البيانات على بيانات الاعتماد من خدمة البيانات الوصفية للمثيل، ولا يحتاج ملف Compose أدناه إلى أي متغيرات خاصة بـ AWS على الإطلاق.
+    </Info>
+  </Step>
+
+  <Step title="اختر مجموعات السجلات" id="pick-your-log-groups">
+    اعرض قائمة بمجموعات السجلات في منطقتك لتستخدم أسماءها الدقيقة وتتأكد من صحة المنطقة:
+
+    ```shell
+    aws logs describe-log-groups --region us-east-1 \
+      --query 'logGroups[].logGroupName' --output table
+    ```
+
+    دوِّن أسماء المجموعات التي تريدها. ويمكن التقاط المجموعات التي تشترك في البادئة نفسها، مثل `/aws/lambda/`، دفعةً واحدة عند كتابة التهيئة.
+  </Step>
+
+  <Step title="انسخ بيانات الاتصال الخاصة بك" id="copy-connection-details">
+    افتح خدمة ClickHouse Observability. ستعرض الخدمة صفحة **Start sending telemetry** إلى أن تبدأ البيانات بالوصول.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![صفحة Start sending telemetry تعرض الخدمة الحالية دون أي بيانات بعد مع ثلاثة خيارات: Use an existing OpenTelemetry setup وInstrument with AI وFollow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+      </Frame>
+    </div>
+
+    ضمن **Use an existing OpenTelemetry setup**، اختر **View connection details**، ثم افتح علامة التبويب **Collector config**. ستجد فيها كتلة مُصدِّر جاهزة لخدمتك تتضمن نقطة النهاية وترويسة `authorization` تحتوي مسبقاً على مفتاح API الخاص بك مسبوقاً بالبادئة `Bearer`. اختر **Reveal key** لإظهار المفتاح كاملاً، ثم انقر زر النسخ.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![مربع حوار Set up OpenTelemetry مع تحديد علامة التبويب Collector config، ويعرض مُصدِّر otlphttp بنقطة نهاية مخفية وترويسة تفويض Bearer](/images/clickstack/getting-started/observability-collector-config.png)
+      </Frame>
+    </div>
+
+    تبدو الكتلة على النحو التالي، وستلصقها في الخطوة التالية ضمن تهيئة جامع البيانات كما نسختها تماماً دون أي تعديل:
+
+    ```yaml
+    exporters:
+      otlphttp:
+        endpoint: https://YOUR_OTEL_ENDPOINT:4318
+        headers:
+          authorization: Bearer <your-api-key>
+    ```
+
+    يمكنك الاطلاع على القيم نفسها في أي وقت ضمن **إعدادات الفريق ← بيانات القياس عن بُعد المُدارة**.
+  </Step>
+
+  <Step title="اكتب تهيئة collector" id="write-the-configuration">
+    أنشئ الملف `otel-collector-config.yaml` من الصيغة التي تناسب الطريقة التي تريد بها تحديد مجموعات السجلات، ثم استبدل كتلة `exporters` فيه بالكتلة التي نسختها. تقرأ كلتا الصيغتين أحداث الساعة الأخيرة عند بدء التشغيل.
+
+    <Tabs>
+      <Tab title="مجموعات السجلات المسماة" id="named-log-groups">
+        ```yaml
+        receivers:
+          aws_cloudwatch:
+            region: us-east-1
+            logs:
+              poll_interval: 1m
+              initial_lookback: 1h
+              groups:
+                named:
+                  /aws/lambda/payment-processor:
+                  /aws/lambda/order-service:
+                  /ecs/api-gateway:
+
+        processors:
+          batch:
+            timeout: 10s
+
+        exporters:
+          otlphttp:
+            endpoint: https://YOUR_OTEL_ENDPOINT:4318
+            headers:
+              authorization: Bearer <your-api-key>
+
+        service:
+          pipelines:
+            logs:
+              receivers: [aws_cloudwatch]
+              processors: [batch]
+              exporters: [otlphttp]
+        ```
+
+        يمثّل كل مفتاح تحت `named` مجموعة سجلات. اترك القيمة فارغة لقراءة جميع التدفقات في المجموعة، أو أضف تحته `names:` أو `prefixes:` لقراءة تدفقات محددة فقط.
+      </Tab>
+
+      <Tab title="الاكتشاف التلقائي حسب البادئة" id="autodiscover-by-prefix">
+        ```yaml
+        receivers:
+          aws_cloudwatch:
+            region: us-east-1
+            logs:
+              poll_interval: 1m
+              initial_lookback: 1h
+              groups:
+                autodiscover:
+                  limit: 100
+                  prefix: /aws/lambda/
+
+        processors:
+          batch:
+            timeout: 10s
+
+        exporters:
+          otlphttp:
+            endpoint: https://YOUR_OTEL_ENDPOINT:4318
+            headers:
+              authorization: Bearer <your-api-key>
+
+        service:
+          pipelines:
+            logs:
+              receivers: [aws_cloudwatch]
+              processors: [batch]
+              exporters: [otlphttp]
+        ```
+
+        يقرأ هذا الإعداد كل مجموعة سجلات يبدأ اسمها بالبادئة المحددة، حتى الحد المعيّن في `limit`، بما في ذلك المجموعات التي تُنشأ لاحقًا. استخدم `pattern` بدلًا من `prefix` لمطابقة سلسلة فرعية في أي موضع من الاسم.
+      </Tab>
+    </Tabs>
+
+    يطابق اسم المُصدِّر `otlphttp` ما تعرضه علامة التبويب. تسمّيه الإصدارات الحديثة من جامع البيانات `otlp_http` مع الإبقاء على `otlphttp` اسمًا بديلًا، لذا يعمل الاسمان كلاهما، ويسجّل جامع البيانات الرسالة `"otlphttp" alias is deprecated` مرة واحدة عند بدء التشغيل. هذا التحذير لا يؤثر في عمل جامع البيانات. إذا أعدت تسمية المُصدِّر، فأعد تسميته في مسار المعالجة (pipeline) أيضًا. أبقِ نقطة النهاية على هيئة عنوان URL الأساسي: لا تُلحق به `/v1/logs`، لأن المُصدِّر يضيف مسار نوع الإشارة تلقائيًا.
+
+    أصبح الملف يحتوي الآن على مفتاح API الخاص بك، لذا احرص على استبعاده من نظام التحكم في الإصدارات. تعمل حاوية جامع البيانات بالمعرّفين UID/GID `10001:10001`. على Linux، امنح تلك المجموعة صلاحية القراءة مع إبقاء الملف قابلاً للتعديل من قِبل مالكه على المضيف:
+
+    ```shell
+    sudo chgrp 10001 otel-collector-config.yaml
+    chmod 640 otel-collector-config.yaml
+    ```
+
+    يتيح ذلك للحاوية قراءة ملف الإعداد المربوط عبر bind mount دون أن يصبح مفتاح API قابلاً للقراءة من قِبل جميع المستخدمين.
+
+    الإعدادات المطلوب تعديلها:
+
+    * `region`: المنطقة التي توجد فيها مجموعات السجلات.
+    * `initial_lookback`: المدة الزمنية التي يعود إليها جامع البيانات للقراءة عند بدء تشغيله. وبدون هذا الإعداد، يقرأ المستقبِل السجل المحفوظ بالكامل لكل مجموعة، مما قد يعني عملية استكمال بيانات تاريخية كبيرة لمرة واحدة يقابلها عدد كبير من استدعاءات API. ولاستكمال البيانات التاريخية بدءًا من نقطة محددة بدلًا من ذلك، استبدله بـ `start_from` مع طابع زمني بتنسيق RFC 3339.
+    * `poll_interval`: قيمته الافتراضية `1m`. تمنحك الفترات الزمنية الأقصر سجلات أحدث مقابل عدد أكبر من استدعاءات API.
+    * تؤدي إعادة التشغيل إلى إعادة قراءة نافذة النظر إلى الوراء، لذا تظهر بيانات الساعة الأخيرة مرتين بعد كل إعادة تشغيل. وفي حالة النشر طويل التنفيذ، أضف الإضافة `file_storage` واضبط الخيار `storage` الخاص بالمستقبِل ليستأنف القراءة من حيث توقف.
+
+    يتناول ملف [README](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) الخاص بالمستقبِل بقية الخيارات، بما فيها عوامل تصفية الدفق والقراءة من الحسابات المرتبطة.
+
+    <Accordion title="اختياري: استخدم مجموعة السجلات اسمًا للخدمة">
+      لا تتضمن أحداث CloudWatch اسم الخدمة، لذا يظهر الحقل `ServiceName` فارغًا في صفحة البحث، ولا يكون لعوامل تصفية الخدمة أي أثر. لملء هذا الحقل من مجموعة السجلات، أضف معالج `transform` وضعه قبل `batch` في مسار المعالجة:
+
+      ```yaml
+      processors:
+        transform:
+          log_statements:
+            - context: resource
+              statements:
+                - set(attributes["service.name"], attributes["cloudwatch.log.group.name"])
+        batch:
+          timeout: 10s
+
+      service:
+        pipelines:
+          logs:
+            receivers: [aws_cloudwatch]
+            processors: [transform, batch]
+            exporters: [otlphttp]
+      ```
+    </Accordion>
+  </Step>
+
+  <Step title="شغّله باستخدام Docker Compose" id="start-with-docker-compose">
+    أنشئ الملف `docker-compose.yaml` بجوار ملف التهيئة. يربط هذا الملف ملف التهيئة بالحاوية، ويمرّر بيانات اعتماد AWS الخاصة بك من الـ shell إلى الحاوية:
+
+    ```yaml
+    services:
+      otel-collector:
+        image: otel/opentelemetry-collector-contrib:0.162.0
+        command: ["--config=/etc/otel-config.yaml"]
+        volumes:
+          - type: bind
+            source: ./otel-collector-config.yaml
+            target: /etc/otel-config.yaml
+            read_only: true
+        environment:
+          - AWS_ACCESS_KEY_ID
+          - AWS_SECRET_ACCESS_KEY
+          - AWS_SESSION_TOKEN
+          - AWS_REGION
+        restart: unless-stopped
+    ```
+
+    شغّله وراقب السجلات:
+
+    ```shell
+    docker compose up -d
+    docker compose logs -f otel-collector
+    ```
+
+    ينتهي بدء التشغيل السليم بالرسالة `Everything is ready. Begin running and processing data.` يجري أول استطلاع بعد انقضاء `poll_interval` واحد من بدء التشغيل، لذا امنحه دقيقة أو دقيقتين. وفيما يلي الأخطاء التي ينبغي التعرّف عليها:
+
+    * `panic: runtime error: invalid memory address or nil pointer dereference` في `ensureSession`، تعقبها إعادة تشغيل الحاوية: يعني ذلك أن جامع البيانات تعذّر عليه التحقق من الهوية لدى AWS، إما لأن بيانات الاعتماد مفقودة أو غير صالحة أو منتهية الصلاحية، وإما لأنه لا يمكن الوصول إلى نقطة نهاية STS. يُبلغ جامع البيانات في الإصدار 0.162.0 عن هذه المشكلة على هيئة انهيار بدلًا من رسالة خطأ، وهي قيد المتابعة في المصدر الأصلي ضمن [التذكرة 50961](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/50961). شغّل `aws sts get-caller-identity` على المضيف، ثم حدّث بيانات اعتماد صالحة وصدّرها، وبعدها شغّل `docker compose up -d --force-recreate otel-collector` من دليل Compose.
+    * `AccessDeniedException`: تحتاج بيانات الاعتماد إلى الصلاحية `logs:DescribeLogGroups` مع `"Resource": "*"`، وإلى الصلاحية `logs:FilterLogEvents` على مجموعات السجلات المطلوبة.
+    * `ResourceNotFoundException`: اسم إحدى مجموعات السجلات مكتوب بشكل خاطئ، أو أن المجموعة موجودة في منطقة أخرى.
+    * `401` أو `403` من المُصدِّر: قيمة `authorization` في التهيئة غير صحيحة. يجب أن تتكوّن من `Bearer` متبوعةً بالمفتاح كاملًا، تمامًا كما يظهر في علامة التبويب الخاصة بإعداد جامع البيانات. صحّح الملف ثم شغّل `docker compose restart otel-collector`.
+    * `404` من المُصدِّر: أُلحِق مسار إشارة مثل `/v1/logs` بنقطة النهاية.
+  </Step>
+</Steps>
+
+## التأكد من وصول البيانات {#confirm-data-is-arriving}
+
+عُد إلى صفحة **Start sending telemetry** في خدمتك واختر **Check for data**. بمجرد وصول بيانات القياس عن بُعد، تتغير حالة الخدمة إلى **Data received** ويصبح الزر **Start exploring** متاحًا.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![صفحة Start sending telemetry تعرض حالة الخدمة على أنها Data received، مع تأكيد بأنك جاهز للاستكشاف، وزر Start exploring مفعّل](/images/clickstack/getting-started/observability-data-received.png)
+  </Frame>
+</div>
+
+اختر **Start exploring** لفتح **بحث**، ثم اختر المصدر **Logs**، واضبط النطاق الزمني على **Last 15 minutes**. تظهر الأحداث خلال دورتي استطلاع أو ثلاث. ويحمل كل حدث معلومات مصدره في هيئة سمات موارد:
+
+* `aws.region`: المنطقة التي هيّأتها.
+* `cloudwatch.log.group.name`: مجموعة السجلات المصدر.
+* `cloudwatch.log.stream`: دفق السجلات المصدر.
+* `cloud.account.id`: حساب AWS الذي وردت منه الأحداث.
+
+لعرضها في أعمدة، استبدل `SELECT` بما يلي `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body`:
+
+<div className="ch-image-lg">
+  <Frame>
+    ![صفحة بحث تعرض أحداث CloudWatch مع سمات الموارد الخاصة بالمنطقة ومجموعة السجلات ودفق السجلات في أعمدة](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
+  </Frame>
+</div>
+
+اختر حدثًا وافتح **Column Values** لفحص سماته:
+
+<div className="ch-image-lg">
+  <Frame>
+    ![عرض تفاصيل السجل يُظهر سمات الموارد aws.region وcloudwatch.log.group.name وcloudwatch.log.stream لحدث من CloudWatch](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
+  </Frame>
+</div>
+
+## إذا لم يظهر أي شيء {#if-nothing-shows-up}
+
+* ابدأ بقراءة سجلات جامع البيانات باستخدام `docker compose logs -f otel-collector`، إذ تُعرض هناك مشكلات AWS ومشكلات المُصدِّر على حدٍّ سواء، مصحوبةً بالرسائل المذكورة أعلاه.
+* شغّل `aws sts get-caller-identity` على المضيف للتحقق من أن بيانات الاعتماد لا تزال صالحة. فصلاحية جلسات SSO تنتهي، وعندئذٍ ينهار جامع البيانات بدلاً من أن يسجّل رسالة خطأ.
+* تحقّق من أن المجموعة استقبلت أحداثاً مؤخراً، لأن المستقبِل لا يقرأ إلا الأحداث المكتوبة ضمن نافذة النظر إلى الوراء وما بعدها. على سبيل المثال: `aws logs filter-log-events --log-group-name /aws/lambda/order-service --region us-east-1 --limit 5`.
+* وسّع النطاق الزمني في **بحث** وأزل جميع عوامل التصفية. فقد يكون المصدر الافتراضي مضبوطاً على **Traces** بدلاً من **Logs**.
+* لاستبعاد احتمال أن تكون المشكلة في الخدمة نفسها، انتقل إلى **إعدادات الفريق → Managed Telemetry** واستخدم **Send a Test Log**. فإذا ظهر هذا السجل في **بحث**، فإن الخدمة تستقبل البيانات، وتكون المشكلة بين جامع البيانات وCloudWatch أو نقطة النهاية.
+
+## استيراد لوحة معلومات CloudWatch (اختياري) {#import-the-cloudwatch-dashboard}
+
+تعرض لوحة معلومات جاهزة حجم السجلات حسب مجموعة السجلات، وتوزيعها حسب مستوى الخطورة، ومصادر الأخطاء. <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">نزّل `cloudwatch-logs-dashboard.json`</TrackedLink>، ثم افتح **Dashboards**، وحدد **Import**، وارفع الملف، ثم حدد **Finish Import**. تعتمد الرسوم البيانية في التصفية على سمات الموارد المذكورة أعلاه، لذا تبدأ بعرض البيانات فور وصول الأحداث.
+
+{/* TODO(dale): لقطة شاشة للوحة معلومات CloudWatch Logs بعد استيرادها في ClickHouse Observability. */}
+
+## الخطوات التالية {#next-steps}
+
+* [التنبيهات](/ar/clickstack/observability/features/alerts): أنشئ تنبيهًا عند ارتفاع عدد الأخطاء في مجموعة السجلات.
+* [البحث](/ar/clickstack/observability/features/search): استعلم حسب مجموعة السجلات والدفق والمتن باستخدام صيغة مشابهة لـ Lucene أو باستخدام SQL.
+* [ربط مُجمِّع OpenTelemetry](/ar/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless): أضف المزيد من المستقبِلات إلى جامع البيانات هذا عبر المُصدِّر نفسه، مثل مقاييس المضيف الخاصة بالمثيل الذي يعمل عليه.
+* [مراقبة Kubernetes باستخدام OpenTelemetry](/ar/clickstack/managed-onboarding/monitoring-kubernetes-serverless): اجمع سجلات الحاويات ومقاييسها مباشرةً من EKS بدلًا من جمعها عبر CloudWatch.

@@ -109,7 +109,7 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 
 ## 設定 {#settings}
 
-`PostgreSQL` テーブルエンジン (および [`postgresql`](/ja/reference/functions/table-functions/postgresql) テーブル関数) で使用される接続プールは、`SETTINGS` 句を使ってテーブルごとに設定できます。設定を指定しない場合は、対応するクエリレベルの `postgresql_*` 設定の値がデフォルトで使用されます。
+`PostgreSQL` テーブルエンジン (および [`postgresql`](/ja/reference/functions/table-functions/postgresql) テーブル関数) で使用される接続プールは、`SETTINGS` 句を使ってテーブルごとに設定できます。設定を指定しない場合は、対応するクエリレベルの `postgresql_*` 設定の値がデフォルトで使用されます。新しいテーブル (バックアップから復元されたものを除く) は、この方法で取得した値のうち、サーバーの値 (例: `SET` やユーザーの設定プロファイルで設定された値) と異なるものを自身の `SETTINGS` に追加します。これにより、サーバーの再起動後もそれらの値が保持されます。サーバーの値と同じ値は保存されないため、そのようなテーブルでは、後でサーバーの値が変更されると変更後の値が使われます。名前付きコレクションで指定された設定はクエリレベルの設定から取得されないため、その設定については何も保存されません。保存済みの値はテーブルの `SETTINGS` の一部となるため、後から名前付きコレクションに追加された同じキーをオーバーライドします。そのキーが `NOT OVERRIDABLE` の場合、テーブルの読み込みは `Override not allowed` エラーで失敗します。テーブルの `SETTINGS` 句で `name = DEFAULT` によりリセットされた設定は、クエリレベルの設定から取得されません。
 
 ### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 

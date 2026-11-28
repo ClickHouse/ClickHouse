@@ -27,9 +27,7 @@ Algumas regras simples podem ajudar na escolha de uma chave de ordenação. Os c
   As chaves de ordenação devem ser definidas na criação da tabela e não podem ser adicionadas depois. É possível adicionar ordenação extra a uma tabela após (ou antes da) inserção de dados por meio de um recurso conhecido como projeções. Esteja ciente de que isso resulta em duplicação de dados. Mais detalhes [aqui](/pt-BR/reference/statements/alter/projection).
 </Info>
 
-<div id="example">
-  ## Exemplo
-</div>
+## Exemplo {#example}
 
 Considere a tabela `posts_unordered` a seguir. Ela contém uma linha para cada post do Stack Overflow.
 
@@ -121,13 +119,9 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 A animação a seguir mostra como um índice primário esparso otimizado é criado para a tabela Posts do Stack Overflow. Em vez de indexar linhas individuais, o índice é aplicado a blocos de linhas:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Chave primária](/images/bestpractices/create_primary_key.webp)
-
-</Frame>
-
+  <Frame>
+    ![Chave primária](/images/bestpractices/create_primary_key.webp)
+  </Frame>
 </div>
 
 Se a mesma consulta for repetida em uma tabela com esta chave de ordenação:
@@ -177,13 +171,9 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 Além disso, visualizamos como o índice esparso descarta todos os blocos de linhas que não podem conter correspondências para nossa consulta de exemplo:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Chave primária](/images/bestpractices/primary_key.webp)
-
-</Frame>
-
+  <Frame>
+    ![Chave primária](/images/bestpractices/primary_key.webp)
+  </Frame>
 </div>
 
 <Note>

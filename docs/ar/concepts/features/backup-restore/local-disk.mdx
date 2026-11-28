@@ -9,19 +9,13 @@ doc_type: 'guide'
 import ExampleSetup from '/snippets/ar/_example_setup.mdx';
 import Syntax from '/snippets/ar/_syntax.mdx';
 
-<div id="syntax">
-  ## الصيغة
-</div>
+## الصيغة {#syntax}
 
 <Syntax />
 
-<div id="configure-backup-destinations-for-disk">
-  ## تهيئة وجهات النسخ الاحتياطي للقرص
-</div>
+## تهيئة وجهات النسخ الاحتياطي للقرص {#configure-backup-destinations-for-disk}
 
-<div id="configure-a-backup-destination">
-  ### إعداد وجهة النسخ الاحتياطي للقرص المحلي
-</div>
+### إعداد وجهة النسخ الاحتياطي للقرص المحلي {#configure-a-backup-destination}
 
 في الأمثلة أدناه، ستظهر وجهة النسخ الاحتياطي بالشكل `Disk('backups', '1.zip')`.
 ولاستخدام محرك النسخ الاحتياطي `Disk`، يجب أولاً إضافة ملف يحدد
@@ -51,9 +45,7 @@ import Syntax from '/snippets/ar/_syntax.mdx';
 </clickhouse>
 ```
 
-<div id="backuprestore-using-an-s3-disk">
-  ### تهيئة وجهة نسخ احتياطي لقرص S3
-</div>
+### تهيئة وجهة نسخ احتياطي لقرص S3 {#backuprestore-using-an-s3-disk}
 
 يمكن أيضًا إجراء `BACKUP`/`RESTORE` إلى S3 عبر تهيئة قرص S3 ضمن
 إعدادات التخزين في ClickHouse. هيّئ القرص كما يلي، وذلك بإضافة ملف إلى
@@ -102,13 +94,9 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
     الصيغة `BACKUP ... TO S3(<endpoint>)` لهذا الغرض.
 </Note>
 
-<div id="usage-examples">
-  ## أمثلة على استخدام النسخ الاحتياطي والاستعادة على القرص المحلي
-</div>
+## أمثلة على استخدام النسخ الاحتياطي والاستعادة على القرص المحلي {#usage-examples}
 
-<div id="backup-and-restore-a-table">
-  ### أخذ نسخة احتياطية من جدول واستعادته
-</div>
+### أخذ نسخة احتياطية من جدول واستعادته {#backup-and-restore-a-table}
 
 <ExampleSetup />
 
@@ -173,9 +161,7 @@ RESTORE TABLE test_db.test_table AS test_db.test_table_renamed FROM Disk('backup
 يمكن استخدام تنسيقات أخرى غير zip. راجع [&quot;النسخ الاحتياطية كأرشيفات tar&quot;](#backups-as-tar-archives)
 أدناه لمزيد من التفاصيل.
 
-<div id="incremental-backups">
-  ### النسخ الاحتياطية التزايدية إلى القرص
-</div>
+### النسخ الاحتياطية التزايدية إلى القرص {#incremental-backups}
 
 النسخة الاحتياطية الأساسية في ClickHouse هي النسخة الاحتياطية الكاملة الأولية التي تُنشأ انطلاقًا منها
 النسخ الاحتياطية التزايدية اللاحقة. ولا تخزّن النسخ الاحتياطية التزايدية سوى التغييرات
@@ -207,9 +193,7 @@ RESTORE TABLE test_db.test_table AS test_db.test_table2
 FROM Disk('backups', 'incremental-a.zip');
 ```
 
-<div id="assign-a-password-to-the-backup">
-  ### تأمين نسخة احتياطية
-</div>
+### تأمين نسخة احتياطية {#assign-a-password-to-the-backup}
 
 يمكن تعيين كلمة مرور على ملفات النسخ الاحتياطية المكتوبة على القرص.
 يمكن تحديد كلمة المرور باستخدام الإعداد `password`.
@@ -236,9 +220,7 @@ FROM Disk('backups', 'password-protected.zip')
 SETTINGS password='qwerty'
 ```
 
-<div id="backups-as-tar-archives">
-  ### النسخ الاحتياطية كأرشيفات tar
-</div>
+### النسخ الاحتياطية كأرشيفات tar {#backups-as-tar-archives}
 
 يمكن تخزين النسخ الاحتياطية ليس فقط كأرشيفات zip، بل أيضًا كأرشيفات tar.
 وتبقى الوظائف نفسها كما في zip، باستثناء أن الحماية بكلمة مرور غير
@@ -274,9 +256,7 @@ BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar.gz')
 * `.tzst`
 * `.tar.xz`
 
-<div id="compression-settings">
-  ### إعدادات الضغط
-</div>
+### إعدادات الضغط {#compression-settings}
 
 يمكن تحديد أسلوب الضغط ومستوى الضغط باستخدام
 الإعدادين `compression_method` و`compression_level`، على التوالي.
@@ -291,9 +271,7 @@ TO Disk('backups', 'filename.zip')
 SETTINGS compression_method='lzma', compression_level=3
 ```
 
-<div id="restore-specific-partitions">
-  ### استعادة تقسيمات محددة
-</div>
+### استعادة تقسيمات محددة {#restore-specific-partitions}
 
 إذا كانت هناك حاجة إلى استعادة تقسيمات محددة مرتبطة بجدول، فيمكن تحديدها.
 

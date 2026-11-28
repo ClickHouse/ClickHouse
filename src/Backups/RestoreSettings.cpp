@@ -4,13 +4,11 @@
 #include <Core/SettingsFields.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Backups/SettingsFieldOptionalBool.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
 #include <Backups/SettingsFieldOptionalString.h>
-#include <Backups/SettingsFieldOptionalUInt64.h>
 
 
 namespace DB
@@ -228,8 +226,8 @@ namespace
 
 namespace
 {
-    /// `allow_unresolved_access_dependencies` is the obsolete name of `skip_unresolved_access_dependencies`;
-    /// a reset of either drops both.
+    /// `allow_unresolved_access_dependencies` is the obsolete name of `skip_unresolved_access_dependencies`:
+    /// either sets the field, and a reset of either drops both.
     std::string_view canonicalRestoreSettingName(std::string_view name)
     {
         if (name == "allow_unresolved_access_dependencies")
@@ -255,21 +253,16 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
             = resolveDefaultedSettings(query, RESTORE_SPECIFIC_SETTING_NAMES, canonicalRestoreSettingName).changes;
         for (const auto & setting : settings)
         {
+            const std::string_view name = canonicalRestoreSettingName(setting.name);
 #define GET_RESTORE_SETTINGS_FROM_QUERY(TYPE, NAME) \
-            if (setting.name == #NAME) \
+            if (name == #NAME) \
                 res.NAME = SettingField##TYPE{setting.value}.value; \
             else
 
             LIST_OF_RESTORE_SETTINGS(GET_RESTORE_SETTINGS_FROM_QUERY)
             /// else
-            /// `allow_unresolved_access_dependencies` is an obsolete name.
-            if (setting.name == "allow_unresolved_access_dependencies")
             {
-                res.skip_unresolved_access_dependencies = SettingFieldBool{setting.value}.value;
-            }
-            else
-            {
-                /// (if setting.name is not the name of a field of BackupSettings)
+                /// (if `name` is not the name of a field of RestoreSettings)
                 res.core_settings.emplace_back(setting);
             }
         }
@@ -291,28 +284,20 @@ CoreSettingsFromQuery RestoreSettings::extractCoreSettingsFromQuery(const ASTBac
 
 void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
-    auto query_settings = make_intrusive<ASTSetQuery>();
-    query_settings->is_standalone = false;
+    SettingsChanges changes;
 
     /// Copy the fields of the RestoreSettings to the query.
     static const RestoreSettings default_settings;
 
 #define COPY_RESTORE_SETTINGS_TO_QUERY(TYPE, NAME) \
     if ((NAME) != default_settings.NAME) \
-        query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
+        changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
 
     LIST_OF_RESTORE_SETTINGS(COPY_RESTORE_SETTINGS_TO_QUERY)
 
-    /// Copy the core settings to the query too.
-    query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
-
-    /// No reset is sent, only the overrides it cancels are dropped, as in `BackupSettings::copySettingsToQuery`.
-    eraseOverridesOfResetSettings(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
-
-    if (query_settings->changes.empty())
-        query_settings = nullptr;
-
-    query.settings = query_settings;
+    /// Read from the incoming clause before it is replaced.
+    const auto core_default_names = extractCoreSettingsFromQuery(query).default_names;
+    query.settings = makeSettingsClauseForOtherHosts(std::move(changes), core_settings, core_default_names);
 
     auto base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
     if (base_backup_name)

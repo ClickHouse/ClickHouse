@@ -381,6 +381,11 @@ public:
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
+    /// Shared data serialization version of `JSON` columns for a part of the given expected size,
+    /// `is_insert` tells whether the part is created by an insert.
+    MergeTreeObjectSharedDataSerializationVersion chooseObjectSharedDataSerializationVersion(
+        size_t bytes_uncompressed, bool is_insert, ProjectionDescriptionRawPtr projection) const;
+
     MergeTreeDataPartBuilder getDataPartBuilder(
         const String & name,
         const VolumePtr & volume,
@@ -957,6 +962,10 @@ public:
     virtual void removeTemporaryPart(const MutableDataPartPtr & part) const;
 
     MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
+
+    /// Throws if the parts that `CLEAR COLUMN` of `_block_number` / `_block_offset` (see `isClearOfBlockColumns`) affects
+    /// have unapplied patch parts.
+    void assertNoPatchesForClearOfBlockColumns(const AlterCommand & command, ContextPtr local_context) const;
 
     bool assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error = true) const;
 
