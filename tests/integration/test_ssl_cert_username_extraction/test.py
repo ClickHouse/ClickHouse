@@ -1,0 +1,283 @@
+import base64
+import os.path
+import ssl
+import urllib.error
+import urllib.parse
+import urllib.request
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.ssl_context import WrapSSLContextWithSNI
+
+# The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
+# The client have to verify server certificate against that name. Client uses SNI
+SSL_HOST = "integration-tests.clickhouse.com"
+HTTPS_PORT = 8443
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+
+cluster = ClickHouseCluster(__file__)
+node_cn = cluster.add_instance(
+    "node_cn",
+    main_configs=[
+        "configs/ssl_config_cn.xml",
+        "certs/server-key.pem",
+        "certs/server-cert.pem",
+        "certs/ca-cert.pem",
+    ],
+    user_configs=["configs/users.xml"],
+)
+node_cn_regexp = cluster.add_instance(
+    "node_cn_regexp",
+    main_configs=[
+        "configs/ssl_config_cn_regexp.xml",
+        "certs/server-key.pem",
+        "certs/server-cert.pem",
+        "certs/ca-cert.pem",
+    ],
+    user_configs=["configs/users.xml"],
+)
+node_san_uri = cluster.add_instance(
+    "node_san_uri",
+    main_configs=[
+        "configs/ssl_config_san_uri.xml",
+        "certs/server-key.pem",
+        "certs/server-cert.pem",
+        "certs/ca-cert.pem",
+    ],
+    user_configs=["configs/users.xml"],
+)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def started_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def get_ssl_context(cert_name):
+    context = WrapSSLContextWithSNI(SSL_HOST, ssl.PROTOCOL_TLS_CLIENT)
+    context.load_verify_locations(cafile=f"{SCRIPT_DIR}/certs/ca-cert.pem")
+    if cert_name:
+        context.load_cert_chain(
+            f"{SCRIPT_DIR}/certs/{cert_name}-cert.pem",
+            f"{SCRIPT_DIR}/certs/{cert_name}-key.pem",
+        )
+        context.verify_mode = ssl.CERT_REQUIRED
+    context.check_hostname = True
+    context.set_ciphers("DEFAULT")
+    return context
+
+
+def execute_query_https(
+    node, query, cert_name=None, headers=None, params=None, method="GET"
+):
+    url = f"https://{node.ip_address}:{HTTPS_PORT}/?query={urllib.parse.quote(query)}"
+    if params:
+        url += "&" + urllib.parse.urlencode(params)
+    request = urllib.request.Request(url, method=method)
+    for key, value in (headers or {}).items():
+        request.add_header(key, value)
+    response = urllib.request.urlopen(
+        request, context=get_ssl_context(cert_name)
+    ).read()
+    return response.decode("utf-8")
+
+
+def assert_rejected(node, cert_name, reason):
+    # Every failed authentication is HTTP 403, so the reason is checked as well: otherwise a
+    # request rejected for another reason than the tested one would pass the test.
+    with pytest.raises(urllib.error.HTTPError) as err:
+        execute_query_https(node, "SELECT currentUser()", cert_name=cert_name)
+    assert err.value.code == 403
+    assert reason in err.value.read().decode("utf-8")
+
+
+def test_cert_only_authentication():
+    assert (
+        execute_query_https(node_cn, "SELECT currentUser()", cert_name="client1")
+        == "client1\n"
+    )
+
+
+def test_explicit_credentials_take_precedence():
+    # X-ClickHouse-User/X-ClickHouse-Key headers win over the certificate.
+    assert (
+        execute_query_https(
+            node_cn,
+            "SELECT currentUser()",
+            cert_name="client1",
+            headers={"X-ClickHouse-User": "jane", "X-ClickHouse-Key": "qwe123"},
+        )
+        == "jane\n"
+    )
+
+    # Query parameters win over the certificate.
+    assert (
+        execute_query_https(
+            node_cn,
+            "SELECT currentUser()",
+            cert_name="client1",
+            params={"user": "jane", "password": "qwe123"},
+        )
+        == "jane\n"
+    )
+
+    # The HTTP Basic 'Authorization' header wins over the certificate.
+    basic = base64.b64encode(b"jane:qwe123").decode()
+    assert (
+        execute_query_https(
+            node_cn,
+            "SELECT currentUser()",
+            cert_name="client1",
+            headers={"Authorization": f"Basic {basic}"},
+        )
+        == "jane\n"
+    )
+
+
+def test_no_such_user():
+    # The certificate is valid and the Common Name is extracted, but there is no user 'client5'.
+    with pytest.raises(Exception) as err:
+        execute_query_https(node_cn, "SELECT currentUser()", cert_name="client5")
+    assert "403" in str(err.value)
+
+
+def test_subject_check_is_not_bypassed():
+    # The user 'client2' exists, but its configured ssl_certificate subject does not match the
+    # certificate: extracting the user name from the certificate must not bypass the subject check.
+    with pytest.raises(Exception) as err:
+        execute_query_https(node_cn, "SELECT currentUser()", cert_name="client2")
+    assert "403" in str(err.value)
+
+
+def test_no_certificate_falls_back_to_default_user():
+    assert execute_query_https(node_cn, "SELECT currentUser()") == "default\n"
+
+
+def test_legacy_header_still_works():
+    assert (
+        execute_query_https(
+            node_cn,
+            "SELECT currentUser()",
+            cert_name="client1",
+            headers={
+                "X-ClickHouse-SSL-Certificate-Auth": "on",
+                "X-ClickHouse-User": "client1",
+            },
+        )
+        == "client1\n"
+    )
+
+
+def test_cross_origin_browser_requests_are_rejected():
+    # A browser presents the client certificate even with the requests that another site makes
+    # it send (e.g. a form submission), so the certificate alone must not authenticate them.
+    same_origin = f"https://{node_cn.ip_address}:{HTTPS_PORT}"
+    foreign_origin = "https://attacker.example"
+    insert = "INSERT INTO csrf VALUES (1)"
+
+    node_cn.query("CREATE TABLE csrf (x UInt8) ENGINE = MergeTree ORDER BY x")
+    try:
+        for headers in [
+            {"Origin": foreign_origin},
+            {"Origin": "null"},
+            {"Sec-Fetch-Site": "cross-site"},
+            {"Sec-Fetch-Site": "same-site"},
+            # A script cannot set `Sec-Fetch-Site`, so it wins over a matching `Origin`.
+            {"Sec-Fetch-Site": "cross-site", "Origin": same_origin},
+        ]:
+            with pytest.raises(Exception) as err:
+                execute_query_https(
+                    node_cn, insert, cert_name="client1", headers=headers, method="POST"
+                )
+            assert "403" in str(err.value), headers
+        assert node_cn.query("SELECT count() FROM csrf") == "0\n"
+
+        # Requests from the same origin (e.g. from a page served by the server itself) and
+        # requests with the explicit certificate authentication are still accepted.
+        for headers in [
+            {"Origin": same_origin},
+            {"Sec-Fetch-Site": "same-origin", "Origin": same_origin},
+            {"Sec-Fetch-Site": "none"},
+            {
+                "Origin": foreign_origin,
+                "Sec-Fetch-Site": "cross-site",
+                "X-ClickHouse-SSL-Certificate-Auth": "on",
+                "X-ClickHouse-User": "client1",
+            },
+        ]:
+            execute_query_https(
+                node_cn, insert, cert_name="client1", headers=headers, method="POST"
+            )
+        assert node_cn.query("SELECT count() FROM csrf") == "4\n"
+    finally:
+        node_cn.query("DROP TABLE IF EXISTS csrf")
+
+
+def test_cn_extraction_with_regexp():
+    # 'client_uid-cert.pem' has the Common Name 'uid=alice,ou=Engineering', and the node extracts
+    # the user name from it with the regular expression 'uid=([^,]+),.*'.
+    assert (
+        execute_query_https(
+            node_cn_regexp, "SELECT currentUser()", cert_name="client_uid"
+        )
+        == "alice\n"
+    )
+
+    # Without the regular expression the whole Common Name is the user name: no such user.
+    assert_rejected(node_cn, "client_uid", "Authentication failed")
+
+
+def test_cn_not_matching_regexp_is_rejected():
+    no_user_name = "Got an empty user name from TLS client certificate"
+
+    # The Common Name 'client1' does not match the regular expression: there is no user name to
+    # extract and the authentication fails, although the user 'client1' exists.
+    assert_rejected(node_cn_regexp, "client1", no_user_name)
+
+    # The regular expression matches only a part of the Common Name 'xuid=alice,ou=Engineering'
+    # of 'client_uid_prefix-cert.pem'. It has to match the whole value, so 'alice' is not extracted.
+    assert_rejected(node_cn_regexp, "client_uid_prefix", no_user_name)
+
+
+def test_regexp_does_not_bypass_subject_check():
+    # 'client_uid_other_ou-cert.pem' has the Common Name 'uid=alice,ou=Sales': the regular
+    # expression extracts the user name 'alice' from it, but the user 'alice' is configured with
+    # the Common Name 'uid=alice,ou=Engineering', so the certificate does not authenticate it.
+    assert_rejected(node_cn_regexp, "client_uid_other_ou", "Authentication failed")
+
+
+def test_san_uri_extraction():
+    user_name = "spiffe://foo.com/bar"
+    node_san_uri.query(
+        f"CREATE USER '{user_name}' IDENTIFIED WITH ssl_certificate SAN 'URI:{user_name}'"
+    )
+    try:
+        # 'client4-cert.pem' has the single Subject Alternative Name entry 'URI:spiffe://foo.com/bar'.
+        assert (
+            execute_query_https(
+                node_san_uri, "SELECT currentUser()", cert_name="client4"
+            )
+            == f"{user_name}\n"
+        )
+
+        # 'client1-cert.pem' has no Subject Alternative Name entries, so there is no user name to
+        # extract and the authentication fails.
+        with pytest.raises(Exception) as err:
+            execute_query_https(
+                node_san_uri, "SELECT currentUser()", cert_name="client1"
+            )
+        assert "403" in str(err.value)
+
+        # 'client_two_uris-cert.pem' has two URI entries, 'spiffe://foo.com/bar' and
+        # 'spiffe://foo.com/baz'. The first one is the name of the user and matches its configured
+        # subject, but the user name is ambiguous, so the authentication fails.
+        assert_rejected(
+            node_san_uri, "client_two_uris", "multiple Subject Alternative Name"
+        )
+    finally:
+        node_san_uri.query(f"DROP USER IF EXISTS '{user_name}'")

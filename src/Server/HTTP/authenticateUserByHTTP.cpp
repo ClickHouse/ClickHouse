@@ -18,6 +18,9 @@
 
 #if USE_SSL
 #    include <Common/Crypto/X509Certificate.h>
+#    include <Common/re2.h>
+
+#    include <mutex>
 #endif
 
 
@@ -35,6 +38,8 @@ namespace ErrorCodes
 namespace ServerSetting
 {
     extern const ServerSettingsString default_session_user;
+    extern const ServerSettingsString ssl_certificate_username_field;
+    extern const ServerSettingsString ssl_certificate_username_regexp;
 }
 
 
@@ -78,6 +83,110 @@ namespace
         else
             LOG_TEST(getLogger("authenticateUserByHTTP"), "Skipping memory limit check for user: {}", user_name);
     }
+
+#if USE_SSL
+    /// Derives the user name from the subjects of the TLS client certificate according to the
+    /// `ssl_certificate_username_field` server setting. Returns an empty string when the certificate
+    /// has no subject of the requested kind; the caller rejects the empty user name.
+    String extractUserNameFromCertificateSubjects(const X509Certificate::Subjects & subjects, const String & field)
+    {
+        if (field == "CN")
+        {
+            const auto & common_names = subjects.at(X509Certificate::Subjects::Type::CN);
+            return common_names.empty() ? "" : *common_names.begin();
+        }
+
+        if (field == "SAN:DNS" || field == "SAN:URI")
+        {
+            /// SAN subjects are stored with the "DNS:" or "URI:" prefix, see X509Certificate::extractAllSubjects.
+            const std::string_view prefix = (field == "SAN:DNS") ? "DNS:" : "URI:";
+            String user_name;
+            for (const auto & subject : subjects.at(X509Certificate::Subjects::Type::SAN))
+            {
+                if (!subject.starts_with(prefix))
+                    continue;
+                if (!user_name.empty())
+                    throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                                    "Invalid authentication: the TLS client certificate contains multiple Subject Alternative Name "
+                                    "entries of the type requested by the `ssl_certificate_username_field` server setting ('{}'), "
+                                    "so the user name cannot be derived unambiguously", field);
+                user_name = subject.substr(prefix.size());
+            }
+            return user_name;
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid value '{}' of the `ssl_certificate_username_field` server setting: "
+                        "must be 'CN', 'SAN:DNS' or 'SAN:URI'", field);
+    }
+
+    /// Returns the compiled `ssl_certificate_username_regexp` server setting. The setting is the
+    /// same for every request, so the regular expression is compiled once, not on every request.
+    std::shared_ptr<const re2::RE2> getUserNameRegexp(const String & pattern)
+    {
+        static std::mutex mutex;
+        static std::shared_ptr<const re2::RE2> cached_regexp;
+
+        std::lock_guard lock(mutex);
+        if (!cached_regexp || cached_regexp->pattern() != pattern)
+        {
+            auto regexp = std::make_shared<const re2::RE2>(pattern, re2::RE2::Quiet);
+            if (!regexp->ok())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid value '{}' of the `ssl_certificate_username_regexp` server setting: {}",
+                                pattern, regexp->error());
+            if (regexp->NumberOfCapturingGroups() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid value '{}' of the `ssl_certificate_username_regexp` server setting: "
+                                "it must contain exactly one capturing group, which captures the user name", pattern);
+            cached_regexp = std::move(regexp);
+        }
+        return cached_regexp;
+    }
+
+    /// Extracts the user name from the value of a certificate field with the regular expression
+    /// from the `ssl_certificate_username_regexp` server setting: the whole value must match, and
+    /// the user name is the capturing group. It is for the certificates whose field holds more
+    /// than the user name, e.g. the Common Name 'uid=alice,ou=Engineering'. Returns an empty
+    /// string when the value does not match; the caller rejects the empty user name.
+    String extractUserNameWithRegexp(const String & field_value, const String & pattern)
+    {
+        String user_name;
+        if (!re2::RE2::FullMatch(field_value, *getUserNameRegexp(pattern), &user_name))
+            return {};
+        return user_name;
+    }
+
+    /// Whether the browser marked the request as initiated by another origin.
+    ///
+    /// A TLS client certificate is an ambient credential: a browser that has it presents it on
+    /// every connection to the server, including the requests that another site makes the browser
+    /// send, such as a cross-site form submission. The explicit certificate authentication is not
+    /// affected: a form cannot add the `X-ClickHouse-SSL-Certificate-Auth` header, and a scripted
+    /// request that adds it needs a CORS preflight. Authentication by the certificate alone has no
+    /// such protection, so it must not be applied to cross-origin requests (CSRF).
+    ///
+    /// Browsers describe the initiator in the `Sec-Fetch-Site` header (sent with every request to
+    /// an HTTPS endpoint; a script can neither set nor remove it) and, in browsers that predate it,
+    /// in the `Origin` header (sent with every request that is not `GET` or `HEAD`, and those two
+    /// methods imply `readonly`). Other clients send neither header and are not affected.
+    bool isCrossOriginBrowserRequest(const HTTPServerRequest & request)
+    {
+        if (request.has("Sec-Fetch-Site"))
+        {
+            /// `none` is a navigation initiated by the user, e.g. an address typed in or a bookmark.
+            const auto & site = request.get("Sec-Fetch-Site");
+            return site != "same-origin" && site != "none";
+        }
+
+        /// A client certificate is only available when the server itself terminates TLS, so the
+        /// scheme of the request is always `https`. An absent `Host` never matches.
+        if (request.has("Origin"))
+            return Poco::icompare(request.get("Origin"), "https://" + request.get("Host", "")) != 0;
+
+        return false;
+    }
+#endif
 }
 
 
@@ -157,6 +266,11 @@ bool authenticateUserByHTTP(
     std::string spnego_challenge;
 #if USE_SSL
     X509Certificate::Subjects certificate_subjects;
+
+    /// When nonempty, a TLS client certificate that passed the handshake verification authenticates
+    /// the request by itself (the user name is derived from the configured certificate field), with
+    /// no `X-ClickHouse-SSL-Certificate-Auth` header required.
+    const String ssl_certificate_username_field = String(global_context->getServerSettings()[ServerSetting::ssl_certificate_username_field]);
 
     /// Capture the TLS client certificate (if the client presented one) regardless of the selected
     /// authentication method, so that session_log records it even when the connection authenticates
@@ -276,6 +390,42 @@ bool authenticateUserByHTTP(
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: '{}' HTTP Authorization scheme is not supported", scheme);
         }
     }
+#if USE_SSL
+    else if (peer_certificate && !ssl_certificate_username_field.empty()
+             && !has_config_credentials && !has_credentials_in_query_params && !has_authorization_header)
+    {
+        /// The client presented a TLS certificate that passed the handshake verification and the
+        /// request carries no credentials of any other kind (they all take precedence over the
+        /// certificate and are handled above or excluded by this condition): authenticate by the
+        /// certificate alone, deriving the user name from the certificate field configured in the
+        /// `ssl_certificate_username_field` server setting. The derived user is still subject to
+        /// the `ssl_certificate` authentication method: its configured subjects must match the
+        /// certificate, as if the user name arrived in the `X-ClickHouse-User` header.
+        ///
+        /// A cross-origin request from a browser is rejected instead of being authenticated as
+        /// the default session user: the client did present a certificate, and silently running
+        /// the request as another user would be worse than refusing it.
+        if (isCrossOriginBrowserRequest(request))
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "Invalid authentication: a cross-origin request cannot be authenticated by the TLS client certificate alone. "
+                "Pass the `X-ClickHouse-SSL-Certificate-Auth: on` HTTP header or other credentials explicitly");
+            session.onAuthenticationFailure(std::nullopt, client_address, exception);
+            throw exception; /// NOLINT
+        }
+
+        certificate_subjects = peer_certificate->extractAllSubjects();
+        user = extractUserNameFromCertificateSubjects(certificate_subjects, ssl_certificate_username_field);
+
+        /// The field can hold more than the user name: the `ssl_certificate_username_regexp`
+        /// server setting, if set, extracts the user name from it.
+        const String ssl_certificate_username_regexp = String(global_context->getServerSettings()[ServerSetting::ssl_certificate_username_regexp]);
+        if (!user.empty() && !ssl_certificate_username_regexp.empty())
+            user = extractUserNameWithRegexp(user, ssl_certificate_username_regexp);
+
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "TLS client certificate", global_context, session, client_address);
+    }
+#endif
     else
     {
         /// Authentication via the URL query parameters (or, if absent, the default session user).
