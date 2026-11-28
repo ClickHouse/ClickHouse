@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/normalizeDivision.h>
@@ -12,12 +13,14 @@
 #include <Formats/ParseError.h>
 #include <Core/Block.h>
 #include <base/find_symbols.h>
+#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/LiteralTokenInfo.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -312,9 +315,53 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
     return parseExpression(*column, column_idx);
 }
 
+namespace
+{
+    /// The streaming parser of `Dynamic` reads a whole balanced `(...)`, `[...]` or `{...}` as one field and, if no
+    /// type can be inferred from it, stores its raw text as `String`. In `VALUES` such a field may be an expression,
+    /// for example `(1 + 1)`, `[1 + 1]` or `{x:UInt8}`, that must be evaluated as for columns of other types.
+    bool mayBeBracketedExpressionForDynamic(const IDataType & type, ReadBuffer & buf, const FormatSettings & format_settings)
+    {
+        if (!format_settings.values.interpret_expressions || !isDynamic(type) || buf.eof())
+            return false;
+        const char c = *buf.position();
+        return c == '(' || c == '[' || c == '{';
+    }
+
+    /// A bracketed field is never inferred as `String`, so a `String` value means its raw text was stored.
+    bool isLastDynamicValueString(const IColumn & column)
+    {
+        const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
+        return !dynamic_column.empty() && dynamic_column.getTypeNameAt(dynamic_column.size() - 1) == "String";
+    }
+
+    /// Whether the value is a literal, possibly composed with `tuple`, `array` or `map` of literals, e.g. `[]`, `()`
+    /// or `['a', x'ff']`. Such a value is data rather than an expression.
+    bool isLiteralOrCompositeOfLiterals(const IAST & ast)
+    {
+        checkStackSize();
+
+        if (ast.as<ASTLiteral>())
+            return true;
+
+        const auto * function = ast.as<ASTFunction>();
+        if (!function || (function->name != "tuple" && function->name != "array" && function->name != "map"))
+            return false;
+
+        if (function->arguments)
+        {
+            for (const auto & argument : function->arguments->children)
+                if (!isLiteralOrCompositeOfLiterals(*argument))
+                    return false;
+        }
+        return true;
+    }
+}
+
 bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 {
     bool rollback_on_exception = false;
+    bool fallback_to_expression = false;
     try
     {
         Exception::SuppressErrorCodesScope suppress_error_codes;
@@ -331,16 +378,27 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         else
         {
             const auto & serialization = serializations[column_idx];
+            const bool may_be_bracketed_expression = mayBeBracketedExpressionForDynamic(*type, *buf, format_settings);
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
                 read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
+
+            if (may_be_bracketed_expression && read && isLastDynamicValueString(column))
+            {
+                column.popBack(1);
+                buf->rollbackToCheckpoint();
+                fallback_to_expression = true;
+            }
         }
 
-        rollback_on_exception = true;
+        if (!fallback_to_expression)
+        {
+            rollback_on_exception = true;
 
-        assertDelimiterAfterValue(column_idx);
-        return read;
+            assertDelimiterAfterValue(column_idx);
+            return read;
+        }
     }
     catch (Exception & e)
     {
@@ -386,6 +444,39 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         /// Note: Throwing exceptions for each expression may be very slow because of stacktraces
         return parseExpression(column, column_idx);
     }
+
+    /// A bracketed field of a `Dynamic` column was read as raw text. If it is an expression, evaluate it,
+    /// and keep the raw text only if it cannot be evaluated, as before.
+    std::exception_ptr expression_exception;
+    try
+    {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
+        return parseExpression(column, column_idx, /* is_bracketed_dynamic_value */ true);
+    }
+    catch (Exception &)
+    {
+        if (buf->isCanceled())
+            throw;
+        expression_exception = std::current_exception();
+    }
+
+    if (!readValueOfDynamicWithStreamingParser(column, column_idx))
+        std::rethrow_exception(expression_exception);
+    return true;
+}
+
+bool ValuesBlockInputFormat::readValueOfDynamicWithStreamingParser(IColumn & column, size_t column_idx)
+{
+    buf->rollbackToCheckpoint();
+    templates[column_idx].reset();
+    parser_type_for_column[column_idx] = ParserType::Streaming;
+    serializations[column_idx]->deserializeTextQuoted(column, *buf, format_settings);
+    if (!checkDelimiterAfterValue(column_idx))
+    {
+        column.popBack(1);
+        return false;
+    }
+    return true;
 }
 
 namespace
@@ -469,7 +560,7 @@ namespace
     }
 }
 
-bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
+bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, bool is_bracketed_dynamic_value)
 {
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
@@ -551,7 +642,19 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     ++(*token_iterator);
 
-    if (parser_type_for_column[column_idx] != ParserType::Streaming && dynamic_cast<const ASTLiteral *>(ast.get()))
+    const bool is_literal = dynamic_cast<const ASTLiteral *>(ast.get()) != nullptr;
+
+    /// A bracketed value of a `Dynamic` column without an inferable type that is not an expression, e.g. `[]` or `()`,
+    /// is kept as read by the streaming parser, see `tryReadValue`.
+    if (is_bracketed_dynamic_value && isLiteralOrCompositeOfLiterals(*ast))
+    {
+        if (!readValueOfDynamicWithStreamingParser(column, column_idx))
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse value of type {} here: {}", type.getName(),
+                std::string_view(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
+        return true;
+    }
+
+    if (parser_type_for_column[column_idx] != ParserType::Streaming && is_literal)
     {
         /// It's possible that streaming parsing has failed on some row (e.g. because of an exponent
         /// such as `1e3` in an integer column), but it still can parse the following rows

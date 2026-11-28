@@ -66,7 +66,10 @@ private:
 
     bool tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
     ALWAYS_INLINE inline bool tryReadValue(IColumn & column, size_t column_idx);
-    bool parseExpression(IColumn & column, size_t column_idx);
+    /// `is_bracketed_dynamic_value` - the value of a `Dynamic` column starts with a bracket and the streaming parser
+    /// could only store its raw text, see `tryReadValue`.
+    bool parseExpression(IColumn & column, size_t column_idx, bool is_bracketed_dynamic_value = false);
+    bool readValueOfDynamicWithStreamingParser(IColumn & column, size_t column_idx);
 
     ALWAYS_INLINE inline void assertDelimiterAfterValue(size_t column_idx);
     ALWAYS_INLINE inline bool checkDelimiterAfterValue(size_t column_idx);
