@@ -7,10 +7,6 @@ keywords: ['managed postgres', 'cloudflare', 'cloudflare workers', 'hyperdrive',
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-cloudflare-workers-beta" />
-
 [Cloudflare Workers](https://developers.cloudflare.com/workers/) はコードを Cloudflare のネットワーク上で実行します。また、[Hyperdrive](https://developers.cloudflare.com/hyperdrive/) はそのネットワークからデータベースへの接続 pool を維持するため、リクエストのたびに TCP および TLS ハンドシェイクを新たに行うコストが発生しません。このガイドでは、インスタンスの証明書を検証する Hyperdrive 設定を作成し、[`node-postgres`](https://node-postgres.com/) (`pg`) を使って行の作成と読み取りを行う TypeScript Worker をビルドします。その後、`wrangler dev` でローカル実行し、`workers.dev` にデプロイします。
 
 ## 前提条件 {#prerequisites}

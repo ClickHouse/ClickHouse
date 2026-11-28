@@ -1,0 +1,170 @@
+---
+slug: /clickstack/observability/ingesting-data/opentelemetry
+toc_max_heading_level: 2
+description: 'Настройте SDK OpenTelemetry и коллекторы для отправки журналов, метрик и трассировок в полностью управляемый ClickHouse Observability.'
+title: 'Загрузка данных с помощью OpenTelemetry'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'OpenTelemetry', 'OTLP', 'ингестия', 'аутентификация']
+sidebarTitle: 'OpenTelemetry'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<Tabs>
+  <Tab title="Полностью управляемый">
+    <BetaBadge label="Сервис в стадии бета-тестирования" />
+
+    Отправляйте журналы, метрики и трассировку в ClickHouse Observability с помощью SDK OpenTelemetry или коллектора, развёрнутого в вашей среде. В состав сервиса входит управляемый коллектор ингестии, который принимает телеметрию по OTLP и записывает её в ClickHouse Cloud.
+
+## Получение сведений о подключении {#sending-otel-data}
+
+    Откройте сервис и перейдите в раздел **Team Settings → Data → Managed Telemetry**. Скопируйте значения **OTLP HTTP endpoint** и **API key**. На вкладках **Env vars** и **Collector config** приведена конфигурация для вашего сервиса.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Раздел Managed Telemetry с замаскированными конечной точкой OTLP по HTTP и ключом API](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Используйте полную конечную точку HTTPS, включая порт, указанный в разделе Managed Telemetry. В базовой конечной точке OTLP по HTTP не указывайте пути сигналов, такие как `/v1/logs`, `/v1/traces` и `/v1/metrics`: экспортеры добавляют их в конец автоматически.
+
+## Отправка напрямую из приложения {#sending-data-to-collector-managed}
+
+    Установите и инициализируйте инструментирование OpenTelemetry и экспортер OTLP по HTTP для языка, на котором написано ваше приложение. Если SDK поддерживает настройку через переменные окружения, перед запуском приложения задайте в его окружении следующие значения:
+
+    ```shell
+    export OTEL_SERVICE_NAME='my-service'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_API_KEY'
+    ```
+
+    Замените конечную точку точным значением из раздела Managed Telemetry, а `YOUR_API_KEY` — ключом API вашего сервиса. Последовательность `%20` кодирует пробел между `Bearer` и ключом в переменной окружения с заголовком.
+
+    Поддержка переменных окружения зависит от SDK. Если ваш SDK требует настройки в коде, укажите ту же конечную точку HTTPS, протокол OTLP HTTP и заголовок `authorization` со значением `Bearer YOUR_API_KEY`. Сведения о поддержке языков и переопределениях для отдельных сигналов см. в [справочнике по конфигурации экспортера OpenTelemetry](https://opentelemetry.io/docs/languages/sdk-configuration/otlp-exporter/).
+
+    Эти настройки отвечают только за экспорт: чтобы приложение генерировало телеметрию, его по-прежнему нужно инструментировать. Чтобы записывать сеансы в браузере, воспользуйтесь [руководством по воспроизведению сеансов](/ru/clickstack/observability/features/session-replay).
+
+## Пересылка данных из коллектора {#forward-from-a-collector}
+
+    Если вы уже собираете телеметрию с помощью коллектора OpenTelemetry, настройте экспортер OTLP HTTP, чтобы пересылать её на управляемую конечную точку. Существующие приёмники и процессоры для сбора и обработки данных можно оставить без изменений.
+
+    Задайте следующие переменные окружения в среде выполнения коллектора:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_API_KEY='YOUR_API_KEY'
+    ```
+
+    Замените оба плейсхолдера значениями из раздела «Управляемая телеметрия». Добавьте этот экспортер в конфигурацию коллектора:
+
+    ```yaml
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "Bearer ${env:OTEL_EXPORTER_OTLP_API_KEY}"
+    ```
+
+    Добавьте `otlp_http/observability` в список `exporters` каждого конвейера журналов, метрик или трассировок в разделе `service.pipelines`, данные которых нужно пересылать. Внесите это изменение в существующую конфигурацию, затем перезапустите или повторно разверните коллектор, чтобы применить изменения.
+
+    В примере используется текущее имя экспортера `otlp_http`. В более старых релизах коллектора может использоваться `otlphttp`; укажите имя, которое поддерживает ваш дистрибутив. Описание параметров конфигурации см. в [документации по экспортеру OTLP HTTP](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter).
+
+    Полный пример сбора журналов и метрик хоста см. в разделе [Локальные системные журналы и метрики](/ru/clickstack/observability/example-datasets/local-data).
+
+## Проверка ингестии {#verify-ingestion}
+
+    Сгенерируйте телеметрию в приложении, затем откройте [Поиск](/ru/clickstack/observability/features/search) в ClickHouse Observability. Выберите **Logs** или **Traces**, задайте временной диапазон, включающий новые события, и выполните поиск по имени вашего сервиса.
+
+    Если данные не отображаются, проверьте журналы SDK или коллектора на наличие ошибок экспорта. Проверьте конечную точку, заголовок аутентификации и протокол, а также убедитесь, что приложение или коллектор может подключиться к управляемой конечной точке. Кроме того, проверьте, нет ли настроек экспортера для отдельных сигналов, которые переопределяют базовую конечную точку или заголовки.
+
+    Чтобы отправить в сервис тестовую запись журнала, воспользуйтесь кнопкой **Send a Test Log** в разделе управляемой телеметрии. Телеметрию приложения проверьте отдельно, чтобы убедиться в корректности его инструментирования и конфигурации экспорта.
+  </Tab>
+
+  <Tab title="Самоуправляемый" id="self-managed">
+    В самостоятельно управляемом ClickHouse Observability **коллектор OpenTelemetry (OTel)** принимает журналы, метрики, трассировки и данные сеансов, а затем записывает их в ClickHouse Cloud. Рекомендуем использовать официальный [дистрибутив коллектора от ClickStack](#installing-otel-collector-managed-self-configured).
+
+    Отправляйте данные в этот коллектор из [SDK для языков программирования](/ru/clickstack/observability/ingesting-data/sdks) или агентов, собирающих журналы и метрики инфраструктуры. Это могут быть коллекторы OpenTelemetry в [роли агента](/ru/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured), [Fluentd](https://www.fluentd.org/) или [Vector](https://vector.dev/). Для централизованного управления коллекторами [Bindplane](/ru/clickstack/observability/integration-partners/bindplane) предоставляет пункт назначения ClickHouse Observability, а также инструменты для сбора, обработки и маршрутизации телеметрии.
+
+## Отправка данных OpenTelemetry {#sending-otel-data-self-configured}
+
+### Подключение коллектора к ClickHouse Cloud {#installing-otel-collector-managed-self-configured}
+
+    Настройте коллектор в [роли шлюза](/ru/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured), чтобы он принимал данные OTLP по HTTP или gRPC и пересылал их в ClickHouse Cloud.
+
+    <Info>
+      **Рекомендуем использовать коллектор ClickStack OpenTelemetry**
+
+      Дистрибутив ClickStack обеспечивает обработку данных и схемы, совместимые с ClickHouse Observability. Схема по умолчанию поддерживает автоматическое определение источников и включает преднастроенные сопоставления столбцов.
+    </Info>
+
+    В ClickHouse Cloud откройте свой сервис и [получите сведения о подключении к нему](/ru/products/cloud/guides/sql-console/connection-details). Задайте следующие переменные окружения в среде выполнения дистрибутива коллектора ClickStack:
+
+    ```shell
+    CLICKHOUSE_ENDPOINT="https://<host>:8443"
+    CLICKHOUSE_USER="<ingestion-user>"
+    CLICKHOUSE_PASSWORD="<ingestion-password>"
+    ```
+
+    Укажите в `CLICKHOUSE_ENDPOINT` HTTPS-конечную точку базы данных вашего сервиса, а также учётные данные [выделенного пользователя для ингестии](/ru/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured). Чтобы применить настройки, перезапустите или заново разверните коллектор. Коллектор принимает телеметрию по OTLP и записывает её в ваш сервис ClickHouse Cloud.
+
+    Если вы используете другой дистрибутив коллектора, укажите в настройках его экспортера ClickHouse ту же конечную точку и те же учётные данные. Пример приведён в разделе [Изменение конфигурации](/ru/clickstack/self-configured/ingesting-data/collector#modifying-otel-collector-configuration-managed-self-configured).
+
+    Инструкции по установке см. в разделе [Развертывание коллектора](/ru/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured). Прежде чем направлять в коллектор трафик из продакшн-среды, [настройте его защиту](/ru/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured). Если вы включили `OTLP_AUTH_TOKEN`, настройте SDK и коллекторы, пересылающие данные, так, чтобы они передавали этот токен в заголовке `authorization`.
+
+### Отправка данных в коллектор {#sending-data-to-collector-managed-self-configured}
+
+    Если коллектор запущен локально со стандартными портами OTLP, укажите в инструментировании OpenTelemetry приведённые ниже конечные точки. Если ваши приложения или агенты работают на другом хосте или в другом контейнере, замените `localhost` на имя хоста коллектора, доступное из этой среды:
+
+    * **HTTP (OTLP):** `http://localhost:4318`
+    * **gRPC (OTLP):** `localhost:4317`
+
+    Если [SDK для языков программирования](/ru/clickstack/observability/ingesting-data/sdks) поддерживают конфигурацию через переменные окружения, перед запуском инструментированного приложения задайте конечную точку и протокол:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+    ```
+
+    Если коллектор требует аутентификации, также задайте `OTEL_EXPORTER_OTLP_HEADERS="authorization=<collector-token>"`, подставив вместо `<collector-token>` значение его `OTLP_AUTH_TOKEN`. Не добавляйте префикс `Bearer`, который используется полностью управляемыми конечными точками. Эти настройки отвечают только за экспорт: чтобы приложение генерировало телеметрию, его всё равно необходимо инструментировать.
+
+    Агент на базе [contrib-дистрибутива OTel collector](https://github.com/open-telemetry/opentelemetry-collector-contrib) может пересылать журналы по OTLP. В примере ниже считывается этот [структурированный файл журнала](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz). Перед запуском агента скачайте его и распакуйте по пути, указанному в `include`. Если шлюз требует аутентификации, добавьте в экспортер агента заголовок `authorization` с токеном шлюза.
+
+    ```yaml
+    # clickhouse-agent-config.yaml
+    receivers:
+      filelog:
+        include:
+          - /opt/data/logs/access-structured.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            timestamp:
+              parse_from: attributes.time_local
+              layout: '%Y-%m-%d %H:%M:%S'
+    exporters:
+      # HTTP setup
+      otlphttp/hdx:
+        endpoint: 'http://localhost:4318'
+        compression: gzip
+
+      # gRPC setup (alternative)
+      otlp/hdx:
+        endpoint: 'localhost:4317'
+        compression: gzip
+    processors:
+      batch:
+        timeout: 5s
+        send_batch_size: 10000
+    service:
+      telemetry:
+        metrics:
+          address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
+      pipelines:
+        logs:
+          receivers: [filelog]
+          processors: [batch]
+          exporters: [otlphttp/hdx]
+    ```
+  </Tab>
+</Tabs>

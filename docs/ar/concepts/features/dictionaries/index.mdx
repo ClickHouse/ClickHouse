@@ -6,7 +6,7 @@ description: 'يوفّر القاموس تمثيلًا للبيانات بصيغ
 doc_type: 'guide'
 ---
 
-يوفّر القاموس في ClickHouse تمثيلاً [بصيغة المفتاح-القيمة](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) للبيانات داخل الذاكرة من [مصادر داخلية وخارجية متنوعة](/ar/reference/statements/create/dictionary/sources/overview#dictionary-sources)، وهو مُحسَّن لتنفيذ استعلامات البحث بزمن كمون منخفض جدًا.
+يوفّر القاموس في ClickHouse تمثيلاً [بصيغة المفتاح-القيمة](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) للبيانات داخل الذاكرة من [مصادر داخلية وخارجية متنوعة](/ar/reference/statements/create/dictionary/sources/overview#dictionary-sources)، وهو مُحسَّن لتنفيذ استعلامات البحث بزمن انتقال منخفض جدًا.
 
 تكون القواميس مفيدة في الحالات التالية:
 
@@ -14,13 +14,9 @@ doc_type: 'guide'
 * إثراء البيانات الواردة لحظيًا من دون إبطاء عملية الإدخال
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![حالات استخدام القاموس في ClickHouse](/images/dictionary/dictionary-use-cases.webp)
-
-</Frame>
-
+  <Frame>
+    ![حالات استخدام القاموس في ClickHouse](/images/dictionary/dictionary-use-cases.webp)
+  </Frame>
 </div>
 
 ## تسريع عمليات JOIN باستخدام قاموس {#speeding-up-joins-using-a-dictionary}
@@ -28,21 +24,17 @@ doc_type: 'guide'
 يمكن استخدام القواميس لتسريع نوع محدد من `JOIN`: [النوع `LEFT ANY`](/ar/reference/statements/select/join#supported-types-of-join)، حيث يجب أن يتطابق مفتاح الربط مع سمة المفتاح في مخزن المفتاح-القيمة الأساسي.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![استخدام القاموس مع LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
-
-</Frame>
-
+  <Frame>
+    ![استخدام القاموس مع LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+  </Frame>
 </div>
 
-في هذه الحالة، يمكن لـ ClickHouse الاستفادة من القاموس لتنفيذ [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). وهذه أسرع خوارزمية JOIN في ClickHouse، وتُطبَّق عندما يدعم [محرك الجدول](/ar/reference/engines/table-engines/index) الأساسي للجدول الموجود على الجانب الأيمن طلبات مفتاح-قيمة منخفضة زمن الانتقال. يوفّر ClickHouse ثلاثة محركات جداول تدعم ذلك: [Join](/ar/reference/engines/table-engines/special/join) (وهو في الأساس جدول hash محسوب مسبقًا)، و[EmbeddedRocksDB](/ar/reference/engines/table-engines/integrations/embedded-rocksdb)، و[Dictionary](/ar/reference/engines/table-engines/special/dictionary). سنشرح النهج القائم على القاموس، لكن الآلية نفسها تنطبق على المحركات الثلاثة جميعًا.
+في هذه الحالة، يمكن لـ ClickHouse الاستفادة من القاموس لتنفيذ [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). وهذه أسرع خوارزمية JOIN في ClickHouse، وتُطبَّق عندما يدعم [محرك الجدول](/ar/reference/engines/table-engines/index) الأساسي للجدول الموجود على الجانب الأيمن طلبات مفتاح-قيمة منخفضة زمن الانتقال. يوفّر ClickHouse ثلاثة محركات جداول تدعم ذلك: [Join](/ar/reference/engines/table-engines/special/join) (وهو في الأساس جدول hash محسوب مسبقًا)، و[EmbeddedRocksDB](/ar/reference/engines/table-engines/integrations/embedded-rocksdb)، و[Dictionary](/ar/reference/engines/table-engines/special/dictionary). سنشرح النهج القائم على القاموس، لكن الآلية نفسها تنطبق على المحركات الثلاثة جميعًا.
 
 تتطلب خوارزمية Direct Join أن يكون الجدول الأيمن معتمدًا على قاموس، بحيث تكون البيانات المراد ربطها من ذلك الجدول موجودة مسبقًا في الذاكرة على هيئة بنية بيانات مفتاح-قيمة منخفضة زمن الانتقال.
 
 <div id="example">
-  ### مثال
+  ### مثال {#example}
 </div>
 
 باستخدام [مجموعة بيانات Stack Overflow](/ar/get-started/sample-datasets/stackoverflow)، لنُجب عن السؤال:
@@ -99,9 +91,7 @@ Peak memory usage: 3.18 GiB.
 
 على الرغم من أن هذا الاستعلام سريع، فإنه يتطلب منا كتابة `JOIN` بعناية لتحقيق أداء جيد. ومن الناحية المثالية، سنكتفي بتصفية المنشورات إلى تلك التي تحتوي على &quot;SQL&quot;، قبل النظر في عدد `UpVote` و`DownVote` للمجموعة الفرعية من المدوّنات لحساب المقياس.
 
-<div id="applying-a-dictionary">
-  #### استخدام قاموس
-</div>
+#### استخدام قاموس {#applying-a-dictionary}
 
 لتوضيح هذه المفاهيم، نستخدم قاموسًا لبيانات التصويت لدينا. وبما أن القواميس تُحفَظ عادةً في الذاكرة (ويُعَد [ssd&#95;cache](/ar/reference/statements/create/dictionary/layouts/ssd-cache) الاستثناء)، ينبغي أن تكون على دراية بحجم البيانات. للتأكد من حجم جدول `votes` لدينا:
 
@@ -121,11 +111,11 @@ GROUP BY table
 └─────────────────┴─────────────────┴───────────────────┴───────┘
 ```
 
-سيُخزَّن البيانات بشكل غير مضغوط في قاموسنا، لذا نحتاج إلى 4 جيجابايت على الأقل من الذاكرة إذا أردنا تخزين جميع الأعمدة (ولن نفعل ذلك) في قاموس. وسيتم تكرار القاموس عبر العنقود، لذا يجب حجز هذه الكمية من الذاكرة *لكل عقدة*.
+سيُخزَّن البيانات بشكل غير مضغوط في قاموسنا، لذا نحتاج إلى 4 جيجابايت على الأقل من الذاكرة إذا أردنا تخزين جميع الأعمدة (ولن نفعل ذلك) في قاموس. وسيتم تكرار القاموس عبر العنقود، لذا يجب حجز هذه الكمية من الذاكرة *لكل عقدة*.
 
 > في المثال أدناه، تأتي بيانات قاموسنا من جدول في ClickHouse. ومع أن هذا يمثّل المصدر الأكثر شيوعًا للقواميس، فإن [عددًا من المصادر](/ar/reference/statements/create/dictionary/sources/overview#dictionary-sources) الأخرى مدعوم أيضًا، بما في ذلك الملفات وHTTP وقواعد البيانات مثل [Postgres](/ar/reference/statements/create/dictionary/sources/postgresql). وكما سنوضّح، يمكن تحديث القواميس تلقائيًا، مما يوفّر طريقة مثالية لضمان إتاحة مجموعات البيانات الصغيرة المعرّضة لتغييرات متكررة لاستخدامها في direct joins.
 
-يتطلّب قاموسنا مفتاحًا أساسيًا تُجرى على أساسه عمليات lookup. وهذا مماثل من حيث المفهوم للمفتاح الأساسي في قواعد البيانات المعاملاتية، ويجب أن يكون فريدًا. يتطلّب الاستعلام أعلاه إجراء lookup على مفتاح الربط `PostId`. ويجب بدوره ملء القاموس بإجمالي الأصوات المؤيدة والمعارضة لكل `PostId` من جدول `votes` الخاص بنا. إليك الاستعلام للحصول على بيانات هذا القاموس:
+يتطلّب قاموسنا مفتاحًا أساسيًا تُجرى على أساسه عمليات بحث. وهذا مماثل من حيث المفهوم للمفتاح الأساسي في قواعد البيانات المعاملاتية، ويجب أن يكون فريدًا. يتطلّب الاستعلام أعلاه إجراء بحث على مفتاح الربط `PostId`. ويجب بدوره ملء القاموس بإجمالي الأصوات المؤيدة والمعارضة لكل `PostId` من جدول `votes` الخاص بنا. إليك الاستعلام للحصول على بيانات هذا القاموس:
 
 ```sql
 SELECT PostId,
@@ -134,6 +124,10 @@ SELECT PostId,
 FROM votes
 GROUP BY PostId
 ```
+
+<Note title="ClickHouse Cloud">
+  عند إنشاء قاموس يقرأ من جدول ClickHouse، أدرِج اسم المستخدم وكلمة المرور الخاصين بمستخدم مخصّص في عبارة `SOURCE`. ويجب أن يمتلك هذا المستخدم صلاحية `SELECT` على الجدول المصدر. راجع [مثال مصدر القاموس من ClickHouse](/ar/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
 
 يتطلب إنشاء القاموس لدينا عبارة DDL التالية — لاحظ استخدام الاستعلام الوارد أعلاه:
 
@@ -154,7 +148,7 @@ LAYOUT(HASHED())
 0 rows in set. Elapsed: 36.063 sec.
 ```
 
-> في بيئات OSS المُدارة ذاتيًا، يجب تنفيذ الأمر أعلاه على جميع العُقد. في ClickHouse Cloud، سيُنسخ القاموس تلقائيًا إلى جميع العُقد. نُفِّذ ما سبق على عقدة في ClickHouse Cloud مزوّدة بذاكرة RAM بسعة 64GB، واستغرق التحميل 36 ثانية.
+> في بيئات OSS المُدارة ذاتيًا، يجب تنفيذ الأمر أعلاه على جميع العُقد. في ClickHouse Cloud، سيُنسخ القاموس تلقائيًا إلى جميع العُقد. نُفِّذ ما سبق على عقدة في ClickHouse Cloud مزوّدة بذاكرة RAM بسعة 64GB، واستغرق التحميل 36 ثانية.
 
 لتأكيد مقدار الذاكرة التي يستهلكها القاموس:
 
@@ -209,7 +203,7 @@ Peak memory usage: 552.26 MiB.
 هذا الاستعلام ليس أبسط بكثير فحسب، بل أسرع أيضًا بأكثر من الضعف! ويمكن تحسينه أكثر من ذلك من خلال تحميل المنشورات التي تضم أكثر من 10 أصوات تأييد ومعارضة فقط إلى القاموس، والاحتفاظ فقط بقيمة الجدل المحتسَبة مسبقًا.
 
 <div id="query-time-enrichment">
-  ## الإثراء وقت تنفيذ الاستعلام
+  ## الإثراء وقت تنفيذ الاستعلام {#query-time-enrichment}
 </div>
 
 يمكن استخدام القواميس للبحث عن القيم وقت تنفيذ الاستعلام. ويمكن إرجاع هذه القيم في النتائج أو استخدامها في عمليات التجميع. لنفترض أننا ننشئ قاموس لربط معرّفات المستخدمين بمواقعهم:
@@ -356,13 +350,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## موضوعات متقدمة عن القواميس
+  ## موضوعات متقدمة عن القواميس {#advanced-dictionary-topics}
 </div>
 
 للاطلاع على إرشادات حول اختيار بُنى القواميس، ومتى تُستخدَم القواميس بدلًا من عبارات JOIN، وكيفية مراقبة استخدامها، راجع [أفضل ممارسات القواميس](/ar/concepts/features/dictionaries/best-practices).
 
 <div id="refreshing-dictionaries">
-  ### تحديث القواميس
+  ### تحديث القواميس {#refreshing-dictionaries}
 </div>
 
 لقد حدّدنا قيمة `LIFETIME` لـ قاموس على هيئة `MIN 600 MAX 900`. تمثل `LIFETIME` فترة تحديث الـ قاموس، وتؤدي القيم هنا إلى إعادة تحميله دوريًا على فترات عشوائية بين 600 و900 ثانية. ويكون هذا التباعد العشوائي ضروريًا لتوزيع الحمل على dictionary source عند التحديث عبر عدد كبير من الخوادم. أثناء التحديث، تظل الاستعلامات على الإصدار القديم من الـ قاموس ممكنة، ولا تُحجب الاستعلامات إلا أثناء initial load. لاحظ أن تعيين `(LIFETIME(0))` يمنع تحديث القواميس.
@@ -371,7 +365,7 @@ Peak memory usage: 666.82 MiB.
 بالنسبة إلى مصادر قواعد البيانات مثل ClickHouse وPostgres، يمكنك إعداد query لتحديث القواميس فقط إذا كانت قد تغيّرت فعلًا (ويحدد ذلك ردّ الـ query)، بدلًا من التحديث على فترات دورية. يمكن العثور على مزيد من التفاصيل [هنا](/ar/reference/statements/create/dictionary/lifetime).
 
 <div id="other-dictionary-types">
-  ### أنواع القواميس الأخرى
+  ### أنواع القواميس الأخرى {#other-dictionary-types}
 </div>
 
 يدعم ClickHouse أيضًا قواميس [هرمية](/ar/reference/statements/create/dictionary/layouts/hierarchical) و[Polygon](/ar/reference/statements/create/dictionary/layouts/polygon) و[التعبير النمطي](/ar/reference/statements/create/dictionary/layouts/regexp-tree).

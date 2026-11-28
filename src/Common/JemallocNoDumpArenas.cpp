@@ -14,6 +14,8 @@
 #include <Common/PerCPUSlots.h>
 
 #include <algorithm>
+#include <atomic>
+#include <mutex>
 #include <optional>
 #include <vector>
 #endif
@@ -57,26 +59,50 @@ bool commitNoDumpExtent(extent_hooks_t *, void * addr, size_t size, size_t offse
     return madvise(static_cast<char *>(addr) + offset, length, MADV_DONTDUMP) != 0;
 }
 
-std::vector<unsigned> createArenas(size_t num_arenas)
+/// One arena per CPU slot, each created by the first thread that allocates on its slot. Creating an arena allocates and
+/// touches its first block (a whole huge page with transparent huge pages enabled), so creating all of them at once costs
+/// milliseconds and tens of megabytes on a large machine, and every process reaches here from a static initializer
+/// (`Poco::XML::XMLString` constants), so a short-lived `clickhouse local` or `clickhouse client` would pay for all of them.
+class Arenas
 {
-    size_t hooks_size = sizeof(default_hooks);
-    if (int err = je_mallctl("arena.0.extent_hooks", &default_hooks, &hooks_size, nullptr, 0))
-        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "JemallocNoDumpArenas: Failed to read default extent hooks, error: {}", err);
-
-    no_dump_hooks = *default_hooks;
-    no_dump_hooks.alloc = allocNoDumpExtent;
-    no_dump_hooks.commit = commitNoDumpExtent;
-    extent_hooks_t * hooks = &no_dump_hooks;
-
-    std::vector<unsigned> indices(num_arenas);
-    for (unsigned & index : indices)
+public:
+    Arenas()
+        : indices(std::max<size_t>(cpu_slots.size(), 1))
     {
+        size_t hooks_size = sizeof(default_hooks);
+        if (int err = je_mallctl("arena.0.extent_hooks", &default_hooks, &hooks_size, nullptr, 0))
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "JemallocNoDumpArenas: Failed to read default extent hooks, error: {}", err);
+
+        no_dump_hooks = *default_hooks;
+        no_dump_hooks.alloc = allocNoDumpExtent;
+        no_dump_hooks.commit = commitNoDumpExtent;
+    }
+
+    unsigned getForCurrentCPU()
+    {
+        auto & slot = indices[cpu_slots.getCurrentSlot() % indices.size()];
+        /// Zero means that the arena is not created yet: `arenas.create` never returns the automatic arena 0.
+        if (unsigned index = slot.load(std::memory_order_acquire))
+            return index;
+
+        std::lock_guard lock(mutex);
+        if (unsigned index = slot.load(std::memory_order_relaxed))
+            return index;
+
+        extent_hooks_t * hooks = &no_dump_hooks;
+        unsigned index = 0;
         size_t index_size = sizeof(index);
         if (int err = je_mallctl("arenas.create", &index, &index_size, &hooks, sizeof(hooks)))
             throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "JemallocNoDumpArenas: Failed to create jemalloc arena, error: {}", err);
+        slot.store(index, std::memory_order_release);
+        return index;
     }
-    return indices;
-}
+
+private:
+    const PerCPUSlots cpu_slots;
+    std::vector<std::atomic<unsigned>> indices;
+    std::mutex mutex;
+};
 
 thread_local constinit int alloc_flags = 0;
 thread_local constinit int dealloc_flags = MALLOCX_TCACHE_NONE;
@@ -119,9 +145,8 @@ void * allocateImpl(size_t bytes, size_t alignment) noexcept
     {
         try
         {
-            static const auto * cpu_slots = new PerCPUSlots;
-            static const auto * arenas = new std::vector<unsigned>(createArenas(std::max<size_t>(cpu_slots->size(), 1)));
-            static thread_local ThreadCache tcache(MALLOCX_ARENA((*arenas)[cpu_slots->getCurrentSlot() % arenas->size()]));
+            static auto * arenas = new Arenas;
+            static thread_local ThreadCache tcache(MALLOCX_ARENA(arenas->getForCurrentCPU()));
         }
         catch (...)
         {

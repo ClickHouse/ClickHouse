@@ -1,0 +1,103 @@
+---
+slug: /clickstack/observability/faq
+title: 'Preguntas frecuentes sobre ClickHouse Observability'
+sidebarTitle: 'Preguntas frecuentes'
+description: 'Preguntas frecuentes sobre ClickHouse Observability totalmente gestionado y autogestionado, la recopilación de datos, las alertas, los dashboards y el descubrimiento de métricas.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'preguntas frecuentes', 'alertas', 'dashboards', 'desgloses', 'descubrimiento de métricas']
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+En esta página se explican los modos totalmente gestionado y autogestionado de ClickHouse Observability, y se responden preguntas frecuentes sobre la recopilación de datos, las alertas, los dashboards y el descubrimiento de métricas.
+
+## Implementación y recopilación de datos {#data-collection}
+
+<Accordion title="¿Cuál es la diferencia entre ClickHouse Observability totalmente gestionado y autogestionado?">
+  **Totalmente gestionado**
+
+  <BetaBadge label="Oferta en fase beta" />
+
+  [ClickHouse Observability totalmente gestionado](/es/clickstack/observability/overview) es el punto de partida recomendado. Envíe la telemetría al endpoint de OpenTelemetry gestionado; ClickHouse se encarga del recolector de ingestión, los esquemas, la infraestructura y el escalado.
+
+  **Autogestionado**
+
+  [Self-managed ClickHouse Observability](/es/clickstack/self-configured/overview) le permite controlar la ingestión, los esquemas, la retención y la configuración de la base de datos. ClickHouse Cloud aloja ClickHouse y la UI de ClickStack, mientras que usted opera el recolector de ingestión y se encarga del ajuste y la capacidad de la base de datos. La opción autogestionada no es una oferta en fase beta.
+</Accordion>
+
+<Accordion title="¿Necesito ejecutar un recolector de OpenTelemetry?">
+  **Totalmente gestionado:** No necesita desplegar un recolector de ingestión. Las aplicaciones y los generadores de telemetría pueden enviar datos directamente al endpoint de OpenTelemetry gestionado.
+
+  Aun así, es posible que necesite un recolector en su propio entorno para leer archivos de log o recopilar métricas del host y de Kubernetes, y después reenviar esos datos al recolector gestionado. Consulte [Logs y métricas locales](/es/clickstack/observability/example-datasets/local-data) y [Monitorización de Kubernetes](/es/clickstack/observability/example-datasets/kubernetes) para ver ejemplos.
+
+  **Autogestionado:** Necesita un recolector de ingestión en ejecución conectado a su servicio de ClickHouse Cloud. Las aplicaciones y los agentes envían la telemetría a este recolector, que la escribe en ClickHouse. Recomendamos la distribución de ClickStack. Consulte [Ingesta con OpenTelemetry](/es/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured) para obtener instrucciones de conexión y la [guía de implementación](/es/clickstack/self-configured/deployment/managed#start-a-collector-existing) para iniciar un recolector.
+</Accordion>
+
+<Accordion title="¿Dónde encuentro mi endpoint de telemetría y mi clave de API?">
+  **Totalmente gestionado:** En su servicio de ClickHouse Observability, abra **Team Settings → Data → Managed Telemetry** y copie el endpoint OTLP y la API key de ingesta. Utilice estos datos al configurar su SDK, el recolector de reenvío o el generador de telemetría.
+
+  **Autogestionado:** Utilice el endpoint OTLP del recolector que opera y el token de autenticación que haya configurado en su receptor, si lo hay. Para el recopilador de ClickStack, si habilita `OTLP_AUTH_TOKEN`, envíe ese token en el encabezado `authorization`. Estos datos son independientes del endpoint de la base de datos de ClickHouse Cloud y de las credenciales que utiliza el recolector para escribir datos. Consulte [Ingesta con OpenTelemetry](/es/clickstack/observability/ingesting-data/opentelemetry#sending-data-to-collector-managed-self-configured) para ver ejemplos.
+
+  Siga el formato de endpoint que requiera la herramienta que utilice. Los [datos de ejemplo y demos](/es/clickstack/observability/example-datasets) incluyen ejemplos de configuración para cada herramienta.
+</Accordion>
+
+## Alertas {#alerting}
+
+<Accordion title="¿Qué tipos de alertas admite ClickHouse Observability?">
+  ClickHouse Observability admite dos tipos de alertas:
+
+  * [Alertas de búsqueda](/es/clickstack/observability/features/alerts#search-alerts): envían notificaciones cuando el número de resultados coincidentes de logs o trazas dentro de una ventana de tiempo supera un umbral o queda por debajo de él.
+  * [Alertas de gráficos del panel](/es/clickstack/observability/features/alerts#dashboard-alerts): envían notificaciones cuando una métrica representada en un panel del cuadro de mando supera un umbral definido.
+
+  Ambos tipos de alerta comparan los resultados con los umbrales configurados. Para obtener más información, consulte [Alertas](/es/clickstack/observability/features/alerts).
+</Accordion>
+
+<Accordion title="¿Puedo crear alertas sobre condiciones de métricas complejas, como proporciones, p95/p99 o fórmulas con varias métricas?">
+  Cree el cálculo como un gráfico del dashboard y, a continuación, asocie una alerta de umbral a ese gráfico. El [creador de gráficos](/es/clickstack/observability/features/dashboards/overview#navigate-chart-explorer) admite cálculos como proporciones y percentiles.
+
+  Para los cálculos que requieren SQL, utilice una [alerta de gráfico basada en SQL](/es/clickstack/observability/features/alerts#sql-based-alerts). Las alertas SQL admiten gráficos de línea, de Barra Apilada y de Número. Guarde el dashboard para activar la alerta.
+</Accordion>
+
+## Dashboards y desgloses {#dashboards-and-drill-downs}
+
+<Accordion title="¿Se incluyen dashboards prediseñados?">
+  Sí. Abra **Dashboards** para encontrar los dashboards predefinidos **Services**, **Kubernetes** y **LLM**. Estos dashboards muestran datos cuando se está ingestando la telemetría correspondiente y el intervalo de tiempo seleccionado incluye esos datos.
+
+  También puede crear dashboards personalizados a partir de los logs, trazas y métricas que haya ingerido. Consulte [Dashboards](/es/clickstack/observability/features/dashboards/overview) para saber cómo crear gráficos y organizarlos en dashboards.
+</Accordion>
+
+<Accordion title="¿ClickHouse Observability admite dashboards parametrizados o variables del panel?">
+  Sí, ClickHouse Observability admite dashboards parametrizados mediante filtros personalizados y variables, que se pueblan con datos consultados desde ClickHouse. Estos filtros le permiten acotar dinámicamente algunos o todos los paneles de un cuadro de mando a un valor específico (por ejemplo, un nombre de servicio, un entorno o un host).
+
+  Para obtener más información sobre cómo crear dashboards y aplicar filtros, consulte [Dashboards](/es/clickstack/observability/features/dashboards/overview).
+</Accordion>
+
+<Accordion title="¿Qué opciones de desglose hay disponibles?">
+  ClickHouse Observability admite los siguientes flujos de trabajo de desglose:
+
+  * [Filtrado a nivel de dashboard](/es/clickstack/observability/features/dashboards/overview#filter-dashboards): los filtros Lucene o SQL a nivel de dashboard se aplican a los paneles del cuadro de mando que tienen habilitada la opción **Apply filters**. También puede ajustar el intervalo de tiempo del dashboard.
+  * Filtros personalizados de dashboard: los dashboards personalizados admiten controles de filtro explícitos que se rellenan con valores de sus datos, lo que permite a los usuarios acotar los paneles del cuadro de mando afectados sin tener que escribir consultas manualmente.
+  * Ver eventos con un clic: al hacer clic en los datos de un panel del cuadro de mando y seleccionar **View Events**, se abre la página [Búsqueda](/es/clickstack/observability/features/search) con los filtros correspondientes para los datos de logs y de trazas.
+  * [Desgloses al hacer clic en una fila de tabla](/es/clickstack/observability/features/dashboards/row-click-drilldowns): un panel de tabla del cuadro de mando puede configurarse para que, al hacer clic en una fila, se abra la página Búsqueda u otro dashboard y los valores de la fila se trasladen como filtros. Esto permite flujos de trabajo de varios niveles, como un inventario de servicios desde el que se accede al dashboard de detalle de cada servicio.
+
+  <Note>
+    Use [Búsqueda](/es/clickstack/observability/features/search) para inspeccionar logs y trazas individuales. Use el Explorador de Gráficos para explorar métricas.
+  </Note>
+</Accordion>
+
+## Descubrimiento de métricas {#metrics-discovery}
+
+<Accordion title="¿Existe una interfaz de usuario para explorar y buscar métricas?">
+  ![Explorador de Atributos de Métricas](/images/clickstack/faq/metrics-explorer-fully-managed.png)
+
+  Los nombres de las métricas se pueden descubrir a través de la lista desplegable de nombre de la métrica en el [creador de gráficos](/es/clickstack/observability/features/dashboards/overview#navigate-chart-explorer). Al seleccionar una métrica, el panel Explorador de Atributos de Métricas muestra su descripción, sus unidades y los atributos disponibles junto con sus valores. Así puede explorar los atributos y añadirlos como filtros o campos de group-by directamente desde el panel.
+
+  Actualmente no existe una página específica para buscar métricas, como sí ocurre con la búsqueda de logs.
+</Accordion>
+
+## Lecturas adicionales {#further-reading}
+
+* [Alertas](/es/clickstack/observability/features/alerts): alertas de búsqueda, alertas de gráficos del panel e integraciones mediante webhook.
+* [Dashboards](/es/clickstack/observability/features/dashboards/overview): creación de visualizaciones y dashboards, y aplicación de filtros.
+* [Búsqueda](/es/clickstack/observability/features/search): consulta de logs y trazas con Lucene y sintaxis SQL.
+* [Arquitectura](/es/clickstack/observability/architecture): componentes de ClickHouse Observability y cómo se articulan entre sí.

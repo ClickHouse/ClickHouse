@@ -13,7 +13,7 @@ integration:
 本文介绍 ClickPipes 客户如何利用基于角色的访问控制与 Amazon Kinesis 进行身份验证，并安全地访问其数据流。
 
 <div id="prerequisite">
-  ## 前置条件
+  ## 前置条件 {#prerequisite}
 </div>
 
 要按照本指南操作，您需要具备：
@@ -21,31 +21,23 @@ integration:
 * 一个已启用的 ClickHouse Cloud 服务
 * 一个 AWS 账户
 
-<div id="introduction">
-  ## 介绍
-</div>
+## 介绍 {#introduction}
 
 在深入设置安全的 Kinesis 访问之前，先了解其工作机制很重要。下面概述了 ClickPipes 如何通过承担客户 AWS 账户中的某个角色来访问 Amazon Kinesis 数据流。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![安全 Kinesis](/images/integrations/data-ingestion/clickpipes/securekinesis.jpg)
-
-</Frame>
-
+  <Frame>
+    ![安全 Kinesis](/images/integrations/data-ingestion/clickpipes/securekinesis.jpg)
+  </Frame>
 </div>
 
 采用这种方式后，客户就可以在一个地方统一管理对其 Kinesis 数据流的所有访问权限 (即被承担角色的 IAM 策略) ，而无需逐一修改每个流的访问策略。
 
 <div id="setup">
-  ## 配置
+  ## 配置 {#setup}
 </div>
 
-<div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ### 获取 ClickHouse 服务 IAM 角色 ARN
-</div>
+### 获取 ClickHouse 服务 IAM 角色 ARN {#obtaining-the-clickhouse-service-iam-role-arn}
 
 * 1. 登录到您的 ClickHouse Cloud 账户。
 * 2. 选择要为其创建集成的 ClickHouse 服务
@@ -54,21 +46,17 @@ integration:
 * 5. 复制如下所示该服务对应的 **Service role ID (IAM)** 值。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Secure S3 ARN](/images/cloud/security/secures3_arn.webp)
-
-</Frame>
-
+  <Frame>
+    ![Secure S3 ARN](/images/cloud/security/secures3_arn.webp)
+  </Frame>
 </div>
 
 <div id="setting-up-iam-assume-role">
-  ### 配置 IAM AssumeRole
+  ### 配置 IAM AssumeRole {#setting-up-iam-assume-role}
 </div>
 
 <div id="manually-create-iam-role">
-  #### 手动创建 IAM 角色。
+  #### 手动创建 IAM 角色。 {#manually-create-iam-role}
 </div>
 
 * 1. 在 Web 浏览器中，使用具有创建和管理 IAM 角色权限的 IAM 用户登录你的 AWS 账户。

@@ -15,6 +15,22 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，且由 ClickHouse 源代码自动生成。
 
+## adaptive_codec_selection_period {#adaptive_codec_selection_period}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "新增设置"}]}]} />
+
+对一个块进行定价，是指用每个候选编解码器分别压缩该块，并保留输出最小的结果。启用 `enable_adaptive_codec_selection` 后，列流会被拆分为若干窗口，每个窗口包含该设置所指定数量的块。每个窗口中取一个块作为样本进行定价，其余块则复用其胜出的编解码器。
+对于复用胜出编解码器的块，如果其每个源字节的写入量多于定价块上次优编解码器的写入量，则会对该块重新定价。如果没有任何编解码器能缩小定价块，则不存在胜出者，此时会对下一个块进行定价。
+定价块的大小绝不会超过使用默认编解码器压缩后的大小，而复用胜出编解码器的块则可能超过。
+设为 `1` 时会对每个块都进行定价。紧凑数据部件始终对每个块进行定价。
+profile events `AdaptiveCodecBlocksPriced`、`AdaptiveCodecBlocksRepriced` 和 `AdaptiveCodecBlocksReused` 会在 `system.part_log` 中按每次合并或变更统计各类块的数量。
+`AdaptiveCodecBytesDefault` 和 `AdaptiveCodecBytesWritten` 分别累加样本块使用默认编解码器时的大小和实际已写入的大小，因此二者的比率即为自适应选择所节省的空间；当周期为 `1` 时，该值是精确的。
+候选仅有默认编解码器和 `NONE` 的流不计入统计。
+
 ## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
@@ -84,6 +100,16 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 合并或变更中单个步骤的目标执行时间。如果
 某个步骤耗时更长，则可能会超过该时间
+
+## cache_temporarily_for_merges {#cache_temporarily_for_merges}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增实验性设置。"}]}]} />
+
+后台合并和变更的读取操作会将文件系统缓存用作临时缓冲区：未命中缓存的数据会先读入缓存，再从缓存中返回；当该数据不再被任何对象持有时，缓存会将其移除，除非此模式之外的读取器或写入器曾使用过该数据。仅 Experimental `ReaderExecutor` 支持此设置，其他读取器会绕过缓存。`force_read_through_cache_for_merges` 的优先级高于此设置。
 
 ## clean_deleted_rows {#clean_deleted_rows}
 
@@ -163,7 +189,11 @@ Keeper 往返通信即可检测重复项。
 1. 在表定义中为该列指定的压缩编解码器
 2. 在 `default_compression_codec` 中定义的压缩编解码器 (此设置)
 3. 在 `compression` 设置中定义的默认压缩编解码器
-   默认值：空字符串 (未定义) 。
+
+编解码器组合器 `FirstApplicable` 会根据每个列 (及其每个 stream) 的数据类型选择编解码器，
+例如 `FirstApplicable(PCO, ZSTD(3))` 会使用 `PCO` 压缩数值，使用 `ZSTD(3)` 压缩其他数据。其候选编解码器中
+必须至少有一个适用于任意数据类型，且不允许包含有损编解码器。
+默认值：空字符串 (未定义) 。
 
 ## disk {#disk}
 
@@ -182,6 +212,17 @@ Dynamic 数据类型的序列化版本。兼容性需要此设置。
 * `v1`
 * `v2`
 * `v3`
+
+## empty_parts_lifetime {#empty_parts_lifetime}
+
+<SettingsInfoBlock type="Seconds" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+空 分片 在被 `remove_empty_parts` 删除前须达到的最短存在时间 (单位：秒) 。存在时间从 分片 的
+`modification_time` 起算，因此如果合并或变更生成了新的空 分片，计时会重新开始。该设置不会推迟
+以其他方式替换该 分片：若某次合并包含该 分片，或某个 `TRUNCATE` 或 `DROP` 操作涵盖该 分片，该 分片 会像其他 分片 一样被标记为过期。
+设为 0 时，空 分片 会被立即删除，无需等待。
 
 ## enforce_index_structure_match_on_partition_manipulation {#enforce_index_structure_match_on_partition_manipulation}
 
@@ -216,6 +257,25 @@ Dynamic 数据类型的序列化版本。兼容性需要此设置。
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 控制后台合并和变更操作在读取时如何处理缓存未命中。禁用时，会使用已缓存的范围，而缺失的范围将直接从底层存储读取，不会填充缓存。启用时，缺失的范围将以读穿 (read-through) 方式读取，并存入文件系统缓存；若已启用分布式缓存，也会同时存入分布式缓存。这样可以为后续读取预热数据，但也会占用缓存容量。
+
+## group_fsync_before_insert_finish {#group_fsync_before_insert_finish}
+
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "新增设置"}]}]} />
+
+当表存储在本地磁盘上时，该设置与 `fsync_after_insert` 配合生效。
+写入多个 分片 的 `INSERT` 不会在每写完一个 分片 后都等待 fsync：各 分片
+写入后会立即提交，所有 分片 的文件会在 `INSERT` 完成前统一执行 fsync (提交已超过 30 秒的 分片
+会提前执行 fsync) 。在此期间，OS 会在后台回写数据。
+分片 可能在持久化之前就已对查询可见，但 `INSERT`
+只有在持久化完成后才会被确认。
+
+禁用时，每个 分片 在写入后、提交前都会立即执行 fsync。
+
+默认值 `auto` 仅对非复制表启用该设置。对于复制表，
+另一个副本可能会基于某个在本副本上已提交但尚未执行 fsync 的 分片 对 `INSERT` 进行去重，
+并在数据持久化之前就确认该 `INSERT`。
 
 ## initialization_retry_period {#initialization_retry_period}
 
@@ -338,6 +398,18 @@ JSON 数据类型的序列化版本。用于兼容性。
 
 只有 `v3` 版本支持更改共享数据序列化版本。
 
+## object_typed_shared_data_serialization_version {#object_typed_shared_data_serialization_version}
+
+<SettingsInfoBlock type="MergeTreeObjectTypedSharedDataSerializationVersion" default_value="v1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "v1"},{"label": "新增设置"}]}]} />
+
+JSON 数据类型中类型化共享数据的序列化版本。类型化共享数据是一种存储结构，它将一个数据分片中所有声明为 `SHARED` 的类型化路径集中存储在固定数量的文件中，而不是为每个路径分别使用一组文件。
+
+可选值：
+
+* `v1` - 在每个粒度内按路径顺序存储各个 `SHARED` 路径的数据，并在标记 stream 中记录每个路径数据的起始位置，因此读取部分路径时只需解码这些路径。
+
 ## old_parts_lifetime {#old_parts_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="480" />
@@ -375,7 +447,7 @@ JSON 数据类型的序列化版本。用于兼容性。
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-控制是否在插入期间优化行顺序，以提高新插入表分片的
+控制是否在插入期间优化行顺序，以提高新插入表数据分片的
 可压缩性。
 
 仅对普通 MergeTree 引擎表生效。对于
@@ -387,7 +459,7 @@ MergeTree 表会 (可选地) 使用[压缩编解码器](/zh/reference/statements
 具有很好的压缩效果。
 
 如果启用此设置，ClickHouse 会尝试以一种行顺序将数据存储到新
-插入的分片中，从而尽量减少新表分片各列中相同值连续段的数量。
+插入的分片中，从而尽量减少新表数据分片各列中相同值连续段的数量。
 换句话说，相同值连续段的数量越少，就意味着单个连续段
 越长，压缩效果也越好。
 
@@ -398,8 +470,8 @@ MergeTree 表会 (可选地) 使用[压缩编解码器](/zh/reference/statements
 <details markdown="1">
   <summary>查找行顺序的启发式方法</summary>
 
-  通常，可以自由打乱表 (或表分片) 的行顺序，
-  因为在 SQL 看来，同一张表 (表分片) 即使行顺序不同，
+  通常，可以自由打乱表 (或表数据分片) 的行顺序，
+  因为在 SQL 看来，同一张表 (表数据分片) 即使行顺序不同，
   也是等价的。
 
   当为表定义了主键时，这种打乱行顺序的自由会受到限制。
@@ -431,9 +503,9 @@ MergeTree 表会 (可选地) 使用[压缩编解码器](/zh/reference/statements
 </details>
 
 如果启用，插入操作会带来额外的 CPU 开销，用于分析并
-优化新数据的行顺序。预计 INSERT 的耗时会增加 30–50%，
+优化新数据的行顺序。预计 INSERT 的耗时会增加 30-50%，
 具体取决于数据特征。
-LZ4 或 ZSTD 的压缩率平均可提升 20–40%。
+LZ4 或 ZSTD 的压缩率平均可提升 20-40%。
 
 此设置最适用于没有主键或主键基数较低的表，
 也就是仅有少量不同主键值的表。

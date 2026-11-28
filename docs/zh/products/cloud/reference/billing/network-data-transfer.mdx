@@ -16,9 +16,9 @@ ClickHouse Cloud 会对入站和出站的数据传输进行计量。
 
 ClickHouse Cloud 的收费项包括：
 
-* 从 ClickHouse Cloud 出站到公共互联网的数据流出，包括到其他
+* 从 ClickHouse Cloud 出站到公共互联网的数据出站，包括到其他
   云服务提供商的其他区域。
-* 到同一云服务提供商中其他区域的数据流出。
+* 到同一云服务提供商中其他区域的数据出站。
 
 同一区域内的数据传输，以及 Private Link/Private
 Service Connect 的使用和数据传输，均不收费。不过，如果我们发现某些使用模式
@@ -27,10 +27,18 @@ Service Connect 的使用和数据传输，均不收费。不过，如果我们�
 
 注意：使用 Private Link/Private Service Connect 时，云服务提供商 (CSP) 的费用仍然适用。请参阅 CSP 的定价页面以获取最新信息。
 
-数据传输费用因 Cloud Service Provider (CSP) 和区域而异。
+数据传输费用因云服务提供商 (CSP) 和区域而异。
 公共互联网出站定价仅基于源区域。
 跨区域 (或跨区) 定价取决于源区域和目标端
 区域。
+
+## Managed Postgres {#managed-postgres}
+
+ClickHouse Managed Postgres 的公共互联网出站和跨区域出站数据传输均按本页所述费率计费。数据传输根据目标端 IP 是否位于云服务提供商公布的 IP 地址范围内进行分类。如果目标端的 IP 不在您所在区域公布的 IP 地址范围内，则发往该目标端的流量将按公共互联网出站计量，即使该目标端托管在同一云服务提供商上也是如此，例如使用自有 IP 地址块 (BYOIP) 的 peer。如果您需要连接此类 peer，请联系[技术支持](https://clickhouse.com/support/program)，以便我们核查其分类。
+
+使用 [ClickPipes](/zh/products/managed-postgres/clickpipes) 将数据从 Managed Postgres 复制到 ClickHouse Cloud 时，ClickPipes 的计算资源免费。从 Managed Postgres 到 ClickPipes 的出站流量与其他数据传输一样计量：两者位于同一区域时不收费；跨区域复制按相应的跨区域层级计费；复制到其他云服务提供商上的 ClickHouse Cloud 服务则按公共互联网费率计费。
+
+为降低数据传输成本，请尽可能将您的应用程序与 Managed Postgres 部署在同一云服务提供商的同一区域中。
 
 **最大限度降低数据传输成本的最佳实践**
 
@@ -43,12 +51,12 @@ Service Connect 的使用和数据传输，均不收费。不过，如果我们�
 2. 请注意，当通过 native protocol 使用非内联
    值执行 `INSERT` 时 (例如 `INSERT INTO [TABLE] FROM INFILE [FILE] FORMAT NATIVE`) ，ClickHouse
    客户端会从服务器拉取元数据来打包数据。如果元数据大于
-   `INSERT` 载荷，从服务器视角看，你可能会反直觉地发现流出
+   `INSERT` 载荷，从服务器视角看，你可能会反直觉地发现出站
    数据量大于流入数据量。如果这不可接受，请考虑
    使用 `VALUES` 语法内联数据，或使用 HTTP protocol。
 
 下表显示了不同云服务提供商和区域中，经由公共
-互联网或跨区域传输时，数据流出费用如何变化。
+互联网或跨区域传输时，出站数据传输费用如何变化。
 
 <Note>
   ClickHouse Cloud 以层级来计量跨区域用量，从 Tier 1 到

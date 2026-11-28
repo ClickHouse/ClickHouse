@@ -673,7 +673,7 @@ ClickHouse は `IS NULL` および `IS NOT NULL` 演算子をサポートして�
   * それ以外の場合は `0`。
 * その他の値に対しては、`IS NULL` 演算子は常に `0` を返します。
 
-[optimize&#95;functions&#95;to&#95;subcolumns](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定を有効にすることで最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数はカラム全体のカラムデータを読み取って処理する代わりに、[null](/ja/reference/data-types/nullable#finding-null) サブカラムだけを読み取ります。クエリ `SELECT n IS NULL FROM table` は `SELECT n.null != 0 FROM TABLE` に変換されます。
+そのカラムがクエリ内の他の箇所で使用されていない場合、この関数はカラム全体のカラムデータを読み取って処理する代わりに、[null](/ja/reference/data-types/nullable#finding-null) サブカラムだけを読み取ることができます。クエリ `SELECT n IS NULL FROM table` は `SELECT n.null != 0 FROM TABLE` に変換されます。この最適化は [optimize&#95;functions&#95;to&#95;subcolumns](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定で制御され、デフォルトで有効になっています。
 
 {/* */}
 
@@ -706,7 +706,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-[optimize&#95;functions&#95;to&#95;subcolumns](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定を有効にすると、最適化できます。`optimize_functions_to_subcolumns = 1` の場合、関数はカラムデータ全体を読み取って処理する代わりに、[null](/ja/reference/data-types/nullable#finding-null) サブカラムだけを読み取ります。クエリ `SELECT n IS NOT NULL FROM table` は `SELECT NOT n.null FROM TABLE` に変換されます。
+カラムがクエリ内の他の箇所で使用されていない場合、関数はカラムデータ全体を読み取って処理する代わりに、[null](/ja/reference/data-types/nullable#finding-null) サブカラムだけを読み取ることができます。クエリ `SELECT n IS NOT NULL FROM table` は `SELECT NOT n.null FROM TABLE` に変換されます。この最適化は [optimize&#95;functions&#95;to&#95;subcolumns](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定で制御され、この設定はデフォルトで有効になっています。
 
 ## ブール値の確認 {#checking-boolean-values}
 

@@ -262,6 +262,11 @@ def test_merge_tree_custom_disk_setting(start_cluster):
         """
         )
 
+        for disk in node1.query(
+            f"SELECT DISTINCT disk_name FROM system.parts WHERE table IN ('{TABLE_NAME}', '{TABLE_NAME}_2')"
+        ).split():
+            node1.query(f"SYSTEM WAIT BLOBS CLEANUP '{disk}'")
+
         list1 = list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
         count1 = len(list1)
 

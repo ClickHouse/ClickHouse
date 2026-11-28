@@ -7,10 +7,6 @@ keywords: ['managed postgres faq', 'postgres 问题', '指标', '扩展', '迁�
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
-
 ## 监控与指标 {#monitoring-and-metrics}
 
 ### 如何访问我的 ClickHouse Managed Postgres 实例指标？ {#metrics-access}
@@ -27,11 +23,23 @@ ClickHouse Managed Postgres 提供每日自动备份和持续 WAL 归档，支�
 
 有关备份频率、保留期以及如何执行时间点恢复的完整信息，请参阅 [备份与恢复](/zh/products/managed-postgres/backup-and-restore) 文档。
 
+## 计费 {#billing}
+
+### Managed Postgres 如何收费，包含哪些内容？ {#billing-what-is-included}
+
+在 AWS 上，费用中已包含与已预配磁盘容量相等的备份存储，超出部分的备份存储按您所在区域的 ClickHouse Cloud 存储价格计费。数据传输按 ClickHouse Cloud 费率计费。使用 ClickPipes 和 WalShadow 将数据从 Managed Postgres 复制到 ClickHouse 不收取费用。GCP 在私有预览期间免费。详情请参阅 [Managed Postgres 定价](/zh/products/managed-postgres/pricing#cloud-provider-pricing)。
+
+### 如果我的组织未支付账单，我的服务会怎样？ {#service-deactivation}
+
+服务将被停用，效果类似于停止服务。现有连接和新连接均会被阻止，该服务也不会产生费用。您的数据和备份会被保留，不会被删除。有关数据和备份保留策略，请参阅[计费合规](/zh/products/cloud/reference/billing/billing-compliance)。
+
+如需恢复访问，请先付清未结余额，然后在服务的 **Settings** 选项卡中点击 **Start**。该按钮仅在服务停用时显示，并在账单付清前保持禁用状态。有关付款期限，请参阅[计费合规](/zh/products/cloud/reference/billing/billing-compliance)。另请参见[服务停用](/zh/products/managed-postgres/pricing#service-deactivation)。
+
 ## 基础设施与自动化 {#infrastructure-and-automation}
 
 ### 支持哪些云提供商？ {#supported-cloud-providers}
 
-ClickHouse Managed Postgres 目前已在 AWS 上以 Public Beta 形式提供，GCP 则处于私有预览阶段。您可以在[此处](https://clickhouse.com/cloud/postgres#gcp-waitlist)加入 GCP 私有预览的候补名单，并阅读[公告](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview)了解更多信息。详情请参见[支持的云提供商](/zh/products/managed-postgres/overview#supported-cloud-providers)。
+ClickHouse Managed Postgres 目前已在 AWS 上正式可用，GCP 则处于私有预览阶段。您可以在[此处](https://clickhouse.com/cloud/postgres#gcp-waitlist)加入 GCP 私有预览的候补名单，并阅读[公告](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview)了解更多信息。详情请参见[支持的云提供商](/zh/products/managed-postgres/overview#supported-cloud-providers)。
 
 ### ClickHouse Managed Postgres 是否支持 Terraform？ {#terraform-support}
 

@@ -1,0 +1,52 @@
+Variant	Enum8(\'a\' = 1, \'b\' = 2)
+Variant memory	1	('','a')	a	('','a')
+Variant memory	2	('x','b')	b	('x','b')
+Variant memory	3	('','a')	a	('','a')
+Variant memory	4	('','a')	a	('','a')
+Variant memory	5	('','a')	a	('','a')
+Variant compact	1	('','a')	a
+Variant compact	2	('x','b')	b
+Variant compact	3	('','a')	a
+Variant compact	4	('','a')	a
+Variant compact	5	('','a')	a
+Variant wide	1	('','a')	a
+Variant wide	2	('x','b')	b
+Variant wide	3	('','a')	a
+Variant wide	4	('','a')	a
+Variant wide	5	('','a')	a
+Dynamic	Enum8(\'a\' = 1, \'b\' = 2)
+Dynamic memory	1	('','a')	a	('','a')
+Dynamic memory	2	('x','b')	b	('x','b')
+Dynamic memory	3	('','a')	a	('','a')
+Dynamic memory	4	('','a')	a	('','a')
+Dynamic memory	5	('','a')	a	('','a')
+Dynamic compact	1	('','a')	a
+Dynamic compact	2	('x','b')	b
+Dynamic compact	3	('','a')	a
+Dynamic compact	4	('','a')	a
+Dynamic compact	5	('','a')	a
+Dynamic wide	1	('','a')	a
+Dynamic wide	2	('x','b')	b
+Dynamic wide	3	('','a')	a
+Dynamic wide	4	('','a')	a
+Dynamic wide	5	('','a')	a
+Dynamic(max_types = 0) memory	1	('','a')	a
+Dynamic(max_types = 0) memory	2	('x','b')	b
+Dynamic(max_types = 0) memory	3	('','a')	a
+Dynamic(max_types = 0) wide	1	('','a')	a
+Dynamic(max_types = 0) wide	2	('x','b')	b
+Dynamic(max_types = 0) wide	3	('','a')	a
+JSON	Enum8(\'a\' = 1, \'b\' = 2)
+JSON memory	1	('','a')	a
+JSON memory	2	('','a')	a
+JSON advanced	1	('','a')	a
+JSON advanced	2	('','a')	a
+JSON map	1	('','a')	a
+JSON map	2	('','a')	a
+JSON advanced null map	1	1	1
+JSON advanced null map	2	1	1
+JSON map null map	1	1	1
+JSON map null map	2	1	1
+JSON advanced isNull	1	1
+JSON advanced isNull	2	1
+default	Nullable(Tuple(s String, e Enum8(\'a\' = 1, \'b\' = 2)))	\N	\N	\N

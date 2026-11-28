@@ -26,6 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
@@ -122,6 +123,7 @@ public:
         , captured_credentials_fingerprint(helper_->getCredentialsFingerprint())
         , helper(helper_)
         , read_schema(read_schema_)
+        , table_schema(table_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
         , binary_columns(binary_columns_)
@@ -152,21 +154,25 @@ public:
 
         if (!physical_names_map_.empty())
         {
-            for (auto & [name, value] : expression_schema)
-                name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
+            /// The fields of structs have physical names too, as in the columns read from the data files: a requested
+            /// subcolumn (e.g. `c-t.c-t-x` for `t.x`) is found by its physical name in the type of the transform output.
+            for (auto & [name, type] : expression_schema)
+            {
+                const auto logical_path = appendToLogicalPath({}, name);
+                name = getPhysicalName(logical_path, physical_names_map_);
+                type = replaceTypeNamesToPhysicalRecursively(type, logical_path, name, physical_names_map_);
+            }
 
             for (auto & name : partition_columns)
                 name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
         }
 
         thread = ThreadFromGlobalPool(
-            [&, thread_group = DB::CurrentThread::getGroup()]
+            DB::attachedJob(DB::ThreadName::DATALAKE_TABLE_SNAPSHOT, [&]
             {
-                /// Attach to current query thread group, to be able to
-                /// have query id in logs and metrics from scanDataFunc.
-                DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
+                /// Attached to the query thread group, to have the query id in logs and metrics from scanDataFunc.
                 scanDataFunc();
-            });
+            }));
     }
 
     ~Iterator() override
@@ -200,7 +206,7 @@ public:
     {
         if (filter.has_value() && enable_engine_predicate)
         {
-            auto predicate = getEnginePredicate(filter.value(), binary_columns, engine_predicate_exception, getContext());
+            auto predicate = getEnginePredicate(filter.value(), binary_columns, engine_predicate_exception, getContext(), table_schema);
             scan = KernelUtils::unwrapResult(
                 ::scan(
                     kernel_snapshot_state->snapshot.get(),
@@ -656,6 +662,8 @@ private:
 
     KernelHelperPtr helper;
     DB::NamesAndTypesList read_schema;
+    /// The logical schema of the table, for the engine predicate.
+    const DB::NamesAndTypesList table_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
     const DB::NameSet binary_columns;

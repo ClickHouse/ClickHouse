@@ -1,13 +1,37 @@
 ---
-title: 'O ClickHouse tem um otimizador baseado em custo'
+title: 'O ClickHouse tem um otimizador baseado em custo?'
+sidebarTitle: 'Otimizador baseado em custo'
 toc_hidden: true
 toc_priority: 10
 slug: /faq/general/cost-based
-description: 'O ClickHouse tem alguns mecanismos de otimização baseados em custo'
+description: 'O ClickHouse tem um otimizador baseado em custo para a ordem de junção, o lado de construção da junção e a ordem das condições de PREWHERE, orientado por estatísticas de coluna coletadas automaticamente'
 doc_type: 'reference'
-keywords: ['CBE', 'optimizer']
+keywords: ['CBO', 'otimizador baseado em custo', 'otimizador', 'estatísticas', 'reordenação de junções']
 ---
 
-O ClickHouse tem alguns mecanismos isolados de otimização baseados em custo, como: a ordem de leitura das colunas é determinada pelo custo de leitura de intervalos compactados de dados em disco.
+Sim. O ClickHouse tem um otimizador baseado em custo (CBO). Ele estima o número de linhas produzidas em cada etapa de uma consulta a partir das estatísticas de coluna e usa essas estimativas para escolher entre planos de consulta equivalentes.
 
-O ClickHouse também faz reordenação de JOIN com base em estatísticas de colunas, porém isso (em 2025) ainda está longe de ser tão avançado quanto o CBE no Postgres, Oracle e MS SQL Server.
+As decisões baseadas em custo são:
+
+* **Ordem de junção.** Em uma consulta que faz junção de várias tabelas, o planejador procura a ordem de junções com o menor custo estimado. Por padrão, ele usa o algoritmo de programação dinâmica `dpsub`, que considera todas as ordens de junção válidas, inclusive ordens com junções `LEFT`, `RIGHT`, `FULL`, `SEMI` e `ANTI`. A busca abrange grupos de até 10 tabelas, limite definido por `query_plan_optimize_join_order_limit`: uma consulta que faz junção de mais tabelas é dividida em grupos otimizados separadamente. Se o limite for aumentado para mais de 12, um grupo com mais de 12 tabelas passa a ser planejado por um algoritmo guloso. Consulte [`query_plan_optimize_join_order_algorithm`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm) e [`query_plan_optimize_join_order_limit`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit).
+* **Lado de construção da junção.** Em uma junção hash, o planejador coloca na tabela hash a entrada com o menor tamanho estimado, independentemente da ordem em que as tabelas aparecem na consulta. Consulte [`query_plan_join_swap_table`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_join_swap_table).
+* **Algoritmo de junção.** Quando as tabelas da junção podem ser lidas na ordem da chave de junção, o planejador escolhe entre uma junção hash e `full_sorting_merge` com base no custo, dando preferência a planos cuja saída ordenada possa ser aproveitada por uma junção posterior. Consulte [`query_plan_join_order_use_interesting_orders`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders).
+* **Ordem dos filtros.** As condições em `WHERE` são movidas para [`PREWHERE`](/pt-BR/optimize/prewhere) e ordenadas de modo que as condições baratas e seletivas sejam avaliadas primeiro, com base no tamanho comprimido das colunas e na seletividade estimada de cada condição.
+
+## De onde vêm as estimativas? {#where-do-the-estimates-come-from}
+
+As tabelas `MergeTree` coletam estatísticas de coluna automaticamente para cada parte de dados quando as partes são mescladas e também na inserção em tabelas menores que [`materialize_statistics_on_insert_max_table_size`](/pt-BR/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size) (25 GiB por padrão), portanto não é necessário executar `ANALYZE` nem manter as estatísticas manualmente. Os tipos de estatísticas são definidos pela configuração da tabela [`auto_statistics_types`](/pt-BR/reference/settings/merge-tree-settings/other#auto_statistics_types), cujo padrão é `basic` (mínimo e máximo, número de valores padrão e `NULL`, comprimento total das strings) e `uniq_v2` (número de valores distintos). Tipos adicionais, como `tdigest` (distribuição de valores) e `countmin` (frequências de valores individuais), melhoram as estimativas para condições de intervalo e de igualdade em dados com distribuição assimétrica. Consulte [Estatísticas de coluna](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#column-statistics).
+
+As estatísticas são usadas quando [`use_statistics`](/pt-BR/reference/settings/session-settings/use-statistics#use_statistics) está habilitado, o que é o padrão. Além das estatísticas de coluna, o otimizador da ordem de junções pode usar os tamanhos das tabelas hash observados em execuções anteriores da mesma junção ([`use_hash_table_stats_for_join_reordering`](/pt-BR/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering)) e as estatísticas contidas nos arquivos de manifesto do Iceberg ([`use_datalake_metadata_statistics`](/pt-BR/reference/settings/session-settings/use)).
+
+## Como posso ver o que o otimizador fez? {#how-can-i-see-what-the-optimizer-did}
+
+Use [`EXPLAIN`](/pt-BR/reference/statements/explain) para ver o plano escolhido e [`EXPLAIN ANALYZE`](/pt-BR/reference/statements/explain#explain-analyze) para executar a consulta e ver as métricas reais de cada etapa. Nas etapas de junção, ele também [compara as contagens de linhas estimadas com as reais](/pt-BR/reference/statements/explain#explain-analyze-join-estimation).
+
+## Quando o otimizador faz diferença? {#when-does-the-optimizer-matter}
+
+Grande parte do desempenho do ClickHouse não depende do otimizador: a chave primária, os índices de salto, a poda de partições e a execução vetorizada tornam uma consulta rápida mesmo sem busca de plano. O otimizador baseado em custo faz mais diferença em consultas que envolvem junções de muitas tabelas, como as cargas de trabalho TPC-H, TPC-DS e Join Order Benchmark.
+
+<Tip>
+  Para ver a lista completa de configurações que controlam o planejamento de junção, consulte [Configurações de junção](/pt-BR/concepts/features/operations/select/join-settings).
+</Tip>

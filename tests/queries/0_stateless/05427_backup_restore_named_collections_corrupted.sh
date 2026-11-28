@@ -39,7 +39,8 @@ echo "${error}" | grep -c "${secret}" || true
 echo "${error}" | grep -c "${collection}" || true
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.named_collections WHERE name = '${collection}'"
 
-# Recompute the authentication code over the corrupted bytes with the test key of
+# Recompute the authentication code over the corrupted bytes with the current key (the one
+# `current_key_id` selects, which encrypts new entries) of
 # tests/config/config.d/named_collections_storage.xml; this doubles as a check of the HMAC
 # construction. The authenticated entry now decrypts into a statement with a garbled first
 # character - the rest, including the secret value, decrypts unchanged - and reaches the parser,
@@ -48,7 +49,7 @@ echo "recompute the authentication code, the restore then fails in the parser wi
 python3 -c "
 import hmac, hashlib, sys
 path = sys.argv[1]
-key = bytes.fromhex('5e4acb1bce2688abbc7f546d7877f04d')
+key = bytes.fromhex('8f2c4a6e1b3d5f7092a4c6e8d0b2f4a6')
 data = open(path, 'rb').read()
 stored = data[:-32]
 auth_key = hmac.new(key, b'ClickHouse named collections backup entry v1', hashlib.sha256).digest()

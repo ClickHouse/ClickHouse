@@ -255,12 +255,15 @@ VectorWithMemoryTracking<ConstantColumnPosition> collectConstantColumnsAfterFilt
 
     const auto * filter = &dag.findInOutputs(filter_column_name);
     StackWithMemoryTracking<const ActionsDAG::Node *> nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     nodes.push(filter);
 
     while (!nodes.empty())
     {
         const auto * node = unwrapAlias(nodes.top());
         nodes.pop();
+        if (!visited.insert(node).second)
+            continue;
 
         if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
             continue;
@@ -329,26 +332,31 @@ static Block checkAndRemoveFilterColumn(Block result, const String & filter_colu
 }
 
 /// constant folding in prepare misses an empty set behind a Nullable argument - no constness at 0 rows
-static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
+static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node, UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & checked)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.at(0);
 
+    if (!checked.insert(node).second)
+        return false;
+
     if (node->type != ActionsDAG::ActionType::FUNCTION)
         return false;
+
+    auto is_always_false = [&](const ActionsDAG::Node * child) { return isAlwaysFalseByEmptySet(child, checked); };
 
 #if USE_EMBEDDED_COMPILER
     if (node->is_function_compiled)
     {
         auto conjuncts = ActionsDAG::getCompiledConjuncts(*node);
-        return std::any_of(conjuncts.begin(), conjuncts.end(), isAlwaysFalseByEmptySet);
+        return std::any_of(conjuncts.begin(), conjuncts.end(), is_always_false);
     }
 #endif
 
     const auto & function_name = node->function_base->getName();
 
     if (function_name == "and")
-        return std::any_of(node->children.begin(), node->children.end(), isAlwaysFalseByEmptySet);
+        return std::any_of(node->children.begin(), node->children.end(), is_always_false);
 
     /// The negative variants never make the filter always false, and the -IgnoreSet variants must not fold
     if (function_name != "in" && function_name != "globalIn" && function_name != "nullIn" && function_name != "globalNullIn")
@@ -473,7 +481,8 @@ IProcessor::Status FilterTransform::prepare()
         if (!always_false && expression && !on_totals)
         {
             const auto & actions_dag = expression->getActionsDAG();
-            always_false = isAlwaysFalseByEmptySet(&actions_dag.findInOutputs(filter_column_name));
+            UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> checked;
+            always_false = isAlwaysFalseByEmptySet(&actions_dag.findInOutputs(filter_column_name), checked);
 
             if (!always_false)
             {
