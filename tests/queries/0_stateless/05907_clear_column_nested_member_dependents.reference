@@ -1,0 +1,70 @@
+-- 1. MATERIALIZED column over the cleared member
+Compact
+Wide
+1	[0,0]	[3,4]	[1,1]	1
+2	[0]	[6]	[1]	1
+3	[]	[]	[]	1
+1	[0,0]	[3,4]	[1,1]	1
+2	[0]	[6]	[1]	1
+3	[]	[]	[]	1
+1	[0,0]	[3,4]	[1,1]	1
+2	[0]	[6]	[1]	1
+3	[]	[]	[]	1
+1	[0,0]	[3,4]	[1,1]	1
+2	[0]	[6]	[1]	1
+3	[]	[]	[]	1
+-- 2. projection over the cleared member
+Compact
+Wide
+projection	1	2	0
+projection	2	1	0
+projection	3	0	0
+no projection	1	2	0
+no projection	2	1	0
+no projection	3	0	0
+projection	1	2	0
+projection	2	1	0
+projection	3	0	0
+no projection	1	2	0
+no projection	2	1	0
+no projection	3	0	0
+-- 3. element types, and members declared as flat columns
+Compact
+Wide
+1	[NULL,NULL]	[[],[]]	['','']	['x','x']	[(0),(0)]	[7,8]	[0,0,0]	[4,5,6]
+[NULL,NULL]	[[],[]]	['!','!']	['x','x']	[(0),(0)]	[1,1,1]
+1	1	1	1	1	1
+1	[NULL,NULL]	[[],[]]	['','']	['x','x']	[(0),(0)]	[7,8]	[0,0,0]	[4,5,6]
+[NULL,NULL]	[[],[]]	['!','!']	['x','x']	[(0),(0)]	[1,1,1]
+1	1	1	1	1	1
+-- 4. one part stores the sibling, the other does not
+Compact
+Wide
+1	[]	[]	[]
+2	[0]	[4]	[1]
+1	[]	[]	[]
+2	[0]	[4]	[1]
+-- 5. the cleared member reads as empty arrays: all members cleared, or offsets not shared
+Compact
+Wide
+Compact
+Wide
+1	[]	[]	[]
+1	[]	[]	[]
+1	[]	[3,4]	[]
+1	[]	[3,4]	[]
+-- 6. a table column named like the sizes subcolumn of the sibling
+Compact
+Wide
+1	[0,0]	[3,4]	7	[1,1]
+1	[0,0]	[3,4]	7	[1,1]
+-- 7. a MATERIALIZED member over the cleared one
+Compact
+Wide
+1	[]	[]	[]
+1	[]	[]	[]
+-- 8. the sibling is converted by the same ALTER
+Compact
+Wide
+1	[0,0]	[3,4]	Array(UInt64)	[1,1]
+1	[0,0]	[3,4]	Array(UInt64)	[1,1]

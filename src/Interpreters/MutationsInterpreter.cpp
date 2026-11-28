@@ -1809,6 +1809,52 @@ void MutationsInterpreter::prepare(bool dry_run)
             dependencies.emplace(name, ColumnDependency::TTL_EXPRESSION);
     }
 
+    NameSet columns_written_before_readonly_stage;
+
+    /// A Nested member the part does not store reads as defaults sized by the offsets of another member of its table.
+    auto find_nested_sizes_source = [&](const String & name) -> std::optional<String>
+    {
+        const auto * data = source.getMergeTreeData();
+        const auto & part = source.getMergeTreeDataPart();
+        if (!data || !part || !(*data->getSettings())[MergeTreeSetting::share_nested_offsets])
+            return {};
+
+        const auto table = Nested::extractTableName(name);
+        if (table == name)
+            return {};
+
+        /// `TTLTransform` runs after every stage and may rewrite members through a column TTL or a GROUP BY TTL.
+        if (std::ranges::any_of(dependencies, is_ttl_target)
+            && (metadata_snapshot->hasAnyColumnTTL() || metadata_snapshot->hasAnyGroupByTTL()))
+            return {};
+
+        /// A member recomputed after the readonly stage rewrites the sizes of the whole group.
+        if (std::ranges::any_of(clear_affected_materialized, [&](const String & column) { return Nested::extractTableName(column) == table; }))
+            return {};
+
+        const auto & alter_conversions = source.getAlterConversions();
+        for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+        {
+            if (column.name == name || clear_column_names.contains(column.name) || !isArray(column.type)
+                || Nested::extractTableName(column.name) != table)
+                continue;
+
+            if (columns_written_before_readonly_stage.contains(column.name))
+                return column.name;
+
+            String name_in_part = column.name;
+            if (alter_conversions && alter_conversions->isColumnRenamed(name_in_part))
+                name_in_part = alter_conversions->getColumnOldName(name_in_part);
+
+            auto column_in_part = part->getColumnsDescription().tryGetPhysical(name_in_part);
+            if (column_in_part && isArray(column_in_part->type)
+                && !(alter_conversions && alter_conversions->isColumnDropped(name_in_part)))
+                return column.name;
+        }
+
+        return {};
+    };
+
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
     /// The same about columns, that are needed for calculation of TTL expressions.
@@ -1833,6 +1879,10 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (!unchanged_columns.empty())
         {
+            for (const auto & stage : stages)
+                for (const auto & [column_name, _] : stage.column_to_updated)
+                    columns_written_before_readonly_stage.insert(column_name);
+
             /// Special step to recalculate affected indices, projections and TTL expressions.
             stages.emplace_back(context);
             stages.back().is_readonly = true;
@@ -1840,14 +1890,22 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 if (cleared_columns_with_dependencies.contains(column))
                 {
-                    /// For columns being cleared, provide the current column DEFAULT
-                    /// expression (or the type default when no expression exists)
-                    /// instead of the original value from the source part.
+                    /// The cleared value is what a read returns after the mutation (DEFAULT, Nested-sized defaults, or the type default).
                     auto col_decl = metadata_snapshot->getColumns().getPhysical(column);
                     auto column_default = metadata_snapshot->getColumns().getDefault(column);
-                    ASTPtr cleared_value = column_default && column_default->expression
-                        ? column_default->expression->clone()
-                        : make_intrusive<ASTLiteral>(col_decl.type->getDefault());
+                    ASTPtr cleared_value = make_intrusive<ASTLiteral>(col_decl.type->getDefault());
+                    if (column_default && column_default->expression)
+                        cleared_value = column_default->expression->clone();
+                    else if (auto sizes_source = isArray(col_decl.type) ? find_nested_sizes_source(column) : std::nullopt)
+                    {
+                        auto sizes = *sizes_source + ".size0";
+                        ASTPtr sizes_ast = make_intrusive<ASTIdentifier>(sizes);
+                        if (columns_written_before_readonly_stage.contains(*sizes_source) || metadata_snapshot->getColumns().has(sizes))
+                            sizes_ast = makeASTFunction("length", make_intrusive<ASTIdentifier>(*sizes_source));
+                        cleared_value = makeASTFunction("arrayResize",
+                            makeASTFunction("_CAST", std::move(cleared_value), make_intrusive<ASTLiteral>(col_decl.type->getName())),
+                            std::move(sizes_ast));
+                    }
                     stages.back().column_to_updated.emplace(
                         column,
                         makeASTFunction("_CAST",
