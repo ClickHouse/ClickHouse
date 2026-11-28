@@ -409,7 +409,8 @@ static void extendSchemaForPartitions(
     String & schema,
     const std::vector<String> & partition_columns,
     const DataTypes & partition_types,
-    const Poco::JSON::Array::Ptr & partition_spec_fields)
+    const Poco::JSON::Array::Ptr & partition_spec_fields,
+    const Poco::JSON::Object::Ptr & table_schema)
 {
     /// Iceberg projects the manifest `partition` values onto the spec by field-id, so reuse
     /// the persisted spec ids. A legacy v1 spec may omit them; there the spec assigns partition
@@ -427,6 +428,8 @@ static void extendSchemaForPartitions(
         }
     }
 
+    std::optional<std::unordered_map<Int64, String>> source_types;
+
     Poco::JSON::Array::Ptr partition_fields = new Poco::JSON::Array;
     for (size_t i = 0; i < partition_columns.size(); ++i)
     {
@@ -434,10 +437,29 @@ static void extendSchemaForPartitions(
             ? partition_spec_fields->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_field_id)
             : static_cast<Int32>(1000 + i);
 
+        /// `adjust-to-utc` follows the Iceberg type of the source field in the manifest's schema, not the ClickHouse time zone.
+        bool adjust_to_utc = false;
+        if (isDateTime64(removeNullable(partition_types[i])))
+        {
+            if (!partition_spec_fields || i >= partition_spec_fields->size()
+                || !partition_spec_fields->getObject(static_cast<UInt32>(i))->has(Iceberg::f_source_id))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Iceberg manifest timestamp partition field '{}' has no source field in the partition spec",
+                    partition_columns[i]);
+
+            if (!source_types)
+                source_types = IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(table_schema->getArray(Iceberg::f_fields));
+            auto source_type = source_types->find(
+                partition_spec_fields->getObject(static_cast<UInt32>(i))->getValue<Int64>(Iceberg::f_source_id));
+            adjust_to_utc = source_type != source_types->end()
+                && (source_type->second == Iceberg::f_timestamptz || source_type->second == Iceberg::f_timestamptz_ns);
+        }
+
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
         field->set(Iceberg::f_field_id, field_id);
         field->set(Iceberg::f_name, partition_columns[i]);
-        field->set(Iceberg::f_type, getAvroType(partition_types[i], field_id));
+        field->set(Iceberg::f_type, getAvroType(partition_types[i], field_id, adjust_to_utc));
         partition_fields->add(field);
     }
 
@@ -697,7 +719,9 @@ void generateManifestFile(
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported iceberg format-version {}", version);
 
-    extendSchemaForPartitions(schema_representation, partition_columns, partition_types, partition_spec->getArray(Iceberg::f_fields));
+    Poco::JSON::Object::Ptr schema_object_to_write = schema_to_serialize ? schema_to_serialize : getCurrentSchema(metadata);
+    extendSchemaForPartitions(
+        schema_representation, partition_columns, partition_types, partition_spec->getArray(Iceberg::f_fields), schema_object_to_write);
     auto schema = avro::compileJsonSchemaFromString(schema_representation);
 
     const avro::NodePtr & root_schema = schema.root(); // NOLINT
@@ -705,7 +729,6 @@ void generateManifestFile(
     if (root_schema->type() != avro::AVRO_RECORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
 
-    Poco::JSON::Object::Ptr schema_object_to_write = schema_to_serialize ? schema_to_serialize : getCurrentSchema(metadata);
     std::string json_representation = stringifyJSON(schema_object_to_write, 4);
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);

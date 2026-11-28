@@ -77,6 +77,8 @@ public:
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
     TableMetadata & withDataLakeSpecificProperties() { with_datalake_specific_metadata = true; return *this; }
     TableMetadata & withForceAddBucket() { force_add_bucket = true; return *this; }
+    /// The time zone of the `DateTime64` type that Iceberg `timestamptz` and `timestamptz_ns` columns of the schema get.
+    TableMetadata & withTimezoneForTimestamptz(const std::string & timezone_) { timezone_for_timestamptz = timezone_; return *this; }
 
     [[nodiscard]] bool hasLocation() const;
     [[nodiscard]] bool hasSchema() const;
@@ -109,6 +111,7 @@ public:
     [[nodiscard]] bool requiresSchema() const { return with_schema; }
     [[nodiscard]] bool requiresCredentials() const { return with_storage_credentials; }
     [[nodiscard]] bool requiresDataLakeSpecificProperties() const { return with_datalake_specific_metadata; }
+    [[nodiscard]] const std::string & getTimezoneForTimestamptz() const { return timezone_for_timestamptz; }
 
     [[nodiscard]] StorageType getStorageType() const;
     [[nodiscard]] bool isS3Location() const;
@@ -159,6 +162,7 @@ private:
 
     bool is_default_readable_table = true;
     DataLakeTableFormat table_format = DataLakeTableFormat::UNKNOWN;
+    std::string timezone_for_timestamptz = "UTC";
 
     bool with_location = false;
     bool with_schema = false;

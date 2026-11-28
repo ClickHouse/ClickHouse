@@ -1235,12 +1235,13 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         return std::make_shared<DataTypeDate32>();
     if (type_name == f_time)
         return std::make_shared<DataTypeInt64>();
+    /// `timestamp` and `timestamp_ns` store a wall-clock reading; in UTC the stored value and its rendering coincide.
     if (type_name == f_timestamp)
-        return std::make_shared<DataTypeDateTime64>(6);
+        return std::make_shared<DataTypeDateTime64>(6, "UTC");
     if (type_name == f_timestamptz)
         return std::make_shared<DataTypeDateTime64>(6, timezone_for_timestamptz);
     if (type_name == f_timestamp_ns)
-        return std::make_shared<DataTypeDateTime64>(9);
+        return std::make_shared<DataTypeDateTime64>(9, "UTC");
     if (type_name == f_timestamptz_ns)
         return std::make_shared<DataTypeDateTime64>(9, timezone_for_timestamptz);
     if (type_name == f_string || type_name == f_binary)

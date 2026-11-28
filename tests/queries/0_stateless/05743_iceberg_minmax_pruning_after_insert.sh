@@ -33,6 +33,7 @@ for n in "${!FILTERS[@]}"; do echo "filter ${n}: ${FILTERS[n]:-none}"; done
 
 # Runs every filter with pruning off and on, tagged with the log comment
 # <table>-<filter>-<use_iceberg_partition_pruning>, and checks both return the same rows.
+# `ts` is read in UTC and `timestamp()` builds its bound in the session time zone, so the session is in UTC.
 run()
 {
     local table="$1" engine="$2" format_version="$3" n pruning queries=""
@@ -45,6 +46,7 @@ run()
 
     local results
     mapfile -t results < <(${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg 1 --query "
+        SET session_timezone = 'UTC';
         DROP TABLE IF EXISTS ${table};
         CREATE TABLE ${table} (tag Int32, date Date32, ts DateTime, name String, number Int64)
             ENGINE = ${engine} SETTINGS iceberg_format_version = ${format_version};

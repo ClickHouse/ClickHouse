@@ -23,7 +23,7 @@ iceberg/ice143_v1_all_types content	35	ok
 iceberg/ice143_v1_all_types content snapshot 1 append	20	ok
 iceberg/ice143_v1_all_types count()	ok
 iceberg/ice143_v1_all_types count() snapshot 1 append	ok
-iceberg/ice143_v1_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
+iceberg/ice143_v1_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
 iceberg/ice143_v2_all_types WHERE `id` < 10	ok
 iceberg/ice143_v2_all_types WHERE `id` = 7	ok
 iceberg/ice143_v2_all_types WHERE `id` >= 25	ok
@@ -47,7 +47,7 @@ iceberg/ice143_v2_all_types `ts_ntz`	ok
 iceberg/ice143_v2_all_types `ts`	ok
 iceberg/ice143_v2_all_types content	30	ok
 iceberg/ice143_v2_all_types count()	ok
-iceberg/ice143_v2_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
+iceberg/ice143_v2_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
 iceberg/ice143_v2_position_deletes WHERE `id` < 10	ok
 iceberg/ice143_v2_position_deletes WHERE `id` = 7	ok
 iceberg/ice143_v2_position_deletes WHERE `id` >= 25	ok
@@ -92,7 +92,7 @@ iceberg/ice143_v2_transforms `ts2`	ok
 iceberg/ice143_v2_transforms `ts`	ok
 iceberg/ice143_v2_transforms content	40	ok
 iceberg/ice143_v2_transforms count()	ok
-iceberg/ice143_v2_transforms types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Nullable(Bool)
+iceberg/ice143_v2_transforms types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Bool)
 iceberg/py_v1_all_types WHERE `id` < 10	ok
 iceberg/py_v1_all_types WHERE `id` = 7	ok
 iceberg/py_v1_all_types WHERE `id` >= 25	ok
@@ -121,7 +121,7 @@ iceberg/py_v1_all_types content	30	ok
 iceberg/py_v1_all_types content snapshot 1 append	20	ok
 iceberg/py_v1_all_types count()	ok
 iceberg/py_v1_all_types count() snapshot 1 append	ok
-iceberg/py_v1_all_types types	Int64, Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(9, 3)), Nullable(Decimal(38, 10)), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Bool), Nullable(Date32), Nullable(Int64), Nullable(DateTime64(6)), Nullable(DateTime64(6, \'UTC\')), Nullable(UUID), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int64)), Map(String, Nullable(Int32))
+iceberg/py_v1_all_types types	Int64, Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(9, 3)), Nullable(Decimal(38, 10)), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Bool), Nullable(Date32), Nullable(Int64), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(UUID), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int64)), Map(String, Nullable(Int32))
 iceberg/py_v1_month_day WHERE `id` < 10	ok
 iceberg/py_v1_month_day WHERE `id` = 7	ok
 iceberg/py_v1_month_day WHERE `id` >= 25	ok
@@ -133,7 +133,7 @@ iceberg/py_v1_month_day `s`	ok
 iceberg/py_v1_month_day `ts`	ok
 iceberg/py_v1_month_day content	30	ok
 iceberg/py_v1_month_day count()	ok
-iceberg/py_v1_month_day types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6)), Nullable(Date32)
+iceberg/py_v1_month_day types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\')), Nullable(Date32)
 iceberg/py_v2_all_types WHERE `id` < 10	ok
 iceberg/py_v2_all_types WHERE `id` = 7	ok
 iceberg/py_v2_all_types WHERE `id` >= 25	ok
@@ -162,7 +162,7 @@ iceberg/py_v2_all_types content	30	ok
 iceberg/py_v2_all_types content snapshot 1 append	20	ok
 iceberg/py_v2_all_types count()	ok
 iceberg/py_v2_all_types count() snapshot 1 append	ok
-iceberg/py_v2_all_types types	Int64, Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(9, 3)), Nullable(Decimal(38, 10)), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Bool), Nullable(Date32), Nullable(Int64), Nullable(DateTime64(6)), Nullable(DateTime64(6, \'UTC\')), Nullable(UUID), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int64)), Map(String, Nullable(Int32))
+iceberg/py_v2_all_types types	Int64, Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(9, 3)), Nullable(Decimal(38, 10)), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Bool), Nullable(Date32), Nullable(Int64), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(UUID), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int64)), Map(String, Nullable(Int32))
 iceberg/py_v2_name_mapping WHERE `id` < 10	ok
 iceberg/py_v2_name_mapping WHERE `id` = 7	ok
 iceberg/py_v2_name_mapping WHERE `id` >= 25	ok
@@ -174,7 +174,7 @@ iceberg/py_v2_name_mapping `s`	ok
 iceberg/py_v2_name_mapping `ts`	ok
 iceberg/py_v2_name_mapping content	25	ok
 iceberg/py_v2_name_mapping count()	ok
-iceberg/py_v2_name_mapping types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6)), Nullable(Date32)
+iceberg/py_v2_name_mapping types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\')), Nullable(Date32)
 iceberg/py_v2_overwrite_delete WHERE `id` < 10	ok
 iceberg/py_v2_overwrite_delete WHERE `id` = 7	ok
 iceberg/py_v2_overwrite_delete WHERE `id` >= 25	ok
@@ -198,7 +198,7 @@ iceberg/py_v2_overwrite_delete count() snapshot 3 overwrite	ok
 iceberg/py_v2_overwrite_delete count() snapshot 4 delete	ok
 iceberg/py_v2_overwrite_delete count() snapshot 5 append	ok
 iceberg/py_v2_overwrite_delete count() snapshot 6 delete	ok
-iceberg/py_v2_overwrite_delete types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6)), Nullable(Date32)
+iceberg/py_v2_overwrite_delete types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\')), Nullable(Date32)
 iceberg/py_v2_schema_evolution WHERE `id` < 10	ok
 iceberg/py_v2_schema_evolution WHERE `id` = 7	ok
 iceberg/py_v2_schema_evolution WHERE `id` >= 25	ok
@@ -226,7 +226,7 @@ iceberg/py_v2_transforms `s`	ok
 iceberg/py_v2_transforms `ts`	ok
 iceberg/py_v2_transforms content	40	ok
 iceberg/py_v2_transforms count()	ok
-iceberg/py_v2_transforms types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6)), Nullable(Date32)
+iceberg/py_v2_transforms types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\')), Nullable(Date32)
 iceberg/v1_all_types WHERE `id` < 10	ok
 iceberg/v1_all_types WHERE `id` = 7	ok
 iceberg/v1_all_types WHERE `id` >= 25	ok
@@ -252,7 +252,7 @@ iceberg/v1_all_types content	35	ok
 iceberg/v1_all_types content snapshot 1 append	20	ok
 iceberg/v1_all_types count()	ok
 iceberg/v1_all_types count() snapshot 1 append	ok
-iceberg/v1_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
+iceberg/v1_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
 iceberg/v1_partition_evolution_void WHERE `id` < 10	ok
 iceberg/v1_partition_evolution_void WHERE `id` = 7	ok
 iceberg/v1_partition_evolution_void WHERE `id` >= 25	ok
@@ -289,7 +289,7 @@ iceberg/v2_all_types `ts_ntz`	ok
 iceberg/v2_all_types `ts`	ok
 iceberg/v2_all_types content	30	ok
 iceberg/v2_all_types count()	ok
-iceberg/v2_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
+iceberg/v2_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
 iceberg/v2_avro WHERE `id` < 10	ok
 iceberg/v2_avro WHERE `id` = 7	ok
 iceberg/v2_avro WHERE `id` >= 25	ok
@@ -463,7 +463,7 @@ iceberg/v2_transforms `ts2`	ok
 iceberg/v2_transforms `ts`	ok
 iceberg/v2_transforms content	40	ok
 iceberg/v2_transforms count()	ok
-iceberg/v2_transforms types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Nullable(Bool)
+iceberg/v2_transforms types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Bool)
 iceberg/v3_all_types WHERE `id` < 10	ok
 iceberg/v3_all_types WHERE `id` = 7	ok
 iceberg/v3_all_types WHERE `id` >= 25	ok
@@ -487,7 +487,7 @@ iceberg/v3_all_types `ts_ntz`	ok
 iceberg/v3_all_types `ts`	ok
 iceberg/v3_all_types content	30	ok
 iceberg/v3_all_types count()	ok
-iceberg/v3_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
+iceberg/v3_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
 iceberg/v3_deletion_vectors WHERE `id` < 10	ok
 iceberg/v3_deletion_vectors WHERE `id` = 7	ok
 iceberg/v3_deletion_vectors WHERE `id` >= 25	ok

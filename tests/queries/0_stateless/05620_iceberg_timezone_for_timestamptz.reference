@@ -3,14 +3,14 @@
 2	2024-01-01 23:30:00.000000	2024-01-02 00:30:00.000000	['2024-01-01 23:30:00.000000']
 id	Nullable(Int32)
 ts	Nullable(DateTime64(6, \'UTC\'))
-local	Nullable(DateTime64(6))
+local	Nullable(DateTime64(6, \'UTC\'))
 arr	Array(Nullable(DateTime64(6, \'UTC\')))
 -- Europe/Berlin
 1	2024-01-02 00:30:00.000000	2024-01-01 23:30:00.000000	['2024-01-02 00:30:00.000000']
 2	2024-01-02 00:30:00.000000	2024-01-02 00:30:00.000000	['2024-01-02 00:30:00.000000']
 id	Nullable(Int32)
 ts	Nullable(DateTime64(6, \'Europe/Berlin\'))
-local	Nullable(DateTime64(6))
+local	Nullable(DateTime64(6, \'UTC\'))
 arr	Array(Nullable(DateTime64(6, \'Europe/Berlin\')))
 Nullable(DateTime64(6, \'Europe/Berlin\'))
 -- the setting of one table does not affect the other

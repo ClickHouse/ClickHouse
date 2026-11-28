@@ -2,17 +2,16 @@
 # Tags: no-fasttest
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 #
-# Regression test for https://github.com/ClickHouse/ClickHouse/issues/119173: an Iceberg `timestamp`
-# column has no time zone in its type name, so the type object carries whichever zone was current when
-# it was built. Execution parses a string literal against such a column in the session zone, while key
-# analysis converts the same literal with a CAST to that type. When the two zones differ the pruner
-# looks for the partition value of a different instant than the one execution matches, and silently
-# skips the file that holds the matching row: no error, no log line. `use_iceberg_partition_pruning`
-# is on by default.
+# Regression test for https://github.com/ClickHouse/ClickHouse/issues/119173 and
+# https://github.com/ClickHouse/ClickHouse/issues/130025: an Iceberg `timestamp` column is a
+# `DateTime64(6, 'UTC')`, so a string literal names the stored wall-clock value under any session time
+# zone, and partition pruning must agree with execution. A pruner that converts the literal differently
+# silently skips the file that holds the matching row: no error, no log line.
+# `use_iceberg_partition_pruning` is on by default.
 #
 # Each arm that can lose a row is paired with the same query at `use_iceberg_partition_pruning = 0`.
 # That control returns 1, so the row is present in the file and only pruning removes it; without the
-# control an arm cannot tell a pruning bug from a predicate that names the wrong instant.
+# control an arm cannot tell a pruning bug from a predicate that names the wrong value.
 #
 # Every statement pins `session_timezone`, because the test runner randomizes that setting.
 
@@ -29,10 +28,6 @@ trap 'rm -rf "${DAY_PATH}" "${HOUR_PATH}" 2>/dev/null' EXIT
 
 # Both rows fall in UTC day 19724 (2024-01-02), and in two different UTC hours. Background Iceberg
 # compaction would rewrite the manifests these arms read, so it is pinned off per table.
-#
-# The `timestamp` column maps to a `DateTime64(6)` with no time zone in its name, and such a type
-# carries the zone that was current where it was built, so the creating session pins one: a `SETTINGS`
-# clause on `CREATE ... ENGINE = IcebergLocal(...)` is read as storage settings, hence the client flag.
 ${CLICKHOUSE_CLIENT} --session_timezone UTC --query "
     CREATE TABLE ${DAY_TABLE} (ts DateTime64(6), id Int32)
     ENGINE = IcebergLocal('${DAY_PATH}', 'Parquet') PARTITION BY (toRelativeDayNum(ts))
@@ -51,27 +46,25 @@ echo "--- rows as stored ---"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT ts, id FROM ${DAY_TABLE} ORDER BY id SETTINGS session_timezone = 'UTC' FORMAT TSV"
 
-# The arms below are only meaningful while the column's zone stays the one pinned above instead of
-# following the session: if that ever changes, this prints the session zone and the test fails here
-# rather than turning every arm into a tautology.
+# The arms below are only meaningful while the column's zone stays `UTC` instead of following the
+# session: if that ever changes, this prints the session zone and the test fails here.
 echo "--- zone the timestamp column carries, read under a non-UTC session ---"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT DISTINCT timeZoneOf(ts) FROM ${DAY_TABLE} SETTINGS session_timezone = 'Asia/Tokyo'"
 
-# 2024-01-03 05:00:00 in Asia/Tokyo is 2024-01-02 20:00:00Z, which is the second row. Pruning must
-# agree with execution: both counts are 1.
+# The literal is the stored value of the second row; Asia/Tokyo (+09:00) does not shift it.
 echo "--- day transform, non-UTC session, equality, pruning on then off ---"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM ${DAY_TABLE} WHERE ts = '2024-01-03 05:00:00'
+    SELECT count() FROM ${DAY_TABLE} WHERE ts = '2024-01-02 20:00:00'
         SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 1;
-    SELECT count() FROM ${DAY_TABLE} WHERE ts = '2024-01-03 05:00:00'
+    SELECT count() FROM ${DAY_TABLE} WHERE ts = '2024-01-02 20:00:00'
         SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 0;"
 
 echo "--- day transform, non-UTC session, range, pruning on then off ---"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM ${DAY_TABLE} WHERE ts >= '2024-01-03 00:00:00' AND ts < '2024-01-03 09:00:00'
+    SELECT count() FROM ${DAY_TABLE} WHERE ts >= '2024-01-02 15:00:00' AND ts < '2024-01-03 00:00:00'
         SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 1;
-    SELECT count() FROM ${DAY_TABLE} WHERE ts >= '2024-01-03 00:00:00' AND ts < '2024-01-03 09:00:00'
+    SELECT count() FROM ${DAY_TABLE} WHERE ts >= '2024-01-02 15:00:00' AND ts < '2024-01-03 00:00:00'
         SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 0;"
 
 echo "--- day transform, UTC session ---"
@@ -79,14 +72,13 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM ${DAY_TABLE} WHERE ts = '2024-01-02 20:00:00'
         SETTINGS session_timezone = 'UTC', use_iceberg_partition_pruning = 1;"
 
-# `toRelativeHourNum` returns t / 3600 for any timezone whose offset is a whole number of hours, so
-# the hour transform only shifts in a zone with a fractional offset. Asia/Kolkata is +05:30, where
-# 2024-01-03 01:30:00 is the same instant as 2024-01-02 20:00:00Z.
+# `toRelativeHourNum` returns t / 3600 for any timezone whose offset is a whole number of hours, so only
+# a session zone with a fractional offset, such as Asia/Kolkata (+05:30), can move the literal to another hour.
 echo "--- hour transform, fractional-offset session, pruning on then off ---"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM ${HOUR_TABLE} WHERE ts = '2024-01-03 01:30:00'
+    SELECT count() FROM ${HOUR_TABLE} WHERE ts = '2024-01-02 20:00:00'
         SETTINGS session_timezone = 'Asia/Kolkata', use_iceberg_partition_pruning = 1;
-    SELECT count() FROM ${HOUR_TABLE} WHERE ts = '2024-01-03 01:30:00'
+    SELECT count() FROM ${HOUR_TABLE} WHERE ts = '2024-01-02 20:00:00'
         SETTINGS session_timezone = 'Asia/Kolkata', use_iceberg_partition_pruning = 0;"
 
 echo "--- partition spec transform names ---"

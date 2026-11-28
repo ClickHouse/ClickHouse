@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # Test Iceberg v3 nanosecond timestamp support (timestamp_ns, timestamptz_ns)
-# These types map to DateTime64(9) and DateTime64(9, 'UTC') respectively
+# Both types map to DateTime64(9, 'UTC')
 
 # If USER_FILES_PATH doesn't exist (local dev), query the server for the actual path
 if [ ! -d "${USER_FILES_PATH}" ]; then
