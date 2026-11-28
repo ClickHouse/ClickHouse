@@ -1,8 +1,16 @@
 #include <Common/Elf.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <base/arithmeticOverflow.h>
 #include <base/unaligned.h>
 
+#include <zlib.h>
+#include <zstd.h>
+
+#include <algorithm>
 #include <cstring>
+#include <limits>
+#include <thread>
 
 
 namespace DB
@@ -137,6 +145,200 @@ std::optional<Elf::Section> Elf::findSection(std::function<bool(const Section & 
 std::optional<Elf::Section> Elf::findSectionByName(const char * name) const
 {
     return findSection([&](const Section & section, size_t) { return 0 == strcmp(name, section.name()); });
+}
+
+
+namespace
+{
+
+/// `avail_in` and `avail_out` are 32-bit, so the streams are fed in chunks.
+bool inflateZlib(std::string_view source, char * destination, size_t size)
+{
+    constexpr size_t max_chunk = 1ULL << 30;
+    z_stream stream{};
+    if (inflateInit(&stream) != Z_OK)
+        return false;
+
+    stream.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(source.data()));
+    stream.next_out = reinterpret_cast<Bytef *>(destination);
+    size_t input_left = source.size();
+    size_t output_left = size;
+    int result = Z_OK;
+    while (result == Z_OK)
+    {
+        if (stream.avail_in == 0)
+        {
+            stream.avail_in = static_cast<uInt>(std::min(input_left, max_chunk));
+            input_left -= stream.avail_in;
+        }
+        if (stream.avail_out == 0)
+        {
+            stream.avail_out = static_cast<uInt>(std::min(output_left, max_chunk));
+            output_left -= stream.avail_out;
+        }
+        result = inflate(&stream, Z_NO_FLUSH);
+    }
+
+    bool done = result == Z_STREAM_END && stream.avail_in == 0 && input_left == 0 && stream.avail_out == 0 && output_left == 0;
+    inflateEnd(&stream);
+    return done;
+}
+
+bool decompressSection(const ElfCompressionHeader & header, std::string_view payload, char * destination)
+{
+    if (header.type == ElfCompressionType::ZSTD)
+    {
+        size_t result = ZSTD_decompress(destination, header.size, payload.data(), payload.size());
+        return !ZSTD_isError(result) && result == header.size;
+    }
+    return inflateZlib(payload, destination, header.size);
+}
+
+}
+
+
+std::optional<std::vector<std::string_view>> Elf::getSectionsData(std::span<const char * const> names) const
+{
+    try
+    {
+        std::vector<std::string_view> result(names.size());
+        std::vector<size_t> indices(names.size(), header->shnum);
+        bool has_compressed = false;
+
+        /// Not `findSectionByName`: it skips a section that runs past the end of the file, which must fail instead.
+        for (size_t i = 0; i < names.size(); ++i)
+        {
+            for (size_t idx = 0; idx < header->shnum; ++idx)
+            {
+                Section section(section_headers[idx], *this);
+                if (0 != strcmp(names[i], section.name()))
+                    continue;
+                if (section.header.type == SectionHeaderType::NOBITS)
+                    break;
+                if (!rangeWithin(section.header.offset, section.header.size, elf_size))
+                    return std::nullopt;
+
+                indices[i] = idx;
+                if (section.header.flags & SectionHeaderFlag::COMPRESSED)
+                    has_compressed = true;
+                else
+                    result[i] = {section.begin(), section.size()};
+                break;
+            }
+        }
+
+        if (!has_compressed)
+            return result;
+
+        std::lock_guard lock(decompression_mutex);
+
+        std::vector<size_t> pending;
+        for (size_t idx : indices)
+        {
+            if (idx == header->shnum || !(section_headers[idx].flags & SectionHeaderFlag::COMPRESSED))
+                continue;
+            if (unreadable_sections.contains(idx))
+                return std::nullopt;
+            if (!decompressed_sections.contains(idx) && std::find(pending.begin(), pending.end(), idx) == pending.end())
+                pending.push_back(idx);
+        }
+
+        if (!pending.empty() && !decompressSections(pending))
+        {
+            unreadable_sections.insert(pending.begin(), pending.end());
+            return std::nullopt;
+        }
+
+        for (size_t i = 0; i < names.size(); ++i)
+        {
+            if (auto it = decompressed_sections.find(indices[i]); it != decompressed_sections.end())
+                result[i] = {it->second.data(), it->second.size()};
+        }
+        return result;
+    }
+    catch (const std::exception &) // Ok: an unreadable section only costs file:line in stack traces.
+    {
+        return std::nullopt;
+    }
+}
+
+
+bool Elf::decompressSections(const std::vector<size_t> & indices) const
+{
+    std::vector<std::pair<ElfCompressionHeader, std::string_view>> inputs;
+    uint64_t total_size = 0;
+    for (size_t idx : indices)
+    {
+        Section section(section_headers[idx], *this);
+        if (section.size() < sizeof(ElfCompressionHeader))
+            return false;
+
+        auto compression = unalignedLoad<ElfCompressionHeader>(section.begin());
+        std::string_view payload(section.begin() + sizeof(ElfCompressionHeader), section.size() - sizeof(ElfCompressionHeader));
+
+        /// Debug info compresses about 3-10 times; this bound rejects a corrupt size before allocation.
+        constexpr size_t max_expansion_ratio = 1024;
+        const size_t max_size = payload.size() > std::numeric_limits<size_t>::max() / max_expansion_ratio
+            ? std::numeric_limits<size_t>::max()
+            : payload.size() * max_expansion_ratio;
+
+        if ((compression.type != ElfCompressionType::ZLIB && compression.type != ElfCompressionType::ZSTD)
+            || compression.size > max_size
+            || common::addOverflow(total_size, compression.size, total_size))
+            return false;
+
+        inputs.emplace_back(compression, payload);
+    }
+
+    /// Refused before anything is allocated if the sections do not fit the server limit.
+    Int64 limit = total_memory_tracker.getHardLimit();
+    Int64 used = std::max(total_memory_tracker.get(), total_memory_tracker.getRSS());
+    if (limit > 0 && (used > limit || total_size > static_cast<uint64_t>(limit - used)))
+        return false;
+
+    bool done = false;
+    try
+    {
+        std::vector<Memory<> *> sections;
+        for (size_t idx : indices)
+            sections.push_back(&decompressed_sections.try_emplace(idx).first->second);
+
+        /// Kept for the life of this object, so a thread of its own allocates them: charged to the server and checked
+        /// against its limit, not deferred by the thread (or charged to the query) that reads them first.
+        std::thread([&]
+        {
+            std::vector<Memory<>> buffers;
+            try
+            {
+                buffers.resize(indices.size());
+                for (size_t i = 0; i < indices.size(); ++i)
+                    if (inputs[i].first.size != 0)
+                        buffers[i] = Memory<>(inputs[i].first.size);
+
+                done = true;
+                for (size_t i = 0; done && i < indices.size(); ++i)
+                    if (inputs[i].first.size != 0)
+                        done = decompressSection(inputs[i].first, inputs[i].second, buffers[i].data());
+            }
+            catch (const std::exception &) // Ok: reported as a failure below.
+            {
+                done = false;
+            }
+
+            if (done)
+                for (size_t i = 0; i < indices.size(); ++i)
+                    sections[i]->swap(buffers[i]);
+        }).join();
+    }
+    catch (const std::exception &) // Ok: reported as a failure below.
+    {
+        done = false;
+    }
+
+    if (!done)
+        for (size_t idx : indices)
+            decompressed_sections.erase(idx);
+    return done;
 }
 
 
