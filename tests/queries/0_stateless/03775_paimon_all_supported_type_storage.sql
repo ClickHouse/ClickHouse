@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Depends on AWS
 
-SET enable_time_time64_type = 1, session_timezone = 'UTC', allow_experimental_paimon_storage_engine = 1;
+SET enable_time_time64_type = 1, session_timezone = 'UTC', enable_paimon_storage_engine = 1;
 
 DROP TABLE IF EXISTS paimon_all_types_storage;
 

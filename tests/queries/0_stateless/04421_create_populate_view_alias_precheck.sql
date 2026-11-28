@@ -4,8 +4,6 @@
 -- `ORDER BY x` (where `(x)` renames the SELECT column `y`) resolves instead of failing with
 -- UNKNOWN_IDENTIFIER.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS mv_04421;
 DROP TABLE IF EXISTS src_04421;
 

@@ -15,11 +15,9 @@ INSERT INTO t_left_04340  VALUES (1, 10), (2, 20), (3, 30);
 INSERT INTO t_right_04340 VALUES (1, 100), (2, 200);
 INSERT INTO t_subq_04340  VALUES (1);
 
--- enable_analyzer: the old analyzer disables convertAnyJoinToSemiOrAntiJoin.
 -- query_plan_convert_any_join_to_semi_or_anti_join / *_filter_push_down etc. are
 -- randomized by the runner; pin them so the filter stays above the ANY JOIN and the
 -- optimization under test actually runs.
-SET enable_analyzer = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 
 -- Case 1: ANY LEFT JOIN, nullIn not-ready set. Filter is TRUE at runtime (1 is in the

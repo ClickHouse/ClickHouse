@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Logger.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/ISimpleTransform.h>
 
 #include <vector>
@@ -30,7 +31,7 @@ public:
 
 private:
     Names column_names;
-    std::vector<size_t> key_column_indices;
+    VectorWithMemoryTracking<size_t> key_column_indices;
 
     size_t num_streams;
 
@@ -60,7 +61,7 @@ private:
     Block key_sample_block;
 
     Names column_names;
-    std::vector<size_t> key_column_indices;
+    VectorWithMemoryTracking<size_t> key_column_indices;
 
     /// Filter by this set when it's created
     SetWithStatePtr set;

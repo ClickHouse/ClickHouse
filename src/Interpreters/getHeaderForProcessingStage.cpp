@@ -19,7 +19,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -192,34 +191,25 @@ SharedHeader getHeaderForProcessingStage(
 
             SharedHeader result;
 
-            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
+                                                          storage_snapshot->getAllColumnsDescription(),
+                                                          storage_snapshot);
+            /// Reuse the already-analyzed query tree (the query-tree ctor applies no passes) instead of
+            /// re-analyzing the reconstructed AST. Re-analysis re-runs the query-tree optimizer, which is
+            /// not idempotent here and can drop a column, yielding a header inconsistent with the one the
+            /// initiator computed from the same tree.
+            if (query_info.query_tree && !query_rewritten_for_join)
             {
-                auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
-                                                                                        storage_snapshot->getAllColumnsDescription(),
-                                                                                        storage_snapshot);
-                /// Reuse the already-analyzed query tree (the query-tree ctor applies no passes) instead of
-                /// re-analyzing the reconstructed AST. Re-analysis re-runs the query-tree optimizer, which is
-                /// not idempotent here and can drop a column, yielding a header inconsistent with the one the
-                /// initiator computed from the same tree.
-                if (query_info.query_tree && !query_rewritten_for_join)
-                {
-                    /// replaceStorageInQueryTree does a cloneAndReplace, so the original tree is untouched.
-                    QueryTreeNodePtr query_tree = query_info.query_tree;
-                    replaceStorageInQueryTree(query_tree, context, storage);
-                    result = InterpreterSelectQueryAnalyzer::getSampleBlock(
-                        query_tree, context, SelectQueryOptions(processed_stage).analyze());
-                }
-                else
-                {
-                    InterpreterSelectQueryAnalyzer interpreter(query, context, SelectQueryOptions(processed_stage).analyze(), storage);
-                    result = interpreter.getSampleBlock();
-                }
+                /// replaceStorageInQueryTree does a cloneAndReplace, so the original tree is untouched.
+                QueryTreeNodePtr query_tree = query_info.query_tree;
+                replaceStorageInQueryTree(query_tree, context, storage);
+                result = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                    query_tree, context, SelectQueryOptions(processed_stage).analyze());
             }
             else
             {
-                auto pipe = Pipe(std::make_shared<SourceFromSingleChunk>(
-                        std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
-                result = InterpreterSelectQuery(query, context, std::move(pipe), SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+                InterpreterSelectQueryAnalyzer interpreter(query, context, SelectQueryOptions(processed_stage).analyze(), storage);
+                result = interpreter.getSampleBlock();
             }
 
             return result;

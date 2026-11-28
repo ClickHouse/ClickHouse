@@ -36,6 +36,7 @@ Checks whether a string begins with the provided string.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionStartsWith>(documentation);
+    factory.registerAlias("starts_with", NameStartsWith::name, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(StartsWithCaseInsensitive)

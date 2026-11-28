@@ -1,0 +1,15 @@
+-- Query cache on disk in read-only mode: the queries run normally
+1
+1
+10
+-- No query cache on disk: the queries run normally
+1
+1
+10
+-- Query cache on disk with writes: the checks apply
+QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS
+QUERY_CACHE_USED_WITH_SYSTEM_TABLE
+QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE
+-- Nothing was written by the read-only queries
+10
+QueryCacheOnDiskMisses

@@ -2,6 +2,7 @@
 
 #include <random>
 #include <Processors/ConcatProcessor.h>
+#include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/thread_local_rng.h>
@@ -30,6 +31,12 @@ void narrowPipe(Pipe & pipe, size_t width)
     size_t size = pipe.numOutputPorts();
     if (size <= width)
         return;
+
+    /// A `ConcatProcessor` leaves its later inputs undemanded until the earlier ones finish, and a
+    /// fan-out that must push to all of its outputs before it consumes again cannot wait that out.
+    for (const auto & processor : pipe.getProcessors())
+        if (processor->requiresAllOutputsPushable())
+            return;
 
     VectorWithMemoryTracking<OutputPortRawPtrs> partitions(width);
 

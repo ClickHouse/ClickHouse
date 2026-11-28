@@ -11,7 +11,7 @@ DROP TABLE `-ts`;
 SELECT 'low_sorting_name_dropped';
 
 -- Same state reached without choosing a name: the view's own inner name is `.inner_id.<uuid>`,
--- which always sorts below `.inner_id.metrics.<uuid>`.
+-- which always sorts below `.inner_id.metricfamilies.<uuid>`.
 DROP TABLE IF EXISTS mv;
 CREATE MATERIALIZED VIEW mv ENGINE = TimeSeries AS SELECT 1 AS a;
 DROP TABLE mv;

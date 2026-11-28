@@ -1,4 +1,7 @@
-SET allow_experimental_trino_dialect = 1;
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: the DDL worker re-parses the DDL with the session `dialect`, which cannot parse the added `UUID`
+
+SET enable_trino_dialect = 1;
 SET dialect = 'trino';
 
 SELECT '-- syntax: ARRAY literals';
@@ -63,6 +66,7 @@ SELECT map_concat(map(ARRAY['a'], ARRAY[1]), map(ARRAY['a', 'b'], ARRAY[10, 20])
 SELECT element_at(map(ARRAY['a'], ARRAY[1]), 'a'), element_at(map(ARRAY['a'], ARRAY[1]), 'b') IS NULL;
 SELECT map_filter(map(ARRAY['a', 'b'], ARRAY[1, 2]), (k, v) -> v > 1);
 SELECT map_entries(map(ARRAY['a'], ARRAY[1])), map_from_entries(ARRAY[ROW('a', 1)]);
+SELECT map_entries(map(ARRAY['a'], ARRAY[1]))[1].key, map_entries(map(ARRAY['a'], ARRAY[1]))[1].value;
 SELECT transform_values(map(ARRAY['a'], ARRAY[1]), (k, v) -> v * 10);
 
 SELECT '-- date and time';
@@ -92,6 +96,10 @@ SELECT round(log(2, 8)), round(ln(exp(1))), truncate(3.79), mod(7, 3);
 SELECT is_nan(nan()), is_finite(1.0), is_infinite(infinity());
 SELECT cosine_similarity(ARRAY[1.0, 0.0], ARRAY[1.0, 0.0]);
 SELECT bitwise_and(12, 10), bitwise_or(12, 10), bitwise_left_shift(1, 4);
+SELECT bitwise_left_shift(1, 8), bitwise_left_shift(1, 20);
+SELECT bitwise_left_shift(CAST(1 AS TINYINT), 4), toTypeName(bitwise_left_shift(1, 8));
+SELECT bitwise_right_shift(-8, 3);
+SELECT bitwise_left_shift(TINYINT '-128', 1), bitwise_left_shift(SMALLINT '-32768', 1), toTypeName(bitwise_left_shift(TINYINT '1', 2));
 SELECT to_hex(from_hex('414243'));
 SELECT to_big_endian_64(1) = from_hex('0000000000000001');
 SELECT random() BETWEEN 0 AND 1, random(10) BETWEEN 0 AND 9;

@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-random-settings
+-- Tags: no-random-settings
 -- Tag no-random-settings: depends on Parquet push-down defaults (filter_push_down, bloom_filter, page_index).
 -- IN (subquery) on Parquet must push down to page index / row-group stats / bloom filter, same as a literal IN.
 SET engine_file_truncate_on_insert = 1;

@@ -921,6 +921,132 @@ SELECT JSONExtractKeysCaseInsensitive('{"User": {"name": "John", "AGE": 25}}', '
 ['name','AGE']
 ```
 
+## JSONExtractLeafPathsAndValues {#JSONExtractLeafPathsAndValues}
+
+Introduced in: v26.11.0
+
+The same as [`JSONExtractLeafValues`](#JSONExtractLeafValues), but returns a tuple `(path, value)` for every scalar leaf.
+See the description of `JSONExtractLeafValues` for the rules of the paths and the arguments `skip_regex` and `arrays`.
+
+<Note>
+The result does not depend on the settings, such as `allow_simdjson`, `input_format_json_max_depth` and `json_type_escape_dots_in_keys`.
+So an index over the function gives the same rows as a full scan.
+</Note>
+        
+
+**Syntax**
+
+```sql
+JSONExtractLeafPathsAndValues(json[, skip_regex[, arrays]])
+```
+
+**Arguments**
+
+- `json` — JSON string to parse. [`String`](/reference/data-types/string)
+- `skip_regex` — Optional. Constant regular expression ([re2](https://github.com/google/re2/wiki/Syntax) syntax). Paths that match are skipped together with everything below them. An empty string (default) skips nothing. [`const String`](/reference/data-types/string)
+- `arrays` — Optional. Constant, case-sensitive. How arrays are handled: `'skip'`, `'string'` or `'elements'` (default). [`const String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns the paths and the values of the scalar leaves. [`Array(Tuple(path String, value String))`](/reference/data-types/array)
+
+**Examples**
+
+**Paths and values**
+
+```sql title=Query
+SELECT arrayMap(x -> (x.1, x.2), JSONExtractLeafPathsAndValues('{"a": {"b": "x"}, "c": [1, {"d": true}]}')) AS res;
+```
+
+```response title=Response
+┌─res──────────────────────────────────────────┐
+│ [('a.b','x'),('c[0]','1'),('c[1].d','true')] │
+└──────────────────────────────────────────────┘
+```
+
+## JSONExtractLeafValues {#JSONExtractLeafValues}
+
+Introduced in: v26.11.0
+
+Parses a JSON string and returns the values of all scalar leaves of the top-level object as an array of strings, in document order.
+A leaf is a string, number or boolean. `null`, empty objects and empty arrays produce no value.
+Strings are returned unescaped, numbers and booleans as JSON text (the same as [`JSONExtractRaw`](#JSONExtractRaw) returns them).
+If the JSON is invalid, or its top level is not an object, the result is an empty array.
+If a key occurs several times, all its values are returned.
+
+The path of a value is formed by the keys joined with `.`, and `[i]` for the index of an array element, for example `a.b`, `a[0]`, `a[0].b`, `a[0][1]`.
+Keys are not escaped: a key `a.b` and a nested key `b` inside `a` give the same path `a.b`.
+Unlike the `JSON` data type, the setting [`json_type_escape_dots_in_keys`](/reference/settings/formats/other#json_type_escape_dots_in_keys) does not apply.
+
+The `skip_regex` is matched against every visited path (object members at any depth, members inside arrays, and array element paths such as `a[0]`).
+A match skips the value and everything below it.
+A partial match is enough, as in [`match`](/reference/functions/regular-functions/string-search-functions#match): use `^` and `$` to match the full path.
+Unlike the `SKIP REGEXP` of the `JSON` data type, the setting [`type_json_use_partial_match_to_skip_paths_by_regexp`](/reference/settings/formats/type-json#type_json_use_partial_match_to_skip_paths_by_regexp) does not apply.
+
+In the `'string'` mode, an array is returned whole, with no depth limit.
+
+<Note>
+The result does not depend on the settings, such as `allow_simdjson`, `input_format_json_max_depth` and `json_type_escape_dots_in_keys`.
+So an index over the function gives the same rows as a full scan.
+</Note>
+
+Use [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) for columns of the `JSON` data type.
+        
+
+**Syntax**
+
+```sql
+JSONExtractLeafValues(json[, skip_regex[, arrays]])
+```
+
+**Arguments**
+
+- `json` — JSON string to parse. [`String`](/reference/data-types/string)
+- `skip_regex` — Optional. Constant regular expression ([re2](https://github.com/google/re2/wiki/Syntax) syntax). Paths that match are skipped together with everything below them. An empty string (default) skips nothing. [`const String`](/reference/data-types/string)
+- `arrays` — Optional. Constant, case-sensitive. How arrays are handled: `'skip'` produces nothing for arrays, `'string'` returns each array as one value in compact JSON, `'elements'` (default) walks the elements, and the element paths are `a[0]`, `a[1]` and so on. [`const String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns the values of the scalar leaves. [`Array(String)`](/reference/data-types/array)
+
+**Examples**
+
+**Nested objects and arrays**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": {"b": "x", "c": 1.50}, "d": [true, null, {"e": "y"}], "f": null}') AS res;
+```
+
+```response title=Response
+┌─res────────────────────┐
+│ ['x','1.5','true','y'] │
+└────────────────────────┘
+```
+
+**Skipping paths**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": "x", "b_noindex": {"c": "y"}, "d": [{"e_noindex": "z", "f": "w"}]}', '.*_noindex$') AS res;
+```
+
+```response title=Response
+┌─res───────┐
+│ ['x','w'] │
+└───────────┘
+```
+
+**Arrays as strings**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": [1, 2], "b": "x"}', '', 'string') AS res;
+```
+
+```response title=Response
+┌─res───────────┐
+│ ['[1,2]','x'] │
+└───────────────┘
+```
+
 ## JSONExtractRaw {#JSONExtractRaw}
 
 Introduced in: v20.1.0
@@ -1283,6 +1409,49 @@ SELECT JSONMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name"
 ┌─res───────────────────┐
 │ {"a":1,"name":"zoey"} │
 └───────────────────────┘
+```
+
+## JSONRemove {#JSONRemove}
+
+Introduced in: v26.10.0
+
+Removes one or more object members or array elements from a JSON string using JSONPath.
+Each path must resolve to one object member name or array position. Paths are applied from left to right.
+A JSONPath range that resolves to one array position, such as `$[1 to 2]`, is treated as that position and is equivalent to `$[1]`.
+Object member steps follow all members with matching names, including duplicates.
+A final object member step removes all matching members. Missing paths do not remove any values.
+The result is compacted. Invalid JSON causes an exception.
+        
+
+**Syntax**
+
+```sql
+JSONRemove(json, path[, path ...])
+```
+
+**Aliases**: `JSON_REMOVE`
+
+**Arguments**
+
+- `json` — A string containing valid JSON. [`String`](/reference/data-types/string)
+- `path[, path ...]` — One or more constant strings containing JSONPath expressions. Each path must resolve to one object member name or array position. A range that resolves to one array position, such as $[1 to 2], is accepted as $[1]. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns the JSON document as a compact string. [`String`](/reference/data-types/string)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT JSONRemove('{"a":1,"b":2}', '$.a');
+SELECT JSON_REMOVE('[0,1,2]', '$[0]', '$[1]');
+```
+
+```response title=Response
+{"b":2}
+[1]
 ```
 
 ## JSONSharedDataPaths {#JSONSharedDataPaths}
@@ -2134,7 +2303,7 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 Introduced in: v21.7.0
 
 Serializes a value to its JSON representation. Various data types and nested structures are supported.
-64-bit [integers](/reference/data-types/int-uint) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) controls this behavior.
+64-bit [integers](/reference/data-types/int-uint) or bigger (like `UInt64` or `Int128`) are output without quotes by default. [output_format_json_quote_64bit_integers](/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) controls this behavior.
 Special values `NaN` and `inf` are replaced with `null`. Enable [output_format_json_quote_denormals](/reference/settings/formats/output-format#output_format_json_quote_denormals) setting to show them.
 When serializing an [Enum](/reference/data-types/enum) value, the function outputs its name.
 

@@ -568,3 +568,90 @@ def test_tab_completion_respects_session_user():
         instance.query("DROP USER IF EXISTS completer")
         instance.query("DROP TABLE IF EXISTS default.visible_completion_target")
         instance.query("DROP TABLE IF EXISTS default.hidden_completion_target")
+
+
+def test_ctrl_z_does_not_stop_server():
+    """Ctrl-Z in the embedded client must not suspend the server process.
+
+    The embedded client runs inside the server, so the "suspend" action of the
+    line editor (`raise(SIGSTOP)`) would stop the whole server. It is disabled by
+    the key binding, but the incremental history search (Ctrl-R) used to handle
+    Ctrl-Z by itself, bypassing the binding.
+    """
+    sock = _open_ws(instance.ip_address, 8123)
+    try:
+        _ws_send_text(sock, json.dumps({"type": "auth", "user": "default", "password": ""}))
+        output = _read_pty_until(sock, timeout=20, marker=":) ")
+        assert ":) " in output, f"no prompt from the embedded client: {output!r}"
+
+        # Ctrl-Z in the main loop, then Ctrl-R (history search) followed by Ctrl-Z.
+        _ws_send_binary(sock, b"\x1a")
+        _ws_send_binary(sock, b"\x12\x1a")
+        _read_pty_until(sock, timeout=1)
+
+        response = instance.http_request("ping", method="GET", timeout=10)
+        assert response.status_code == 200
+
+        # The session is still usable: Ctrl-U clears the line, then run a query.
+        _ws_send_binary(sock, b"\x15SELECT 1234 + 1\r")
+        output = _read_pty_until(sock, timeout=10, marker="1235")
+        assert "1235" in output, f"the embedded client does not respond: {output!r}"
+    finally:
+        sock.close()
+
+
+def test_session_keeps_user_settings():
+    """The embedded client must keep the settings of the authenticated user.
+
+    It used to replace the session settings with default values, dropping
+    everything that comes from the user's profiles, roles and
+    `CREATE USER ... SETTINGS`, so a `readonly` user got write access and
+    resource limits were removed. Settings sent along with a query must also
+    be checked against the constraints.
+    """
+    instance.query(
+        "CREATE USER restricted_terminal_user IDENTIFIED WITH plaintext_password BY 'restricted_password' "
+        "SETTINGS readonly = 1, max_memory_usage = 5000000 CONST"
+    )
+
+    try:
+        sock = _open_ws(instance.ip_address, 8123)
+        try:
+            _ws_send_text(
+                sock,
+                json.dumps(
+                    {
+                        "type": "auth",
+                        "user": "restricted_terminal_user",
+                        "password": "restricted_password",
+                    }
+                ),
+            )
+
+            output = _read_pty_until(sock, timeout=20, marker=":) ")
+            assert ":) " in output, f"no prompt from the embedded client: {output!r}"
+
+            _ws_send_binary(
+                sock,
+                b"SELECT concat('settings_', getSetting('readonly')::String, '_', getSetting('max_memory_usage')::String) FORMAT TSV\r",
+            )
+            output = _read_pty_until(sock, timeout=10, marker="settings_1_5000000\r\n")
+            assert "settings_1_5000000\r\n" in output, (
+                f"the session settings of the user were not preserved: {output!r}"
+            )
+
+            # Wait for the next prompt: while a query runs, the client reads the
+            # keyboard (to toggle the progress table) and would swallow the next query.
+            if ":) " not in output.split("settings_1_5000000\r\n", 1)[1]:
+                output = _read_pty_until(sock, timeout=10, marker=":) ")
+                assert ":) " in output, f"no prompt after the first query: {output!r}"
+
+            _ws_send_binary(sock, b"SELECT 'bypassed' SETTINGS readonly = 0 FORMAT TSV\r")
+            output = _read_pty_until(sock, timeout=10, marker="READONLY")
+            assert "READONLY" in output and "bypassed\r\n" not in output, (
+                f"changing `readonly` in the query was not rejected: {output!r}"
+            )
+        finally:
+            sock.close()
+    finally:
+        instance.query("DROP USER IF EXISTS restricted_terminal_user")

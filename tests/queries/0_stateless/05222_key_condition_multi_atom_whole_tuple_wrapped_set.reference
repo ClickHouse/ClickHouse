@@ -1,0 +1,12 @@
+(s, x) IN (('7', 7))	1	1	2	Condition: and((cityHash64(tuple(s, x)) in 1-element set), (tuple(s, x) in 1-element set))
+(s, x) IN (('7', 7), ('120', 120))	2	2	2
+has([('7', 7)], (s, x))	1	1	2
+has([('7', 7), ('120', 120)], (s, x))	2	2	2
+(s, x) NOT IN (('7', 7))	199	199	25	Condition: (tuple(s, x) notIn 1-element set)
+NOT has([('7', 7)], (s, x))	199	199	25	Condition: (tuple(s, x) notIn 1-element set)
+(s, x) IN (('7', 7))	1	1	25	Condition: (tuple(s, x) in 1-element set)
+(d, y) NOT IN ((toDateTime(1698543000, 'Europe/Berlin'), 1))	2	2	2
+notHas([(toDateTime(1698543000, 'Europe/Berlin'), 1)], (d, y))	2	2	2
+NOT has([(toDateTime(1698543000, 'Europe/Berlin'), 1)], (d, y))	2	2	2
+notHas([(toDateTime(1698543000, 'Europe/Berlin'), 1)], (d, y))	2	2	2
+has([(toDateTime(1698543000, 'Europe/Berlin'), 1)], (d, y))	0	0	0

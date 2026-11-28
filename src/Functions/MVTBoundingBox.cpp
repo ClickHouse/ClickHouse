@@ -58,18 +58,18 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMVTBoundingBox>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     /// Disabled so that Nullable arguments are seen (and rejected) by argument validation: the result is a
     /// non-nullable Tuple, so the default null adaptor would otherwise evaluate a NULL control with the nested
     /// default value and return a bounding box for the wrong tile.
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"zoom", &isNativeUInt, nullptr, "UInt8"},
@@ -94,7 +94,7 @@ public:
             element_names);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto full_arguments = arguments;
         for (auto & argument : full_arguments)
@@ -205,9 +205,10 @@ fraction of the tile size; set `margin` to `buffer / extent` to match the clip b
                 "Bounding box of the whole world at zoom 0",
                 "SELECT MVTBoundingBox(0, 0, 0) AS bbox",
                 R"(
-┌─bbox────────────────────────────────────────────┐
-│ (-180,-85.05112877980659,180,85.05112877980659) │
-└─────────────────────────────────────────────────┘
+┌─bbox───────────────────────────────────────────────────────┐
+├─min_lon─┬────────────min_lat─┬─max_lon─┬───────────max_lat─┤
+│    -180 │ -85.05112877980659 │     180 │ 85.05112877980659 │
+└─────────┴────────────────────┴─────────┴───────────────────┘
                 )",
             },
         };
@@ -242,9 +243,10 @@ The optional `margin` expands the box on every side by that fraction of the tile
                 "Mercator bounding box of a tile",
                 "SELECT MVTBoundingBoxMercator(1, 0, 0) AS bbox",
                 R"(
-┌─bbox────────────────────────┐
-│ (0,0,2147483648,2147483648) │
-└─────────────────────────────┘
+┌─bbox────────────────────────────────────┐
+├─min_x─┬─min_y─┬──────max_x─┬──────max_y─┤
+│     0 │     0 │ 2147483648 │ 2147483648 │
+└───────┴───────┴────────────┴────────────┘
                 )",
             },
         };

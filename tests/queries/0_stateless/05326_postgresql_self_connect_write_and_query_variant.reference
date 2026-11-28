@@ -1,0 +1,12 @@
+--- INSERT through the postgresql table function
+1	one	10
+2	quote \' and "double" and \\backslash	\N
+3		30
+--- INSERT through the PostgreSQL engine
+4	tab\there	\N
+4
+--- the query(...) variant with an explicit structure
+2
+4
+--- the query(...) variant without a structure is rejected
+rejected

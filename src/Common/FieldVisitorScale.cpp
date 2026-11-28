@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorScale.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -11,8 +12,8 @@ namespace ErrorCodes
 FieldVisitorScale::FieldVisitorScale(Int64 rhs_) : rhs(rhs_) {}
 
 // Multiply through unsigned to get well-defined wraparound (FillingRow::doLongJump relies on it to detect overflow).
-void FieldVisitorScale::operator() (Int64 & x) const { reinterpret_cast<UInt64 &>(x) *= static_cast<UInt64>(rhs); }
-void FieldVisitorScale::operator() (UInt64 & x) const { x *= static_cast<UInt64>(rhs); }
+void NO_SANITIZE_UNSIGNED_OVERFLOW FieldVisitorScale::operator() (Int64 & x) const { reinterpret_cast<UInt64 &>(x) *= static_cast<UInt64>(rhs); }
+void NO_SANITIZE_UNSIGNED_OVERFLOW FieldVisitorScale::operator() (UInt64 & x) const { x *= static_cast<UInt64>(rhs); }
 void FieldVisitorScale::operator() (Float64 & x) const { x *= static_cast<Float64>(rhs); }
 void FieldVisitorScale::operator() (Null &) const { /*Do not scale anything*/ }
 
@@ -25,6 +26,7 @@ void FieldVisitorScale::operator() (UUID &) const { throw Exception(ErrorCodes::
 void FieldVisitorScale::operator() (IPv4 &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale IPv4s"); }
 void FieldVisitorScale::operator() (IPv6 &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale IPv6s"); }
 void FieldVisitorScale::operator() (CustomType & x) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale custom type {}", x.getTypeName()); }
+void FieldVisitorScale::operator() (NumberLiteral &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale NumberLiterals"); }
 void FieldVisitorScale::operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale AggregateFunctionStates"); }
 void FieldVisitorScale::operator() (bool &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale Bools"); }
 

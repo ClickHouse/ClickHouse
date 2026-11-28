@@ -5,102 +5,156 @@ description: 'Cloud にファイルをアップロードする方法'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
+import UploadCsvCLI from "/snippets/ja/cloud/migration/_upload_csv_cli.mdx";
 
-ClickHouse Cloud では、ファイルを簡単にインポートでき、次の
-フォーマットをサポートしています。
+<Visibility for="agents">
+  <UploadCsvCLI />
+</Visibility>
 
-| フォーマット                          |
-| ------------------------------- |
-| `CSV`                           |
-| `CSVWithNamesAndTypes`          |
-| `CSVWithNames`                  |
-| `JSONEachRow`                   |
-| `TabSeparated`                  |
-| `TabSeparatedWithNames`         |
-| `TabSeparatedWithNamesAndTypes` |
+<Visibility for="humans">
+  <View title="Cloud UI">
+    ClickHouse Cloud ではファイルを簡単にインポートでき、
+    次のフォーマットをサポートしています。
 
-<Steps>
-  <Step title="ファイルをアップロードする" id="upload-file">
-    以下のように、Cloud のホームページからサービスを選択します。
+    | フォーマット                          |
+    | ------------------------------- |
+    | `CSV`                           |
+    | `CSVWithNamesAndTypes`          |
+    | `CSVWithNames`                  |
+    | `JSONEachRow`                   |
+    | `TabSeparated`                  |
+    | `TabSeparatedWithNames`         |
+    | `TabSeparatedWithNamesAndTypes` |
 
-    <Image img="/images/cloud/migrate/csv_01.webp" alt="upload_file_02" />
+    <Steps>
+      <Step title="ファイルをアップロードする" id="upload-file">
+        Cloud のホームページで、以下のようにサービスを選択します。
 
-    サービスがアイドル状態の場合は、起動する必要があります。
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_02](/images/cloud/migrate/csv_01.webp)
+          </Frame>
+        </div>
 
-    以下のように、左側のタブで `Data sources` を選択します。
+        サービスがアイドル状態の場合は、起動してください。
 
-    <Image img="/images/cloud/migrate/csv_02.webp" alt="upload_file_03" />
+        以下のように、左側のタブで `Data sources` を選択します。
 
-    次に、データソースページの右側で `Upload a file` を選択します。
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_03](/images/cloud/migrate/csv_02.webp)
+          </Frame>
+        </div>
 
-    <Image img="/images/cloud/migrate/csv_03.webp" alt="upload_file_04" />
+        次に、データソースページの右側にある `Upload a file` を選択します。
 
-    ファイル選択ダイアログが表示され、Cloud サービス上のテーブルに
-    データを挿入するためのファイルを選択できます。
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_04](/images/cloud/migrate/csv_03.webp)
+          </Frame>
+        </div>
 
-    <Image img="/images/cloud/migrate/csv_04.webp" alt="upload_file_05" />
-  </Step>
+        ファイルダイアログが表示されるので、Cloud サービス上のテーブルに挿入するデータを含む
+        ファイルを選択します。
 
-  <Step title="テーブルを設定する" id="configure-table">
-    ファイルのアップロードが完了すると、データの挿入先となるテーブルを
-    設定できます。先頭 3 行を含むテーブルのプレビューも表示されます。
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_05](/images/cloud/migrate/csv_04.webp)
+          </Frame>
+        </div>
+      </Step>
 
-    <Image img="/images/cloud/migrate/csv_08.webp" alt="upload_file_08" />
+      <Step title="テーブルを設定する" id="configure-table">
+        ファイルのアップロードが完了すると、データの挿入先テーブルを
+        設定できます。テーブルのプレビューとして先頭の 3 行が表示されます。
 
-    ここで宛先テーブルを選択できます。選択肢は次のとおりです。
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_08](/images/cloud/migrate/csv_08.webp)
+          </Frame>
+        </div>
 
-    * 新しいテーブル
-    * 既存のテーブル
+        ここで書き込み先テーブルを選択します。選択肢は次のとおりです。
 
-    <br />
+        * 新しいテーブル
+        * 既存のテーブル
 
-    データのアップロード先データベースを指定でき、新しいテーブルの場合は、
-    作成するテーブル名も指定できます。また、ソートキーも選択できます。
+        <br />
 
-    <Image img="/images/cloud/migrate/csv_05.webp" alt="upload_file_05" />
+        データのアップロード先データベースを指定でき、新しいテーブルの場合は
+        作成するテーブルの名前も指定できます。また、sorting key も選択できます。
 
-    ファイルから読み取られたカラムは `Source field` として表示され、各フィールドに対して
-    次の項目を変更できます。
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_05](/images/cloud/migrate/csv_05.webp)
+          </Frame>
+        </div>
 
-    * 推論された型
-    * デフォルト値
-    * カラムを [Nullable](/ja/reference/data-types/nullable) にするかどうか
+        ファイルから読み込まれたカラムは `Source field` として表示され、各フィールドについて
+        次の項目を変更できます。
 
-    <Image img="/images/cloud/migrate/csv_06.webp" alt="upload_file_06" />
+        * 推論された型
+        * デフォルト値
+        * カラムを [Nullable](/ja/reference/data-types/nullable) にするかどうか
 
-    <Info>
-      **フィールドの除外**
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_06](/images/cloud/migrate/csv_06.webp)
+          </Frame>
+        </div>
 
-      インポートに含めたくない場合は、フィールドを除外することもできます
-    </Info>
+        <Info>
+          **フィールドの除外**
 
-    使用するテーブルエンジンの種類を指定できます。
+          インポートに含めないフィールドは削除することもできます。
+        </Info>
 
-    * `MergeTree`
-    * `ReplacingMergeTree`
-    * `SummingMergeTree`
-    * `Null`
+        使用するテーブルエンジンの種類を指定できます。
 
-    <br />
+        * `MergeTree`
+        * `ReplacingMergeTree`
+        * `SummingMergeTree`
+        * `Null`
 
-    パーティション化キー式とプライマリ
-    キー式を指定できます。
+        <br />
 
-    <Image img="/images/cloud/migrate/csv_07.webp" alt="upload_file_07" />
+        パーティションキー式とプライマリキー式も
+        指定できます。
 
-    データをインポートするには、`Import to ClickHouse` (上図参照) をクリックします。データのインポートはキューに追加され、
-    以下のように `Status` カラムの `queued` ステータスバッジで示されます。また、
-    `Open as query` (上図参照) をクリックして、SQL Console で INSERT クエリを開くこともできます。このクエリは、
-    `URL` テーブル関数を使用して S3 bucket にアップロードされたファイルを挿入します。
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_07](/images/cloud/migrate/csv_07.webp)
+          </Frame>
+        </div>
 
-    <Image img="/images/cloud/migrate/csv_09.webp" alt="upload_file_09" />
+        `Import to ClickHouse` (上図参照) をクリックしてデータをインポートします。以下のように、`Status` カラムに
+        `queued` ステータスバッジが表示され、データのインポートがキューに登録されたことがわかります。また、
+        `Open as query` (上図参照) をクリックすると、INSERT クエリを SQL コンソールで開けます。このクエリは
+        `URL` テーブル関数を使用して、S3 バケットにアップロードされたファイルを挿入します。
 
-    ジョブが失敗した場合は、`Data upload history` タブの `Status` カラムに
-    `failed` ステータスバッジが表示されます。`View Details` をクリックすると、
-    アップロードが失敗した理由の詳細を確認できます。失敗した挿入のエラーメッセージに応じて、
-    テーブル設定を変更するか、データをクリーンアップする必要がある場合があります。
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_09](/images/cloud/migrate/csv_09.webp)
+          </Frame>
+        </div>
 
-    <Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />
-  </Step>
-</Steps>
+        ジョブが失敗した場合は、`Data upload history` タブの `Status` カラムに
+        `failed` ステータスバッジが表示されます。`View Details` をクリックすると、アップロードが
+        失敗した理由の詳細を確認できます。エラーメッセージの内容に応じて、テーブルの設定を
+        変更するか、データをクリーニングしてください。
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_11](/images/cloud/migrate/csv_10.webp)
+          </Frame>
+        </div>
+      </Step>
+    </Steps>
+  </View>
+
+  <View title="CLI">
+    この手順は、自分で実行することも、スクリプト化することも、AI エージェントに任せることもできます。コンソールで行う手順については、**Cloud UI** ビューに切り替えてください。
+
+    <UploadCsvCLI />
+  </View>
+</Visibility>

@@ -9,6 +9,7 @@ ObjectStorageQueueExclusiveFileMetadata::ObjectStorageQueueExclusiveFileMetadata
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
     ObjectStorageQueueMetadata & metadata_,
+    const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
     const std::string & zookeeper_name_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
@@ -21,6 +22,7 @@ ObjectStorageQueueExclusiveFileMetadata::ObjectStorageQueueExclusiveFileMetadata
           max_loading_retries_,
           metadata_ref_count_,
           /* use_persistent_processing_nodes */ false,
+          processing_state_cache_ttl_seconds_,
           log_)
     , metadata(metadata_)
 {

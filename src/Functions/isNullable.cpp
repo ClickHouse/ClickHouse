@@ -11,7 +11,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace
@@ -22,24 +21,18 @@ class FunctionIsNullable final : public IFunction
 {
 public:
     static constexpr auto name = "isNullable";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionIsNullable>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
+        return std::make_shared<FunctionIsNullable>();
     }
 
-    explicit FunctionIsNullable(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
-
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
-        /// isNullable(column) triggers a bug in old analyzer when it is replaced to constant.
-        if (!use_analyzer)
-            return nullptr;
-
         const ColumnWithTypeAndName & elem = arguments[0];
         if (elem.type->onlyNull() || canContainNull(*elem.type))
             return result_type->createColumnConst(1, UInt8(1));
@@ -47,36 +40,35 @@ public:
         return result_type->createColumnConst(1, UInt8(0));
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt8>();
+        return "(Any) -> UInt8";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & elem = arguments[0];
         return ColumnUInt8::create(input_rows_count, isColumnNullable(*elem.column) || elem.type->isLowCardinalityNullable());
     }
 
 private:
-    bool use_analyzer;
 };
 
 }

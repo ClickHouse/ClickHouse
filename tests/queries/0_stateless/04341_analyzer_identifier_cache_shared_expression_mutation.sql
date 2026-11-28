@@ -10,7 +10,6 @@
 -- failed with NOT_FOUND_COLUMN_IN_BLOCK. The optimization now skips a conjunct
 -- already present, so the result is independent of node sharing.
 
-SET enable_analyzer = 1;
 SET enable_identifier_resolve_cache = 1;
 
 SELECT '-- compound AND alias in GROUP BY + HAVING (empty result)';

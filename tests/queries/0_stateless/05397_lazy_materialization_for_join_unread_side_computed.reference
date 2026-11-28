@@ -1,0 +1,36 @@
+-- the side is a constant
+l999
+l999
+l999
+l998
+l998
+l999
+l999
+l999
+l998
+l998
+1
+-- the side is computed from two tables, and nothing of it is needed
+l999
+l999
+l999
+l998
+l998
+l999
+l999
+l999
+l998
+l998
+1
+-- the side is computed from two tables, and it is in the result
+l999	r00
+l999	r110
+l999	r220
+l998	r00
+l998	r110
+l999	r00
+l999	r110
+l999	r220
+l998	r00
+l998	r110
+1

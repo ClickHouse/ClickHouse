@@ -8,7 +8,7 @@ Expression ((Project names + Projection))
             GatherExchange
               JoinLogical
                 ScatterExchange (by hash([__table1.src_ip]))
-                  Expression
+                  Expression ((Apply runtime join filter + (WHERE + Change column names to column identifiers)))
                     GatherExchange
                       ReadFromMergeTree (default.test)
                 ScatterExchange (by hash([__table2.dst_ip]))
@@ -24,7 +24,7 @@ Expression ((Project names + Projection))
         Expression ((Before GROUP BY + ))
           JoinLogical
             ShuffleExchange (by hash([__table1.src_ip]))
-              Expression
+              Expression ((Apply runtime join filter + (WHERE + Change column names to column identifiers)))
                 ReadFromMergeTree (default.test)
             ShuffleExchange (by hash([__table2.dst_ip]))
               BuildRuntimeFilter (Build runtime join filter on __table2.dst_ip)

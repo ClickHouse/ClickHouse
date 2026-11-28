@@ -1,0 +1,27 @@
+max_temporary_tables
+10
+tmp2
+tmp3
+max_temporary_table_memory_usage
+1000
+1
+1001000
+Memory	1
+0
+1000
+50000
+1000000
+20
+max_temporary_table_size_bytes_compressed
+101000
+0
+1000
+0
+0
+16000
+100000
+max_temporary_table_size_bytes_uncompressed
+1000
+10000
+10000
+1000000

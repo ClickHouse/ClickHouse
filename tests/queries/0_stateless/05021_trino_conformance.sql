@@ -2,7 +2,7 @@
 -- (https://github.com/trinodb/trino, core/trino-main/src/test/java/io/trino/sql/query, Apache License 2.0).
 -- Expected results verified against the assertions of the original tests.
 
-SET allow_experimental_trino_dialect = 1;
+SET enable_trino_dialect = 1;
 SET dialect = 'trino';
 
 SELECT '-- TestAggregation';

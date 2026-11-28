@@ -13,6 +13,9 @@ SELECT formatQueryFromJSON('{"type":"AlterQuery","alter_object":"BOGUS","table":
 -- AlterCommand: `command_type` is required (a missing key would otherwise be silently deserialized as ADD_COLUMN).
 SELECT formatQueryFromJSON('{"type":"AlterQuery","alter_object":"TABLE","table":"t","command_list":{"type":"ExpressionList","children":[{"type":"AlterCommand"}]}}'); -- { serverError BAD_ARGUMENTS }
 
+-- AlterCommand (MODIFY CONSTRAINT): requires `constraint_decl`, which `formatImpl` dereferences unconditionally.
+SELECT formatQueryFromJSON('{"type":"AlterCommand","command_type":"MODIFY_CONSTRAINT"}'); -- { serverError BAD_ARGUMENTS }
+
 -- DropQuery: at least one of database/table/database_and_tables is required.
 SELECT formatQueryFromJSON('{"type":"DropQuery","kind":"Drop"}'); -- { serverError BAD_ARGUMENTS }
 
@@ -52,6 +55,13 @@ SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":"SCHEDULE_MERGE",
 -- SystemQuery (REFRESH VIEW): requires `table`.
 SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":"REFRESH_VIEW"}'); -- { serverError BAD_ARGUMENTS }
 
+-- SystemQuery (bare background-control verbs): require `table`.
+SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":"STOP"}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":"START"}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":"PAUSE"}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":"CANCEL"}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":"REFRESH"}'); -- { serverError BAD_ARGUMENTS }
+
 -- SystemQuery: an unknown `query_type` name is rejected.
 SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":"NO_SUCH_QUERY_TYPE"}'); -- { serverError BAD_ARGUMENTS }
 
@@ -88,3 +98,5 @@ SELECT formatQueryFromJSON('{"type":"UpdateQuery","table":{"type":"Identifier","
 SELECT formatQueryFromJSON(parseQueryToJSON('OPTIMIZE TABLE t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('DROP TABLE t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE DATABASE d'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM START db.t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY CONSTRAINT c CHECK x > 0'));

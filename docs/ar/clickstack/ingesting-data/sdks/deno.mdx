@@ -3,64 +3,35 @@ slug: /use-cases/observability/clickstack/sdks/deno
 description: 'حزمة SDK لـ Deno لـ ClickStack - حزمة observability من ClickHouse'
 title: 'Deno'
 doc_type: 'guide'
-keywords: ['Deno ClickStack SDK', 'Deno OpenTelemetry', 'تكامل ClickStack مع Deno', 'Deno observability', 'Deno تسجيل الأحداث SDK']
+keywords: ['Deno ClickStack SDK', 'Deno OpenTelemetry', 'تكامل ClickStack مع Deno', 'Deno observability', 'Deno التسجيل SDK']
 ---
 
-يتناول هذا الدليل تكامل ما يلي:
+import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-* **السجلات**
+استخدم دعم OpenTelemetry المدمج في Deno لإرسال السجلات والمقاييس وبيانات التتبّع إلى ClickStack. لا حاجة إلى ClickStack Node.js SDK ولا إلى حزمة التسجيل القديمة الخاصة بـ Deno.
 
-<Note>
-  يدعم حاليًا OpenTelemetry لتسجيل الأحداث فقط. ولمزيد من الدعم الخاص بالتتبّع، [راجع الدليل التالي](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example).
-</Note>
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-<div id="logging">
-  ## تسجيل الأحداث
-</div>
+## إعداد OpenTelemetry {#set-up-opentelemetry}
 
-يُدعَم تسجيل الأحداث عبر تصدير `logger` مخصّص لوحدة `std/log`.
+اتبع [تعليمات إعداد OpenTelemetry الرسمية الخاصة بـ Deno](https://docs.deno.com/runtime/fundamentals/open_telemetry/) لتزويد تطبيقك بأدوات جمع بيانات الرصد. هيّئ الوجهة أدناه، ثم فعّل التكامل المدمج في Deno عند تشغيل تطبيقك:
 
-**مثال على الاستخدام:**
-
-```typescript
-import * as log from 'https://deno.land/std@0.203.0/log/mod.ts';
-import { OpenTelemetryHandler } from 'npm:@hyperdx/deno';
-
-log.setup({
-  handlers: {
-    otel: new OpenTelemetryHandler('DEBUG'),
-  },
-
-  loggers: {
-    'my-otel-logger': {
-      level: 'DEBUG',
-      handlers: ['otel'],
-    },
-  },
-});
-
-log.getLogger('my-otel-logger').info('Hello from Deno!');
+```shell
+OTEL_DENO=true OTEL_SERVICE_NAME='my-deno-app' deno run app.ts
 ```
 
-<div id="run-the-application">
-  ### تشغيل التطبيق
-</div>
+أضف الصلاحيات التي يحتاجها تطبيقك. استبدل أي وجهات واردة على سبيل المثال أو إعدادات مُصدِّر وحدة التحكم المذكورة في تعليمات المصدر الأصلي، بما في ذلك تجاوزات إعدادات نقاط النهاية الخاصة بكل إشارة.
 
-<Tabs>
-  <Tab title="Managed ClickStack">
-    ```shell
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
-    OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
-    deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
-    ```
-  </Tab>
+## تهيئة الوجهة {#configure-destination}
 
-  <Tab title="ClickStack Open Source">
-    ```shell
-    OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>" \
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
-    OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
-    deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
-    ```
-  </Tab>
-</Tabs>
+حدّد نقطة نهاية OTLP HTTP ومفتاح الإدخال الخاصين بمُجمِّع ClickStack. استخدم `http://` إذا لم يكن TLS مُهيَّأً على جامع البيانات لديك. لمعرفة كيفية إعداد جامع البيانات، راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry).
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
+
+## التحقق من إدخال البيانات {#verify-ingestion}
+
+شغّل تطبيقك وولّد بعض النشاط. في ClickStack، اختر نطاقًا زمنيًا حديثًا وابحث عن اسم الخدمة الخاص بتطبيقك ضمن السجلات (Logs) أو التتبّعات (Traces). ثم تحقّق من المقاييس (Metrics) بعد مرور وقت كافٍ لتصديرها.

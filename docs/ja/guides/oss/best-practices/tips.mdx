@@ -10,9 +10,7 @@ import SelfManaged from '/snippets/ja/_self_managed_only_automated.mdx';
 
 <SelfManaged />
 
-<div id="cpu-scaling-governor">
-  ## CPU スケーリングガバナー
-</div>
+## CPU スケーリングガバナー {#cpu-scaling-governor}
 
 常に `performance` スケーリングガバナーを使用してください。`on-demand` スケーリングガバナーは、継続的に高い負荷がかかる環境ではパフォーマンスが大幅に低下します。
 
@@ -20,16 +18,12 @@ import SelfManaged from '/snippets/ja/_self_managed_only_automated.mdx';
 $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-<div id="cpu-limitations">
-  ## CPU の制限事項
-</div>
+## CPU の制限事項 {#cpu-limitations}
 
 CPU は過熱することがあります。過熱によって CPU のクロック周波数が制限されたかどうかは、`dmesg` で確認できます。
 この制限は、データセンター側で設定されることもあります。負荷をかけた状態で監視するには、`turbostat` を使用できます。
 
-<div id="ram">
-  ## RAM
-</div>
+## RAM {#ram}
 
 少量のデータ (圧縮後で最大約 200 GB) の場合は、データ量と同程度の、できるだけ多くのメモリを使用するのが最適です。
 大量のデータを扱い、対話的 (オンライン) なクエリを処理する場合は、ホットデータのサブセットがページ cache に収まるよう、適切な量の RAM (128 GB 以上) を使用してください。
@@ -44,9 +38,7 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 `perf top` を使って、メモリ管理に関してカーネル内でどれだけ時間が費やされているかを確認します。
 永続的な huge pages も割り当てる必要はありません。
 
-<div id="using-less-than-16gb-of-ram">
-  ### 16GB未満のRAMを使用する
-</div>
+### 16GB未満のRAMを使用する {#using-less-than-16gb-of-ram}
 
 推奨されるRAM容量は32 GB以上です。
 
@@ -67,9 +59,7 @@ RAMが16GB未満の環境でClickHouseを使用する場合は、以下を推奨
   コマンドを実行できます。
 * 低メモリのマシンでは、S3やKafkaのインテグレーションの使用は推奨しません。これらはバッファにかなりのメモリを必要とするためです。
 
-<div id="storage-subsystem">
-  ## ストレージサブシステム
-</div>
+## ストレージサブシステム {#storage-subsystem}
 
 予算に余裕がありSSDを使えるなら、SSDを使ってください。
 そうでなければ、HDDを使ってください。7200 RPMのSATA HDDで十分です。
@@ -77,9 +67,7 @@ RAMが16GB未満の環境でClickHouseを使用する場合は、以下を推奨
 ディスクシェルフが接続された少数のサーバーよりも、ローカルハードドライブを搭載した多数のサーバーを優先してください。
 ただし、クエリの頻度が低いアーカイブの保存であれば、シェルフでも問題ありません。
 
-<div id="raid">
-  ## RAID
-</div>
+## RAID {#raid}
 
 HDD を使用する場合は、RAID-10、RAID-5、RAID-6、または RAID-50 を構成できます。
 Linux では、ソフトウェア RAID (`mdadm`) のほうが適しています。
@@ -110,9 +98,7 @@ HDD では、書き込み cache を有効にしてください。
 
 OS で NVME および SSD ディスクに対して [`fstrim`](https://en.wikipedia.org/wiki/Trim_\(computing\)) が有効になっていることを確認してください (通常は cronjob または systemd service で実装されます) 。
 
-<div id="file-system">
-  ## ファイルシステム
-</div>
+## ファイルシステム {#file-system}
 
 最も信頼性が高いのは Ext4 です。マウントオプションには `noatime` を設定してください。XFS も適しています。
 そのほかのほとんどのファイルシステムでも、通常は問題なく動作します。
@@ -124,24 +110,18 @@ FAT-32 と exFAT は、ハードリンクに対応していないためサポー
 
 ClickHouse は NFS 上でも動作しますが、最適な選択肢ではありません。
 
-<div id="linux-kernel">
-  ## Linux カーネル
-</div>
+## Linux カーネル {#linux-kernel}
 
 古い Linux カーネルは使用しないでください。
 
-<div id="network">
-  ## ネットワーク
-</div>
+## ネットワーク {#network}
 
 IPv6 を使用している場合は、ルートキャッシュのサイズを増やしてください。
 Linux カーネル 3.2 より前では、IPv6 の実装に多くの問題がありました。
 
 可能であれば、少なくとも 10 Gb のネットワークを使用してください。1 Gb でも動作はしますが、数十テラバイトのデータを持つレプリカの修復や、大量の中間データを伴う分散クエリの処理では、性能が大幅に低下します。
 
-<div id="huge-pages">
-  ## Huge Pages
-</div>
+## Huge Pages {#huge-pages}
 
 透過的 Huge Pages は、常に `madvise` に設定してください。古いカーネル (5.9 より前) では、THP を `always` に設定すると、パフォーマンスが大幅に低下することがあります。これは、特に 64 GB 以上の RAM を搭載したシステムで、カーネルがメモリのデフラグメンテーションに過剰な時間を費やすためです。カーネル 5.9 では proactive compaction が導入され、THP をより適切に処理できるようになりましたが、THP が `always` に設定されていると ClickHouse は起動時に引き続き警告を出します。そのため、カーネルのバージョンにかかわらず、推奨される設定は `madvise` です。
 
@@ -157,9 +137,7 @@ $ GRUB_CMDLINE_LINUX_DEFAULT="transparent_hugepage=madvise ..."
 
 その後、`sudo update-grub` コマンドを実行し、変更を反映させるために再起動します。
 
-<div id="hypervisor-configuration">
-  ## ハイパーバイザーの設定
-</div>
+## ハイパーバイザーの設定 {#hypervisor-configuration}
 
 OpenStack を使用している場合は、次を設定します
 
@@ -180,9 +158,7 @@ XML 設定で指定します。
 これは、ClickHouse が `cpuid` 命令から正しい情報を取得できるようにするために重要です。
 そうしないと、ハイパーバイザーが古い CPU モデル上で動作している場合に、`Illegal instruction` によるクラッシュが発生することがあります。
 
-<div id="zookeeper">
-  ## ClickHouse Keeper と ZooKeeper
-</div>
+## ClickHouse Keeper と ZooKeeper {#zookeeper}
 
 ClickHouse クラスターでは、ZooKeeper の置き換えとして ClickHouse Keeper の使用を推奨します。[ClickHouse Keeper](/ja/guides/oss/deployment-and-scaling/keeper/index) のドキュメントを参照してください。
 
@@ -254,12 +230,12 @@ preAllocSize=131072
 # is started. The default snapCount is 100000.
 snapCount=3000000
 
-# If this option is defined, requests will be will logged to a trace file named
+# If this option is defined, requests will be logged to a trace file named
 # traceFile.year.month.day.
 #traceFile=
 
 # Leader accepts client connections. Default value is "yes". The leader machine
-# coordinates updates. For higher update throughput at thes slight expense of
+# coordinates updates. For higher update throughput at the slight expense of
 # read throughput the leader can be configured to not accept clients and focus
 # on coordination.
 leaderServes=yes
@@ -338,14 +314,10 @@ script
 end script
 ```
 
-<div id="antivirus-software">
-  ## ウイルス対策ソフト
-</div>
+## ウイルス対策ソフト {#antivirus-software}
 
 ウイルス対策ソフトを使用している場合は、ClickHouse のデータファイル (`/var/lib/clickhouse`) があるフォルダーをスキャン対象から除外するよう設定してください。そうしないと、パフォーマンスが低下したり、データのインジェスト中やバックグラウンドでのマージ中に予期しないエラーが発生したりすることがあります。
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * [ClickHouse 入門で陥りがちな 13 の「致命的な落とし穴」とその回避方法](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

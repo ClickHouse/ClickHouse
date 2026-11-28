@@ -2,6 +2,7 @@
 #include <Core/QualifiedTableName.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB

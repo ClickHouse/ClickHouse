@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/DequeWithMemoryTracking.h>
+#include <Common/DevectorWithMemoryTracking.h>
 
 #include <queue>
 
@@ -20,5 +21,10 @@ namespace DB
 
 template <typename T>
 using QueueWithMemoryTracking = std::queue<T, DequeWithMemoryTracking<T>>;
+
+/// A queue that keeps its elements in a `devector`: a double-ended vector, so the elements stay
+/// contiguous and the queue is a smaller object than one backed by a `deque`.
+template <typename T>
+using DevectorQueueWithMemoryTracking = std::queue<T, DevectorWithMemoryTracking<T>>;
 
 }

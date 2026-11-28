@@ -7,8 +7,6 @@ sidebarTitle: 'التحليلات في الوقت الفعلي'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -22,29 +20,33 @@ export const ExclusiveGroup = ({ name, children }) => {
 يقوم العميل بتحديث لوحة معلومات، أو فتح لوحة المتصدرين، أو التحقيق في مشكلة، ويتوقع أن تعكس البيانات ما حدث للتو.
 ومن الناحية التقنية، لا يعني هذا مجرد تقديم استعلامات تحليلية منخفضة زمن الاستجابة، بل تحقيق ذلك مع إدخال البيانات باستمرار وبأحجام كبيرة.
 
-<div id="system-properties">
-  ## خصائص نظام للتحليلات في الوقت الفعلي
-</div>
+## خصائص نظام للتحليلات في الوقت الفعلي {#system-properties}
 
 عندما يقيّم العملاء منصة للتحليلات في الوقت الفعلي، فإنهم غالبًا ما يركّزون فقط على زمن استجابة الاستعلام. وسؤال &quot;هل يمكنه إرجاع إجابة خلال 50ms؟&quot; سؤالٌ منطقي، ويمكن لمعظم محركات التحليلات الإجابة عنه بصورة مقنعة إذا وفّرت لها موارد حوسبة كافية على مجموعة بيانات ثابتة.
 
-لكن السؤال الذي يحدّد ما يلمسه المستخدمون فعليًا أصعب من ذلك. وهو ما إذا كان النظام يستطيع إرجاع إجابة خلال 50ms **على بيانات وصلت قبل ثانية واحدة**، بينما لا تزال عملية استيعاب البيانات جارية، وفي الوقت نفسه يرسل مستخدمون آخرون استعلاماتهم أيضًا.
+لكن السؤال الذي يحدّد ما يلمسه المستخدمون فعليًا أصعب من ذلك. وهو ما إذا كان النظام يستطيع إرجاع إجابة خلال 50ms **على بيانات وصلت قبل ثانية واحدة**، بينما لا تزال عملية إدخال البيانات جارية، وفي الوقت نفسه يرسل مستخدمون آخرون استعلاماتهم أيضًا.
 
 يتطلّب إتاحة البيانات التفكير في الزمن الإجمالي اللازم للوصول إلى الرؤى، وهو يتكوّن من ثلاثة مكوّنات.
 
-* **الوقت اللازم لاستيعاب البيانات**: كم يستغرق وصول البيانات المُنشأة حديثًا إلى المنصة وتخزينها فيها بشكل دائم؟
-* **الوقت اللازم للتحويل والإعداد**: كم يستغرق تنظيف البيانات وإثراؤها وربطها وتجميعها مسبقًا أو تحديث البُنى المستخدمة لخدمة الاستعلامات (العروض المادية، والتجميعات التراكمية، والفهارس) التي تُنفَّذ عليها الاستعلامات فعليًا؟
+* **الوقت اللازم لإدخال البيانات**: كم يستغرق وصول البيانات المُنشأة حديثًا إلى المنصة وتخزينها فيها بشكل دائم؟
+* **الوقت اللازم للتحويل والإعداد**: كم يستغرق تنظيف البيانات وإثراؤها وربطها وتجميعها مسبقًا أو تحديث البُنى المستخدمة لخدمة الاستعلامات (العروض المُجسَّدة، والتجميعات التراكمية، والفهارس) التي تُنفَّذ عليها الاستعلامات فعليًا؟
 * **الوقت اللازم للاستعلام**: كم يستغرق تخطيط القراءة وتنفيذها بمجرد أن تصبح البيانات متاحة؟
 
-<Image img="/images/use-cases/rta-considerations.webp" alt="التحليلات في الوقت الفعلي: الوقت اللازم لاستيعاب البيانات وتحويلها والاستعلام عنها" />
-
-<div id="clickhouse-rta">
-  ## كيف يُمكّن ClickHouse التحليلات في الوقت الفعلي
+<div className="ch-image-lg">
+  <Frame>
+    ![التحليلات في الوقت الفعلي: الوقت اللازم لإدخال البيانات وتحويلها والاستعلام عنها](/images/use-cases/rta-considerations.webp)
+  </Frame>
 </div>
+
+## كيف يُمكّن ClickHouse التحليلات في الوقت الفعلي {#clickhouse-rta}
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="كيف يُمكّن ClickHouse التحليلات في الوقت الفعلي" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![كيف يُمكّن ClickHouse التحليلات في الوقت الفعلي](/images/use-cases/real-time-analytics-architecture.webp)
+      </Frame>
+    </div>
   </div>
 
   <ExclusiveGroup name="rta-arch">
@@ -56,9 +58,9 @@ export const ExclusiveGroup = ({ name, children }) => {
       </Accordion>
 
       <Accordion title="تحويلات البيانات والاستعلامات">
-        تجعل [Materialized views](/ar/concepts/features/materialized-views) التحويلات سلسة — إذ تُفعَّل تلقائيًا عند insert بيانات جديدة، فتستخرج البيانات وتجمّعها وتعدّلها فور وصولها من دون pipelines مخصصة. كما أن ربطها معًا يضيف مرونة معيارية.
+        تجعل [العروض المُجسَّدة](/ar/concepts/features/materialized-views) التحويلات سلسة — إذ تُفعَّل تلقائيًا عند insert بيانات جديدة، فتستخرج البيانات وتجمّعها وتعدّلها فور وصولها من دون pipelines مخصصة. كما أن ربطها معًا يضيف مرونة معيارية.
 
-        تكون queries على Materialized views سريعة للغاية لأن النتائج تُخزَّن في tables مخصصة. ويتضمن ClickHouse Cloud [query cache](/ar/concepts/features/performance/caches/query-cache) و[sparse indexes](/ar/concepts/features/performance/skip-indexes/skipping-indexes) و[projections](/ar/concepts/features/projections/projections) من دون أي تكلفة إضافية.
+        تكون الاستعلامات على العروض المُجسَّدة سريعة للغاية لأن النتائج تُخزَّن في tables مخصصة. ويتضمن ClickHouse Cloud [query cache](/ar/concepts/features/performance/caches/query-cache) و[الفهارس المتناثرة](/ar/concepts/features/performance/skip-indexes/skipping-indexes) و[projections](/ar/concepts/features/projections/projections) من دون أي تكلفة إضافية.
       </Accordion>
 
       <Accordion title="التطبيقات ولوحات المعلومات">

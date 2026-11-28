@@ -1,0 +1,20 @@
+LowCardinality
+9f4:e6e1:c77e:ffe8:49ac:6a6a:9f11:620f
+1.2.3.4
+100.115.72.131
+192.0.2.1
+1.2.3.4	1
+2001:db8::1	1
+9f4:e6e1:c77e:ffe8:49ac:6a6a:9f11:620f
+Nullable
+9f4:e6e1:c77e:ffe8:49ac:6a6a:9f11:620f
+\N
+1.2.3.4
+\N
+100.115.72.131
+\N
+192.0.2.1
+\N
+9f4:e6e1:c77e:ffe8:49ac:6a6a:9f11:620f
+\N
+an empty string in the data is still rejected

@@ -1,3 +1,4 @@
+#include <cmath>
 #include <type_traits>
 #include <base/bit_cast.h>
 #include <Functions/FunctionFactory.h>
@@ -31,6 +32,8 @@ template <typename T>
 requires std::is_same_v<T, Float32>
 inline T roundDownToPowerOfTwo(T x)
 {
+    if (std::isnan(x))
+        return x;
     return bit_cast<T>(bit_cast<UInt32>(x) & ~((1ULL << 23) - 1));
 }
 
@@ -38,6 +41,8 @@ template <typename T>
 requires std::is_same_v<T, Float64>
 inline T roundDownToPowerOfTwo(T x)
 {
+    if (std::isnan(x))
+        return x;
     return bit_cast<T>(bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
 }
 
@@ -57,6 +62,7 @@ inline T roundDownToPowerOfTwo(T)
   * - negative powers are also used (example: roundToExp2(0.7) = 0.5);
   * - if number is zero, return zero;
   * - if number is less than zero, the result is symmetrical: roundToExp2(x) = -roundToExp2(-x). (example: roundToExp2(-0.3) = -0.25);
+  * - if number is NaN, return it unchanged (zeroing the mantissa would turn it into infinity).
   */
 
 template <typename T>
@@ -64,6 +70,7 @@ struct RoundToExp2Impl
 {
     using ResultType = T;
     static constexpr const bool allow_string_or_fixed_string = false;
+    static constexpr auto signature = "(A : NativeNumber) -> A";
 
     static T apply(T x)
     {

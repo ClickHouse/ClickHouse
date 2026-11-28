@@ -8,8 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # failure-handling blocks with stub clients (many generator invocations plus polling loops),
 # which made the combined test cross the 60s per-test limit on the macOS fast-test runner.
 # The cheap marker/payload/phase-parsing assertions stay in the opt_in test so every platform
-# keeps a fast check of the diagnostics wiring, while this half is skipped on Darwin
-# (see ci/defs/darwin.skip).
+# keeps a fast check of the diagnostics wiring.
 
 GEN="$CURDIR/03008_deduplication.python"
 

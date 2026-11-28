@@ -11,8 +11,7 @@ SELECT '-- 1 untuple(arrayJoin(map)), three levels';
 SELECT t.keys AS label
 FROM (SELECT untuple(arrayJoin(m)) AS t
       FROM (SELECT map('a', 1, 'b', 0) AS m) AS mt) AS tt
-WHERE t.values > 0
-SETTINGS enable_analyzer = 1;
+WHERE t.values > 0;
 
 SELECT '-- 2 untuple of a named tuple, no arrayJoin';
 

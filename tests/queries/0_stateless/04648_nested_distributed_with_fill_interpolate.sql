@@ -13,9 +13,6 @@
 -- deterministic. The bug still shows through as a different multiset (per-node filling duplicates the
 -- fill rows: 12 rows instead of 10) or as the logical error, both independent of ordering.
 --
--- serialize_query_plan = 0 because WITH FILL is not supported in serialized sort descriptions
--- (serializeSortDescription throws NOT_IMPLEMENTED) and the CI `distributed plan` shard turns
--- serialize_query_plan on globally; this test exercises the (nested) shard read, not plan serialization.
 
 DROP TABLE IF EXISTS mt_04648;
 DROP TABLE IF EXISTS dist_04648;
@@ -26,7 +23,6 @@ INSERT INTO mt_04648 VALUES (10, 1), (20, 2), (30, 3), (40, 5);
 CREATE TABLE dist_04648 ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), mt_04648);
 CREATE TABLE merge_04648 ENGINE = Merge(currentDatabase(), '^dist_04648$');
 
-SET serialize_query_plan = 0;
 SET prefer_localhost_replica = 0;
 
 SELECT g, id FROM

@@ -1,14 +1,15 @@
 #include "config.h"
 
 #include <Backups/BackupFactory.h>
-#include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Backups/BackupIO_AzureBlobStorage.h>
 #include <Backups/BackupImpl.h>
 #include <Backups/BackupInfo.h>
+#include <Backups/BackupLocatorArchive.h>
 #include <Backups/BackupSourceAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <IO/Archives/ArchiveUtils.h>
@@ -17,6 +18,8 @@
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 
 #include <Poco/URI.h>
+
+#include <filesystem>
 
 #endif
 
@@ -31,11 +34,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace Setting
-{
-extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
-}
-
 #if USE_AZURE_BLOB_STORAGE
 namespace
 {
@@ -44,21 +42,7 @@ namespace
         AzureBlobStorage::ConnectionParams connection_params;
         String blob_path;
         String archive_name;
-        /// `blob_path` before a trailing archive filename is stripped off it.
-        String blob_path_with_archive;
     };
-
-    String removeFileNameFromURL(String & url)
-    {
-        Poco::URI url2{url};
-        String path = url2.getPath();
-        size_t slash_pos = path.find_last_of('/');
-        String file_name = path.substr(slash_pos + 1);
-        path.resize(slash_pos + 1);
-        url2.setPath(path);
-        url = url2.toString();
-        return file_name;
-    }
 
     String stripOneTrailingSlash(String str)
     {
@@ -178,7 +162,6 @@ namespace
                 "(storage account URL, container, path, account name, account key)");
         }
 
-        location.blob_path_with_archive = location.blob_path;
         if (hasRegisteredArchiveFileExtension(location.blob_path))
             location.archive_name = removeFileNameFromURL(location.blob_path);
         return location;
@@ -194,11 +177,15 @@ namespace
         /// Resolving it is still required: that is where `NAMED_COLLECTION` is enforced.
         if (!backup_info.id_arg.empty())
         {
-            backup_info.getNamedCollection(context);
+            (void)backup_info.getNamedCollection(context);
             return target;
         }
 
-        target.uri = resolveAzureBackupLocation(backup_info, context).blob_path_with_archive;
+        /// The key that is accessed: an archive is opened under the split-off `blob_path`.
+        const auto location = resolveAzureBackupLocation(backup_info, context);
+        target.uri = location.archive_name.empty()
+            ? location.blob_path
+            : String(std::filesystem::path(location.blob_path) / location.archive_name);
         return target;
     }
 
@@ -249,29 +236,13 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
         auto & connection_params = location.connection_params;
         String & blob_path = location.blob_path;
 
-        BackupImpl::ArchiveParams archive_params;
-        if (!location.archive_name.empty())
-        {
-            if (hasSupportedZipExtension(location.archive_name))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Zip archive format is not supported for AzureBlobStorage backups because zip requires seeking "
-                    "which object storage does not support efficiently. "
-                    "Use tar.gz or other tar-based formats instead");
+        if (hasSupportedZipExtension(location.archive_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Zip archive format is not supported for AzureBlobStorage backups because zip requires seeking "
+                "which object storage does not support efficiently. "
+                "Use tar.gz or other tar-based formats instead");
 
-            if (params.is_internal_backup)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
-
-            archive_params.archive_name = location.archive_name;
-            archive_params.compression_method = params.compression_method;
-            archive_params.compression_level = params.compression_level;
-            archive_params.password = params.password;
-            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
-        }
-        else
-        {
-            if (!params.password.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password is not applicable, backup cannot be encrypted");
-        }
+        auto archive_params = makeBackupArchiveParams(params, location.archive_name);
 
         if (params.open_mode == IBackup::OpenMode::UNLOCK)
         {
@@ -301,12 +272,11 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.write_settings,
                 params.context);
 
-            auto snapshot_reader_creator = [&](const String & endpoint, const String & container_name)
+#if CLICKHOUSE_CLOUD
+            auto snapshot_reader_creator = [&](const String & endpoint, const String & blob_namespace)
             {
-                connection_params.endpoint.storage_account_url = endpoint;
-                connection_params.endpoint.container_name = container_name;
                 return std::make_shared<BackupReaderAzureBlobStorage>(
-                    connection_params,
+                    makeSnapshotSourceConnectionParams(connection_params, endpoint, blob_namespace),
                     "",
                     params.allow_azure_native_copy,
                     params.read_settings,
@@ -315,6 +285,9 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
             };
 
             return std::make_unique<BackupImpl>(params, archive_params, reader, snapshot_reader_creator);
+#else
+            return std::make_unique<BackupImpl>(params, archive_params, reader);
+#endif
         }
 
         auto writer = std::make_shared<BackupWriterAzureBlobStorage>(
@@ -353,7 +326,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, source_access_fn);
+    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, source_access_fn, azureBackupSecretArguments());
 }
 
 }

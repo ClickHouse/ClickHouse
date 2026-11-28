@@ -28,8 +28,6 @@ SELECT sum(b), count(b), sum(a), count(a) FROM (SELECT a, b FROM test);
 
 SELECT sum(a), count(a) FROM ( SELECT CAST(materialize(1), 'LowCardinality(Nullable(Int32))') AS a) t;
 
-SET enable_analyzer = 1;
-
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count(b) * count(b) IGNORE NULLS FROM (SELECT b FROM test);
 

@@ -1,4 +1,4 @@
--- Tags: long, no-random-settings, no-random-merge-tree-settings
+-- Tags: long, no-random-settings, no-random-merge-tree-settings, no-msan
 -- no-random-settings, no-random-merge-tree-settings: Explain output may differ
 
 -- Unlike DISTINCT / GROUP BY, per-partition set building has no cost heuristic (the ordinary set fill is
@@ -17,6 +17,9 @@ SET max_block_size = 6540;
 -- The pretty EXPLAIN output decorates plan lines with tree-drawing characters; use the legacy format
 -- so the assertions below match plain `Pre-distinct: 1` lines.
 SET explain_query_plan_default = 'legacy';
+
+-- Keep the many `INSERT ... SELECT` setup statements synchronous; async inserts only slow this test down.
+SET async_insert = 0;
 
 -- { echo }
 

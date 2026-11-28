@@ -17,8 +17,8 @@ from abc import ABC, abstractmethod
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from datetime import datetime
-from pathlib import Path
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
 from shlex import quote
 from threading import Event, Thread
 from types import SimpleNamespace
@@ -298,22 +298,21 @@ class Shell:
             print("Process already terminated.")
             return
 
-        time_wait = 0
-        wait_interval = 5
+        # Grace period keyed on the readers finishing (`finished`), not on the
+        # leader's own exit. The leader may already be dead while a backgrounded
+        # descendant keeps stdout/stderr open; polling process.poll() here would
+        # return immediately and skip the SIGKILL, leaving a SIGTERM-ignoring
+        # descendant to block the reader threads forever.
+        if finished.wait(100):
+            return
 
-        # Wait for process to terminate
-        while process.poll() is None and time_wait < 100:
-            print("Waiting for process to exit...")
-            time.sleep(wait_interval)
-            time_wait += wait_interval
-
-        # Force kill if still running
-        if process.poll() is None:
-            print("WARNING: Process still running after SIGTERM, sending SIGKILL")
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                print("Process already terminated.")
+        # Still not done after the grace period: escalate to SIGKILL on the whole
+        # group, even when the leader itself has already exited.
+        print("WARNING: Process still running after SIGTERM, sending SIGKILL")
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            print("Process already terminated.")
 
     @classmethod
     def run(
@@ -627,18 +626,19 @@ class Utils:
         return datetime.now().timestamp()
 
     @staticmethod
-    def timestamp_to_str(timestamp):
-        return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+    def to_datetime(value, input_format="unix"):
+        if input_format == "unix":
+            return datetime.fromtimestamp(value, timezone.utc)
+        if input_format == "iso":
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        raise ValueError(f"Unsupported datetime input format [{input_format}]")
 
     @staticmethod
-    def timestamp_to_gh_str(timestamp):
-        """UTC timestamp as GitHub writes them, e.g. `2026-08-24T15:49:43Z`."""
-        return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    @staticmethod
-    def gh_str_to_datetime(gh_str):
-        """Parse a GitHub UTC timestamp (`2026-08-24T15:49:43Z`) tz-aware."""
-        return datetime.fromisoformat(gh_str.replace("Z", "+00:00"))
+    def timestamp_to_str(timestamp, input_format="unix"):
+        dt = Utils.to_datetime(timestamp, input_format=input_format)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
     def get_failed_tests_number(description: str) -> Optional[int]:
@@ -756,14 +756,38 @@ class Utils:
     ) -> List["str"]:
         included_files_ = set()
         for path in include_paths:
-            included_files_.update(cls.traverse_path(path, file_suffixes=file_suffixes))
+            included_files_.update(
+                cls.traverse_path(
+                    path, file_suffixes=file_suffixes, not_exists_ok=not_exists_ok
+                )
+            )
 
-        exclude_paths = ["./" + p.removeprefix("./") for p in exclude_paths]
-        res = [
-            f
-            for f in included_files_
-            if not any(f.startswith(exclude_path) for exclude_path in exclude_paths)
-        ]
+        def is_excluded(file):
+            # Matching follows the digest-config semantics used by
+            # Job.CacheDigestConfig.is_excluded and Job.Config.is_affected_by:
+            # an exclude is an exact path, a directory prefix on a path
+            # boundary, or a glob. A plain startswith check silently ignores
+            # glob entries (an include may be a glob, so an exclude written the
+            # same way must work too) and also swallows sibling paths that
+            # merely share a name prefix.
+            #
+            # full_match (Python 3.13+, the interpreter CI runs on) is the only
+            # matcher with correct glob semantics: `**` spans any number of
+            # directories while a plain `*` stays within a single path segment,
+            # so patterns like `./**/*.pyc` (ci/praktika/cache.py) and
+            # `./inc/**/generated/*.py` match exactly the files they name.
+            file = os.path.normpath(file)
+            for exclude_path in exclude_paths:
+                exclude_path = os.path.normpath(exclude_path)
+                if file == exclude_path or file.startswith(exclude_path + os.sep):
+                    return True
+                if any(c in exclude_path for c in "*?[") and PurePosixPath(
+                    file
+                ).full_match(exclude_path):
+                    return True
+            return False
+
+        res = [f for f in included_files_ if not is_excluded(f)]
         if sorted:
             res.sort(reverse=True)
         return res
@@ -812,7 +836,7 @@ class Utils:
                         path_out = str(dest_path)
 
                 Shell.check(
-                    f"cd {parent} && tar -cf - {name} | zstd -c > {quote(path_out)}",
+                    f"cd {parent} && tar -cf - {name} | zstd -c -T0 > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
@@ -830,7 +854,7 @@ class Utils:
                         path_out = str(dest_path)
 
                 Shell.check(
-                    f"rm -f {quote(path_out)} && zstd -c {quote(path)} > {quote(path_out)}",
+                    f"rm -f {quote(path_out)} && zstd -c -T0 {quote(path)} > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
@@ -840,10 +864,12 @@ class Utils:
     def fix_ownership_after_docker(path, docker_image: str) -> None:
         uid = os.getuid()
         gid = os.getgid()
-        Shell.run(
+        if Shell.run(
             f"docker run --rm --user root --volume {path}:{path} {docker_image} chown -R {uid}:{gid} {path}",
             verbose=True,
-        )
+        ) != 0:
+            # The docker daemon can go away together with the job container.
+            Shell.run(f"sudo -n chown -R {uid}:{gid} {quote(str(path))}", verbose=True)
 
     @classmethod
     def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:

@@ -1,0 +1,8 @@
+-- volatile table functions
+1	3
+2	3
+3	5
+-- join overflow without buffer
+1	1
+2	1
+3	2

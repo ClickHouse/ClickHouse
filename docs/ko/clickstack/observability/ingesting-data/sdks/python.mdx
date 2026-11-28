@@ -1,0 +1,91 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/python
+description: 'ClickHouse Observability 및 자가 관리형 배포 환경에서 Python을 설정하고 구성하는 방법을 설명합니다.'
+title: 'Python'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+sidebarTitle: 'Python'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+ClickStack Python SDK를 사용하면 로그와 trace를 ClickHouse Observability로 전송할 수 있습니다. 이 SDK는 `hyperdx-opentelemetry` 패키지로 배포되는 OpenTelemetry 배포판으로, 지원되는 Python 라이브러리와 프레임워크를 자동으로 계측합니다.
+
+<ClickStackIntegrates signals={['logs', 'traces']} />
+
+## SDK 설치 {#install-the-sdk}
+
+애플리케이션의 Python 환경에 [ClickStack Python SDK](https://github.com/hyperdxio/hyperdx-py)를 설치합니다:
+
+```shell
+pip install hyperdx-opentelemetry
+opentelemetry-bootstrap -a install
+```
+
+부트스트랩 명령은 애플리케이션에 설치된 의존성에 맞는 instrumentation을 설치합니다. 따라서 의존성을 모두 설치한 후에 이 명령을 실행하십시오.
+
+## 대상 구성 {#configure-destination}
+
+<Tabs>
+  <Tab title="완전 관리형">
+    <BetaBadge label="베타 제공" />
+
+    서비스에서 **팀 설정 → 데이터 → Managed Telemetry**를 열고 **OTLP HTTP 엔드포인트**와 **API Key**를 복사하십시오. 포트를 포함한 전체 HTTPS 엔드포인트를 사용하십시오.
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export HYPERDX_API_KEY='Bearer YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_SERVICE_NAME='my-python-app'
+    ```
+  </Tab>
+
+  <Tab title="자가 관리형">
+    collector의 OTLP HTTP 엔드포인트와 수집 키를 사용하십시오. collector에 TLS가 구성되어 있지 않다면 `https://` 대신 `http://`를 사용하십시오. collector 설정 방법은 [OpenTelemetry로 데이터 수집하기](/ko/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured)를 참조하십시오.
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export HYPERDX_API_KEY='YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_SERVICE_NAME='my-python-app'
+    ```
+  </Tab>
+</Tabs>
+
+## 애플리케이션 시작하기 {#start-your-application}
+
+자동 계측을 적용하여 애플리케이션을 실행하십시오.
+
+```shell
+export OTEL_LOG_LEVEL='warning'
+export OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION='false'
+opentelemetry-instrument python app.py
+```
+
+`app.py`를 애플리케이션의 진입 파일로 바꾸십시오.
+
+`OTEL_LOG_LEVEL`은 SDK의 로깅 수준을 설정합니다. 아래 테스트 메시지를 수집하려면 `warning`으로 설정하고, 심각도가 더 낮은 애플리케이션 로그까지 수집하려면 `info`로 설정하십시오. 수준을 구성하지 않으면 SDK는 기본값인 `ERROR`를 사용합니다.
+
+ClickStack SDK는 이미 로그 익스포터를 설치합니다. `OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION=false`로 설정하면 OpenTelemetry의 로깅 instrumentation이 익스포터를 하나 더 추가하여 로그 레코드가 중복되는 것을 막을 수 있습니다. 이 경우에도 SDK는 계속 로그를 내보냅니다.
+
+## 수집 확인 {#verify-ingestion}
+
+애플리케이션에 요청을 보내고 `WARNING` 수준 이상의 Python 로그 메시지를 출력하십시오. 그런 다음 ClickHouse Observability에서 최근 시간 범위를 선택하고 로그 또는 trace에서 `my-python-app`(또는 직접 구성한 서비스 이름)을 검색하십시오.
+
+## 선택적 구성 {#optional-configuration}
+
+HTTP 요청 헤더와 본문을 수집하려면 애플리케이션을 시작하기 전에 고급 네트워크 캡처를 활성화하십시오.
+
+```shell
+export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
+```
+
+요청 헤더와 본문에는 민감한 데이터가 포함될 수 있습니다. 수집하려는 데이터에 한해서만 캡처를 활성화하십시오.
+
+## 문제 해결 {#troubleshooting}
+
+로그가 누락된 경우 `OTEL_LOG_LEVEL`과 애플리케이션의 로거 및 핸들러 레벨을 확인하십시오. 수집하려는 메시지의 심각도(severity)가 포함되도록 레벨을 설정하십시오.
+
+instrumentation 및 익스포터 관련 문제 해결은 [OpenTelemetry Python 문제 해결 가이드](https://opentelemetry.io/docs/zero-code/python/troubleshooting/)를 참조하십시오.

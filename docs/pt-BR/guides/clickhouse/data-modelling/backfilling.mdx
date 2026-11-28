@@ -1,21 +1,19 @@
 ---
 slug: /data-modeling/backfilling
-title: 'Backfill de dados'
-description: 'Como fazer backfill de grandes volumes de dados no ClickHouse'
-keywords: ['visões materializadas', 'backfilling', 'inserção de dados', 'carga de dados resiliente']
+title: 'Carregamento de dados históricos'
+description: 'Como fazer carregamento de dados históricos de grandes volumes de dados no ClickHouse'
+keywords: ['visões materializadas', 'carregamento de dados históricos', 'inserção de dados', 'carga de dados resiliente']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
-Seja você iniciante no ClickHouse ou responsável por uma implantação existente, inevitavelmente precisará preencher tabelas retroativamente com dados históricos. Em alguns casos, isso é relativamente simples, mas pode se tornar mais complexo quando visões materializadas precisam ser populadas. Este guia descreve alguns processos para essa tarefa que você pode aplicar ao seu caso de uso.
+Seja você iniciante no ClickHouse ou responsável por uma implantação existente, inevitavelmente precisará realizar o carregamento de dados históricos em tabelas. Em alguns casos, isso é relativamente simples, mas pode se tornar mais complexo quando visões materializadas precisam ser populadas. Este guia descreve alguns processos para essa tarefa que você pode aplicar ao seu caso de uso.
 
 <Note>
   Este guia pressupõe que os usuários já estejam familiarizados com o conceito de [visões materializadas incrementais](/pt-BR/concepts/features/materialized-views/incremental-materialized-view) e [carregamento de dados com funções de tabela, como s3 e gcs](/pt-BR/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse). Também recomendamos que os usuários leiam nosso guia sobre [como otimizar o desempenho de inserção a partir do armazenamento de objetos](/pt-BR/integrations/connectors/data-ingestion/AWS/performance), cujas orientações podem ser aplicadas às inserções ao longo deste guia.
 </Note>
 
 <div id="example-dataset">
-  ## Conjunto de dados de exemplo
+  ## Conjunto de dados de exemplo {#example-dataset}
 </div>
 
 Ao longo deste guia, usamos um conjunto de dados do PyPI. Cada linha desse conjunto de dados representa o download de um pacote Python usando uma ferramenta como `pip`.
@@ -72,7 +70,7 @@ SETTINGS describe_compact_output = 1
 </Note>
 
 <div id="backfilling-scenarios">
-  ## Cenários de backfill
+  ## Cenários de backfill {#backfilling-scenarios}
 </div>
 
 O backfill normalmente é necessário quando um fluxo de dados começa a ser consumido a partir de um determinado ponto no tempo. Esses dados são inseridos em tabelas do ClickHouse com [visões materializadas incrementais](/pt-BR/concepts/features/materialized-views/incremental-materialized-view), que são acionadas por bloco à medida que os dados são inseridos. Essas visões materializadas podem transformar os dados antes da inserção ou calcular agregações e enviar os resultados para tabelas de destino para uso posterior em aplicações downstream.
@@ -87,7 +85,7 @@ Pressupomos que o backfill será feito a partir do armazenamento de objetos. Em 
 Recomendamos fazer o backfill de dados históricos a partir do armazenamento de objetos. Sempre que possível, os dados devem ser exportados para Parquet para obter desempenho de leitura e compressão ideais (reduzindo a transferência pela rede). Em geral, prefere-se um tamanho de arquivo em torno de 150 MB, mas o ClickHouse oferece suporte a mais de [70 formatos de arquivo](/pt-BR/reference/formats/index) e é capaz de lidar com arquivos de todos os tamanhos.
 
 <div id="using-duplicate-tables-and-views">
-  ## Usando tabelas duplicadas e views
+  ## Usando tabelas duplicadas e views {#using-duplicate-tables-and-views}
 </div>
 
 Em todos os cenários, utilizamos o conceito de &quot;tabelas e visões duplicadas&quot;. Essas tabelas e visões representam cópias das utilizadas para os dados de streaming em tempo real e permitem que o backfill seja realizado de forma isolada, com um mecanismo simples de recuperação em caso de falha. Por exemplo, temos a seguinte tabela principal `pypi` e visão materializada, que calcula o número de downloads por projeto Python:
@@ -301,7 +299,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-
 </Note>
 
 <div id="scenario-1-backfilling-data-with-existing-data-ingestion">
-  ## Cenário 1: Backfill de dados com ingestão de dados existente
+  ## Cenário 1: Backfill de dados com ingestão de dados existente {#scenario-1-backfilling-data-with-existing-data-ingestion}
 </div>
 
 Neste cenário, assumimos que os dados a serem submetidos a backfill não estão em um bucket isolado e, portanto, é necessário aplicar filtros. Os dados já estão sendo inseridos, e é possível identificar um timestamp ou uma coluna monotonicamente crescente a partir dos quais os dados históricos precisam ser restaurados.
@@ -372,7 +370,7 @@ Se os dados históricos estiverem em um bucket isolado, o filtro de tempo acima 
 </Info>
 
 <div id="scenario-2-adding-materialized-views-to-existing-tables">
-  ## Cenário 2: Adicionar visões materializadas a tabelas existentes
+  ## Cenário 2: Adicionar visões materializadas a tabelas existentes {#scenario-2-adding-materialized-views-to-existing-tables}
 </div>
 
 Não é incomum precisar adicionar novas visões materializadas a uma configuração em que um volume significativo de dados já foi carregado e novos dados continuam sendo inseridos. Uma coluna `timestamp` ou monotonicamente crescente, que possa ser usada para identificar um ponto no fluxo, é útil nesse caso e evita pausas na ingestão de dados. Nos exemplos abaixo, assumimos ambos os casos e priorizamos abordagens que evitem pausas na ingestão.
@@ -384,7 +382,7 @@ Não é incomum precisar adicionar novas visões materializadas a uma configura�
 </Info>
 
 <div id="timestamp-or-monotonically-increasing-column-available">
-  ### Timestamp ou coluna monotonicamente crescente disponível
+  ### Timestamp ou coluna monotonicamente crescente disponível {#timestamp-or-monotonically-increasing-column-available}
 </div>
 
 Nesse caso, recomendamos que a nova visão materializada inclua um filtro que restrinja as linhas àquelas posteriores a uma data arbitrária no futuro. Em seguida, a visão materializada pode receber backfill a partir dessa data usando dados históricos da tabela principal. A abordagem de backfill depende do volume de dados e da complexidade da consulta associada.
@@ -470,15 +468,17 @@ Nesse caso, os usuários têm várias opções:
 
 Exploramos (2) em mais detalhes abaixo.
 
-<div id="using-a-null-table-engine-for-filling-materialized-views">
-  #### Usando o Null table engine para popular visões materializadas
-</div>
+#### Usando o Null table engine para popular visões materializadas {#using-a-null-table-engine-for-filling-materialized-views}
 
 O [Null table engine](/pt-BR/reference/engines/table-engines/special/null) fornece um motor de armazenamento que não persiste dados (pense nele como o `/dev/null` do mundo dos motores de tabela). Embora isso pareça contraditório, as visões materializadas ainda serão executadas sobre os dados inseridos nesse motor de tabela. Isso permite construir visões materializadas sem persistir os dados originais, evitando E/S e o armazenamento associado.
 
 É importante destacar que quaisquer visões materializadas associadas ao motor de tabela ainda são executadas sobre blocos de dados à medida que são inseridos, enviando seus resultados para uma tabela de destino. Esses blocos têm tamanho configurável. Embora blocos maiores possam ser potencialmente mais eficientes (e mais rápidos de processar), eles consomem mais recursos (principalmente memória). O uso desse motor de tabela significa que podemos construir nossa visão materializada de forma incremental, isto é, um bloco por vez, evitando a necessidade de manter toda a agregação em memória.
 
-<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="Desnormalização no ClickHouse" />
+<div className="ch-image-md">
+  <Frame>
+    ![Desnormalização no ClickHouse](/images/data-modeling/null_table_mv.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -523,7 +523,7 @@ Peak memory usage: 639.47 MiB.
 Observe que o uso de memória aqui é de `639.47 MiB`.
 
 <div id="tuning-performance--resources">
-  ##### Ajuste de desempenho &amp; recursos
+  ##### Ajuste de desempenho &amp; recursos {#tuning-performance--resources}
 </div>
 
 Vários fatores determinarão o desempenho e os recursos utilizados no cenário acima. Antes de tentar fazer ajustes, recomendamos que os leitores compreendam os mecanismos de inserção documentados em detalhes na seção [Using Threads for Reads](/pt-BR/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) do [Optimizing for S3 Insert and Read Performance guide](/pt-BR/integrations/connectors/data-ingestion/AWS/performance). Em resumo:
@@ -595,7 +595,7 @@ Peak memory usage: 218.64 MiB.
 Por fim, esteja ciente de que reduzir os tamanhos de bloco gera mais partes e aumenta a pressão sobre as mesclagens. Como discutido [aqui](/pt-BR/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges), essas configurações devem ser alteradas com cautela.
 
 <div id="no-timestamp-or-monotonically-increasing-column">
-  ### Sem timestamp ou coluna monotonicamente crescente
+  ### Sem timestamp ou coluna monotonicamente crescente {#no-timestamp-or-monotonically-increasing-column}
 </div>
 
 Os processos acima dependem de o usuário ter uma coluna de timestamp ou uma coluna monotonicamente crescente. Em alguns casos, isso simplesmente não está disponível. Nesse caso, recomendamos o processo a seguir, que aproveita muitas das etapas descritas anteriormente, mas exige que os usuários pausem a ingestão.

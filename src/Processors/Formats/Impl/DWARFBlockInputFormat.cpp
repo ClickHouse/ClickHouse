@@ -2,12 +2,13 @@
 #include <Common/CurrentThread.h>
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <llvm/DebugInfo/DWARF/DWARFFormValue.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugRnglists.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugRangeList.h>
 #include <llvm/BinaryFormat/Dwarf.h>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -99,10 +100,10 @@ static NamesAndTypesList getHeaderForDWARF()
     return NamesAndTypesList(cols.begin(), cols.end());
 }
 
-static const std::unordered_map<std::string, size_t> & getColumnNameToIdx()
+static const UnorderedMapWithMemoryTracking<std::string, size_t> & getColumnNameToIdx()
 {
     static std::once_flag once;
-    static std::unordered_map<std::string, size_t> name_to_idx;
+    static UnorderedMapWithMemoryTracking<std::string, size_t> name_to_idx;
     std::call_once(once, [&] {
         size_t i = 0;
         for (const auto & c : getHeaderForDWARF())
@@ -136,14 +137,61 @@ static size_t getColumnIdx(const std::string & name)
     return it->second;
 }
 
-DWARFBlockInputFormat::UnitState::UnitState(llvm::DWARFUnit * u)
+/// `tryExtractDIEsIfNeeded` makes LLVM parse the unit DIE. LLVM advances the offset by the length of a block or
+/// a fixed-size form without checking it against the section (see `checkAttributeEnd`), so a malformed length
+/// made it read past the end of the section on the next attribute. Walk the unit DIE the same way with checks first.
+/// `data` is truncated at the end of the unit, so this walk itself does not read the next unit, and LLVM parses
+/// the unit DIE only if all its attributes are within the unit.
+static void checkUnitDie(
+    const llvm::DWARFUnit & unit, const llvm::DWARFAbbreviationDeclarationSet & abbrevs, const llvm::DWARFDataExtractor & data,
+    uint64_t end_offset)
+{
+    const uint64_t end = data.size();
+    uint64_t offset = unit.getOffset() + unit.getHeaderSize();
+    /// Leave other errors to LLVM, which reports them.
+    if (offset >= end)
+        return;
+    auto err = llvm::Error::success();
+    uint64_t abbrev_code = data.getULEB128(&offset, &err);
+    if (err)
+        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Failed to parse the unit entry at offset {}: {}", unit.getOffset(), llvm::toString(std::move(err)));
+    if (abbrev_code == 0 || abbrev_code > UINT32_MAX)
+        return;
+    const auto * abbrev = abbrevs.getAbbreviationDeclaration(static_cast<uint32_t>(abbrev_code));
+    if (!abbrev)
+        return;
+    for (const auto & attr : abbrev->attributes())
+    {
+        const uint64_t attr_offset = offset;
+        if (auto size = attr.getByteSize(unit))
+            offset += *size;
+        else if (!llvm::DWARFFormValue::skipValue(attr.Form, data, &offset, unit.getFormParams()))
+            return;
+        /// `skipValue` does not advance the offset if the string is not terminated within the unit.
+        if (attr.Form == llvm::dwarf::DW_FORM_string && offset == attr_offset)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+                "String attribute {} of the unit entry is not terminated before the end of the unit {}",
+                llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), end_offset);
+        /// A huge length makes the offset wrap around.
+        if (offset < attr_offset || offset > end)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+                "Attribute {} of form {} of the unit entry goes past the end of the unit: offset {}, end of unit {}",
+                llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, offset, end_offset);
+    }
+}
+
+DWARFBlockInputFormat::UnitState::UnitState(llvm::DWARFUnit * u, const llvm::DWARFDataExtractor & section_data)
     : dwarf_unit(u), end_offset(dwarf_unit->getNextUnitOffset())
+    /// Offsets stay relative to the start of the section.
+    , data(section_data, std::min<uint64_t>(end_offset, section_data.size()))
     , offset(dwarf_unit->getOffset() + dwarf_unit->getHeaderSize())
 {
     /// This call is not thread safe, so we do it during initialization.
     abbrevs = dwarf_unit->getAbbreviations();
     if (abbrevs == nullptr)
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Couldn't find abbreviation set for unit at offset {}", dwarf_unit->getOffset());
+
+    checkUnitDie(*u, *abbrevs, data, end_offset);
 
     /// This call initializes some data structures inside DWARFUnit that are needed for parsing attributes.
     auto err = u->tryExtractDIEsIfNeeded(/*CUDieOnly*/ true);
@@ -285,7 +333,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
     dwarf_context = llvm::DWARFContext::create(sections, /*AddrSize*/ 8);
 
     for (std::unique_ptr<llvm::DWARFUnit> & unit : dwarf_context->info_section_units())
-        units_queue.emplace_back(unit.get());
+        units_queue.emplace_back(unit.get(), *extractor);
 
     LOG_DEBUG(getLogger("DWARF"), "{} units, reading in {} threads", units_queue.size(), num_threads);
 
@@ -353,16 +401,32 @@ static inline void throwIfError(llvm::Error & e, const char * what)
     throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Failed to parse {}: {}", what, llvm::toString(std::move(e)));
 }
 
+/// LLVM advances the offset by the length of a block or a fixed-size form without checking it against the
+/// section (LEB128 decoding checks the offset only with an assertion), so every following read would start
+/// past the end of the section. Attributes are read from `UnitState::data`, which ends at the end of the unit,
+/// so the bytes of the next unit are never read, and the offset is checked after each attribute.
+/// The offset is advanced with plain unsigned addition, so a huge length makes it wrap around to before the start of the attribute.
+void DWARFBlockInputFormat::checkAttributeEnd(
+    const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t attr_offset, uint64_t offset, const UnitState & unit) const
+{
+    if (offset < attr_offset || offset > unit.data.size())
+        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+            "Attribute {} of form {} goes past the end of the unit: offset {}, end of unit {}",
+            llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, offset, unit.end_offset);
+}
+
 llvm::DWARFFormValue DWARFBlockInputFormat::parseAttribute(
     const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
     const UnitState & unit) const
 {
+    const uint64_t attr_offset = *offset;
     auto val = llvm::DWARFFormValue::createFromSValue(
         attr.Form, attr.isImplicitConst() ? attr.getImplicitConstValue() : 0);
-    if (!val.extractValue(*extractor, offset, unit.dwarf_unit->getFormParams(), unit.dwarf_unit))
+    if (!val.extractValue(unit.data, offset, unit.dwarf_unit->getFormParams(), unit.dwarf_unit))
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
             "Failed to parse attribute {} of form {} at offset {}",
                 llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
+    checkAttributeEnd(attr, attr_offset, *offset, unit);
     return val;
 }
 
@@ -379,11 +443,18 @@ void DWARFBlockInputFormat::skipAttribute(
     }
     else
     {
+        const uint64_t attr_offset = *offset;
         if (!llvm::DWARFFormValue::skipValue(
-            attr.Form, *extractor, offset, unit.dwarf_unit->getFormParams()))
+            attr.Form, unit.data, offset, unit.dwarf_unit->getFormParams()))
                 throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
                     "Failed to skip attribute {} of form {} at offset {}",
                     llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
+        /// `skipValue` does not advance the offset if the string is not terminated within the unit.
+        if (attr.Form == llvm::dwarf::DW_FORM_string && *offset == attr_offset)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+                "String attribute {} at offset {} is not terminated before the end of the unit {}",
+                llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr_offset, unit.end_offset);
+        checkAttributeEnd(attr, attr_offset, *offset, unit);
     }
 }
 
@@ -443,16 +514,16 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
             col_offset->insertValue(die_offset);
         if (need[COL_ANCESTOR_TAGS])
         {
-            for (size_t i = unit.stack.size() - 1; i != UINT64_MAX; --i)
+            for (auto it = unit.stack.rbegin(); it != unit.stack.rend(); ++it)
             {
-                col_ancestor_tags->insertValue(unit.stack[i].tag);
+                col_ancestor_tags->insertValue(it->tag);
                 if (need[COL_ANCESTOR_OFFSETS])
-                    col_ancestor_dwarf_offsets->insertValue(unit.stack[i].offset);
+                    col_ancestor_dwarf_offsets->insertValue(it->offset);
             }
             col_ancestor_array_offsets->insertValue(col_ancestor_tags->size());
         }
 
-        uint64_t abbrev_code = extractor->getULEB128(&unit.offset, &err);
+        uint64_t abbrev_code = unit.data.getULEB128(&unit.offset, &err);
         throwIfError(err, "DIE header");
 
         if (abbrev_code == 0)
@@ -1022,22 +1093,6 @@ Chunk DWARFBlockInputFormat::read()
 
         deliver_chunk.wait(lock);
     }
-}
-
-void DWARFBlockInputFormat::resetParser()
-{
-    stopThreads();
-
-    runner.reset();
-    background_exception = nullptr;
-    is_stopped = false;
-    units_queue.clear();
-    delivery_queue.clear();
-    units_in_progress = 0;
-    elf.reset();
-    extractor.reset();
-
-    IInputFormat::resetParser();
 }
 
 DWARFSchemaReader::DWARFSchemaReader(ReadBuffer & in_)

@@ -12,6 +12,7 @@
 #include <boost/integer/common_factor.hpp>
 #include <libdivide-config.h>
 #include <libdivide.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -26,7 +27,8 @@ class CompressionCodecGCD : public ICompressionCodec
 public:
     explicit CompressionCodecGCD(UInt8 gcd_bytes_size_, bool is_signed_type_);
 
-    uint8_t getMethodByte() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -34,11 +36,11 @@ protected:
     /// 1 byte (`gcd_bytes_size` value) + 1 byte (`bytes_to_skip` value) + `bytes_to_skip` bytes (trash) + `gcd_bytes_size` bytes (gcd value) + (`source_size` - `bytes_to_skip`) bytes (data)
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    bool isCompression() const override { return false; }
-    bool isGenericCompression() const override { return false; }
-    String getDescription() const override
+    [[nodiscard]] bool isCompression() const override { return false; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] String getDescription() const override
     {
         return "Preprocessor. Greatest common divisor compression; divides values by a common divisor; effective for divisible integer sequences.";
     }
@@ -62,7 +64,11 @@ CompressionCodecGCD::CompressionCodecGCD(UInt8 gcd_bytes_size_, bool is_signed_t
     : gcd_bytes_size(gcd_bytes_size_)
     , is_signed_type(is_signed_type_)
 {
-    setCodecDescription("GCD", {});
+}
+
+ASTPtr CompressionCodecGCD::getCodecDescription() const
+{
+    return makeCodecDescription("GCD");
 }
 
 UInt32 CompressionCodecGCD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -79,7 +85,7 @@ uint8_t CompressionCodecGCD::getMethodByte() const
 
 void CompressionCodecGCD::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(gcd_bytes_size);
     hash.update(is_signed_type);
 }
@@ -88,7 +94,8 @@ namespace
 {
 
 template <typename T>
-void compressDataForType(const char * source, UInt32 source_size, char * dest, bool is_signed)
+/// Negating the quotient of the most negative value only exists modulo 2^N, as with the magnitude.
+void NO_SANITIZE_UNSIGNED_OVERFLOW compressDataForType(const char * source, UInt32 source_size, char * dest, bool is_signed)
 {
     /// T must be unsigned even when `is_signed` is true, because the codec's arithmetic needs
     /// well-defined modulo-2^N semantics, which only unsigned types provide: the magnitude of the
@@ -102,7 +109,8 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest, b
 
     /// Return the unsigned magnitude of a raw value, handling signed wrap-around.
     using S = make_signed_t<T>;
-    auto toMagnitude = [is_signed](T val) -> T
+    /// The magnitude of the most negative value only exists modulo 2^N, which is what GCD stores.
+    auto toMagnitude = [is_signed](T val) NO_SANITIZE_UNSIGNED_OVERFLOW -> T
     {
         return (is_signed && static_cast<S>(val) < S(0)) ? T(0) - val : val;
     };
@@ -161,8 +169,9 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest, b
     }
 }
 
+/// Multiplying the quotients back by the GCD wraps modulo 2^N, which is how the codec round-trips.
 template <typename T>
-UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
+UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
     const char * original_dest = dest;
     if (source_size % sizeof(T) != 0)
@@ -192,7 +201,9 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
     {
         if (dest + sizeof(T) > dest_end) [[unlikely]]
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data");
-        unalignedStore<T>(dest, unalignedLoad<T>(source) * gcd_multiplier);
+        /// A type narrower than `int` is promoted to the signed `int`, where the product of two large values overflows.
+        using Product = std::conditional_t<(sizeof(T) < sizeof(unsigned)), unsigned, T>;
+        unalignedStore<T>(dest, static_cast<T>(static_cast<Product>(unalignedLoad<T>(source)) * static_cast<Product>(gcd_multiplier)));
 
         source += sizeof(T);
         dest += sizeof(T);
@@ -286,20 +297,27 @@ UInt32 CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_
 namespace
 {
 
-std::pair<UInt8, bool> getGCDTypeInfo(const IDataType * column_type)
+/// Returns nullopt if the codec is not applicable to the type and `throw_if_not_applicable` is false.
+std::optional<std::pair<UInt8, bool>> getGCDTypeInfo(const IDataType & column_type, bool throw_if_not_applicable)
 {
     WhichDataType which(column_type);
     if (!(which.isInt() || which.isUInt() || which.isDecimal() || which.isDateOrDate32() || which.isDateTime() ||which.isDateTime64()))
+    {
+        if (!throw_if_not_applicable)
+            return {};
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec GCD cannot be applied to column {} because it can only be used with Int*, UInt*, Decimal*, Date* or DateTime* types.",
-            column_type->getName());
+            column_type.getName());
+    }
 
-    size_t max_size = column_type->getSizeOfValueInMemory();
+    size_t max_size = column_type.getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8 || max_size == 16 || max_size == 32)
-        return {static_cast<UInt8>(max_size), !column_type->isValueRepresentedByUnsignedInteger()};
+        return std::pair<UInt8, bool>{static_cast<UInt8>(max_size), !column_type.isValueRepresentedByUnsignedInteger()};
+    if (!throw_if_not_applicable)
+        return {};
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Codec GCD is only applicable for data types of size 1, 2, 4, 8, 16, 32 bytes. Given type {}",
-        column_type->getName());
+        column_type.getName());
 }
 
 }
@@ -318,11 +336,12 @@ void registerCodecGCD(CompressionCodecFactory & factory)
         /// Unlike `T64`, `GCD` intentionally does not throw when type information is missing.
         /// This still preserves correctness, but for signed data it can degrade divisor discovery and therefore compression efficiency.
         if (column_type)
-            std::tie(gcd_bytes_size, is_signed_type) = getGCDTypeInfo(column_type);
+            std::tie(gcd_bytes_size, is_signed_type) = *getGCDTypeInfo(*column_type, /*throw_if_not_applicable=*/ true);
 
         return std::make_shared<CompressionCodecGCD>(gcd_bytes_size, is_signed_type);
     };
-    factory.registerCompressionCodecWithType("GCD", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("GCD", method_code, codec_builder,
+        {.is_applicable_to_type = [](const IDataType & type) { return getGCDTypeInfo(type, /*throw_if_not_applicable=*/ false).has_value(); }});
 }
 
 CompressionCodecPtr getCompressionCodecGCD(UInt8 gcd_bytes_size)

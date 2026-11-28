@@ -41,8 +41,8 @@ FROM mergeTreeCodecBlockCounts(currentDatabase(), t_h) WHERE column = 'n';
 SELECT 'vertical', max(mapContains(codec_block_counts, 'T64')), max(mapContains(codec_block_counts, 'NONE'))
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_v) WHERE column = 'n';
 
--- Default case: adaptive still applies, so `n` is T64.
-SELECT 'default', max(mapContains(codec_block_counts, 'T64')), max(mapContains(codec_block_counts, 'NONE'))
+-- Default case: adaptive still applies, so `n` is T64 chained with the default.
+SELECT 'default', mapKeys(codec_block_counts)
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_def) WHERE column = 'n';
 
 SELECT 'roundtrip', count(), sum(n) FROM t_def;

@@ -38,38 +38,28 @@ public:
         return std::make_shared<FunctionGeoToS2>();
     }
 
-    std::string getName() const override
+    [[nodiscard]] std::string getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        for (size_t i = 0; i < getNumberOfArguments(); ++i)
-        {
-            const auto * arg = arguments[i].get();
-            if (!WhichDataType(arg).isFloat64())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}. Must be Float64",
-                    arg->getName(), i, getName());
-        }
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(Float64, Float64) -> UInt64";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
@@ -128,7 +118,7 @@ public:
             if (!lat_lng.is_valid())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Point ({}, {}) is invalid in function {}. For valid point the latitude is between -90 and 90 degrees inclusive"
+                    "Point ({}, {}) is invalid in function {}. For valid point the latitude is between -90 and 90 degrees inclusive "
                     "and the longitude is between -180 and 180 degrees inclusive.",
                     lon,
                     lat,

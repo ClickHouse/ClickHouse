@@ -1,0 +1,77 @@
+---
+slug: /clickstack/observability/migration/elastic/migrating-sdks
+title: 'Migrating SDKs from Elastic'
+sidebarTitle: 'Migrating SDKs'
+description: 'Migrate Elastic SDK instrumentation to fully managed ClickHouse Observability, with separate connection settings for self-managed deployments.'
+show_related_blogs: true
+keywords: ['ClickHouse Observability']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+The Elastic Stack provides two types of language SDKs for instrumenting applications:
+
+1. **[Elastic Official APM agents](https://www.elastic.co/docs/reference/apm-agents/)** – These are built specifically for use with the Elastic Stack. For these agents, plan a transition to [OpenTelemetry instrumentation](https://opentelemetry.io/docs/languages/) for your language, including any custom spans and attributes used by your application.
+
+2. **[Elastic Distributions of OpenTelemetry (EDOT SDKs)](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/)** – These are Elastic's distributions of the standard OpenTelemetry SDKs, available for .NET, Java, Node.js, PHP, and Python. If your application is already using an EDOT SDK, you don't need to re-instrument your code. Instead, you can simply reconfigure the SDK to export telemetry data to your ClickHouse Observability OTLP endpoint. See ["Migrating EDOT SDKs"](#migrating-edot-sdks-self-configured) for further details.
+
+
+## Migrating EDOT SDKs {#migrating-edot-sdks-self-configured}
+
+The Elastic Distributions of the OpenTelemetry SDKs (EDOT SDKs) are customized versions of the official OpenTelemetry SDKs. For example, the [EDOT Python SDK](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/python/) is a vendor-customized distribution of the [OpenTelemetry Python SDK](https://opentelemetry.io/docs/languages/python/) designed to work seamlessly with Elastic Observability.
+
+Because these SDKs are based on standard OpenTelemetry libraries, migration to ClickHouse Observability is straightforward - no re-instrumentation is required. You only need to adjust the configuration to direct telemetry data to your ClickHouse Observability OTLP endpoint.
+
+Configuration follows the standard OpenTelemetry mechanisms. For Python, this is typically done via environment variables, as described in the [OpenTelemetry Zero-Code Instrumentation docs](https://opentelemetry.io/docs/zero-code/python/configuration/).
+
+A typical EDOT SDK configuration might look like this:
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES='service.name=YOUR_APP_NAME'
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://my-deployment.ingest.us-west1.gcp.cloud.es.io
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=ApiKey P....l"
+```
+
+To migrate, update the OTLP connection settings in your application's environment and restart the application. The examples below use OTLP HTTP with protobuf encoding.
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+Copy the OTLP HTTP endpoint and API key from **Team Settings → Data → Managed Telemetry**:
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES='service.name=YOUR_APP_NAME'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_API_KEY'
+```
+
+Use the exact endpoint, including its port, without a signal suffix such as `/v1/traces`. The header value uses `%20` to encode the space after `Bearer`. See [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) for connection details.
+
+</Tab>
+<Tab title="Self-managed">
+
+Point the SDK at your receiving collector's reachable OTLP HTTP endpoint:
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES='service.name=YOUR_APP_NAME'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_COLLECTOR_TOKEN'
+```
+
+If you secured the receiving collector with `OTLP_AUTH_TOKEN`, use that token as the authorization value. Use `localhost` only when the application and collector share the same network namespace. For a TLS-enabled collector, use its HTTPS endpoint and configure the SDK to trust its certificate. See [Securing the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
+
+If collector authentication is disabled, clear the previous Elastic header:
+
+```shell
+unset OTEL_EXPORTER_OTLP_HEADERS
+```
+
+</Tab>
+</Tabs>
+
+If your application sets signal-specific OTLP endpoint, protocol, or header variables, update those as well; they take precedence over the generic settings above. Preserve your existing resource attributes when setting the service name.

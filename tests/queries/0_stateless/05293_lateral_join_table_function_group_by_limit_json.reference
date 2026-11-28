@@ -1,0 +1,38 @@
+-- (1)
+SELECT *\nFROM t\nINNER JOIN lateral(1, 2) ON true
+SELECT *\nFROM t\nINNER JOIN lateral(numbers(3)) AS l ON t.id = l.number
+SELECT *\nFROM t, lateral(1)
+SELECT *\nFROM t\nINNER JOIN LATERAL\n(\n    SELECT 1\n) AS s ON true
+SELECT *\nFROM t\nLEFT JOIN LATERAL\n(\n    SELECT 1\n) AS s ON true
+-- (2) throw
+1	2
+2	1
+3	0
+4	2
+-- (2) any
+1	2	21
+2	1	20
+3	0	0
+4	2	21
+-- (2) user GROUP BY
+1	10	1
+1	11	1
+2	20	1
+4	10	1
+4	11	1
+1	10	1
+1	11	1
+2	20	1
+4	10	1
+4	11	1
+-- (2) ORDER BY sort limits
+1	10
+2	20
+3	0
+4	10
+1	10
+2	20
+3	0
+4	10
+-- (3)
+SELECT * FROM t1 INNER JOIN LATERAL (SELECT 1) AS s ON true

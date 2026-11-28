@@ -6,9 +6,7 @@ title: 'Funciones para trabajar con coordenadas geográficas'
 doc_type: 'reference'
 ---
 
-<div id="greatcircledistance">
-  ## greatCircleDistance
-</div>
+## greatCircleDistance {#greatcircledistance}
 
 Calcula la distancia entre dos puntos sobre la superficie terrestre usando [la fórmula del gran círculo](https://en.wikipedia.org/wiki/Great-circle_distance).
 
@@ -43,9 +41,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS grea
 └─────────────────────┘
 ```
 
-<div id="geodistance">
-  ## geoDistance
-</div>
+## geoDistance {#geodistance}
 
 Es similar a `greatCircleDistance`, pero calcula la distancia sobre el elipsoide WGS-84 en lugar de hacerlo sobre una esfera. Esta es una aproximación más precisa del geoide terrestre.
 El rendimiento es el mismo que el de `greatCircleDistance` (sin pérdida de rendimiento). Se recomienda usar `geoDistance` para calcular distancias sobre la Tierra.
@@ -83,9 +79,7 @@ SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
 └─────────────┘
 ```
 
-<div id="greatcircleangle">
-  ## greatCircleAngle
-</div>
+## greatCircleAngle {#greatcircleangle}
 
 Calcula el ángulo central entre dos puntos de la superficie terrestre usando [la fórmula del gran círculo](https://en.wikipedia.org/wiki/Great-circle_distance).
 
@@ -116,9 +110,7 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
-<div id="geotoutm">
-  ## geoToUTM
-</div>
+## geoToUTM {#geotoutm}
 
 Convierte coordenadas geográficas WGS84 `(longitude, latitude)` en coordenadas de la [Universal Transversa de Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system).
 
@@ -150,9 +142,7 @@ SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
 (448251.5978370684,5411935.125629659,31,'U')
 ```
 
-<div id="utmtogeo">
-  ## UTMToGeo
-</div>
+## UTMToGeo {#utmtogeo}
 
 Convierte las coordenadas [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) nuevamente a coordenadas geográficas WGS84 `(longitud, latitud)`. Es la operación inversa de [`geoToUTM`](#geotoutm).
 
@@ -181,9 +171,7 @@ SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
 (2.2944970289079203,48.85822204127082)
 ```
 
-<div id="geotomgrs">
-  ## geoToMGRS
-</div>
+## geoToMGRS {#geotomgrs}
 
 Codifica coordenadas geográficas WGS84 `(longitude, latitude)` como una cadena del [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System).
 
@@ -215,9 +203,7 @@ SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3)
 └─────────────────┴─────────────┘
 ```
 
-<div id="mgrstogeo">
-  ## MGRSToGeo
-</div>
+## MGRSToGeo {#mgrstogeo}
 
 Decodifica una cadena [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) en coordenadas geográficas WGS84 `(longitud, latitud)`. Esta es la operación inversa de [`geoToMGRS`](#geotomgrs).
 
@@ -245,9 +231,7 @@ SELECT MGRSToGeo('31UDQ4825111935') AS coord;
 (2.294495618908297,48.85822536113692)
 ```
 
-<div id="pointinellipses">
-  ## pointInEllipses
-</div>
+## pointInEllipses {#pointinellipses}
 
 Comprueba si el punto pertenece a al menos una de las elipses.
 Las coordenadas son geométricas y se expresan en el sistema de coordenadas cartesianas.
@@ -280,9 +264,7 @@ SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 └─────────────────────────────────────────────────┘
 ```
 
-<div id="pointinpolygon">
-  ## pointInPolygon
-</div>
+## pointInPolygon {#pointinpolygon}
 
 Comprueba si el punto está dentro del polígono en el plano.
 
@@ -334,4 +316,5 @@ SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
 > **Nota**
 > • Puede establecer `validate_polygons = 0` para omitir la validación geométrica.
 > • `pointInPolygon` asume que cada polígono está bien formado. Si la entrada se interseca a sí misma, tiene anillos en un orden incorrecto o bordes superpuestos, los resultados dejan de ser fiables, especialmente para puntos que están exactamente sobre un borde, un vértice o dentro de una autointersección, donde la noción de &quot;dentro&quot; frente a &quot;fuera&quot; no está definida.
+> • Las coordenadas del polígono no deben superar `1e150` en valor absoluto; la función lanza una excepción si tuviera que operar con un valor mayor.
 > • Cuando el argumento del polígono es constante y el punto se expresa mediante columnas de clave indexadas (por ejemplo, `pointInPolygon((x, y), constant_polygon)` en una tabla donde `x, y` forman parte de la `PRIMARY KEY` o están incluidas en un índice `minmax`), ClickHouse puede usar tanto la clave primaria como los índices de omisión de datos `minmax` para descartar gránulos irrelevantes.

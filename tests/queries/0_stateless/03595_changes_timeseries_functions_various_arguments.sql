@@ -22,7 +22,7 @@ SELECT timeSeriesResetsToGridIf(10, 120, 10, 70)(timestamps, values, toNullable(
 
 SELECT * FROM ts_data_nullable WHERE value IS NULL AND id < 5;
 
-SELECT timeSeriesResampleToGridWithStalenessIf(15, 125, 10, 10)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
+SELECT timeSeriesLastToGridIf(15, 125, 10, 10)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
 
 -- Test with Nullable arguments
 SELECT timeSeriesChangesToGrid(15, 125, 10, 20)(arrayResize(timestamps, arrayMin([length(timestamps), length(values)]) as min_len), arrayResize(values, min_len)) FROM ts_data;

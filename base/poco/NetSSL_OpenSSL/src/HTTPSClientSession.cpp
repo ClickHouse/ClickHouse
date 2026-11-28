@@ -151,6 +151,16 @@ std::string HTTPSClientSession::proxyRequestPrefix() const
 
 void HTTPSClientSession::proxyAuthenticate(HTTPRequest& request)
 {
+	/// `sendRequest` calls this for every request when a proxy is configured, including requests
+	/// sent inside a `CONNECT` tunnel. In the tunnel the credentials were already sent with `CONNECT`
+	/// (see `proxyConnect`), and the request goes over TLS to the target, so adding
+	/// `Proxy-Authorization` here would leak the proxy credentials to the target server.
+	if (isProxyTunnel())
+		return;
+
+	/// Without a tunnel `connect` establishes TLS with the proxy itself (the peer name is the proxy host),
+	/// so the credentials go to the proxy over TLS and never reach the target.
+	proxyAuthenticateImpl(request);
 }
 
 
@@ -160,7 +170,7 @@ void HTTPSClientSession::connect(const SocketAddress& address)
 
 	if (useProxy && isProxyTunnel())
 	{
-		StreamSocket proxySocket(proxyConnect());
+		StreamSocket proxySocket(proxyConnect(&address));
 		SecureStreamSocket secureSocket = SecureStreamSocket::attach(proxySocket, getHost(), _pContext, _pSession);
 		attachSocket(secureSocket);
 		if (_pContext->sessionCacheEnabled())

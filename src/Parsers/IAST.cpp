@@ -13,6 +13,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Poco/String.h>
+#include <Common/SecretString.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
@@ -50,8 +51,9 @@ void intrusive_ptr_release(const IAST * p) noexcept
 
                 ASTs children;
                 children.swap(ptr->children);
+                void * storage = dynamic_cast<void *>(ptr);
                 ptr->~IAST();
-                LinkedList * elem = new (dynamic_cast<void *>(ptr)) LinkedList;
+                LinkedList * elem = new (storage) LinkedList;
                 elem->children.swap(children);
                 return elem;
             }
@@ -270,16 +272,20 @@ String IAST::formatForErrorMessage() const
         /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 }
 
-String IAST::formatWithSecretsOneLine() const
+template <typename StringType>
+StringType IAST::formatWithSecretsOneLine() const
 {
-    return formatWithPossiblyHidingSensitiveData(
+    return StringType(formatWithPossiblyHidingSensitiveData(
         /*max_length=*/0,
         /*one_line=*/true,
         /*show_secrets=*/true,
         /*print_pretty_type_names=*/false,
         /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
 }
+
+template String IAST::formatWithSecretsOneLine<String>() const;
+template SecretString IAST::formatWithSecretsOneLine<SecretString>() const;
 
 String IAST::formatWithSecretsMultiLine() const
 {
@@ -353,6 +359,15 @@ void IAST::FormatSettings::writeIdentifier(WriteBuffer & ostr, const String & na
         const auto & keyword_set = getKeyWordSet();
         must_quote = keyword_set.contains(Poco::toUpper(name));
     }
+    else if (identifier_quoting_rule == IdentifierQuotingRule::AlwaysUnlessUpperCase && !must_quote)
+    {
+        /// An external database that folds an unquoted identifier to lower case (PostgreSQL) resolves a
+        /// quoted name without upper-case characters to the same column as the unquoted one, so quoting it
+        /// is always safe and keeps reserved words such as `where` parsable. Quoting a name that contains
+        /// upper-case characters, on the contrary, would turn `Foo` into a case-sensitive reference instead
+        /// of the folded `foo`, so such a name is left alone.
+        must_quote = std::none_of(name.begin(), name.end(), [](char c) { return isUpperAlphaASCII(c); });
+    }
 
     switch (identifier_quoting_style)
     {
@@ -380,6 +395,20 @@ void IAST::FormatSettings::writeIdentifier(WriteBuffer & ostr, const String & na
                 writeProbablyBackQuotedStringMySQL(name, ostr);
             break;
         }
+        case IdentifierQuotingStyle::DoubleQuotesPostgreSQL:
+        {
+            if (must_quote)
+                writeDoubleQuotedStringPostgreSQL(name, ostr);
+            else
+                writeProbablyDoubleQuotedStringPostgreSQL(name, ostr);
+            break;
+        }
+        case IdentifierQuotingStyle::BackticksSQLite:
+            if (must_quote)
+                writeBackQuotedStringSQLite(name, ostr);
+            else
+                writeProbablyBackQuotedStringSQLite(name, ostr);
+            break;
     }
 }
 
@@ -402,9 +431,7 @@ void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
 {
     checkStackSize();
     String indent_str(indent, '-');
-    ostr << indent_str << getID() << ", ";
-    writePointerHex(this, ostr);
-    writeChar('\n', ostr);
+    ostr << indent_str << getID() << '\n';
     for (const auto & child : children)
     {
         if (!child)

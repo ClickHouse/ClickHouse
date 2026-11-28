@@ -66,9 +66,6 @@ struct TreeRewriterResult
     /// Note: not used further.
     NameToNameMap array_join_name_to_alias;
 
-    /// Predicate optimizer overrides the sub queries
-    bool rewrite_subqueries = false;
-
     /// Whether the query contains explicit columns like "SELECT column1 + column2 FROM table1".
     /// Queries like "SELECT count() FROM table1", "SELECT 1" don't contain explicit columns.
     bool has_explicit_columns = false;
@@ -92,9 +89,9 @@ struct TreeRewriterResult
 
     void collectSourceColumns(bool add_special);
     bool collectUsedColumns(const ASTPtr & query, bool is_select, bool no_throw = false);
-    Names requiredSourceColumns() const { return required_source_columns.getNames(); }
-    const Names & requiredSourceColumnsForAccessCheck() const { return required_source_columns_before_expanding_alias_columns; }
-    NameSet getArrayJoinSourceNameSet() const;
+    [[nodiscard]] Names requiredSourceColumns() const { return required_source_columns.getNames(); }
+    [[nodiscard]] const Names & requiredSourceColumnsForAccessCheck() const { return required_source_columns_before_expanding_alias_columns; }
+    [[nodiscard]] NameSet getArrayJoinSourceNameSet() const;
 };
 
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;

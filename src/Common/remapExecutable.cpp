@@ -9,6 +9,7 @@
 
 #include <emmintrin.h>
 
+#include <base/defines.h>
 #include <Common/getMappedArea.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -42,8 +43,16 @@ namespace
 #    define NO_PROFILE_INSTRUMENTATION
 #endif
 
+/// Clang CFI (`cfi-icall`) cannot check the calls that step1 and step2 make to and from the scratch copy of the code.
+#define NO_SANITIZE_CFI_ICALL __attribute__((no_sanitize("cfi-icall")))
+
+/** The two below read and write the return address at a fixed offset from `%rsp`. A
+  * `-fstack-protector-strong` canary sits between the locals and the return address and moves it, so
+  * `8(%rsp)` would then find the canary. Neither has locals today, so neither is instrumented; the
+  * attribute pins that down rather than trusting the heuristic.
+  */
 /// NOLINTNEXTLINE(cert-dcl50-cpp)
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) int64_t our_syscall(...)
+NO_PROFILE_INSTRUMENTATION NO_STACK_PROTECTOR __attribute__((__noinline__)) int64_t our_syscall(...)
 {
     __asm__ __volatile__ (R"(
         movq %%rdi,%%rax;
@@ -60,7 +69,7 @@ NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) int64_t our_syscall(...
 }
 
 
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep3(void * scratch, size_t size, size_t offset)
+NO_PROFILE_INSTRUMENTATION NO_STACK_PROTECTOR __attribute__((__noinline__)) void remapToHugeStep3(void * scratch, size_t size, size_t offset)
 {
     /// The function should not use the stack, otherwise various optimizations, including "omit-frame-pointer" may break the code.
 
@@ -74,7 +83,7 @@ NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep3(v
 }
 
 
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, void * scratch, void * syscall_in_scratch, void * step3_in_place)
+NO_PROFILE_INSTRUMENTATION NO_SANITIZE_CFI_ICALL __attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, void * scratch, void * syscall_in_scratch, void * step3_in_place)
 {
     /** Unmap old memory region with the code of our program.
       * Our instruction pointer is located inside scratch area and this function can execute after old code is unmapped.
@@ -135,7 +144,7 @@ NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep2(v
 }
 
 
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
+NO_PROFILE_INSTRUMENTATION NO_SANITIZE_CFI_ICALL __attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
 {
     /// Allocate scratch area and copy the code there.
 
