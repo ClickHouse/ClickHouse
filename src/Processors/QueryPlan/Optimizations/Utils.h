@@ -84,6 +84,9 @@ enum class FilterResult
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
 
+/// The `ActionsDAG` of an `ExpressionStep` or `FilterStep`, otherwise `nullptr`.
+[[nodiscard]] const ActionsDAG * tryGetActionsDAG(const IQueryPlanStep * step);
+
 [[nodiscard]] bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag);
 
 [[nodiscard]] bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root);
