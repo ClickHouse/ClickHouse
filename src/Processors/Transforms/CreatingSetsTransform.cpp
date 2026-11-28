@@ -135,6 +135,8 @@ void CreatingSetsTransform::startSubquery()
         {
             try
             {
+                /// A cancelled task must not take over the build of a set another task abandoned.
+                CurrentThread::checkIfNotCancelled();
                 auto from_cache = prepared_sets_cache->findOrPromiseToBuild(set_and_key->key);
                 if (from_cache.index() == 0)
                 {
@@ -145,7 +147,11 @@ void CreatingSetsTransform::startSubquery()
                 {
                     LOG_TRACE(log, "Waiting for set to be built by another thread, key: {}", set_and_key->key);
                     SharedSet set_built_by_another_thread = std::move(std::get<1>(from_cache));
+                    while (set_built_by_another_thread.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
+                        CurrentThread::checkIfNotCancelled();
                     const SetPtr & ready_set = set_built_by_another_thread.get();
+                    /// The set may become ready after this task was cancelled.
+                    CurrentThread::checkIfNotCancelled();
                     if (!ready_set)
                     {
                         LOG_TRACE(log, "Failed to use set from cache, key: {}", set_and_key->key);
