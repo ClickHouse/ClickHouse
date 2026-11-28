@@ -395,7 +395,17 @@ KafkaConsumer2::Stat KafkaConsumer2::getStat() const
 
     if (consumer)
     {
-        const auto cpp_assignments = consumer->get_assignment();
+        cppkafka::TopicPartitionList cpp_assignments;
+        try
+        {
+            cpp_assignments = consumer->get_assignment();
+        }
+        catch (const cppkafka::HandleException & e)
+        {
+            /// A consumer with an empty `group.id` has no assignment, librdkafka reports it as an unknown group.
+            if (e.get_error() != RD_KAFKA_RESP_ERR__UNKNOWN_GROUP)
+                throw;
+        }
         cppkafka_offsets = consumer->get_offsets_position(cpp_assignments);
         consumer_id = consumer->get_member_id();
     }
