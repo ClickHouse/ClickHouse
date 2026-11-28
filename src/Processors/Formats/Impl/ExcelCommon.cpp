@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/DateLUT.h>
@@ -1011,10 +1012,11 @@ void ColumnTypeInferrer::add(const Cell & cell)
                     }
                     else
                     {
-                        /// The original text is exact, while the double may be rounded: `9007199254740993.5` is read as an integer double.
-                        /// The double is rounded to 2^63 for integers close to it, so the check of the range is conservative.
+                        /// The original text is exact, while the double may be rounded: `9007199254740993.5` is read as an integer double,
+                        /// and `9223372036854775807` as 2^63. So both the integrality and the range are checked on the text.
                         String integer_text;
-                        if (numberTextToInteger(cell.text, integer_text) && std::abs(cell.number) < 9223372036854775808.0)
+                        Int64 integer = 0;
+                        if (numberTextToInteger(cell.text, integer_text) && tryParse(integer, integer_text))
                             has_integer = true;
                         else
                             has_float = true;
