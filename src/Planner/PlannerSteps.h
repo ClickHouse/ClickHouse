@@ -47,6 +47,9 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
     const PlannerContextPtr & planner_context,
     const std::unordered_map<String, String> & shard_collapse_duplicate_keys);
 
+void addConvertGroupByKeysToNullableStep(QueryPlan & query_plan,
+    const AggregationAnalysisResult & aggregation_analysis_result);
+
 void addTotalsHavingStep(QueryPlan & query_plan,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,

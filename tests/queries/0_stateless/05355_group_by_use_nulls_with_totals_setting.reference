@@ -1,0 +1,25 @@
+0	Nullable(UInt64)	0	1
+1	Nullable(UInt64)	0	1
+2	Nullable(UInt64)	0	1
+
+\N	Nullable(UInt64)	1	3
+0	UInt64	0	1
+1	UInt64	0	1
+2	UInt64	0	1
+
+0	UInt64	0	3
+0	UInt64	0	1
+1	UInt64	0	1
+2	UInt64	0	1
+
+0	UInt64	0	3
+0	2
+1	2
+\N	4
+
+0	4
+0	2
+1	2
+\N	4
+
+\N	4
