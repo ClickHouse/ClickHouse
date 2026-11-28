@@ -1,0 +1,68 @@
+literal	0	12" pizza
+literal	0	x\ny\nz\nw
+after_delimiter	0	a	x\ny\nz\nw
+after_delimiter	0	b	p\nq\nr\ns
+after_space	0	a	x\ny\nz\nw
+literal	1	12" pizza
+literal	1	x\ny\nz\nw
+after_delimiter	1	a	x\ny\nz\nw
+after_delimiter	1	b	p\nq\nr\ns
+after_space	1	a	x\ny\nz\nw
+count_literal	0	2
+count_after_delimiter	0	2
+count_after_space	0	1
+count_literal	1	2
+count_after_delimiter	1	2
+count_after_space	1	1
+array_after_space	0	[1,2,3,4]
+single_quoted	0	"x\ny\nz\nw"
+count_array_after_space	0	1
+count_single_quoted	0	1
+array_after_space	1	[1,2,3,4]
+single_quoted	1	"x\ny\nz\nw"
+count_array_after_space	1	1
+count_single_quoted	1	1
+bom_array	0	[1,2,3,4]
+count_bom_array	0	1
+single_quoted_text	0	a"x\ny\nz\nw"
+count_single_quoted_text	0	1
+tuple_vt	0	(1,'x\ny\nz\nw')
+count_tuple_vt	0	1
+tuple_ff	0	(1,'x\ny\nz\nw')
+count_tuple_ff	0	1
+bom_array	1	[1,2,3,4]
+count_bom_array	1	1
+single_quoted_text	1	a"x\ny\nz\nw"
+count_single_quoted_text	1	1
+tuple_vt	1	(1,'x\ny\nz\nw')
+count_tuple_vt	1	1
+tuple_ff	1	(1,'x\ny\nz\nw')
+count_tuple_ff	1	1
+tuple_cr	0	(1,'x\ny\nz\nw')
+count_tuple_cr	0	1
+count_mid_bom	0	4	4
+count_mid_bom	0	1048576	4
+count_space_apostrophe	0	4
+rows_space_apostrophe	0	4
+count_vt_apostrophe	0	4
+rows_vt_apostrophe	0	4
+tuple_cr	1	(1,'x\ny\nz\nw')
+count_tuple_cr	1	1
+count_mid_bom	1	4	4
+count_mid_bom	1	1048576	4
+count_space_apostrophe	1	4
+rows_space_apostrophe	1	4
+count_vt_apostrophe	1	4
+rows_vt_apostrophe	1	4
+ws_single_quote	0	a"x\ny\nz\nw"
+count_ws_single_quote	0	1
+count_bom_string	0	4	4
+rows_bom_string	0	4	4
+count_bom_string	0	1048576	4
+rows_bom_string	0	1048576	4
+ws_single_quote	1	a"x\ny\nz\nw"
+count_ws_single_quote	1	1
+count_bom_string	1	4	4
+rows_bom_string	1	4	4
+count_bom_string	1	1048576	4
+rows_bom_string	1	1048576	4
