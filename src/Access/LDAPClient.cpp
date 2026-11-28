@@ -85,7 +85,9 @@ LDAPClient::~LDAPClient()
 namespace
 {
 
-    [[clang::no_destroy]] std::recursive_mutex ldap_global_mutex;
+    /// libldap initializes its process-wide state (global options, the TLS library) lazily and without synchronization,
+    /// so `ldap_initialize` and `LDAP_OPT_X_TLS_NEWCTX` must not run concurrently. Connections use their own handle.
+    [[clang::no_destroy]] std::mutex ldap_global_mutex;
 
     auto escapeForDN(const String & src)
     {
@@ -173,8 +175,6 @@ namespace
 
 void LDAPClient::handleError(int result_code, String text)
 {
-    std::lock_guard lock(ldap_global_mutex);
-
     if (result_code != LDAP_SUCCESS)
     {
         const char * raw_err_str = ldap_err2string(result_code);
@@ -213,8 +213,6 @@ void LDAPClient::handleError(int result_code, String text)
 
 bool LDAPClient::openConnection()
 {
-    std::lock_guard lock(ldap_global_mutex);
-
     closeConnection();
 
     {
@@ -232,6 +230,7 @@ bool LDAPClient::openConnection()
 
         SCOPE_EXIT({ ldap_memfree(uri); });
 
+        std::lock_guard lock(ldap_global_mutex);
         handleError(ldap_initialize(&handle, uri));
         if (!handle)
             throw Exception(ErrorCodes::LDAP_ERROR, "ldap_initialize() failed");
@@ -344,6 +343,7 @@ bool LDAPClient::openConnection()
 
 #ifdef LDAP_OPT_X_TLS_NEWCTX
     {
+        std::lock_guard lock(ldap_global_mutex);
         const int i_am_a_server = 0;
         handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_NEWCTX, &i_am_a_server));
     }
@@ -398,8 +398,6 @@ bool LDAPClient::openConnection()
 
 void LDAPClient::closeConnection() noexcept
 {
-    std::lock_guard lock(ldap_global_mutex);
-
     if (!handle)
         return;
 
@@ -412,8 +410,6 @@ void LDAPClient::closeConnection() noexcept
 
 LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
 {
-    std::lock_guard lock(ldap_global_mutex);
-
     SearchResults result;
 
     int scope = 0;

@@ -445,9 +445,12 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     bool /* allow_no_password */,
     bool /* allow_plaintext_password */) const
 {
-    std::lock_guard lock(mutex);
-    auto id = memory_storage.find<User>(credentials.getUserName());
-    UserPtr user = id ? memory_storage.read<User>(*id) : nullptr;
+    UserPtr user;
+    {
+        std::lock_guard lock(mutex);
+        if (auto id = memory_storage.find<User>(credentials.getUserName()))
+            user = memory_storage.read<User>(*id);
+    }
 
     std::shared_ptr<User> new_user;
     if (!user)
@@ -463,6 +466,7 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     if (!isAddressAllowed(*user, address))
         throwAddressNotAllowed(address);
 
+    /// Not under `mutex`: the check waits for the LDAP server, and every lookup in this storage would wait with it.
     LDAPClient::SearchResultsList external_roles;
     if (!areLDAPCredentialsValidNoLock(*user, credentials, external_authenticators, external_roles))
     {
@@ -476,18 +480,24 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
             return {};
     }
 
-    if (new_user)
+    std::lock_guard lock(mutex);
+
+    /// A concurrent login of the same user may have added it while its credentials were checked.
+    auto id = memory_storage.find<User>(credentials.getUserName());
+    if (id)
     {
+        // Just in case external_roles are changed. This will be no-op if they are not.
+        updateAssignedRolesNoLock(*id, user->getName(), external_roles);
+    }
+    else
+    {
+        chassert(new_user);
+
         // TODO: if these were AlwaysAllowCredentials, then mapped external roles are not available here,
         // since without a password we can't authenticate and retrieve roles from the LDAP server.
 
         assignRolesNoLock(*new_user, external_roles);
         id = memory_storage.insert(new_user);
-    }
-    else
-    {
-        // Just in case external_roles are changed. This will be no-op if they are not.
-        updateAssignedRolesNoLock(*id, user->getName(), external_roles);
     }
 
     if (id)
