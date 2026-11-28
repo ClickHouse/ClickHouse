@@ -43,7 +43,8 @@ void TableFunctionFactory::registerFunction(
 TableFunctionPtr TableFunctionFactory::get(
     const ASTPtr & ast_function,
     ContextPtr context,
-    bool is_replayed_definition) const
+    bool is_replayed_definition,
+    LoadingStrictnessLevel mode) const
 {
     const auto * table_function = ast_function->as<ASTFunction>();
     if (!table_function)
@@ -60,6 +61,7 @@ TableFunctionPtr TableFunctionFactory::get(
     }
 
     res->setReplayedDefinition(is_replayed_definition);
+    res->setLoadingStrictnessLevel(mode);
     res->parseArguments(ast_function, context);
     return res;
 }

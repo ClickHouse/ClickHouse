@@ -84,7 +84,14 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
 {
     const auto context = args.getLocalContext();
     configuration->is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
-    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
+    StorageObjectStorageConfiguration::initialize(
+        *configuration,
+        args.engine_args,
+        context,
+        false,
+        &args.table_id,
+        args.mode,
+        args.is_restore_from_backup);
 
     // Format settings come from the server's settings, as for `File` and `URL`, plus the SETTINGS clause. Not from the
     // session: the definition does not keep them, so the table would read differently once it is attached again, e.g.
@@ -1222,22 +1229,24 @@ Without an explicit schema, the Iceberg table must already exist in storage. To 
 
 ```sql
 CREATE TABLE iceberg_table_s3
-    ENGINE = IcebergS3(url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression], [,extra_credentials])
+    ENGINE = IcebergS3(url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,extra_credentials])
 
 CREATE TABLE iceberg_table_azure
-    ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format])
 
 CREATE TABLE iceberg_table_hdfs
-    ENGINE = IcebergHDFS(path_to_table, [,format] [,compression_method])
+    ENGINE = IcebergHDFS(path_to_table, [,format])
 
 CREATE TABLE iceberg_table_local
-    ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+    ENGINE = IcebergLocal(path_to_table, [,format])
 ```
 
 ## Engine arguments {#engine-arguments}
 
 Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage`, `HDFS` and `File` correspondingly.
-`format` stands for the format of data files in the Iceberg table.
+`format` stands for the format of data files in the Iceberg table, and accepts only `Parquet`, `ORC`, `Avro` or `Vortex`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+Unlike the plain object-storage engines, data lake engines do not accept a `compression_method` (or `compression`) argument other than `auto` (the default; an empty string means the same): the data files use the format's own internal codec, so the outer codec would be silently dropped on write and misinterpreted on read. Control file compression with the format-specific setting (for example, `output_format_parquet_compression_method`) instead.
 
 For `IcebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
@@ -1872,22 +1881,24 @@ Creating `Paimon*` tables is gated by `enable_paimon_storage_engine` (disabled b
 SET enable_paimon_storage_engine = 1;
 
 CREATE TABLE paimon_table_s3
-    ENGINE = PaimonS3(url, [, access_key_id, secret_access_key] [,format] [,compression])
+    ENGINE = PaimonS3(url, [, access_key_id, secret_access_key] [,format])
 
 CREATE TABLE paimon_table_azure
-    ENGINE = PaimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ENGINE = PaimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 
 CREATE TABLE paimon_table_hdfs
-    ENGINE = PaimonHDFS(path_to_table, [,format] [,compression_method])
+    ENGINE = PaimonHDFS(path_to_table, [,format])
 
 CREATE TABLE paimon_table_local
-    ENGINE = PaimonLocal(path_to_table, [,format] [,compression_method])
+    ENGINE = PaimonLocal(path_to_table, [,format])
 ```
 
 ## Engine arguments {#engine-arguments}
 
 Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage`, `HDFS` and `File` correspondingly.
-`format` stands for the format of data files in the Paimon table.
+`format` stands for the format of data files in the Paimon table, and accepts only `Parquet`, `ORC` or `Avro`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+Unlike the plain object-storage engines, data lake engines do not accept a `compression_method` (or `compression`) argument other than `auto` (the default; an empty string means the same): the data files use the format's own internal codec, so the outer codec would be silently dropped on write and misinterpreted on read. Control file compression with the format-specific setting (for example, `output_format_parquet_compression_method`) instead.
 
 Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections)
 
@@ -2524,11 +2535,11 @@ ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<pa
 ```sql
 -- Account key
 CREATE TABLE table_name
-ENGINE = DeltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+ENGINE = DeltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format])
 
 -- Workload identity (mutually exclusive with account_name / account_key)
 CREATE TABLE table_name
-ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])
+ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format])
 ```
 
 **Arguments**
@@ -2540,6 +2551,10 @@ ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_cre
 - `account_name` — Azure storage account name
 - `account_key` — Azure storage account key
 - `extra_credentials` — Optional alternative to `account_name` / `account_key`. Use `client_id` and `tenant_id` for Azure workload identity authentication. Cannot be combined with account credentials. This is not the S3 `role_arn` form of `extra_credentials`.
+
+`format` accepts only `Parquet`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+Data lake engines do not accept a `compression_method` (or `compression`) argument other than `auto` (the default; an empty string means the same): the data files use the format's own internal codec, so the outer codec would be silently dropped on write and misinterpreted on read. Control file compression with the format-specific setting (for example, `output_format_parquet_compression_method`) instead.
 
 Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections). Named collections accept the same `client_id` and `tenant_id` keys.
 
@@ -2675,8 +2690,8 @@ The `DeltaLake` table engine and table function support data caching, the same a
         },
         Documentation{
             .description = "Provides an integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage, supporting both reads and writes (writes from version 26.9).",
-            .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])\n"
-                      "ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])",
+            .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath, [account_name, account_key, format])\n"
+                      "ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format])",
             .related = {"DeltaLake"}});
 #    endif
     factory.registerStorage(

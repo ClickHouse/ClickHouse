@@ -55,7 +55,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true);
+        StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true, nullptr, loading_mode);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -75,6 +75,8 @@ public:
         else
             Configuration().addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
     }
+
+    void setLoadingStrictnessLevel(LoadingStrictnessLevel mode) override { loading_mode = mode; }
 
 protected:
     StoragePtr executeImpl(
@@ -100,6 +102,7 @@ protected:
     mutable bool object_storage_is_readonly = false;
     ColumnsDescription structure_hint;
     std::shared_ptr<Settings> settings;
+    LoadingStrictnessLevel loading_mode = LoadingStrictnessLevel::CREATE;
 
     VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 };

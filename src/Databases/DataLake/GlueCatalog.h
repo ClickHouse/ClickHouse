@@ -8,6 +8,7 @@
 #include <aws/glue/model/Table.h>
 #include <aws/glue/model/TableInput.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/LRUCache.h>
@@ -37,6 +38,7 @@ public:
         DB::ContextPtr context_,
         const CatalogSettings & settings_,
         const DB::SecretString & table_engine_definition_,
+        DB::LoadingStrictnessLevel table_definition_mode_,
         bool allow_server_credentials_in_user_queries_);
 
     ~GlueCatalog() override;
@@ -130,6 +132,8 @@ private:
     std::string region;
     CatalogSettings settings;
     DB::SecretString table_engine_definition;
+    /// See `DatabaseDataLake::table_definition_mode`.
+    DB::LoadingStrictnessLevel table_definition_mode;
 
     [[nodiscard]] DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
     [[nodiscard]] CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;

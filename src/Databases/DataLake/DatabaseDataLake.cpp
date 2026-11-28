@@ -272,6 +272,7 @@ DatabaseDataLake::DatabaseDataLake(
     UUID uuid,
     bool allow_server_credentials_in_user_queries_,
     bool is_loading_from_existing_metadata_,
+    LoadingStrictnessLevel table_definition_mode_,
     bool is_existing_definition)
     : IDatabase(database_name_)
     , url(url_)
@@ -281,6 +282,7 @@ DatabaseDataLake::DatabaseDataLake(
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
     , is_loading_from_existing_metadata(is_loading_from_existing_metadata_)
+    , table_definition_mode(table_definition_mode_)
     , db_uuid(uuid)
 {
     validateSettings(is_existing_definition);
@@ -522,6 +524,7 @@ void DatabaseDataLake::initialize() const
                 Context::getGlobalContextInstance(),
                 catalog_parameters,
                 table_engine_definition,
+                table_definition_mode,
                 allow_server_credentials_in_user_queries);
             break;
 #else
@@ -1300,7 +1303,33 @@ StoragePtr DatabaseDataLake::maybeCreateTableInExternalCatalog(ContextPtr contex
     catalog->createTableAtDefaultLocation(namespace_name, table_name, metadata_object);
     LOG_DEBUG(log, "Created table {} in the catalog of database {}", name, backQuoteIfNeed(getDatabaseName()));
 
-    auto storage = tryGetTableImpl(name, context_, /* lightweight */ false, /* ignore_if_not_iceberg */ false);
+    StoragePtr storage;
+    try
+    {
+        storage = tryGetTableImpl(name, context_, /* lightweight */ false, /* ignore_if_not_iceberg */ false);
+    }
+    catch (...)
+    {
+        /// The catalog has already committed the table, but this database cannot load it, so the query fails.
+        /// For example, the engine arguments that the table inherits from the database definition are validated
+        /// only here, because parsing them needs the location, which the catalog may assign only on creation.
+        /// Remove the table from the catalog again, so that a failed `CREATE TABLE` does not leave it behind.
+        /// The table is new and has no data, so its files (the first metadata file) are removed as well.
+        try
+        {
+            catalog->dropTable(namespace_name, table_name, /* delete_data */ true);
+            LOG_DEBUG(log, "Removed table {} from the catalog of database {}, because it cannot be loaded after creation",
+                name, backQuoteIfNeed(getDatabaseName()));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format(
+                "Cannot remove table {} from the catalog of database {} after its creation failed",
+                name, backQuoteIfNeed(getDatabaseName())));
+        }
+        throw;
+    }
+
     if (!storage)
         throw Exception(
             ErrorCodes::DATALAKE_DATABASE_ERROR,
@@ -1468,7 +1497,16 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
-    StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
+    /// `table_definition_mode`: the engine arguments come verbatim from the `CREATE DATABASE` query, so they
+    /// are validated as a fresh definition only when the user supplied the database definition in this server
+    /// run; a database replayed from persisted metadata or a backup is a compatibility path.
+    StorageObjectStorageConfiguration::initialize(
+        *configuration,
+        args,
+        context_copy,
+        /* with_table_structure */ false,
+        /* table_id */ nullptr,
+        table_definition_mode);
 
 #if USE_HDFS
     if (auto * hdfs_configuration = dynamic_cast<StorageHDFSConfiguration *>(configuration.get()))
@@ -2354,6 +2392,14 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             args.uuid,
             allow_server_credentials_in_user_queries,
             is_loading_from_existing_metadata,
+            /// A user `CREATE DATABASE` and a full-definition `ATTACH DATABASE ... ENGINE = ...` supply a fresh
+            /// table engine definition; server startup, a short `ATTACH DATABASE db`, `RESTORE DATABASE` and a replay
+            /// marked with `isRecoveryFromStoredMetadata` replay an accepted one. `args.internal` is not used here: it
+            /// is also set for user statements run by `PARALLEL WITH` or `EXECUTE AS`.
+            /*table_definition_mode=*/(args.create_query.attach_short_syntax || args.is_metadata_replay || args.is_restore_from_backup
+                                       || is_recovery_from_stored_metadata)
+                ? LoadingStrictnessLevel::ATTACH
+                : LoadingStrictnessLevel::CREATE,
             /// `ATTACH DATABASE` (server startup or a user re-attach) and `RESTORE DATABASE` replay an existing
             /// definition. They shouldn't do network I/O: an unreachable or unauthorized catalog must not block them.
             /// Keyed on the attach and restore flags, not `internal`: a user `CREATE` wrapped in `PARALLEL WITH` or

@@ -100,9 +100,9 @@ public:
     /// when the engine has a source, or `READ` and `WRITE` on the source of a function that has no engine.
     /// A definition that cannot be a table is refused. `is_replayed_definition` is passed on to
     /// `ITableFunction::setReplayedDefinition`: a definition the server stored itself has to load under the rules it was
-    /// accepted by.
+    /// accepted by. `mode` is passed on to `ITableFunction::setLoadingStrictnessLevel`.
     static std::optional<AccessRightsElement> getRequiredAccessOfTableFunction(
-        const ASTPtr & table_function_ast, const ContextPtr & query_context, bool is_replayed_definition);
+        const ASTPtr & table_function_ast, const ContextPtr & query_context, bool is_replayed_definition, LoadingStrictnessLevel mode);
 
     static String getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context);
 

@@ -9,6 +9,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Databases/LoadingStrictnessLevel.h>
 
 #include <memory>
 #include <string>
@@ -136,6 +137,9 @@ public:
     /// The function sets the expression of `INSERT INTO FUNCTION ... PARTITION BY`.
     /// Only the interpreter of `INSERT INTO FUNCTION` calls it.
     void setPartitionBy(const ASTPtr & partition_by_) { partition_by = partition_by_; }
+
+    /// For `CREATE TABLE ... AS f(...)`: how the table definition is loaded. Set before `parseArguments`.
+    virtual void setLoadingStrictnessLevel(LoadingStrictnessLevel) {}
 
     /// Create storage according to the query.
     /// `check_create_temporary_table` is passed as false by database engines that resolve their
