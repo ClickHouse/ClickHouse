@@ -852,7 +852,10 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
 
     try
     {
-        info.is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port);
+        /// The default port above is the one of the destination server, so it is not shifted by
+        /// `port_offset`; whether the source points to this server is decided by the bound port.
+        UInt16 local_port = secure ? global_context->getBoundTCPPortSecure().value_or(0) : global_context->getBoundTCPPort();
+        info.is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), local_port);
     }
     catch (const NetException &)
     {

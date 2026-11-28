@@ -16,6 +16,7 @@
 #include <cerrno>
 #include <charconv>
 #include <csignal>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <functional>
@@ -1046,6 +1047,47 @@ bool initClickHouseDB(
         ping_secure = true;
     }
 #endif
+    /// The server shifts its listeners by `port_offset`, so the readiness check and the initialization client
+    /// must use the shifted ports. A zero port is never shifted, like in the server.
+    int64_t port_offset = 0;
+    if (std::string port_offset_str = getEffectiveConfigValue(extra_server_args, config_file, "port_offset"); !port_offset_str.empty())
+    {
+        const char * offset_end = port_offset_str.data() + port_offset_str.size();
+        auto [ptr, error] = std::from_chars(port_offset_str.data(), offset_end, port_offset);
+        if (error != std::errc() || ptr != offset_end
+            || port_offset < std::numeric_limits<int32_t>::min() || port_offset > std::numeric_limits<int32_t>::max())
+        {
+            std::cerr << "docker-init: error: invalid `port_offset` '" << port_offset_str << "'\n";
+            return false;
+        }
+    }
+    auto shift_port = [port_offset](std::string & port, std::string_view setting)
+    {
+        if (port_offset == 0 || port.empty())
+            return true;
+        int64_t port_number = 0;
+        const char * port_end = port.data() + port.size();
+        auto [ptr, error] = std::from_chars(port.data(), port_end, port_number);
+        if (error != std::errc() || ptr != port_end || port_number < 0 || port_number > 65535)
+        {
+            std::cerr << "docker-init: error: invalid `" << setting << "` '" << port << "'\n";
+            return false;
+        }
+        if (port_number == 0)
+            return true;
+        const int64_t effective_port = port_number + port_offset;
+        if (effective_port < 1 || effective_port > 65535)
+        {
+            std::cerr << "docker-init: error: `" << setting << "` " << port_number << " with `port_offset` " << port_offset
+                      << " results in invalid port " << effective_port << "\n";
+            return false;
+        }
+        port = std::to_string(effective_port);
+        return true;
+    };
+    if (!shift_port(native_port, "tcp_port") || !shift_port(ping_port, ping_secure ? "https_port" : "http_port"))
+        return false;
+
     auto parse_port = [](const std::string & port, std::string_view setting, Poco::UInt16 & port_number)
     {
         const char * port_end = port.data() + port.size();

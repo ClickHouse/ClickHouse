@@ -124,6 +124,10 @@ private:
 
     ClusterPtr makeCluster(const ClusterInfo & cluster_info);
 
+    /// The port this node registers in Keeper for the given cluster: the bound (offset) plain or
+    /// secure TCP port, depending on the cluster's `secure` flag.
+    UInt16 getAdvertisedPort(bool secure) const;
+
     bool needUpdate(const Strings & node_uuids, const NodesInfo & nodes);
     bool upsertCluster(ClusterInfo & cluster_info);
     void removeCluster(const String & name, bool is_dynamic);
