@@ -126,6 +126,16 @@ public:
     [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const key_type & key, size_t hash_value) const { return flat.find(key, hash_value); }
     [[nodiscard]] bool ALWAYS_INLINE has(const key_type & key) const { return flat.has(key); }
 
+    /// The cell of a key is the cell with that index, so there is no hash to compute. A range join prefetches
+    /// a key before it checks the key against its range, so the index is masked to stay inside the buffer.
+    template <typename KeyHolder>
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
+    {
+        const size_t index = static_cast<size_t>(keyHolderGetKey(key_holder)) & (flat.getBufferSizeInCells() - 1);
+        __builtin_prefetch(flat.data() + index);
+        keyHolderDiscardKey(key_holder);
+    }
+
     [[nodiscard]] size_t size() const { return flat.size(); }
     [[nodiscard]] bool empty() const { return flat.empty(); }
     [[nodiscard]] size_t getBufferSizeInBytes() const { return flat.getBufferSizeInBytes(); }
