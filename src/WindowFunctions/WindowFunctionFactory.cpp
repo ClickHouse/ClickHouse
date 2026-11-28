@@ -79,13 +79,13 @@ bool WindowFunctionFactory::isWindowFunctionName(const String & name) const
     return functions.contains(resolved_name) || case_insensitive_functions.contains(Poco::toLower(resolved_name));
 }
 
-DataTypes WindowFunctionFactory::bindArgumentTypes(const String & name, DataTypes argument_types) const
+DataTypes WindowFunctionFactory::bindArgumentTypes(const String & name, DataTypes argument_types, const Settings & settings) const
 {
     const Value & registration = find(name);
     if (!registration.binder)
         return argument_types;
 
-    return registration.binder(std::move(argument_types));
+    return registration.binder(std::move(argument_types), settings);
 }
 
 GeneralWindowFunctionPtr WindowFunctionFactory::get(const String & name, NullsAction action, const DataTypes & argument_types, const Array & parameters) const

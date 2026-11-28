@@ -21,7 +21,7 @@ struct Array;
 struct Settings;
 
 using WindowFunctionCreator = std::function<GeneralWindowFunctionPtr(const String &, const DataTypes &, const Array &, const Settings *)>;
-using WindowFunctionArgumentTypesBinder = std::function<DataTypes(DataTypes argument_types)>;
+using WindowFunctionArgumentTypesBinder = std::function<DataTypes(DataTypes argument_types, const Settings & settings)>;
 
 struct WindowFunctionRegistration
 {
@@ -45,7 +45,7 @@ public:
     void registerFunction(const String & name, Value registration, Case case_sensitiveness = Case::Sensitive);
 
     [[nodiscard]] bool isWindowFunctionName(const String & name) const;
-    [[nodiscard]] DataTypes bindArgumentTypes(const String & name, DataTypes argument_types) const;
+    [[nodiscard]] DataTypes bindArgumentTypes(const String & name, DataTypes argument_types, const Settings & settings) const;
     [[nodiscard]] GeneralWindowFunctionPtr get(const String & name, NullsAction action, const DataTypes & argument_types, const Array & parameters) const;
     [[nodiscard]] FunctionDocumentation getDocumentation(const String & name) const;
 
