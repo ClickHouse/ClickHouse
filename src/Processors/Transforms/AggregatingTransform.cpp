@@ -75,12 +75,8 @@ ManyAggregatedData::~ManyAggregatedData()
             // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
             if (variant->aggregator)
             {
-                pool->scheduleOrThrowOnError(
-                    [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
-                    {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::AGGREGATOR_DESTRUCTION);
-                        my_variant.reset();
-                    });
+                pool->scheduleOrThrowOnError(attachedJob(
+                    ThreadName::AGGREGATOR_DESTRUCTION, [my_variant = std::move(variant)]() mutable { my_variant.reset(); }));
             }
         }
 

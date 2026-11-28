@@ -15,7 +15,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/saturatedDuration.h>
@@ -235,11 +235,11 @@ private:
     }
 
     /// A pooled object lives as long as the pool, so a long-lived pool does not charge it to the query that happens to create it.
-    [[nodiscard]] std::optional<MemoryTrackerBlockerInThread> blockQueryTrackingIfPoolOutlivesQuery() const
+    [[nodiscard]] std::optional<ServerOwnedMemoryScope> blockQueryTrackingIfPoolOutlivesQuery() const
     {
         if (!pool_outlives_query)
             return {};
-        return std::optional<MemoryTrackerBlockerInThread>(std::in_place);
+        return std::optional<ServerOwnedMemoryScope>(std::in_place);
     }
 
     Entry makeEntry(PooledObject & item)
