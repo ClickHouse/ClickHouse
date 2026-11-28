@@ -24,7 +24,10 @@ docker pull clickhouse/clickhouse-server
 - Branch tags like `22.2` point to the latest release of the corresponding branch.
 - Full Version tags like `22.2.3` and `22.2.3.5` point to the corresponding release.
 - The tag `head` is built from the latest commit to the default branch.
+- The tags without a suffix point to the image built `FROM scratch`: it contains only ClickHouse and the few system files it needs, without a shell, a package manager, or coreutils. See [Image without a shell](#image-without-a-shell) below.
+- Each tag has an optional `-ubuntu` suffix for the image built on top of `ubuntu`, with a shell and the usual tools, which runs the shell script `entrypoint.sh`.
 - Each tag has an optional `-alpine` suffix to reflect that it's built on top of `alpine`.
+- Each tag has an optional `-distroless` suffix for the image built on top of a distroless base image, which runs as the `clickhouse` user (uid 101) from the start.
 
 ### Compatibility {#compatibility}
 
@@ -206,3 +209,46 @@ clickhouse client -n <<-EOSQL
     CREATE TABLE docker.docker (x Int32) ENGINE = MergeTree
     ORDER BY ();
 EOSQL
+```
+
+## Image without a shell {#image-without-a-shell}
+
+The default image (the tags without a suffix) is built `FROM scratch`. It contains the statically linked `clickhouse` binary, its configuration, and the few system files it needs: CA certificates, `/etc/passwd`. There is no shell, no package manager, no C library, and no other programs, so the only software to keep patched is ClickHouse.
+
+The logic of the entrypoint (preparing the directories, creating the user from `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD`, creating `CLICKHOUSE_DB`, running the scripts from `/docker-entrypoint-initdb.d`) is built into the binary as `clickhouse docker-init`, and is configured with the same environment variables. The differences from the `-ubuntu` image:
+
+- The `*.sql` and `*.sql.gz` init scripts work as usual. A `*.sh` script needs a shell: an executable script is run directly, and a non-executable one is run by `sh -e` (instead of being sourced), so it stops at the first failed command, like with `set -e` in `entrypoint.sh`. If there is no shell, the container stops with an error, rather than starting without the initialization.
+- `docker run clickhouse/clickhouse-server <command>` and `docker exec` can run only the ClickHouse tools, such as `clickhouse-client` or `clickhouse-local`.
+
+When you need a shell, for example for troubleshooting, mount one into the container. It has to be statically linked, such as `busybox` from the `busybox-static` package of Debian and Ubuntu:
+
+```bash
+docker run --rm -it -v /bin/busybox:/bin/sh:ro --entrypoint /bin/sh clickhouse/clickhouse-server
+# Or, to add a shell to a running server, for `docker exec` and the `*.sh` init scripts:
+docker run -d -v /bin/busybox:/bin/sh:ro --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+docker exec -it some-clickhouse-server /bin/sh
+```
+
+Alternatively, use the image with the `-ubuntu` suffix.
+
+### User-defined functions and executable scripts {#user-defined-functions-and-executable-scripts}
+
+[Executable user-defined functions](/reference/functions/regular-functions/udf#executable-user-defined-functions), the [`executable`](/reference/functions/table-functions/executable) table function, the [`Executable`](/reference/engines/table-engines/special/executable) table engine and executable dictionaries start programs from `user_scripts_path` (`/var/lib/clickhouse/user_scripts/`). The image without a shell can run only statically linked programs, because it has no shell, no interpreter such as Python, and no C library. Mount the programs and the configuration of the functions (a file matching `*_function.*ml`) into the container:
+
+```bash
+docker run -d \
+    -v "$PWD/user_scripts:/var/lib/clickhouse/user_scripts:ro" \
+    -v "$PWD/my_function.xml:/etc/clickhouse-server/my_function.xml:ro" \
+    --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+```
+
+For scripts, build an image on top of the image with the `-ubuntu` suffix and install the interpreter:
+
+```dockerfile
+FROM clickhouse/clickhouse-server:latest-ubuntu
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+The configuration of the server sets [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation) to `best_effort`. Docker does not let the server create the namespaces it needs unless the container has `CAP_SYS_ADMIN`, so by default the server runs without the isolation and logs a warning. If the container has `CAP_SYS_ADMIN` and its security profile allows mounting filesystems, the server isolates itself, and the interpreters, libraries and data of the scripts have to be listed in `filesystem_isolation_paths`. [Driver-based user-defined functions](/reference/functions/regular-functions/udf#driver-based-executable-user-defined-functions) need `dynamic_user_defined_executable_functions_path` declared as `<read_write_executable>` when the isolation is in force, and need the tools that the drivers run. See [Executable UDFs with filesystem isolation](/reference/functions/regular-functions/udf#filesystem-isolation).

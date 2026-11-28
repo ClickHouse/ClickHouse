@@ -211,5 +211,27 @@ docker exec -it some-clickhouse-server /bin/sh
 ```
 
 Alternatively, use the image with the `-ubuntu` suffix.
+
+### User-defined functions and executable scripts
+
+[Executable user-defined functions](https://clickhouse.com/docs/sql-reference/functions/udf#executable-user-defined-functions), the `executable` table function, the `Executable` table engine and executable dictionaries start programs from `user_scripts_path` (`/var/lib/clickhouse/user_scripts/`). The image without a shell can run only statically linked programs, because it has no shell, no interpreter such as Python, and no C library. Mount the programs and the configuration of the functions (a file matching `*_function.*ml`) into the container:
+
+```bash
+docker run -d \
+    -v "$PWD/user_scripts:/var/lib/clickhouse/user_scripts:ro" \
+    -v "$PWD/my_function.xml:/etc/clickhouse-server/my_function.xml:ro" \
+    --name some-clickhouse-server --ulimit nofile=262144:262144 %%IMAGE%%
+```
+
+For scripts, build an image on top of the image with the `-ubuntu` suffix and install the interpreter:
+
+```dockerfile
+FROM %%IMAGE%%:latest-ubuntu
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+The configuration of the server sets [`filesystem_isolation`](https://clickhouse.com/docs/reference/settings/server-settings/settings/other#filesystem_isolation) to `best_effort`. Docker does not let the server create the namespaces it needs unless the container has `CAP_SYS_ADMIN`, so by default the server runs without the isolation and logs a warning. If the container has `CAP_SYS_ADMIN` and its security profile allows mounting filesystems, the server isolates itself, and the interpreters, libraries and data of the scripts have to be listed in `filesystem_isolation_paths`. [Driver-based user-defined functions](https://clickhouse.com/docs/sql-reference/functions/udf#driver-based-executable-user-defined-functions) need `dynamic_user_defined_executable_functions_path` declared as `<read_write_executable>` when the isolation is in force, and need the tools that the drivers run. See [Executable UDFs with filesystem isolation](https://clickhouse.com/docs/sql-reference/functions/udf#filesystem-isolation).
 <!-- REMOVE UNTIL HERE -->
 <!-- docker-official-library:on -->

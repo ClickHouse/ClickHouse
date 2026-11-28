@@ -211,7 +211,11 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
 void registerTableFunctionExecutable(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionExecutable>({.description = R"DOCS_MD(
-The `executable` table function creates a table based on the output of a user-defined function (UDF) that you define in a script that outputs rows to **stdout**. The executable script is stored in the `users_scripts` directory and can read data from any source. Make sure your ClickHouse server has all the required packages to run the executable script. For example, if it is a Python script, ensure that the server has the necessary Python packages installed.
+The `executable` table function creates a table based on the output of a user-defined function (UDF) that you define in a script that outputs rows to **stdout**. The executable script is stored in the `user_scripts` directory and can read data from any source. Make sure your ClickHouse server has all the required packages to run the executable script. For example, if it is a Python script, ensure that the server has the necessary Python packages installed.
+
+<Note>
+With the server setting [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation), which the `config.xml` installed by the packages enables, the script runs in the isolated filesystem of the server. It can be started from `user_scripts_path`, but its interpreter, the libraries it needs, and the files it reads must be made visible with `filesystem_isolation_paths`. The default Docker image, built `FROM scratch`, has no shell and no interpreter. See [Executable UDFs with filesystem isolation](/reference/functions/regular-functions/udf#filesystem-isolation).
+</Note>
 
 You can optionally include one or more input queries that stream their results to **stdin** for the script to read.
 
