@@ -77,8 +77,7 @@ public:
     [[nodiscard]] size_t getHashes() const { return hashes; }
     [[nodiscard]] size_t getSeed() const { return seed; }
 
-    /// For debug.
-    [[nodiscard]] UInt64 isEmpty() const;
+    [[nodiscard]] bool isEmpty() const;
 
     [[nodiscard]] size_t memoryUsageBytes() const;
 
