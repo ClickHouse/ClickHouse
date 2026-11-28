@@ -7,6 +7,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <Common/HiddenSecret.h>
+#include <Common/escapeForFileName.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
@@ -44,8 +45,14 @@
 
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupInfo.h>
+#include <Backups/BackupMetadataFinder.h>
+#include <Core/SettingsFields.h>
+#include <IO/ReadBufferFromString.h>
+#include <cmath>
+#include <limits>
 
 #include <Disks/DiskBackup.h>
+#include <Disks/IDisk.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
 
@@ -82,7 +89,9 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_SETTING;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int CANNOT_PARSE_NUMBER;
 }
 
 namespace
@@ -100,7 +109,7 @@ public:
 /// depends on, including the local database name. Fields are length-prefixed to keep their
 /// boundaries unambiguous, and the name stays a pure function of them because it has to come out
 /// identical on every open of the same database.
-String buildStoragePolicyName(const String & local_database_name, const DatabaseBackup::Configuration & config)
+String buildStoragePolicyName(const String & local_database_name, const DatabaseBackup::Configuration & config, const String & root)
 {
     const std::string_view backup_info_string = config.backup_info;
 
@@ -111,12 +120,16 @@ String buildStoragePolicyName(const String & local_database_name, const Database
     hash.update(config.database_name);
     hash.update(backup_info_string.size());
     hash.update(backup_info_string);
+    hash.update(config.shard_num_in_backup);
+    hash.update(config.replica_num_in_backup);
+    hash.update(root.size());
+    hash.update(root);
 
     return fmt::format("__database_backup_config_{}", getSipHash128AsHexString(hash));
 }
 
 void updateCreateQueryWithDatabaseBackupStoragePolicy(
-    ASTCreateQuery * create_query, const String & local_database_name, const DatabaseBackup::Configuration & config)
+    ASTCreateQuery * create_query, const String & local_database_name, const DatabaseBackup::Configuration & config, const String & root)
 {
     auto * storage = create_query->storage;
 
@@ -177,7 +190,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(
         settings = storage->settings;
     }
 
-    auto storage_policy_name = buildStoragePolicyName(local_database_name, config);
+    auto storage_policy_name = buildStoragePolicyName(local_database_name, config, root);
     settings->changes.setSetting("storage_policy", Field(storage_policy_name));
 }
 
@@ -249,6 +262,8 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     try
     {
         backup = BackupFactory::instance().createBackup(backup_open_params);
+        roots = BackupMetadataFinder::selectRootPaths(*backup, config.shard_num_in_backup, config.replica_num_in_backup,
+            BackupMetadataFinder::SelectionPolicy::RequireUnique);
     }
     catch (...)
     {
@@ -261,27 +276,26 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
         /// the backup becomes available again to access its tables.
         tryLogCurrentException(
             log,
-            fmt::format("Cannot open backup for database {}, it will be loaded without tables", backQuoteIfNeed(getDatabaseName())));
+            fmt::format("Cannot load backup database {}, it will be loaded without tables", backQuoteIfNeed(getDatabaseName())));
         backup = nullptr;
+        roots.clear();
         return;
     }
 
-    auto storage_policy_name = buildStoragePolicyName(getDatabaseName(), config);
-
-    getContext()->getOrCreateStoragePolicy(storage_policy_name, [&](const StoragePoliciesMap &)
+    for (const auto & root : roots)
     {
-        DiskBackup::PathPrefixReplacement path_prefix_replacement;
-        path_prefix_replacement.from = data_path;
-        path_prefix_replacement.to = DatabaseCatalog::getDataDirPath(config.database_name) / "";
-
-        DiskBackupConfiguration disk_backup_config;
-
-        auto disk = std::make_shared<DiskBackup>(backup, std::move(path_prefix_replacement), disk_backup_config, "");
-        auto volume = std::make_shared<SingleDiskVolume>("_volume_backup_disk", disk);
-
-        static constexpr double move_factor_for_single_disk_volume = 0.0;
-        return std::make_shared<StoragePolicy>(storage_policy_name, Volumes{volume}, move_factor_for_single_disk_volume);
-    });
+        auto storage_policy_name = buildStoragePolicyName(getDatabaseName(), config, root.string());
+        getContext()->getOrCreateStoragePolicy(storage_policy_name, [&](const StoragePoliciesMap &)
+        {
+            DiskBackup::PathPrefixReplacement replacement;
+            replacement.from = data_path;
+            replacement.to = root.relative_path() / DatabaseCatalog::getDataDirPath(config.database_name) / "";
+            DiskBackupConfiguration disk_config;
+            auto disk = std::make_shared<DiskBackup>(backup, std::move(replacement), disk_config, "");
+            auto volume = std::make_shared<SingleDiskVolume>("_volume_backup_disk", disk);
+            return std::make_shared<StoragePolicy>(storage_policy_name, Volumes{volume}, 0.0);
+        });
+    }
 }
 
 void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
@@ -299,55 +313,57 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
 
-    std::vector<std::string> metadata_files;
-
-    auto tables_files = backup->listFiles("/metadata/" + config.database_name, false /*recursive*/);
-
-    for (const auto & file_name : tables_files)
+    std::map<String, std::filesystem::path> metadata_files;
+    for (const auto & root : roots)
     {
-        /// For '.svn', '.gitignore' directory and similar.
-        if (file_name.at(0) == '.')
-            continue;
+        auto tables_files = backup->listFiles(root / "metadata" / escapeForFileName(config.database_name), false);
+        for (const auto & file_name : tables_files)
+        {
+            /// For '.svn', '.gitignore' directory and similar.
+            if (file_name.at(0) == '.')
+                continue;
 
-        /// There are .sql.bak files - skip them.
-        if (endsWith(file_name, ".sql.bak"))
-        {
-            continue;
-        }
+            /// There are .sql.bak files - skip them.
+            if (endsWith(file_name, ".sql.bak"))
+            {
+                continue;
+            }
 
-        /// Permanently detached table flag
-        if (endsWith(file_name, ".sql.detached"))
-        {
-            continue;
-        }
+            /// Permanently detached table flag
+            if (endsWith(file_name, ".sql.detached"))
+            {
+                continue;
+            }
 
-        if (endsWith(file_name, ".sql.tmp_drop"))
-        {
-            /// There are files that we tried to delete previously
-            continue;
-        }
-        else if (endsWith(file_name, ".sql.tmp"))
-        {
-            /// There are files .sql.tmp
-            continue;
-        }
-        else if (endsWith(file_name, ".sql"))
-        {
-            /// The required files have names like `table_name.sql`
-            metadata_files.emplace_back(file_name);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Incorrect file extension: {} in metadata directory {}", file_name, getMetadataPath());
+            if (endsWith(file_name, ".sql.tmp_drop"))
+            {
+                /// There are files that we tried to delete previously
+                continue;
+            }
+            else if (endsWith(file_name, ".sql.tmp"))
+            {
+                /// There are files .sql.tmp
+                continue;
+            }
+            else if (endsWith(file_name, ".sql"))
+            {
+                /// The required files have names like `table_name.sql`
+                metadata_files.try_emplace(file_name, root);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Incorrect file extension: {} in metadata directory {}", file_name, getMetadataPath());
+            }
         }
     }
 
     /// NOTE No concurrent writes are possible during database loading
     const std::string current_database_name = TSA_SUPPRESS_WARNING_FOR_READ(database_name);
 
-    auto process_metadata_file = [&metadata, &current_database_name, local_context, this](const String & file_name)
+    auto process_metadata_file = [&metadata, &current_database_name, local_context, this](const auto & entry)
     {
-        std::filesystem::path metadata_path("/metadata/" + config.database_name);
+        const auto & [file_name, root] = entry;
+        std::filesystem::path metadata_path = root / "metadata" / escapeForFileName(config.database_name);
         std::filesystem::path metadata_file_path = metadata_path / file_name;
 
         try
@@ -384,7 +400,7 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
                 return;
             }
 
-            updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, current_database_name, config);
+            updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, current_database_name, config, root.string());
 
             {
                 SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};
@@ -415,28 +431,26 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
         }
     };
 
-    std::sort(metadata_files.begin(), metadata_files.end());
-    metadata_files.erase(std::unique(metadata_files.begin(), metadata_files.end()), metadata_files.end());
-
     /// Read and parse metadata in parallel
     ThreadPool pool(CurrentMetrics::DatabaseBackupThreads, CurrentMetrics::DatabaseBackupThreadsActive, CurrentMetrics::DatabaseBackupThreadsScheduled);
 
     {
-        /// Note that we pass batch by value (always fine) and process_metadata_file by reference
+        /// Note that we pass iterators by value (always fine) and process_metadata_file by reference
         /// process_metadata_file is ok since a) it outlives runner and b) it captures by reference only things that outlive runner
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DATABASE_BACKUP);
         const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
 
-        for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
+        for (auto it = metadata_files.begin(); it != metadata_files.end();)
         {
-            std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
-            runner.enqueueAndKeepTrack([batch, &process_metadata_file]() mutable
+            auto end = std::next(it, std::min(batch_size, static_cast<size_t>(std::distance(it, metadata_files.end()))));
+            runner.enqueueAndKeepTrack([it, end, &process_metadata_file]() mutable
                 {
-                    for (const auto & file : batch)
-                        process_metadata_file(file);
+                    for (auto current = it; current != end; ++current)
+                        process_metadata_file(*current);
                 },
                 Priority{},
                 getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+            it = end;
         }
         runner.waitForAllToFinishAndRethrowFirstError();
     }
@@ -478,8 +492,10 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
     /// The locator is emitted as the function it is, not as a string literal holding its text: this
     /// definition is what `ALTER DATABASE ... MODIFY COMMENT` writes back into the metadata file, and
     /// the load path parses the second argument with `BackupInfo::fromAST`, which takes a function.
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
+    String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
         backQuoteIfNeed(database_name), quoteString(config.database_name), config.backup_info);
+    if (config.has_selectors)
+        query += fmt::format(" SETTINGS shard_num_in_backup = {}, replica_num_in_backup = {}", config.shard_num_in_backup, config.replica_num_in_backup);
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser,
@@ -580,6 +596,59 @@ void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextP
 
 namespace
 {
+
+void parseBackupSelection(const ASTStorage * storage, DatabaseBackup::Configuration & config)
+{
+    if (storage->settings)
+    {
+        config.has_selectors = true;
+        auto is_selector = [](std::string_view name)
+        {
+            return name == "shard_num_in_backup" || name == "replica_num_in_backup";
+        };
+        if (!storage->settings->default_settings.empty())
+        {
+            const auto & name = *storage->settings->default_settings.begin();
+            if (!is_selector(name))
+                throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown Backup database setting {}", name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEFAULT is not supported for Backup database setting {}", name);
+        }
+        if (!storage->settings->query_parameters.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Query parameters are not supported in Backup database settings");
+        for (const auto & change : storage->settings->changes)
+        {
+            if (!is_selector(change.name))
+                throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown Backup database setting {}", change.name);
+            /// Truncation or overflow could select a different backup source.
+            if (change.value.getType() == Field::Types::Float64)
+            {
+                auto value = change.value.safeGet<Float64>();
+                if (!std::isfinite(value) || std::trunc(value) != value)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} must be an integer", change.name);
+            }
+            if (change.shorthand)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} requires a value", change.name);
+            if (change.value.getType() == Field::Types::String)
+            {
+                const auto & text = change.value.safeGet<String>();
+                ReadBufferFromString buffer(text);
+                UInt64 number = 0;
+                readIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(number, buffer);
+                if (!buffer.eof())
+                {
+                    UInt64 multiplier = parseWithSizeSuffix<UInt64>("1" + text.substr(buffer.count()));
+                    if (number > std::numeric_limits<UInt64>::max() / multiplier)
+                        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Overflow while parsing a number");
+                }
+            }
+            SettingFieldUInt64 value(change.value);
+            if (change.name == "shard_num_in_backup")
+                config.shard_num_in_backup = value.value;
+            else
+                config.replica_num_in_backup = value.value;
+        }
+    }
+}
 
 void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
 {
@@ -837,13 +906,38 @@ void registerDatabaseBackup(DatabaseFactory & factory)
             = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax || is_internal_metadata_replay;
 
         auto config = parseArguments(engine_args, args.context, /*allow_locator_in_string_literal=*/ from_existing_metadata);
+        parseBackupSelection(engine_define, config);
         if (has_real_user && !from_existing_metadata)
             BackupFactory::instance().checkSourceAccess(BackupInfo::fromString(config.backup_info), args.context, IBackup::OpenMode::READ);
+
+        if (args.mode == LoadingStrictnessLevel::ATTACH && !args.create_query.attach_short_syntax && !args.is_metadata_replay)
+        {
+            auto disk = args.context->getDatabaseDisk();
+            auto path = DatabaseCatalog::getMetadataFilePath(args.database_name);
+            if (disk->existsFile(path))
+            {
+                auto stored_ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, args.context, disk, path);
+                const auto * stored_create = stored_ast->as<ASTCreateQuery>();
+                if (!stored_create || !stored_create->storage || !stored_create->storage->engine
+                    || stored_create->storage->engine->name != "Backup")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Stored database definition is not a Backup database; attach its stored definition before recreating it");
+                DatabaseBackup::Configuration stored_config;
+                parseBackupSelection(stored_create->storage, stored_config);
+                if (config.shard_num_in_backup != stored_config.shard_num_in_backup
+                    || config.replica_num_in_backup != stored_config.replica_num_in_backup)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup database selection does not match stored metadata; recreate the database");
+            }
+        }
 
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
-    factory.registerDatabase("Backup", create_fn, {.custom = findBackupDatabaseSecretArguments}, {.supports_arguments = true, .is_external = true}, Documentation{
+    factory.registerDatabase("Backup", create_fn, {.custom = findBackupDatabaseSecretArguments},
+        {.supports_arguments = true, .supports_settings = true, .is_external = true,
+         .has_builtin_setting_fn = [](std::string_view name)
+         {
+             return name == "shard_num_in_backup" || name == "replica_num_in_backup";
+         }}, Documentation{
         .description = R"DOCS_MD(
 Database backup allows to instantly attach table/database from [backups](/concepts/features/backup-restore/overview) in read-only mode.
 
@@ -856,12 +950,31 @@ CREATE DATABASE backup_database
 ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
 ```
 
+For a clustered backup, select one stored shard and replica to inspect in read-only mode:
+
+```sql
+CREATE DATABASE backup_shard
+ENGINE = Backup('source_database', Disk('backups', 'cluster_backup'))
+SETTINGS shard_num_in_backup = 2, replica_num_in_backup = 1;
+```
+
+The selectors identify sources in the backup, not the server running the query. Zero or omission selects a source automatically only when that axis has a single choice. A flat backup is the implicit source 1/1. A fresh creation fails if automatic selection is ambiguous. This differs from `RESTORE` defaults: an explicit replica is required when multiple replicas exist, even if their replicated table data is identical. Tables are found in replica, shard, then global order, with each table's data read from the same location as its metadata.
+
+If an older ambiguous definition is loaded at server startup, the database remains available without tables and a diagnostic is logged. Drop and recreate it with explicit selectors to access a source. If the database is detached, restart the server first so it can be dropped.
+
+Before downgrading to a version that does not support these settings, drop database definitions that use selectors. Dropping a `Backup` database does not remove the backup itself.
+
 The backup destination can be any valid backup [destination](/concepts/features/backup-restore/local-disk#configure-backup-destinations-for-disk), such as `Disk`, `S3`, or `File`. It is passed as a function, for example `Disk('disk_name', 'backup_name')`.
 
 **Engine Parameters**
 
 - `database_name_inside_backup` — Name of the database inside the backup.
 - `backup_destination` — Backup destination.
+
+**Settings**
+
+- `shard_num_in_backup`: Stored shard identifier. Zero or omission selects the shard only when the choice is unique.
+- `replica_num_in_backup`: Stored replica identifier within the selected shard. Zero or omission selects the replica only when the choice is unique.
 
 ## Usage example {#usage-example}
 
@@ -941,7 +1054,8 @@ SELECT database, name FROM system.tables WHERE database = 'test_database_backup'
 └──────────────────────┴──────────────┘
 ```
 )DOCS_MD",
-        .syntax = "ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))",
+        .syntax = "ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name')) "
+                  "[SETTINGS shard_num_in_backup = N, replica_num_in_backup = M]",
         .related = {}});
 }
 
