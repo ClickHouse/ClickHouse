@@ -674,6 +674,9 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     output.input_type = primitive.output_type;
     output.output_type = node.type_hint ? node.type_hint : inferred_type;
     output.needs_cast = !output.output_type->equals(*output.input_type);
+    if (!primitive.output_nullable && !primitive.decoded_type->isDefaultInsertTrivial()
+        && removeLowCardinality(output.output_type)->equals(*output.input_type))
+        primitive.null_default_type = primitive.decoded_type;
 
     return true;
 }

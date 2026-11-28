@@ -12,6 +12,10 @@ DROP DICTIONARY IF EXISTS dict_nullable_key;
 DROP TABLE IF EXISTS src_str;
 DROP TABLE IF EXISTS src_empty;
 DROP TABLE IF EXISTS src_nullable_key;
+DROP DICTIONARY IF EXISTS dict_defaults;
+DROP DICTIONARY IF EXISTS dict_date_key;
+DROP TABLE IF EXISTS src_defaults;
+DROP TABLE IF EXISTS src_date_key;
 
 CREATE TABLE src_str (k String, v String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO src_str VALUES ('a', 'A'), ('b', 'B'), ('c', 'C');
@@ -89,6 +93,29 @@ SELECT count() > 0 FROM (EXPLAIN actions = 1
     LEFT JOIN dict_str AS dd ON t.pref = dd.k)
 WHERE explain ILIKE '%Algorithm: DirectKeyValueJoin%';
 
+-- Not-matched rows get the type default, also for a type whose default is not the column zero.
+CREATE TABLE src_defaults (k String, d Date32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO src_defaults VALUES ('a', '2000-01-01');
+CREATE DICTIONARY dict_defaults (k String, d Date32)
+PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE 'src_defaults' DB currentDatabase())) LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(0);
+
+CREATE TABLE src_date_key (k Date32, v String) ENGINE = MergeTree ORDER BY k;
+INSERT INTO src_date_key VALUES ('2000-01-01', 'A');
+CREATE DICTIONARY dict_date_key (k Date32, v String)
+PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE 'src_date_key' DB currentDatabase())) LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(0);
+
+SELECT 'Type defaults of not-matched rows, Nullable key';
+SELECT t.pref, dd.d FROM (SELECT arrayJoin(['a', 'b', NULL]::Array(Nullable(String))) AS pref) AS t
+LEFT JOIN dict_defaults AS dd ON t.pref = dd.k ORDER BY t.pref NULLS LAST SETTINGS join_use_nulls = 0;
+
+SELECT 'Type defaults of not-matched rows, non-Nullable key';
+SELECT t.pref, dd.d FROM (SELECT arrayJoin(['a', 'b']) AS pref) AS t
+LEFT JOIN dict_defaults AS dd ON t.pref = dd.k ORDER BY t.pref SETTINGS join_use_nulls = 0;
+
+SELECT 'Type default of a not-found Date32 dictionary key';
+SELECT t.k, dd.k, dd.v FROM (SELECT arrayJoin([toDate32('2000-01-01'), toDate32('2000-01-02')]) AS k) AS t
+LEFT JOIN dict_date_key AS dd ON t.k = dd.k ORDER BY t.k SETTINGS join_use_nulls = 0;
+
 DROP DICTIONARY dict_str;
 DROP DICTIONARY dict_empty;
 DROP DICTIONARY dict_nullable_key;
@@ -97,3 +124,7 @@ DROP TABLE src_empty;
 DROP TABLE src_nullable_key;
 DROP TABLE src_sparse;
 DROP TABLE src_array;
+DROP DICTIONARY dict_defaults;
+DROP DICTIONARY dict_date_key;
+DROP TABLE src_defaults;
+DROP TABLE src_date_key;

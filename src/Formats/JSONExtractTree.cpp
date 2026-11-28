@@ -777,6 +777,8 @@ template <typename JSONParser, typename DateType, typename ColumnNumericType>
 class DateNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
+    explicit DateNode(const DataTypePtr & type) : type_for_default(getTypeForDefault(type)) {}
+
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
@@ -786,7 +788,7 @@ public:
     {
         if (element.isNull() && format_settings.null_as_default)
         {
-            column.insertDefault();
+            insertDefaultOfType(column, type_for_default);
             return true;
         }
 
@@ -826,6 +828,9 @@ public:
         assert_cast<ColumnVector<ColumnNumericType> &>(column).insertValue(date);
         return true;
     }
+
+private:
+    DataTypePtr type_for_default;
 };
 
 /// A declared time zone belongs to the value, so it wins; without one the value is read in the
@@ -1530,8 +1535,8 @@ template <typename JSONParser>
 class LowCardinalityNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
-    explicit LowCardinalityNode(bool is_nullable_, std::unique_ptr<JSONExtractTreeNode<JSONParser>> nested_)
-        : is_nullable(is_nullable_), nested(std::move(nested_))
+    LowCardinalityNode(bool is_nullable_, std::unique_ptr<JSONExtractTreeNode<JSONParser>> nested_, const DataTypePtr & type)
+        : is_nullable(is_nullable_), nested(std::move(nested_)), type_for_default(getTypeForDefault(type))
     {
     }
 
@@ -1544,7 +1549,7 @@ public:
     {
         if (element.isNull() && (is_nullable || format_settings.null_as_default))
         {
-            column.insertDefault();
+            insertDefaultOfType(column, type_for_default);
             return true;
         }
 
@@ -1563,6 +1568,7 @@ public:
 private:
     bool is_nullable;
     std::unique_ptr<JSONExtractTreeNode<JSONParser>> nested;
+    DataTypePtr type_for_default;
 };
 
 template <typename JSONParser>
@@ -3143,9 +3149,9 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
         case TypeIndex::IPv6:
             return std::make_unique<IPv6Node<JSONParser>>();
         case TypeIndex::Date:;
-            return std::make_unique<DateNode<JSONParser, DayNum, UInt16>>();
+            return std::make_unique<DateNode<JSONParser, DayNum, UInt16>>(type);
         case TypeIndex::Date32:
-            return std::make_unique<DateNode<JSONParser, ExtendedDayNum, Int32>>();
+            return std::make_unique<DateNode<JSONParser, ExtendedDayNum, Int32>>(type);
         case TypeIndex::DateTime:
             return std::make_unique<DateTimeNode<JSONParser>>(assert_cast<const DataTypeDateTime &>(*type));
         case TypeIndex::DateTime64:
@@ -3209,7 +3215,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
                 case TypeIndex::UUID:
                     return std::make_unique<LowCardinalityUUIDNode<JSONParser>>(is_nullable);
                 default:
-                    return std::make_unique<LowCardinalityNode<JSONParser>>(is_nullable, buildJSONExtractTree<JSONParser>(dictionary_type, source_for_exception_message));
+                    return std::make_unique<LowCardinalityNode<JSONParser>>(is_nullable, buildJSONExtractTree<JSONParser>(dictionary_type, source_for_exception_message), type);
             }
         }
         case TypeIndex::Nullable:

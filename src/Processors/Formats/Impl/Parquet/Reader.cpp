@@ -3928,6 +3928,20 @@ static constexpr size_t max_gap_bytes_to_coalesce = 128;
 /// Wider values cost more to copy again when dropping the gap than the skip saves.
 static constexpr size_t max_coalesced_value_bytes = 8;
 
+/// Like `column->expand(null_map, /*inverted*/ true)`, but NULL rows get the default of `null_default_type` if it is set.
+static void expandNullRows(MutableColumnPtr & column, const PaddedPODArray<UInt8> & null_map, const DataTypePtr & null_default_type)
+{
+    column->expand(null_map, /*inverted*/ true);
+    if (!null_default_type)
+        return;
+
+    auto default_row = null_default_type->createColumn();
+    null_default_type->insertDefaultInto(*default_row);
+    for (size_t i = 0; i < null_map.size(); ++i)
+        if (null_map[i])
+            column->updateAt(*default_row, i, 0);
+}
+
 void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, RowGroup & row_group, RowSubgroup & row_subgroup)
 {
     ScopedZstdContext zstd_context;
@@ -4109,7 +4123,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             if (subchunk.null_map)
             {
                 const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
-                subchunk.column->expand(null_map, /*inverted*/ true);
+                expandNullRows(subchunk.column, null_map, column_info.null_default_type);
                 subchunk.null_map = subchunk.null_map->filter(decoded_rows_filter, row_subgroup.filter.rows_pass)->assumeMutable();
             }
             subchunk.column = subchunk.column->filter(decoded_rows_filter, row_subgroup.filter.rows_pass)->assumeMutable();
@@ -4146,7 +4160,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
         /// Fill defaults at null rows so the column reaches full size. For a group_nullable leaf,
         /// the null map is the group null map: defaults fill the struct-null rows.
-        subchunk.column->expand(null_map, /*inverted*/ true);
+        expandNullRows(subchunk.column, null_map, column_info.null_default_type);
     }
 
     if (column_info.group_nullable && subchunk.null_map)

@@ -1,6 +1,6 @@
--- A not-matched row of an outer join carries the column default, which for `Date32` is 1970-01-01,
--- while the type default is 1900-01-01. The outer-to-inner and any-to-semi/anti conversions decide
--- whether the filter above the join rejects that row, so they must judge the value the join fills.
+-- A not-matched row of an outer join carries the type default, which for `Date32` is 1900-01-01.
+-- The outer-to-inner and any-to-semi/anti conversions decide whether the filter above the join
+-- rejects that row, so they must judge the value the join fills.
 -- The cutoffs are fixed rather than now(): the type default wraps to 2036-02-07 under toDateTime,
 -- so a now() predicate would stop detecting a reverted probe after that date.
 
@@ -57,12 +57,12 @@ SELECT 'LEFT JOIN, no wrapper', count()
 FROM kr_05233 AS r LEFT JOIN kl_05233 AS l ON l.v = r.v
 WHERE l.d > toDate32('1950-01-01');
 
--- 1970-01-01 fails this predicate, so converting to INNER is correct and must still happen.
-SELECT 'conversion preserved, rows', count()
+-- 1900-01-01 fails this predicate too, but the conversions skip a type whose default insertion is not trivial.
+SELECT 'conversion skipped, rows', count()
 FROM kr_05233 AS r LEFT JOIN kl_05233 AS l ON l.v = r.v
 WHERE l.d > toDate32('1980-01-01');
 
-SELECT 'conversion preserved, plan', count() FROM (
+SELECT 'conversion skipped, plan', count() FROM (
     EXPLAIN actions = 1
     SELECT count() FROM kr_05233 AS r LEFT JOIN kl_05233 AS l ON l.v = r.v
     WHERE l.d > toDate32('1980-01-01')
@@ -75,7 +75,7 @@ SELECT 'LowCardinality(Date32)', count()
 FROM kr_05233 AS r LEFT JOIN kl_lc_05233 AS l ON l.v = r.v
 WHERE toDateTime(l.d) < toDateTime('2020-07-25 12:00:00');
 
-SELECT 'LowCardinality(Date32), conversion preserved, plan', count() FROM (
+SELECT 'LowCardinality(Date32), conversion skipped, plan', count() FROM (
     EXPLAIN actions = 1
     SELECT count() FROM kr_05233 AS r LEFT JOIN kl_lc_05233 AS l ON l.v = r.v
     WHERE l.d > toDate32('1980-01-01')
@@ -88,7 +88,7 @@ SELECT 'Tuple(Date32)', count()
 FROM kr_05233 AS r LEFT JOIN kl_tup_05233 AS l ON l.v = r.v
 WHERE toDateTime(l.t.1) < toDateTime('2020-07-25 12:00:00');
 
-SELECT 'Tuple(Date32), conversion preserved, plan', count() FROM (
+SELECT 'Tuple(Date32), conversion skipped, plan', count() FROM (
     EXPLAIN actions = 1
     SELECT count() FROM kr_05233 AS r LEFT JOIN kl_tup_05233 AS l ON l.v = r.v
     WHERE toDateTime(materialize(l.t).1) > toDateTime('2030-01-01')

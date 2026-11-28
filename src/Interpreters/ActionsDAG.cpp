@@ -3658,8 +3658,7 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
         if (input->column)
             continue;
 
-        /// A not-matched row holds the column's own default (`Date32`: 1970-01-01, not `getDefault`'s
-        /// 1900-01-01), and where default insertion is not trivial no probe is guaranteed faithful.
+        /// Where default insertion is not trivial, no probe is guaranteed to match the value a not-matched row holds.
         if (!input->result_type->isDefaultInsertTrivial())
             continue;
 
