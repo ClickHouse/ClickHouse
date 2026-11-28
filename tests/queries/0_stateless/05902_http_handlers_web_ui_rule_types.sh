@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the `acme` handler type exists only with `USE_SSL`, and the fast test build has no SSL
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
