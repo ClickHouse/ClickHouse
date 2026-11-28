@@ -1,0 +1,4 @@
+udf: exit 36, rejected 1
+workload: exit 36, rejected 1
+udf_valid_path: exit 0, rejected 0
+replicated_access: exit 36, rejected 1
