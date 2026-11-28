@@ -1,0 +1,69 @@
+a	Nullable(Int64)					
+b	Nullable(Float64)					
+a	Nullable(Int64)					
+b	Nullable(Float64)					
+1	10	11
+2	20	22
+1	10	0
+2	20	0
+0	10	10
+2	20	22
+a	Nullable(Int64)					
+b	Nullable(Float64)					
+c	Nullable(String)					
+1	1.5	x
+2	2.5	y
+3	3.5	z
+4	4.5	u
+5	5.5	v
+6	6.5	w
+b	Nullable(Float64)					
+a	Nullable(Int32)					
+1	1.5
+2	2.5
+1	10
+2	20
+1	10
+2	20
+1	10
+2	20
+1	10
+2	20
+1	x
+2	y
+3	z
+1	10
+3	30
+4	40
+5	50
+20	2
+a	Nullable(Float64)					
+b	Nullable(Float64)					
+1	1.5
+2.5	2
+1	1.5
+2	2.5
+1	10
+a	Nullable(Int64)					
+b	Nullable(Float64)					
+a	Nullable(Int64)					
+b	Nullable(Float64)					
+1	1.5
+2	2.5
+a	Int32					
+b	Nullable(Float64)					
+5
+1	10
+2	20
+3	30
+4	40
+5	50
+1
+a	Nullable(Int64)					
+b	Nullable(Float64)					
+a	Nullable(Float64)					
+b	Nullable(Float64)					
+1	1.5
+2.5	2
+1	1.5
+2	2.5
