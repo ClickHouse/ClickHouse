@@ -959,6 +959,46 @@ TEST(AccessRights, PartialRevokeWithWildcard)
     ASSERT_EQ(root.toString(), "GRANT SELECT ON *.*, REVOKE SELECT ON internal*.*, GRANT SELECT ON internal_public.*");
 }
 
+TEST(AccessRights, GrantableRightsWithoutRevokedGrantOption)
+{
+    /// `getGrantableRights` is what GRANT CURRENT GRANTS and RESTORE may hand out.
+    AccessRights root;
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revokeGrantOption(AccessType::SELECT, "db", "secret");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "secret"));
+    ASSERT_FALSE(root.hasGrantOption(AccessType::SELECT, "db", "secret"));
+
+    AccessRights grantable = root.getGrantableRights();
+    ASSERT_FALSE(grantable.isGranted(AccessType::SELECT, "db", "secret"));
+    ASSERT_FALSE(grantable.hasGrantOption(AccessType::SELECT, "db", "secret"));
+    ASSERT_TRUE(grantable.hasGrantOption(AccessType::SELECT, "db", "other"));
+    ASSERT_EQ(grantable.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE SELECT ON db.secret");
+
+    /// GRANT CURRENT GRANTS(SELECT ON *.*)
+    AccessRights rights;
+    rights.grant(AccessType::SELECT);
+    rights.makeIntersection(grantable);
+    ASSERT_FALSE(rights.isGranted(AccessType::SELECT, "db", "secret"));
+    ASSERT_TRUE(rights.isGranted(AccessType::SELECT, "db", "other"));
+
+    root = {};
+    root.grantWildcardWithGrantOption(AccessType::SELECT, "db");
+    root.revokeWildcardGrantOption(AccessType::SELECT, "dbx");
+    grantable = root.getGrantableRights();
+    ASSERT_FALSE(grantable.isGranted(AccessType::SELECT, "dbx1"));
+    ASSERT_TRUE(grantable.hasGrantOption(AccessType::SELECT, "db1"));
+
+    /// A right granted again without the grant option is not grantable either.
+    root = {};
+    root.grantWithGrantOption(AccessType::INSERT);
+    root.revoke(AccessType::INSERT, "db", "t");
+    root.grant(AccessType::INSERT, "db");
+    grantable = root.getGrantableRights();
+    ASSERT_TRUE(root.isGranted(AccessType::INSERT, "db", "t"));
+    ASSERT_FALSE(grantable.isGranted(AccessType::INSERT, "db", "t"));
+    ASSERT_TRUE(grantable.hasGrantOption(AccessType::INSERT, "db", "other"));
+}
+
 TEST(AccessRights, WildcardGrantOptionInteractions)
 {
     AccessRights root;

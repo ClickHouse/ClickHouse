@@ -1672,7 +1672,11 @@ AccessRights AccessRights::getGrantableRights() const
             continue;
 
         if (element.is_partial_revoke)
+        {
+            /// A right with a revoked grant option is not grantable, so remove the right itself.
+            element.grant_option = false;
             result.revoke(element);
+        }
         else
             result.grant(element);
     }
