@@ -1,4 +1,4 @@
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
 Header: id UInt64
         value String
         rhs.id UInt64
@@ -90,7 +90,7 @@ Positions: 4 0 1 2
 --
 2	Value_2	2	Value_2
 --
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
 Header: id UInt64
         value String
         rhs.id UInt64
@@ -182,7 +182,7 @@ Positions: 4 0 1 2
 --
 2	Value_2	2	Value_2
 --
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
 Header: id UInt64
         value String
         rhs.id UInt64

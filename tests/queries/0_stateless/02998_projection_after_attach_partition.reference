@@ -25,7 +25,7 @@ ALTER TABLE visits_order_dst ATTACH PARTITION ID '2' FROM visits_order;
 SET enable_parallel_replicas=0;
 EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2';
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (user_name_projection)
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=1, parallel_replicas_local_plan=1, parallel_replicas_support_projection=1, optimize_aggregation_in_order = 0;

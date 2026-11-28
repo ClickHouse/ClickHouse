@@ -3,7 +3,7 @@ Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
       Aggregating
-        Expression ((Before GROUP BY + ))
+        Expression ((Before GROUP BY + WHERE))
           JoinLogical (Broadcast HashJoin  swapped)
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ParallelRead default.rsj_fact)
@@ -20,7 +20,7 @@ Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
       Aggregating
-        Expression ((Before GROUP BY + ))
+        Expression ((Before GROUP BY + WHERE))
           JoinLogical (Broadcast HashJoin  swapped)
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ParallelRead default.rsj_fact)

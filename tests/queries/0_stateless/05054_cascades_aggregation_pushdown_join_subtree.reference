@@ -9,7 +9,7 @@ Expression (Project names)
               ReadFromMergeTree (default.t_corr_right_multi)
           GatherExchange
             Aggregating
-              Expression
+              Expression (Apply runtime join filter)
                 JoinLogical (Broadcast HashJoin )
                   Expression ((Apply runtime join filter + Change column names to column identifiers))
                     ReadFromMergeTree (ParallelRead default.t_corr_left)
@@ -26,7 +26,7 @@ Expression (Project names)
               ReadFromMergeTree (default.t_corr_right_multi)
           GatherExchange
             Aggregating
-              Expression
+              Expression (Apply runtime join filter)
                 JoinLogical (Broadcast HashJoin )
                   Expression (((Apply runtime join filter + Apply runtime join filter) + Change column names to column identifiers))
                     ReadFromMergeTree (ParallelRead default.t_corr_left)

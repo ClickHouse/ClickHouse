@@ -1,13 +1,13 @@
 -- no WHERE, ORDER BY matches projection sorting key
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
-    Expression
+    Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
       ReadFromMergeTree (commit_order)
 
 -- WHERE present, ORDER BY matches projection sorting key
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
-    Expression
+    Expression (((Before ORDER BY + Projection) + (WHERE + Change column names to column identifiers)))
       ReadFromMergeTree (commit_order)
 
 -- no WHERE, no ORDER BY: projection is not helpful, fall back to main table

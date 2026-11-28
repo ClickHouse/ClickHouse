@@ -131,7 +131,7 @@ Header: bx String
   Sorting (Sorting for ORDER BY)
   Header: __table1.a2 String
           __table2.bx String
-    Expression ((Before ORDER BY + (Projection + )))
+    Expression ((Before ORDER BY + (Projection + WHERE)))
     Header: __table1.a2 String
             __table2.bx String
       Expression (Post Join Actions)

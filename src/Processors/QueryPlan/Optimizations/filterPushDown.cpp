@@ -1144,7 +1144,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         {
             /// This means that all predicates of filter were pushed down.
             /// Replace current actions to expression, as we don't need to filter anything.
-            parent = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(filter_expression));
+            auto expression_step = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(filter_expression));
+            expression_step->setStepDescription(*filter);
+            parent = std::move(expression_step);
             filter = nullptr;
         }
         else

@@ -1,4 +1,4 @@
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
 Header: t1.id UInt64
         t1.value String
         t2.value String

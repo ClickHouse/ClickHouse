@@ -10,7 +10,7 @@ Expression ((Project names + Projection))
 
 reading indexed columns
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (commit_order)
     Indexes:
       PrimaryKey

@@ -747,6 +747,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     ListWithMemoryTracking<std::variant<ActionsDAG, MainFilterStep>> main_steps;
     ListWithMemoryTracking<ActionsDAG> lazy_steps;
+    /// The description of the step each element of `main_steps` and `lazy_steps` is split from, in the same order.
+    ListWithMemoryTracking<String> split_step_descriptions;
 
     for (const auto & step_to_split : steps_to_split | std::views::reverse)
     {
@@ -777,6 +779,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         }
         else
             return false;
+
+        split_step_descriptions.emplace_back(step_to_split.step->getStepDescription());
     }
 
     QueryPlan main_plan;
@@ -791,15 +795,18 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     {
         auto main_global_offset_dag = calculateGlobalOffset(*read_from_merge_tree);
         auto main_global_offset_step = std::make_unique<ExpressionStep>(main_plan.getCurrentHeader(), std::move(main_global_offset_dag));
+        main_global_offset_step->setStepDescription("Calculate global row index");
         main_plan.addStep(std::move(main_global_offset_step));
     }
 
+    auto main_step_description = split_step_descriptions.begin();
     for (auto & step : main_steps)
     {
+        QueryPlanStepPtr new_step;
         if (std::holds_alternative<ActionsDAG>(step))
         {
             auto dag = std::move(std::get<ActionsDAG>(step));
-            main_plan.addStep(std::make_unique<ExpressionStep>(main_plan.getCurrentHeader(), std::move(dag)));
+            new_step = std::make_unique<ExpressionStep>(main_plan.getCurrentHeader(), std::move(dag));
         }
         else
         {
@@ -809,8 +816,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
                 main_plan.getCurrentHeader(),
                 std::move(filter_dag_info.actions), filter_dag_info.column_name, filter_dag_info.do_remove_column);
             new_filter_step->setOptimizeConstantColumnsAfterFilter(main_filter_step.optimize_constant_columns_after_filter);
-            main_plan.addStep(std::move(new_filter_step));
+            new_step = std::move(new_filter_step);
         }
+        new_step->setStepDescription(*main_step_description++, settings.max_step_description_length);
+        main_plan.addStep(std::move(new_step));
     }
 
     if (sorting_step || shuffle_step)
@@ -897,7 +906,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         /// Remove dangling nodes from the DAG. Some of them may not exist anymore (e.g. filter column)
         if (!lazy_steps.empty())
             removeDanglingNodes(dag);
-        result_plan.addStep(std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag)));
+        auto lazy_step = std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag));
+        lazy_step->setStepDescription(split_step_descriptions.front(), settings.max_step_description_length);
+        split_step_descriptions.pop_front();
+        result_plan.addStep(std::move(lazy_step));
     }
 
     query_plan.replaceNodeWithPlan(&root, std::move(result_plan), std::move(expected_header));

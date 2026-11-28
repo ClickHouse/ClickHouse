@@ -5,7 +5,7 @@ SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN 
 WHERE lhs.id = 5
 SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
 Header: id UInt64
         rhs.id UInt64
         value String
@@ -96,7 +96,7 @@ SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN 
 WHERE rhs.id = 5
 SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
 Header: id UInt64
         rhs.id UInt64
         value String
@@ -187,7 +187,7 @@ SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN 
 WHERE lhs.id = 5 AND rhs.id = 6
 SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
 Header: id UInt64
         rhs.id UInt64
         value String
@@ -289,7 +289,7 @@ SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs LEFT JOIN t
 WHERE lhs.id = 5
 SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
 Header: id UInt64
         rhs.id UInt64
         value String
@@ -576,7 +576,7 @@ SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs RIGHT JOIN 
 WHERE rhs.id = 5
 SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
 Header: id UInt64
         rhs.id UInt64
         value String

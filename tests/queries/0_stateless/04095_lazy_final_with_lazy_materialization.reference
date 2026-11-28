@@ -14,13 +14,13 @@
 1
 === Full EXPLAIN ===
 Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
-  Expression
-    Expression
+  Expression (( + (Before ORDER BY + Projection)))
+    Expression ((WHERE + Change column names to column identifiers))
       JoinLazyColumnsStep
         Limit (preliminary LIMIT)
           Sorting (Sorting for ORDER BY)
-            Expression
-              Filter
+            Expression ((Before ORDER BY + Projection))
+              Filter (((WHERE + Change column names to column identifiers) + Calculate global row index))
                 Union
                   InputSelector
                     LazyFinalKeyAnalysis

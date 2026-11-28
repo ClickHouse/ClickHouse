@@ -1319,6 +1319,7 @@ void processAndOptimizeTextIndexFunctions(
             auto new_filter_column_name = result_filter_node->result_name;
             auto new_filter_step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
             new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+            new_filter_step->setStepDescription(*step);
             node->step = std::move(new_filter_step);
             continue;
         }
@@ -1331,14 +1332,17 @@ void processAndOptimizeTextIndexFunctions(
             continue;
 
         const SharedHeader & input_header = step->getInputHeaders().front();
+        QueryPlanStepPtr new_step;
         if (filter_step)
         {
             auto new_filter_step = std::make_unique<FilterStep>(input_header, dag.clone(), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
             new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
-            node->step = std::move(new_filter_step);
+            new_step = std::move(new_filter_step);
         }
         else
-            node->step = std::make_unique<ExpressionStep>(input_header, dag.clone());
+            new_step = std::make_unique<ExpressionStep>(input_header, dag.clone());
+        new_step->setStepDescription(*step);
+        node->step = std::move(new_step);
     }
 }
 

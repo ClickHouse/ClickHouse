@@ -1,6 +1,6 @@
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
-    Expression
+    Expression (((Before ORDER BY + Projection) + (WHERE + Change column names to column identifiers)))
       ReadFromMergeTree (p)
       Indexes:
         PrimaryKey

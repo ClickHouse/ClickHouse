@@ -49,12 +49,15 @@ struct QueryDAG
     /// The combined value of `optimize_constant_columns_after_filter` of the collected filters,
     /// to be set on a `FilterStep` that replaces them.
     std::optional<bool> optimize_constant_columns_after_filter;
+    /// The descriptions of the collected steps, combined as merging the steps combines them, for a step that replaces them.
+    String description;
 
     bool build(QueryPlan::Node & node);
 
 private:
     bool buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & filter_nodes);
     void appendExpression(const ActionsDAG & expression);
+    void appendDescription(const IQueryPlanStep & step);
 };
 
 struct ProjectionCandidate

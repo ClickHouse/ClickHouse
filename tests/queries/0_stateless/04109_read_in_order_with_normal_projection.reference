@@ -10,7 +10,7 @@ Expression (Project names)
         Expression ((Before ORDER BY + Projection))
           Expression ((WHERE + Change column names to column identifiers))
             ReadFromMergeTree (default.mt)
-      Expression
+      Expression (((Before ORDER BY + Projection) + (WHERE + Change column names to column identifiers)))
         ReadFromMergeTree (proj)
 ---
 Expression (Project names)
@@ -20,6 +20,6 @@ Expression (Project names)
         Expression ((Before ORDER BY + Projection))
           Expression ((WHERE + Change column names to column identifiers))
             ReadFromMergeTree (default.mt)
-      Expression
+      Expression (((Before ORDER BY + Projection) + (WHERE + Change column names to column identifiers)))
         ReadFromMergeTree (proj)
 ---

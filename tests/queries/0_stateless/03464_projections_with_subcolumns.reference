@@ -1,5 +1,5 @@
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (p1)
     Indexes:
       PrimaryKey
@@ -13,7 +13,7 @@ Expression ((Project names + Projection))
 ReadFromMergeTree (p1)
 {"a":1,"b":"str","c":[{"d":1}]}
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (p2)
     Indexes:
       PrimaryKey
@@ -27,7 +27,7 @@ Expression ((Project names + Projection))
 ReadFromMergeTree (p2)
 (1,1)
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (p3)
     Indexes:
       PrimaryKey
@@ -41,7 +41,7 @@ Expression ((Project names + Projection))
 ReadFromMergeTree (p3)
 {"a":1,"b":"str","c":[{"d":1}]}
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (p1)
     Indexes:
       PrimaryKey
@@ -56,7 +56,7 @@ ReadFromMergeTree (p1)
 {"a":1,"b":"str","c":[{"d":1}]}
 {"a":1,"b":"str","c":[{"d":1}]}
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (p2)
     Indexes:
       PrimaryKey
@@ -71,7 +71,7 @@ ReadFromMergeTree (p2)
 (1,1)
 (1,1)
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (p3)
     Indexes:
       PrimaryKey
@@ -87,7 +87,7 @@ ReadFromMergeTree (p3)
 {"a":1,"b":"str","c":[{"d":1}]}
 ------------------------------------------------------------------
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (p1)
     Indexes:
       PrimaryKey
@@ -101,7 +101,7 @@ Expression ((Project names + Projection))
 ReadFromMergeTree (p1)
 {"a":1,"b":"str","c":[{"d":1}]}
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (p2)
     Indexes:
       PrimaryKey
@@ -115,7 +115,7 @@ Expression ((Project names + Projection))
 ReadFromMergeTree (p2)
 (1,1)
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (p3)
     Indexes:
       PrimaryKey

@@ -1,6 +1,6 @@
 Expression (((Project names + Projection) + Post Join Actions))
   Join (JOIN FillRightFirst)
-    Expression (((Left Pre Join Actions + ) + Post Join Actions))
+    Expression (((Left Pre Join Actions + (Apply runtime join filter + Calculate left join keys)) + Post Join Actions))
       Join (JOIN FillRightFirst)
         Expression (Left Pre Join Actions)
           Filter (((((Apply runtime join filter + Calculate left join keys) + Apply runtime join filter) + Calculate left join keys) + Change column names to column identifiers))

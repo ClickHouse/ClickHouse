@@ -2,7 +2,7 @@
 
 EXPLAIN header = 1, indexes = 1
 SELECT name FROM users INNER JOIN users2 USING name WHERE users.name ='Alice';
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
 Header: name String
   Expression (Post Join Actions)
   Header: __table1.name String
@@ -42,7 +42,7 @@ SELECT '--';
 --
 EXPLAIN header = 1, indexes = 1
 SELECT name FROM users LEFT JOIN users2 USING name WHERE users.name ='Alice';
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
 Header: name String
   Expression (Post Join Actions)
   Header: __table1.name String
@@ -82,7 +82,7 @@ SELECT '--';
 --
 EXPLAIN header = 1, indexes = 1
 SELECT name FROM users RIGHT JOIN users2 USING name WHERE users2.name ='Alice';
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
 Header: name String
   Expression (Post Join Actions)
   Header: __table2.name String

@@ -1074,6 +1074,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     {
         auto & expr_or_filter_node = nodes.emplace_back();
         expr_or_filter_node.step = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputHeader(), std::move(*query.dag));
+        expr_or_filter_node.step->setStepDescription(query.description, optimization_settings.max_step_description_length);
         expr_or_filter_node.children.push_back(&projection_reading_node);
         next_node = &expr_or_filter_node;
     }

@@ -154,6 +154,14 @@ void QueryDAG::appendExpression(const ActionsDAG & expression)
         dag = std::move(cloned);
 }
 
+void QueryDAG::appendDescription(const IQueryPlanStep & step)
+{
+    const auto step_description = step.getStepDescription();
+    if (step_description.empty())
+        return;
+    description = description.empty() ? String(step_description) : fmt::format("({} + {})", step_description, description);
+}
+
 static const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
 {
     auto & outputs = dag.getOutputs();
@@ -226,6 +234,7 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
             return false;
 
         appendExpression(actions);
+        appendDescription(*expression);
         return true;
     }
 
@@ -236,6 +245,7 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
             return false;
 
         appendExpression(actions);
+        appendDescription(*filter);
         const auto * filter_expression = findInOutputs(*dag, filter->getFilterColumnName(), filter->removesFilterColumn());
         if (!filter_expression)
             return false;

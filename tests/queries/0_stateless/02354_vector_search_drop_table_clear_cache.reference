@@ -2,11 +2,11 @@
 6
 7
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey

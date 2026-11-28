@@ -2,7 +2,7 @@ Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
       Aggregating
-        Expression ((Before GROUP BY + ))
+        Expression ((Before GROUP BY + WHERE))
           JoinLogical (Broadcast HashJoin )
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ParallelRead default.t_rc_probe)

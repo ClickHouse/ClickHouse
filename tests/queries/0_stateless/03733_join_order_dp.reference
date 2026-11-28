@@ -1,6 +1,6 @@
 =========================================
 Plan with greedy algorithm
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
   Expression (Post Join Actions)
     Join (JOIN FillRightFirst)
       Expression (Left Pre Join Actions)
@@ -24,7 +24,7 @@ Expression ((Project names + (Projection + )))
 5684007341784604324
 =========================================
 Plan with DPsize algorithm
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
   Expression (Post Join Actions)
     Join (JOIN FillRightFirst)
       Expression (Left Pre Join Actions)
@@ -48,7 +48,7 @@ Expression ((Project names + (Projection + )))
 5684007341784604324
 =========================================
 Plan with DPsub algorithm
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
   Expression (Post Join Actions)
     Join (JOIN FillRightFirst)
       Expression (Left Pre Join Actions)

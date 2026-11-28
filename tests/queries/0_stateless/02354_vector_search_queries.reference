@@ -3,11 +3,11 @@
 6	[0,2.1]	0.09999990463256836
 7	[0,2.2]	0.20000004768371582
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey
@@ -26,11 +26,11 @@ Expression (Project names)
 7	[0,2.1]	0.09999990463256836
 8	[0,2.2]	0.20000004768371582
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey
@@ -50,11 +50,11 @@ Special cases
 4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey
@@ -70,11 +70,11 @@ Expression (Project names)
       LazilyReadFromMergeTree
 -- Setting "max_limit_for_vector_search_queries"
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey
@@ -88,11 +88,11 @@ Expression (Project names)
 4	[2.4,5.2]	3.9999999046325727
 2	[4.2,3.4]	4.427188573446585
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_l2_f64)
             Indexes:
               PrimaryKey
@@ -110,11 +110,11 @@ Expression (Project names)
 4	[2.4,5.2]	3.9999999046325727
 2	[4.2,3.4]	4.427188573446585
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_l2_f32)
             Indexes:
               PrimaryKey
@@ -132,11 +132,11 @@ Expression (Project names)
 4	[2.4,5.2]	3.9999999046325727
 2	[4.2,3.4]	4.427188573446585
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_l2_f16)
             Indexes:
               PrimaryKey
@@ -154,11 +154,11 @@ Expression (Project names)
 4	[2.4,5.2]	3.9999999046325727
 2	[4.2,3.4]	4.427188573446585
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_l2_bf16)
             Indexes:
               PrimaryKey
@@ -176,11 +176,11 @@ Expression (Project names)
 4	[2.4,5.2]	3.9999999046325727
 2	[4.2,3.4]	4.427188573446585
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_l2_i8)
             Indexes:
               PrimaryKey
@@ -198,11 +198,11 @@ Expression (Project names)
 4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_cos_f64)
             Indexes:
               PrimaryKey
@@ -220,11 +220,11 @@ Expression (Project names)
 4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_cos_f32)
             Indexes:
               PrimaryKey
@@ -242,11 +242,11 @@ Expression (Project names)
 4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_cos_f16)
             Indexes:
               PrimaryKey
@@ -264,11 +264,11 @@ Expression (Project names)
 4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_cos_bf16)
             Indexes:
               PrimaryKey
@@ -286,11 +286,11 @@ Expression (Project names)
 4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_cos_i8)
             Indexes:
               PrimaryKey
@@ -308,11 +308,11 @@ Expression (Project names)
 4	[2.4,5.2]	10.399999618530273
 7	[5.5,4.7]	9.399999618530273
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_dot_f64)
             Indexes:
               PrimaryKey
@@ -330,11 +330,11 @@ Expression (Project names)
 4	[2.4,5.2]	10.399999618530273
 7	[5.5,4.7]	9.399999618530273
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_dot_f32)
             Indexes:
               PrimaryKey
@@ -352,11 +352,11 @@ Expression (Project names)
 4	[2.4,5.2]	10.399999618530273
 7	[5.5,4.7]	9.399999618530273
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_dot_f16)
             Indexes:
               PrimaryKey
@@ -374,11 +374,11 @@ Expression (Project names)
 4	[2.4,5.2]	10.399999618530273
 7	[5.5,4.7]	9.399999618530273
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_dot_bf16)
             Indexes:
               PrimaryKey
@@ -396,11 +396,11 @@ Expression (Project names)
 4	[2.4,5.2]	10.399999618530273
 7	[5.5,4.7]	9.399999618530273
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab_dot_i8)
             Indexes:
               PrimaryKey
@@ -427,11 +427,11 @@ Expression (Project names)
 4	[2.4,5.2]	10.399999618530273
 7	[5.5,4.7]	9.399999618530273
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey
@@ -447,11 +447,11 @@ Expression (Project names)
       LazilyReadFromMergeTree
 -- Wrong sort direction (DESC for L2Distance), doesnt use the index
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey
@@ -462,11 +462,11 @@ Expression (Project names)
       LazilyReadFromMergeTree
 -- Wrong sort direction, (DESC for cosineDistance) doesnt use the index
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey
@@ -477,11 +477,11 @@ Expression (Project names)
       LazilyReadFromMergeTree
 -- Wrong sort direction (ASC for dotProduct), doesnt use the index
 Expression (Project names)
-  Expression
+  Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
     JoinLazyColumnsStep
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
-          Expression
+          Expression (((Before ORDER BY + (Projection + Change column names to column identifiers)) + Calculate global row index))
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey

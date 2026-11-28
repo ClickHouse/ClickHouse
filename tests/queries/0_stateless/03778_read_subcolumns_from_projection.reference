@@ -1,6 +1,6 @@
 Expression ((Project names + Projection))
   Aggregating
-    Expression
+    Expression ((Before GROUP BY + (WHERE + Change column names to column identifiers)))
       ReadFromMergeTree (sorted_by_company_name)
       Indexes:
         PrimaryKey

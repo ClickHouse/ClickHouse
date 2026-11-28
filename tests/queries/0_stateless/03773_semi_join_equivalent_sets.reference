@@ -2,7 +2,7 @@
       Type: LEFT
       Strictness: ANY
             ReadType: Default
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE)))
 Actions: INPUT : 0 -> __table1.uid UInt64 : 0
          INPUT : 1 -> __table1.name String : 1
          INPUT : 2 -> __table1.age Int16 : 2

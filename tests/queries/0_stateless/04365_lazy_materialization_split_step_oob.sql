@@ -59,7 +59,8 @@ INSERT INTO test_split_oob4_filter
 SELECT number, 'a' || toString(number), 'b' || toString(number), 'c' || toString(number)
 FROM numbers(20);
 
-SELECT trimLeft(explain) AS s FROM (
+-- Only the step names: the description of the filter depends on what it is merged with.
+SELECT splitByChar(' ', trimLeft(explain))[1] AS s FROM (
     EXPLAIN actions = 0, pretty = 0
     SELECT a, b, c FROM test_split_oob4_filter WHERE id > 2 ORDER BY a LIMIT 5
     SETTINGS optimize_move_to_prewhere = 0,
