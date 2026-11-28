@@ -27,6 +27,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#include <Processors/Formats/Impl/Puffin/PuffinCommon.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
@@ -460,20 +461,12 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
-    for (UInt32 j = 0; j < schemas->size(); ++j)
-    {
-        auto schema = schemas->getObject(j);
-        schema_processor->addIcebergTableSchema(schema);
-    }
+    schema_processor->registerMetadata(metadata_object);
     Poco::JSON::Object::Ptr current_snapshot = nullptr;
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-        auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
-        auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
-        schema_processor->registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
         if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == snapshot_id)
         {
             current_snapshot = snapshot;
@@ -1620,12 +1613,13 @@ namespace
 std::optional<UInt64> countDeletedRows(
     const std::vector<ProcessedManifestFileEntryPtr> & data_files,
     const std::vector<ProcessedManifestFileEntryPtr> & position_deletes,
+    const IcebergPathResolver & path_resolver,
     LoggerPtr log)
 {
-    auto grouped = groupPositionDeletesByDataFile(position_deletes);
+    auto grouped = groupPositionDeletesByDataFile(position_deletes, path_resolver);
     if (!grouped.other.empty())
         LOG_DEBUG(
-            log, "The row estimate does not subtract {} position delete files that cover several data files", grouped.other.size());
+            log, "The row estimate does not subtract {} position delete files not scoped to one resolvable data file", grouped.other.size());
 
     UInt64 deleted_rows = 0;
     if (grouped.single_data_file.empty())
@@ -1637,7 +1631,10 @@ std::optional<UInt64> countDeletedRows(
 
     for (const auto & data_file : data_files)
     {
-        const auto it = grouped.single_data_file.find(data_file->parsed_entry->file_path_key);
+        const auto data_file_identity = path_resolver.tryStorageIdentity(data_file->parsed_entry->file_path_key);
+        if (!data_file_identity)
+            continue;
+        const auto it = grouped.single_data_file.find(*data_file_identity);
         if (it == grouped.single_data_file.end())
             continue;
 
@@ -1684,8 +1681,6 @@ std::optional<Int64> tryGetInt64(const Poco::Dynamic::Var & value)
 /// entries and the blobs that the file keeps from an earlier snapshot.
 std::unordered_map<Int32, UInt64> readTableStatisticsDistinctValues(const Poco::JSON::Array::Ptr & statistics, Int64 snapshot_id)
 {
-    static constexpr auto theta_sketch_blob_type = "apache-datasketches-theta-v1";
-
     std::unordered_map<Int32, UInt64> distinct_values;
     if (!statistics)
         return distinct_values;
@@ -1705,7 +1700,7 @@ std::unordered_map<Int32, UInt64> readTableStatisticsDistinctValues(const Poco::
 
             const auto type = blob->get(f_type);
             const auto fields = blob->getArray(f_fields);
-            if (!type.isString() || type.convert<String>() != theta_sketch_blob_type || !fields || fields->size() != 1
+            if (!type.isString() || type.convert<String>() != PUFFIN_DATASKETCHES_THETA_BLOB_TYPE || !fields || fields->size() != 1
                 || tryGetInt64(blob->get(f_metadata_snapshot_id)) != snapshot_id)
                 continue;
 
@@ -1864,7 +1859,7 @@ IcebergMetadata::estimateRead(
         }
     }
 
-    const auto deleted_rows = countDeletedRows(remaining_data_files, position_deletes, log);
+    const auto deleted_rows = countDeletedRows(remaining_data_files, position_deletes, persistent_components.path_resolver, log);
     if (!deleted_rows)
         return estimate;
     column_statistics.subtractDeletedRows(*deleted_rows);
@@ -2040,6 +2035,7 @@ void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, con
     /// The format settings of an engine table are not taken from the query, so a query's request for order is applied here.
     if (local_context.getSettingsRef()[Setting::input_format_parquet_preserve_order])
         format_settings.parquet.preserve_order = true;
+    Iceberg::useUTCForORCTimestamps(format_settings);
 }
 
 void IcebergMetadata::addDeleteTransformers(
@@ -2057,7 +2053,10 @@ void IcebergMetadata::addDeleteTransformers(
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
-            { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, parser_shared_resources, local_context); });
+            {
+                return iceberg_object_info->getPositionDeleteTransformer(
+                    object_storage, persistent_components.path_resolver, header, format_settings, parser_shared_resources, local_context);
+            });
     }
     const auto & delete_files = iceberg_object_info->info.equality_deletes_objects;
     LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
@@ -2191,6 +2190,7 @@ void IcebergMetadata::addDeleteTransformers(
 
 SinkToStoragePtr IcebergMetadata::write(
     SharedHeader sample_block,
+    StorageMetadataPtr metadata_snapshot,
     const StorageID & table_id,
     ObjectStoragePtr /*object_storage*/,
     StorageObjectStorageConfigurationPtr configuration,
@@ -2201,7 +2201,12 @@ SinkToStoragePtr IcebergMetadata::write(
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         checkTableRootIsQueriedPath("INSERT");
-        return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
+        /// The schema the query planned the inserted columns with, pinned in the metadata snapshot like for a read.
+        std::optional<Int32> planned_schema_id;
+        if (metadata_snapshot && metadata_snapshot->datalake_table_state)
+            planned_schema_id = std::get<Iceberg::TableStateSnapshot>(*metadata_snapshot->datalake_table_state).schema_id;
+        return std::make_shared<IcebergStorageSink>(
+            object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id, planned_schema_id);
     }
     else
     {
@@ -2243,7 +2248,7 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     chassert(object_info->getFileFormat().has_value());
     /// Only these readers resolve columns through a mapper: `Parquet` and `Avro` for the columns they read
     /// (and `Parquet` for its filters), `Vortex` for the filters it pushes into the scan, `ORC` for the columns
-    /// absent from the file.
+    /// it reads.
     const auto file_format = Poco::toLower(*object_info->getFileFormat());
     if (file_format != "parquet" && file_format != "avro" && file_format != "vortex" && file_format != "orc")
         return nullptr;

@@ -8,10 +8,10 @@ doc_type: 'reference'
 
 A função de tabela `eval` avalia seu argumento como uma string de consulta e, em seguida, executa essa string como uma única consulta `SELECT`.
 
-Esta função de tabela é experimental e fica desativada por padrão. Habilite-a com a configuração `allow_experimental_eval_table_function`:
+Esta função de tabela é experimental e fica desativada por padrão. Habilite-a com a configuração `enable_eval_table_function`:
 
 ```sql
-SET allow_experimental_eval_table_function = 1;
+SET enable_eval_table_function = 1;
 ```
 
 ## Sintaxe {#syntax}
@@ -112,4 +112,4 @@ Resultado:
 ## Veja também {#related}
 
 * [função de tabela `view`](/pt-BR/reference/functions/table-functions/view)
-* configuração `allow_experimental_eval_table_function`
+* configuração `enable_eval_table_function`

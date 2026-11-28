@@ -98,10 +98,14 @@ public:
 
     struct BloomFilterData
     {
-        using HashesForColumns = std::vector<VectorWithMemoryTracking<uint64_t>>;
+        using Hashes = std::shared_ptr<const VectorWithMemoryTracking<uint64_t>>;
+        using HashesForColumns = std::vector<Hashes>;
         HashesForColumns hashes_per_column;
         /// Subset of RPNElement::key_columns.
         std::vector<std::size_t> key_columns;
+
+        /// Sorts and deduplicates `hashes` (an `IN` set can repeat a hash), as `BloomFilter::findAnyHash` receives them.
+        static Hashes makeHashes(VectorWithMemoryTracking<uint64_t> hashes);
     };
 
     struct BloomFilter
@@ -109,7 +113,7 @@ public:
         virtual ~BloomFilter() = default;
 
         /// `hashes` are the hashes of the query constants of one atom for one column. They are sorted
-        /// and deduplicated (see `prepareBloomFilterData`), which lets an implementation with a sorted
+        /// and deduplicated (see `BloomFilterData::makeHashes`), which lets an implementation with a sorted
         /// value set intersect the two sequences in one pass instead of searching for each hash
         /// separately. Returns true if any of them may be present.
         virtual bool findAnyHash(const VectorWithMemoryTracking<uint64_t> & hashes) = 0;
@@ -527,13 +531,18 @@ public:
     /// without `can_be_false`, i.e. `relaxed`. Making one true directly needs `FUNCTION_UNKNOWN` instead.
     void relaxAtomsOverNaNHidingColumns(const DataTypes & key_types);
 
+    /// Whether an atom can claim a key value that carries a nested `NULL` or `NaN` as matching, see
+    /// `mayReadNullKeyValue`. Such a value can sit anywhere inside a range, so the analysis never answers
+    /// `can_be_false = false` for it, whatever the range is, and no range of marks can be exact.
+    [[nodiscard]] bool mayClaimNestedNullOrNaN(const DataTypes & key_types) const;
+
     [[nodiscard]] bool isSinglePoint() const { return single_point; }
 
     /// Does the filter condition have any ORs?
     [[nodiscard]] bool hasOnlyConjunctions() const;
 
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
-                                std::function<std::optional<VectorWithMemoryTracking<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
+                                std::function<BloomFilterData::Hashes(size_t column_idx, const ColumnPtr &)> hash_many);
 
     /// Split the KeyCondition into single-column conditions AND-ed together, plus a remaining
     /// multi-column KeyCondition.
@@ -912,7 +921,8 @@ private:
         const Columns & set_columns,
         const DataTypes & set_types,
         SetAtomCandidate candidate,
-        const DataTypePtr & has_element_type);
+        const DataTypePtr & has_element_type,
+        const Set * source_set);
 
     /// Maps the predicate expression whose values are tested for set membership (the left-hand side
     /// of `IN`, or the element argument of `has`) onto key columns. Each matched tuple component has
@@ -935,7 +945,8 @@ private:
         SetIndexAnalysisResult analysis,
         bool allow_relaxed_pruning,
         AtomGroup & group,
-        const DataTypePtr & has_element_type = nullptr) const;
+        const DataTypePtr & has_element_type = nullptr,
+        const Set * source_set = nullptr) const;
 
     /// Checks that the index can not be used.
     ///

@@ -29,6 +29,7 @@ CREATE TABLE qc_tmp (vec Array(Int8) CODEC(Quantized('int8', 64))) ENGINE = Merg
 CREATE TABLE qc_tmp (vec Array(UInt8) CODEC(Quantized('int8', 64))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 CREATE TABLE qc_tmp (vec Array(UInt8) CODEC(Quantized('prefix', 64, 16, 'int8'))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 CREATE TABLE qc_tmp (vec Array(UInt32) CODEC(Quantized('rabitq', 64))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
+CREATE TABLE qc_tmp (vec Array(Bool) CODEC(Quantized('rabitq', 64))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
 CREATE TABLE qc_i8 (id UInt32, vec Array(Int8) CODEC(Quantized('rabitq', 64))) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE qc_u8 (id UInt32, vec Array(UInt8) CODEC(Quantized('rabitq', 64))) ENGINE = MergeTree ORDER BY id;

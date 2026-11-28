@@ -436,6 +436,16 @@ def test_backup_named_collection_does_not_inherit_server_keys():
     )
     assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
 
+    # The same holds for RESTORE, which builds its own S3 client. The backup at the collection's location is
+    # written with the server keys, so a RESTORE through the URL-only collection could read it only with them.
+    node_with_server_keys.query(
+        "BACKUP TABLE t_backup_keys TO S3('http://minio1:9001/root/backup_nc_url_only/b_restore')"
+    )
+    error = node_with_server_keys.query_and_get_error(
+        "RESTORE TABLE t_backup_keys AS t_restored_keys FROM S3(nc_backup_url_only, 'b_restore')"
+    )
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
+
     # A backup named collection with only a role_arn has no base key pair of its own, so the server static
     # keys must not be used as the STS base to assume the role. The role cannot be assumed and the backup
     # fails (unsigned -> rejected) instead of authenticating with the server's keys.

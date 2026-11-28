@@ -5,6 +5,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <IO/WriteBufferFromFileBase.h>
 
 
@@ -114,6 +115,7 @@ void MultipleFileWriter::startNewFile()
     /// the limit would be ignored for all smaller files.
     FormatSettings file_format_settings = format_settings ? *format_settings : getFormatSettings(context);
     file_format_settings.parquet.row_group_bytes = std::min(file_format_settings.parquet.row_group_bytes, max_data_file_num_bytes);
+    Iceberg::useUTCForORCTimestamps(file_format_settings);
 
     /// The ORC String/FixedString logical-type handling lives in ORCBlockOutputFormat, keyed on
     /// the column mapper, so it covers the compaction/mutation rewrite paths too.

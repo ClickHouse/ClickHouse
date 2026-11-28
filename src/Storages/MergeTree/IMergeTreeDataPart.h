@@ -177,6 +177,10 @@ public:
     ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
     /// The same for several subcolumns at once, listed by one reader; the results go to the cache as well.
     std::vector<ColumnSize> getSubcolumnSizes(const NamesAndTypesList & subcolumns) const;
+    /// The sizes of the subcolumns, and, if `with_columns`, of the columns among `column_names` that the part has. The uncached
+    /// subcolumn sizes are calculated with one reader per column, or nullopt is returned if `only_from_memory` and that reads files.
+    std::optional<std::vector<std::pair<String, ColumnSize>>> getColumnAndSubcolumnSizes(
+        const Names & column_names, bool with_columns, bool only_from_memory) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -509,6 +513,11 @@ public:
     /// selection does not replace a codec the user asked for. It is in-memory provenance of the write
     /// that is producing the part: nothing on disk records it, so it stays `false` for a loaded part.
     bool default_codec_is_explicit_recompression = false;
+
+    /// Shared data serialization version of the `JSON` columns written into this part, chosen by
+    /// `MergeTreeData::chooseObjectSharedDataSerializationVersion` by the code that creates the part.
+    /// In-memory state of the write: each written column stores its version in its serialization prefix.
+    std::optional<MergeTreeObjectSharedDataSerializationVersion> object_shared_data_serialization_version;
 
     /// Set by `loadChecksums` when `checksums.txt` was missing on disk and had to be regenerated
     /// during the current load. The regenerated file is compressed with the *current* built-in
@@ -911,6 +920,7 @@ protected:
 
     /// Calculate the sizes of all files required to read the specified subcolumns, one size per subcolumn.
     virtual std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const { return std::vector<ColumnSize>(subcolumns.size()); }
+    virtual bool canCalculateSubcolumnSizeFromMemory(const NameAndTypePair & /*subcolumn*/) const { return true; }
 
     /// Calculate the size of the streams a read of all columns touches; the size on disk where columns are not stored
     /// in streams of their own.

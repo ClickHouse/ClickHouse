@@ -26,6 +26,7 @@
 #include <unordered_set>
 #include <base/memcmpSmall.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -106,13 +107,14 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
 }
 
 namespace FailPoints
 {
     extern const char aggregator_merge_collect_states_throw[];
+    extern const char aggregator_convert_queued_states_throw[];
+    extern const char aggregator_convert_insert_results_throw[];
 }
 
 }
@@ -208,10 +210,12 @@ void initDataVariantsWithSizeHint(
     ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
 }
 
-/// Collection and use of the statistics should be enabled. `repeat_dominated` is the adaptive verdict of the run (see
+/// Collection and use of the statistics should be enabled. `verdict` is the adaptive verdict of the run (see
 /// `Aggregator::adaptiveStagingVerdict`), if it measured one.
 void updateStatistics(
-    const DB::ManyAggregatedDataVariants & data_variants, std::optional<bool> repeat_dominated, const DB::StatsCollectingParams & params)
+    const DB::ManyAggregatedDataVariants & data_variants,
+    std::optional<DB::Aggregator::AdaptiveStagingVerdict> verdict,
+    const DB::StatsCollectingParams & params)
 {
     if (!params.isCollectionAndUseEnabled())
         return;
@@ -230,20 +234,19 @@ void updateStatistics(
     for (const auto & variants : data_variants)
         sum_of_sizes_with_empty_string += variants->sizeWithEmptyString();
 
-    /// A run without a verdict of its own carries the stored one over, so that the runs the verdict keeps off the
-    /// adaptive path do not erase it: a query marked repeat-dominated is not measured again until its entry is evicted.
+    /// A run carries the stored verdicts over and replaces only the one it measured itself, which is the
+    /// verdict of its own kind of run. So the runs that a verdict keeps off the adaptive path do not erase
+    /// it: runs of a kind marked repeat-dominated are not measured again until the entry is evicted.
     auto & stats = DB::getHashTablesStatistics<DB::AggregationEntry>();
-    if (!repeat_dominated)
-    {
-        const auto prev = stats.getSizeHint(params);
-        repeat_dominated = prev && prev->adaptive_staging_repeat_dominated;
-    }
-    stats.update(
-        {.sum_of_sizes = sum_of_sizes,
-         .median_size = *median_size,
-         .sum_of_sizes_with_empty_string = sum_of_sizes_with_empty_string,
-         .adaptive_staging_repeat_dominated = *repeat_dominated},
-        params);
+    DB::AggregationEntry entry;
+    if (const auto prev = stats.getSizeHint(params))
+        entry = *prev;
+    entry.sum_of_sizes = sum_of_sizes;
+    entry.median_size = *median_size;
+    entry.sum_of_sizes_with_empty_string = sum_of_sizes_with_empty_string;
+    if (verdict)
+        entry.adaptiveStagingRepeatDominated(verdict->lone_producer) = verdict->repeat_dominated;
+    stats.update(entry, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
@@ -498,37 +501,8 @@ Aggregator::Params::Params(
 
 size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by)
 {
-    std::optional<size_t> threshold;
-    if (max_bytes_before_external_group_by != 0)
-        threshold = max_bytes_before_external_group_by;
-
-    if (max_bytes_ratio_before_external_group_by != 0.)
-    {
-        double ratio = max_bytes_ratio_before_external_group_by;
-        if (ratio < 0 || ratio >= 1.)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_group_by should be >= 0 and < 1 ({:.3f})", ratio);
-
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
-        {
-            size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
-            if (threshold)
-                threshold = std::min(threshold.value(), ratio_in_bytes);
-            else
-                threshold = ratio_in_bytes;
-
-            LOG_TRACE(getLogger("Aggregator"), "Adjusting memory limit before external aggregation with {} (ratio: {:.3f}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-                ratio,
-                formatReadableSizeWithBinarySuffix(*available_system_memory));
-        }
-        else
-        {
-            LOG_TRACE(getLogger("Aggregator"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_group_by");
-        }
-    }
-
-    return threshold.value_or(0);
+    return getMaxBytesBeforeExternalProcessing(
+        max_bytes_before_external_group_by, max_bytes_ratio_before_external_group_by, "max_bytes_ratio_before_external_group_by");
 }
 
 Aggregator::Params::Params(
@@ -1538,8 +1512,8 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
         /// that can get it there, floored so a table hovering just below cannot degrade the
         /// block into row-sized dispatches (the floor is also the overshoot bound). The
         /// per-slice `after_slice` keeps the consecutive-keys cache statistics exact:
-        /// `executeImplBatch` resets the cache on entry, so the misses must be collected
-        /// slice by slice, not once at the end.
+        /// `executeImplBatch` and `executeImplBatchNoAggregates` reset the cache on entry, so
+        /// the misses must be collected slice by slice, not once at the end.
         const auto run_slices = [&](auto & state, auto && after_slice) -> size_t
         {
             size_t pos = row_begin;
@@ -1594,6 +1568,77 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
     throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 }
 
+namespace
+{
+
+/// The per-row steps of the `GROUP BY ... LIMIT` top-K heap in an aggregation loop: skip the rows that cannot reach
+/// the result, and admit the new keys. With `enabled = false` every step compiles to nothing.
+/// A skipped row does nothing but read the bitmap: no counter, which the compiler may keep in memory (an increment
+/// through memory on every row). The skipped rows are the batch's rows that never reached `admit`.
+template <bool enabled, typename Heap>
+class TopKRowFilter
+{
+public:
+    explicit TopKRowFilter(Heap & heap_) : heap(heap_) {}
+
+    /// Before a loop that passes every row of `[begin, end)` to `skip`, and every row not skipped to `admit`.
+    void startBatch(const ColumnRawPtrs & key_columns, size_t begin, size_t end)
+    {
+        if constexpr (enabled)
+        {
+            skip_bitmap = heap.startBatch(key_columns, begin, end);
+            batch_rows = end - begin;
+        }
+    }
+
+    [[nodiscard]] ALWAYS_INLINE bool skip(size_t row) const
+    {
+        if constexpr (enabled)
+            return heap.shouldSkip(skip_bitmap, row);
+        return false;
+    }
+
+    template <typename State, typename EmplaceResult>
+    ALWAYS_INLINE void admit(State & state, size_t row, EmplaceResult & emplace_result)
+    {
+        if constexpr (enabled)
+        {
+            ++admitted_rows;
+            if (!emplace_result.isInserted())
+                return;
+            if (state.isNullAt(row))
+                heap.push(row);
+            else
+                heap.push(row, emplace_result.getKey());
+        }
+    }
+
+    [[nodiscard]] bool needsTrim() const
+    {
+        if constexpr (enabled)
+            return heap.needsTrim();
+        return false;
+    }
+
+    void finish(size_t rows)
+    {
+        if constexpr (enabled)
+        {
+            const size_t skipped = batch_rows - admitted_rows;
+            ProfileEvents::increment(ProfileEvents::AggregationTopKRowsSkipped, skipped);
+            heap.recordRows(rows, skipped);
+        }
+    }
+
+private:
+    Heap & heap;
+    const UInt8 * skip_bitmap = nullptr;
+    size_t batch_rows = 0;
+    size_t admitted_rows = 0;
+};
+
+}
+
 /// Register each key's presence, without building any aggregate state. This is the whole of the work for a
 /// set method, and it is also the fast path a map method takes when it happens to have no aggregates - there
 /// the cell's mapped value is set to a non-null dummy, so the existing "is this cell occupied" checks still
@@ -1610,6 +1655,10 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
 {
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
 
+    /// The misses since the last reset are reported for this range only. `executeImplUntilAdaptiveFreeze`
+    /// runs one state over several ranges and must not count the misses of the earlier ones again.
+    state.resetCache();
+
     /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
     PrefetchingHelper prefetching;
     size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
@@ -1617,37 +1666,31 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
     [[maybe_unused]] AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
 
-    [[maybe_unused]] ColumnRawPtrs heap_key_cols;
-    if constexpr (top_k)
-        heap_key_cols.assign(key_columns.begin(), key_columns.begin() + params.top_k->key_columns);
+    /// If all keys are const, the key columns hold 1 row.
+    const size_t key_start = all_keys_are_const ? 0 : row_begin;
+    const size_t key_end = all_keys_are_const ? 1 : row_end;
 
-    static constexpr bool has_typed_key = requires(const State & s) { s.getKeyData(); }
-        && !requires(const State & s) { s.positions; }
-        && !Method::one_key_nullable_optimization;
+    TopKRowFilter<top_k, decltype(method.top_k_heap)> top_k_rows(method.top_k_heap);
+    top_k_rows.startBatch(key_columns, key_start, key_end);
 
-    [[maybe_unused]] const void * typed_key_data = nullptr;
-    if constexpr (top_k && has_typed_key)
-        typed_key_data = state.getKeyData();
+    static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
+    ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(key_start);
 
-    auto heap_push = [&]([[maybe_unused]] size_t row, [[maybe_unused]] const auto & emplace_result)
+    for (size_t i = key_start; i < key_end; ++i)
     {
-        if constexpr (top_k)
+        if constexpr (prefetch_cells)
         {
-            if (emplace_result.isInserted())
-            {
-                if (state.isNullAt(row))
-                    method.top_k_heap.push(heap_key_cols, row);
-                else
-                    method.top_k_heap.push(heap_key_cols, row, emplace_result.getKey());
-            }
-        }
-    };
+            if (i == key_start + PrefetchingHelper::iterationsToMeasure())
+                prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
-    /// Returns nothing and is force-inlined on purpose: a variant of this that returned the emplace
-    /// result was compiled into an out-of-line call per row for the string methods, and the call is
-    /// what the loop's speed is made of - it costs more than the work it wraps.
-    auto process_row = [&](size_t row, auto && emplace_result) ALWAYS_INLINE
-    {
+            look_ahead_keys.prefetch(state, method.data, i, prefetch_look_ahead, key_end, *aggregates_pool);
+        }
+
+        if (top_k_rows.skip(i))
+            continue;
+
+        auto emplace_result = look_ahead_keys.emplaceKey(state, method.data, i, *aggregates_pool);
+
         // For some methods we simply don't have a set counterpart, so a map method is used.
         // Thus we have to set a `mapped` even though nothing reads it. Only the row that creates the
         // cell has to: for a key that is already there the cell holds the same sentinel, and writing it
@@ -1657,67 +1700,16 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
             if (emplace_result.isInserted())
                 emplace_result.setMapped(place);
         }
-        heap_push(row, emplace_result);
-    };
 
-    if (all_keys_are_const)
-    {
-        process_row(0, state.emplaceKey(method.data, 0, *aggregates_pool));
-        return;
-    }
-
-    [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
-    if constexpr (top_k)
-    {
-        if (method.top_k_heap.hasBoundary())
-            skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
-    }
-
-    [[maybe_unused]] size_t top_k_rows_skipped = 0;
-
-    static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
-    ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(row_begin);
-
-    /// For all rows.
-    for (size_t i = row_begin; i < row_end; ++i)
-    {
-        if constexpr (prefetch_cells)
+        top_k_rows.admit(state, i, emplace_result);
+        if (top_k_rows.needsTrim())
         {
-            if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
-                prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-
-            look_ahead_keys.prefetch(state, method.data, i, prefetch_look_ahead, row_end, *aggregates_pool);
-        }
-
-        if constexpr (top_k)
-        {
-            if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
-                            : (method.top_k_heap.hasBoundary()
-                               && method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, i)))
-            {
-                ++top_k_rows_skipped;
-                continue;
-            }
-        }
-
-        process_row(i, look_ahead_keys.emplaceKey(state, method.data, i, *aggregates_pool));
-
-        if constexpr (top_k)
-        {
-            if (method.top_k_heap.needsTrim())
-            {
-                trimHeapAndPruneHashTable(method, nullptr, i);
-                skip_bitmap = nullptr;
-                state.resetCache();
-            }
+            trimHeapAndPruneHashTable(method, nullptr, i);
+            state.resetCache();
         }
     }
 
-    if constexpr (top_k)
-    {
-        ProfileEvents::increment(ProfileEvents::AggregationTopKRowsSkipped, top_k_rows_skipped);
-        method.top_k_heap.recordRows(row_end - row_begin, top_k_rows_skipped);
-    }
+    top_k_rows.finish(key_end - key_start);
 }
 
 /// A set method has no aggregate states at all, so the batch never gets past registering the keys.
@@ -1744,6 +1736,164 @@ void NO_INLINE Aggregator::executeImplBatch(
     executeImplBatchNoAggregates<prefetch, top_k>(method, state, key_columns, aggregates_pool, row_begin, row_end, all_keys_are_const);
 }
 
+/// `count()` alone keeps the count in the hash table cell, so the batch creates no aggregate states.
+template <bool prefetch, bool top_k, typename Method, typename State>
+void NO_INLINE Aggregator::executeImplBatchSimpleCount(
+    Method & method,
+    State & state,
+    const ColumnRawPtrs & key_columns,
+    Arena * aggregates_pool,
+    size_t row_begin,
+    size_t row_end,
+    bool no_more_keys,
+    bool all_keys_are_const,
+    AggregateDataPtr overflow_row) const
+{
+    using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
+
+    /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
+    PrefetchingHelper prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+
+    if constexpr (Method::low_cardinality_optimization && !top_k)
+    {
+        if (!all_keys_are_const && state.canCountPositions(row_begin, row_end))
+        {
+            executeImplBatchCountPositions<prefetch>(method, state, aggregates_pool, row_begin, row_end, no_more_keys, overflow_row, prefetch_look_ahead);
+            return;
+        }
+    }
+
+    TopKRowFilter<top_k, decltype(method.top_k_heap)> top_k_rows(method.top_k_heap);
+
+    if (all_keys_are_const)
+    {
+        const UInt64 count = row_end - row_begin;
+        if (!no_more_keys)
+        {
+            auto emplace_result = state.emplaceKey(method.data, 0, *aggregates_pool);
+            if (emplace_result.isInserted())
+                getInlineCountState(emplace_result.getMapped()) = count;
+            else
+                getInlineCountState(emplace_result.getMapped()) += count;
+        }
+        else
+        {
+            auto find_result = state.findKey(method.data, 0, *aggregates_pool);
+            if (find_result.isFound())
+                getInlineCountState(find_result.getMapped()) = count;
+            else if (overflow_row)
+                getCountState(overflow_row) += count;
+        }
+    }
+    else if (no_more_keys)
+    {
+        /// See the comment in `Set::executeImplCase`: without this the hash table fields are reloaded on every row.
+        __builtin_assume_dereferenceable(&method.data, sizeof(method.data));
+        __builtin_assume_dereferenceable(&state, sizeof(state));
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            auto find_result = state.findKey(method.data, i, *aggregates_pool);
+            if (find_result.isFound())
+                ++getInlineCountState(find_result.getMapped());
+            else if (overflow_row)
+                ++getCountState(overflow_row);
+        }
+    }
+    else
+    {
+        top_k_rows.startBatch(key_columns, row_begin, row_end);
+
+        static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
+        ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(row_begin);
+
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            if constexpr (prefetch_cells)
+            {
+                if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                look_ahead_keys.prefetch(state, method.data, i, prefetch_look_ahead, row_end, *aggregates_pool);
+            }
+
+            if (top_k_rows.skip(i))
+                continue;
+
+            auto emplace_result = look_ahead_keys.emplaceKey(state, method.data, i, *aggregates_pool);
+            top_k_rows.admit(state, i, emplace_result);
+
+            if (emplace_result.isInserted())
+                getInlineCountState(emplace_result.getMapped()) = 1;
+            else
+                ++getInlineCountState(emplace_result.getMapped());
+
+            if (top_k_rows.needsTrim())
+            {
+                trimHeapAndPruneHashTable(method, nullptr, i);
+                state.resetCache();
+            }
+        }
+    }
+
+    top_k_rows.finish(row_end - row_begin);
+}
+
+/// `count()` alone over a `LowCardinality` key: one hash table access per distinct dictionary position of the batch.
+template <bool prefetch, typename Method, typename State>
+void Aggregator::executeImplBatchCountPositions(
+    Method & method,
+    State & state,
+    Arena * aggregates_pool,
+    size_t row_begin,
+    size_t row_end,
+    bool no_more_keys,
+    AggregateDataPtr overflow_row,
+    size_t prefetch_look_ahead) const
+{
+    if (no_more_keys)
+    {
+        state.forEachPositionCount(row_begin, row_end, [&](size_t first_row, UInt64 count)
+        {
+            auto find_result = state.findKey(method.data, first_row, *aggregates_pool);
+            if (find_result.isFound())
+                getInlineCountState(find_result.getMapped()) += count;
+            else if (overflow_row)
+                getCountState(overflow_row) += count;
+        });
+        return;
+    }
+
+    const auto add_count = [&](size_t first_row, UInt64 count) ALWAYS_INLINE
+    {
+        auto emplace_result = state.emplaceKey(method.data, first_row, *aggregates_pool);
+        if (emplace_result.isInserted())
+            getInlineCountState(emplace_result.getMapped()) = count;
+        else
+            getInlineCountState(emplace_result.getMapped()) += count;
+    };
+
+    if constexpr (prefetch && requires { method.data.prefetchByHash(size_t{}); })
+    {
+        PODArrayWithStackMemory<std::pair<UInt32, UInt32>, 4096> position_rows;
+        state.forEachPositionCount(row_begin, row_end, [&](size_t first_row, UInt64 count)
+        {
+            position_rows.emplace_back(static_cast<UInt32>(first_row - row_begin), static_cast<UInt32>(count));
+        });
+        for (size_t i = 0; i < position_rows.size(); ++i)
+        {
+            if (i + prefetch_look_ahead < position_rows.size())
+                method.data.prefetchByHash(
+                    state.getHash(method.data, row_begin + position_rows[i + prefetch_look_ahead].first, *aggregates_pool));
+            add_count(row_begin + position_rows[i].first, position_rows[i].second);
+        }
+    }
+    else
+    {
+        state.forEachPositionCount(row_begin, row_end, add_count);
+    }
+}
+
 template <bool prefetch, bool top_k, typename Method, typename State>
 requires MapAggregationState<State>
 void NO_INLINE Aggregator::executeImplBatch(
@@ -1760,10 +1910,6 @@ void NO_INLINE Aggregator::executeImplBatch(
     AggregateDataPtr overflow_row) const
 {
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
-
-    /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
-    PrefetchingHelper prefetching;
-    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
@@ -1831,184 +1977,17 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
-    [[maybe_unused]] ColumnRawPtrs heap_key_cols;
-    if constexpr (top_k)
-    {
-        size_t heap_key_count = params.top_k->key_columns;
-        heap_key_cols.assign(key_columns.begin(), key_columns.begin() + heap_key_count);
-    }
-
-    static constexpr bool has_typed_key = requires(const State & s) { s.getKeyData(); }
-        && !requires(const State & s) { s.positions; }
-        && !Method::one_key_nullable_optimization;
-
-    [[maybe_unused]] const void * typed_key_data = nullptr;
-    if constexpr (top_k && has_typed_key)
-        typed_key_data = state.getKeyData();
-
-    [[maybe_unused]] auto heap_should_skip = [&](size_t row) -> bool
-    {
-        if constexpr (top_k)
-            return method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, row);
-        return false;
-    };
-
-    [[maybe_unused]] size_t top_k_rows_skipped = 0;
-
     if (is_simple_count)
     {
-        if constexpr (Method::low_cardinality_optimization && !top_k)
-        {
-            if (!all_keys_are_const && state.canCountPositions(row_begin, row_end))
-            {
-                if (!no_more_keys)
-                {
-                    const auto add_count = [&](size_t first_row, UInt64 count) ALWAYS_INLINE
-                    {
-                        auto emplace_result = state.emplaceKey(method.data, first_row, *aggregates_pool);
-                        if (emplace_result.isInserted())
-                            getInlineCountState(emplace_result.getMapped()) = count;
-                        else
-                            getInlineCountState(emplace_result.getMapped()) += count;
-                    };
-
-                    if constexpr (prefetch && requires { method.data.prefetchByHash(size_t{}); })
-                    {
-                        PODArrayWithStackMemory<std::pair<UInt32, UInt32>, 4096> position_rows;
-                        state.forEachPositionCount(row_begin, row_end, [&](size_t first_row, UInt64 count)
-                        {
-                            position_rows.emplace_back(static_cast<UInt32>(first_row - row_begin), static_cast<UInt32>(count));
-                        });
-                        for (size_t i = 0; i < position_rows.size(); ++i)
-                        {
-                            if (i + prefetch_look_ahead < position_rows.size())
-                                method.data.prefetchByHash(
-                                    state.getHash(method.data, row_begin + position_rows[i + prefetch_look_ahead].first, *aggregates_pool));
-                            add_count(row_begin + position_rows[i].first, position_rows[i].second);
-                        }
-                    }
-                    else
-                    {
-                        state.forEachPositionCount(row_begin, row_end, add_count);
-                    }
-                }
-                else
-                {
-                    state.forEachPositionCount(row_begin, row_end, [&](size_t first_row, UInt64 count)
-                    {
-                        auto find_result = state.findKey(method.data, first_row, *aggregates_pool);
-                        if (find_result.isFound())
-                            getInlineCountState(find_result.getMapped()) += count;
-                        else if (overflow_row)
-                            getCountState(overflow_row) += count;
-                    });
-                }
-                return;
-            }
-        }
-
-        if (all_keys_are_const)
-        {
-            if (!no_more_keys)
-            {
-                auto emplace_result = state.emplaceKey(method.data, 0, *aggregates_pool);
-                if (emplace_result.isInserted())
-                    getInlineCountState(emplace_result.getMapped()) = row_end - row_begin;
-                else
-                    getInlineCountState(emplace_result.getMapped()) += row_end - row_begin;
-            }
-            else
-            {
-                auto find_result = state.findKey(method.data, 0, *aggregates_pool);
-                if (find_result.isFound())
-                    getInlineCountState(find_result.getMapped()) = row_end - row_begin;
-                else if (overflow_row)
-                    getCountState(overflow_row) += row_end - row_begin;
-            }
-        }
-        else if (!no_more_keys)
-        {
-            [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
-            if constexpr (top_k)
-            {
-                if (method.top_k_heap.hasBoundary())
-                    skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
-            }
-
-            static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
-            ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(row_begin);
-
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                if constexpr (prefetch_cells)
-                {
-                    if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
-                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-
-                    look_ahead_keys.prefetch(state, method.data, i, prefetch_look_ahead, row_end, *aggregates_pool);
-                }
-
-                if constexpr (top_k)
-                {
-                    if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
-                                    : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
-                    {
-                        ++top_k_rows_skipped;
-                        continue;
-                    }
-                }
-
-                auto emplace_result = look_ahead_keys.emplaceKey(state, method.data, i, *aggregates_pool);
-
-                if constexpr (top_k)
-                {
-                    if (emplace_result.isInserted())
-                    {
-                        if (state.isNullAt(i))
-                            method.top_k_heap.push(heap_key_cols, i);
-                        else
-                            method.top_k_heap.push(heap_key_cols, i, emplace_result.getKey());
-                    }
-                }
-
-                if (emplace_result.isInserted())
-                    getInlineCountState(emplace_result.getMapped()) = 1;
-                else
-                    ++getInlineCountState(emplace_result.getMapped());
-
-                if constexpr (top_k)
-                {
-                    if (method.top_k_heap.needsTrim())
-                    {
-                        trimHeapAndPruneHashTable(method, nullptr, i);
-                        skip_bitmap = nullptr;
-                        state.resetCache();
-                    }
-                }
-            }
-        }
-        else
-        {
-            /// See the comment in `Set::executeImplCase`: without this the hash table fields are reloaded on every row.
-            __builtin_assume_dereferenceable(&method.data, sizeof(method.data));
-            __builtin_assume_dereferenceable(&state, sizeof(state));
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                auto find_result = state.findKey(method.data, i, *aggregates_pool);
-                if (find_result.isFound())
-                    ++getInlineCountState(find_result.getMapped());
-                else if (overflow_row)
-                    ++getCountState(overflow_row);
-            }
-        }
-
-        if constexpr (top_k)
-        {
-            ProfileEvents::increment(ProfileEvents::AggregationTopKRowsSkipped, top_k_rows_skipped);
-            method.top_k_heap.recordRows(row_end - row_begin, top_k_rows_skipped);
-        }
+        executeImplBatchSimpleCount<prefetch, top_k>(
+            method, state, key_columns, aggregates_pool, row_begin, row_end, no_more_keys, all_keys_are_const, overflow_row);
         return;
     }
+
+    /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
+    /// After the paths above, which have their own: its `Stopwatch` reads the clock, once per batch.
+    PrefetchingHelper prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
     /// NOTE: only row_end-row_start is required, but:
     /// - this affects only optimize_aggregation_in_order,
@@ -2039,6 +2018,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     state.resetCache();
 
+    TopKRowFilter<top_k, decltype(method.top_k_heap)> top_k_rows(method.top_k_heap);
     [[maybe_unused]] std::vector<DestroyedState> destroyed_states;
     /// Assign at the branch tails so `no_more_keys` is not live across either loop.
     bool all_places_are_non_null = false;
@@ -2046,13 +2026,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// For all rows.
     if (!no_more_keys)
     {
-        [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
-        if constexpr (top_k)
-        {
-            destroyed_states.clear();
-            if (method.top_k_heap.hasBoundary())
-                skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
-        }
+        top_k_rows.startBatch(key_columns, key_start, key_end);
 
         static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
         ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(key_start);
@@ -2071,30 +2045,14 @@ void NO_INLINE Aggregator::executeImplBatch(
                 look_ahead_keys.prefetch(state, method.data, i, prefetch_look_ahead, key_end, *aggregates_pool);
             }
 
-            if constexpr (top_k)
+            if (top_k_rows.skip(i))
             {
-                if (skip_bitmap
-                    ? static_cast<bool>(skip_bitmap[i])
-                    : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
-                {
-                    places[i] = nullptr;
-                    ++top_k_rows_skipped;
-                    continue;
-                }
+                places[i] = nullptr;
+                continue;
             }
 
             auto emplace_result = look_ahead_keys.emplaceKey(state, method.data, i, *aggregates_pool);
-
-            if constexpr (top_k)
-            {
-                if (emplace_result.isInserted())
-                {
-                    if (state.isNullAt(i))
-                        method.top_k_heap.push(heap_key_cols, i);
-                    else
-                        method.top_k_heap.push(heap_key_cols, i, emplace_result.getKey());
-                }
-            }
+            top_k_rows.admit(state, i, emplace_result);
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
             if (emplace_result.isInserted())
@@ -2119,16 +2077,14 @@ void NO_INLINE Aggregator::executeImplBatch(
                 emplace_result.setMapped(aggregate_data);
             }
             else
-                aggregate_data = emplace_result.getMapped();
-
-            if constexpr (top_k)
             {
-                if (method.top_k_heap.needsTrim())
-                {
-                    trimHeapAndPruneHashTable(method, &destroyed_states, i);
-                    skip_bitmap = nullptr;
-                    state.resetCache();
-                }
+                aggregate_data = emplace_result.getMapped();
+            }
+
+            if (top_k_rows.needsTrim())
+            {
+                trimHeapAndPruneHashTable(method, &destroyed_states, i);
+                state.resetCache();
             }
 
             chassert(aggregate_data != nullptr);
@@ -2180,11 +2136,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         all_places_are_non_null = false;
     }
 
-    if constexpr (top_k)
-    {
-        ProfileEvents::increment(ProfileEvents::AggregationTopKRowsSkipped, top_k_rows_skipped);
-        method.top_k_heap.recordRows(key_end - key_start, top_k_rows_skipped);
-    }
+    top_k_rows.finish(key_end - key_start);
 
     const bool has_only_one_value = top_k ? false : state.hasOnlyOneValueSinceLastReset();
     const bool use_jit = use_compiled_functions && !top_k;
@@ -2712,6 +2664,9 @@ bool Aggregator::executeOnBlock(Columns columns,
         }
     }
 
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    replaceNegativeZeros(key_columns, materialized_columns);
+
     prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions, nested_columns_holder);
     block_columns_scope.reset();
 
@@ -2812,7 +2767,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         /// external-aggregation threshold the table is written to disk once the write frees enough memory, whether it
         /// is learning or frozen, and its producer learns again.
         if (over_external_threshold && adaptiveTableWorthSpilling(result, *adaptive))
-            spillAdaptiveTable(result, *adaptive, result.memoryUsage() + params.min_free_disk_space);
+            spillAdaptiveTable(result, *adaptive, getTemporaryFileReserveSize(result.memoryUsage(), params.min_free_disk_space));
         return true;
     }
 
@@ -2848,7 +2803,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space, /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
+        writeToTemporaryFile(result, getTemporaryFileReserveSize(result.memoryUsage(), params.min_free_disk_space), /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
         reseedKeptKeysAfterSpill(result);
     }
 
@@ -2964,7 +2919,7 @@ size_t Aggregator::spill(AggregatedDataVariants & data_variants, bool no_more_ke
     size_t before = data_variants.memoryUsage();
     if (!data_variants.isTwoLevel())
         data_variants.convertToTwoLevel();
-    writeToTemporaryFile(data_variants, before + params.min_free_disk_space, /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
+    writeToTemporaryFile(data_variants, getTemporaryFileReserveSize(before, params.min_free_disk_space), /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
     reseedKeptKeysAfterSpill(data_variants);
     size_t after = data_variants.memoryUsage();
     return before > after ? before - after : 0;
@@ -4647,6 +4602,10 @@ Chunk Aggregator::insertResultsIntoColumns(
             ++aggregate_functions_destroy_index;
 
             aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena);
+            fiu_do_on(FailPoints::aggregator_convert_insert_results_throw,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while inserting the results of a block");
+            });
         }
     }
     catch (...)
@@ -4659,7 +4618,6 @@ Chunk Aggregator::insertResultsIntoColumns(
 #if USE_EMBEDDED_COMPILER
         if (use_compiled_functions && is_aggregate_function_compiled[aggregate_functions_destroy_index])
         {
-            ++aggregate_functions_destroy_index;
             continue;
         }
 #endif
@@ -4840,6 +4798,11 @@ Chunks Aggregator::convertToBlockImplFinal(
         const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
         IColumn::SerializationSettings serialization_settings{
             .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+        if (unlikely(places.size() == 1))
+            fiu_do_on(FailPoints::aggregator_convert_queued_states_throw,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while converting the states of a block");
+            });
         method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
         places.emplace_back(mapped);
 
@@ -4848,26 +4811,36 @@ Chunks Aggregator::convertToBlockImplFinal(
 
         if (!return_single_block && places.size() >= max_block_size)
         {
+            /// `insertResultsIntoColumns` owns the states of `places` from the call on, also when it throws, so the `catch` must not see them.
+            SCOPE_EXIT({ places.clear(); });
             chunks.emplace_back(
                 insertResultsIntoColumns(places, std::move(out_cols.value()), arena, has_null_key_data, use_compiled_functions));
-            places.clear();
             out_cols.reset();
             has_null_key_data = false;
         }
     };
 
-    if (allow_having_prefilter)
-        data.forEachValue([&](const auto & key, auto & mapped) { fill_block.template operator()<true>(key, mapped); });
-    else
-        data.forEachValue([&](const auto & key, auto & mapped) { fill_block.template operator()<false>(key, mapped); });
-
-    if (skipped)
-        ProfileEvents::increment(ProfileEvents::AggregationHavingPrefilterGroupsSkipped, skipped);
-
-    if (untruncated_keys)
+    try
     {
-        untruncated_keys->bytes = key_bytes_meter->getBytes();
-        untruncated_keys->sample_columns = key_bytes_meter->detachSample();
+        if (allow_having_prefilter)
+            data.forEachValue([&](const auto & key, auto & mapped) { fill_block.template operator()<true>(key, mapped); });
+        else
+            data.forEachValue([&](const auto & key, auto & mapped) { fill_block.template operator()<false>(key, mapped); });
+
+        if (skipped)
+            ProfileEvents::increment(ProfileEvents::AggregationHavingPrefilterGroupsSkipped, skipped);
+
+        if (untruncated_keys)
+        {
+            untruncated_keys->bytes = key_bytes_meter->getBytes();
+            untruncated_keys->sample_columns = key_bytes_meter->detachSample();
+        }
+    }
+    catch (...)
+    {
+        /// The cells of the queued states are already nulled, so the table no longer destroys them.
+        destroyDetachedSources(places, /*first_function=*/ 0, /*skip_compiled=*/ false);
+        throw;
     }
 
     if (return_single_block)
@@ -5122,7 +5095,9 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
             data_variants.aggregates_pools.push_back(std::make_shared<Arena>());
 
     std::atomic<UInt32> next_bucket_to_merge = 0;
-    std::vector<AggregatedChunks> res(max_threads);
+    /// The chunks by bucket number: the threads take the buckets in turn, but the result must be in the order of buckets,
+    /// as the memory-efficient merging (`GroupingAggregatedTransform`) of a remote result relies on it.
+    std::vector<std::optional<AggregatedChunk>> res(Method::Data::NUM_BUCKETS);
 
     auto converter = [this, &next_bucket_to_merge, &method, &data_variants, &res, final](size_t thread_id)
     {
@@ -5138,11 +5113,14 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
 
             /// Select Arena to avoid race conditions
             Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
-            res[thread_id].emplace_back(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*untruncated_keys=*/nullptr, /*merged_group_count=*/nullptr));
+            res[bucket].emplace(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*untruncated_keys=*/nullptr, /*merged_group_count=*/nullptr));
         }
     };
 
     ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+    /// Reserve the tracking slots before scheduling: otherwise `enqueueAndKeepTrack` could throw after the pool
+    /// has accepted a job, and nothing would wait for that job while it uses `converter` and `res` by reference.
+    runner.reserve(max_threads);
     try
     {
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
@@ -5159,13 +5137,16 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
     catch (...) // Ok: wait for parallel tasks to finish before rethrowing
     {
         runner.waitForAllToFinishAndRethrowFirstError();
+        /// The exception may come from the synchronous conversion or from scheduling, with no task having failed.
+        throw;
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
 
     AggregatedChunks chunks;
-    for (auto & chunks_list : res)
-        chunks.splice(chunks.end(), std::move(chunks_list));
+    for (auto & chunk : res)
+        if (chunk)
+            chunks.push_back(std::move(*chunk));
     return chunks;
 }
 
@@ -6107,17 +6088,22 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
             };
 
             ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+            const size_t threads = std::min({params.max_threads, variants_to_convert.size(), max_parallel_two_level_conversions});
+            /// Reserve the tracking slots before scheduling: otherwise `enqueueAndKeepTrack` could throw after the pool
+            /// has accepted a job, and nothing would wait for that job while it uses `converter` by reference.
+            runner.reserve(threads);
             try
             {
                 /// Passing converter as a reference is fine: `runner` waits for all tasks before
                 /// this scope (and the captured state) is destroyed.
-                const size_t threads = std::min({params.max_threads, variants_to_convert.size(), max_parallel_two_level_conversions});
                 for (size_t i = 0; i < threads; ++i)
                     runner.enqueueAndKeepTrack([&converter]() { converter(); }, Priority{});
             }
             catch (...) // Ok: wait for parallel tasks to finish before rethrowing
             {
                 runner.waitForAllToFinishAndRethrowFirstError();
+                /// A failure to schedule must not leave some variants unconverted.
+                throw;
             }
             runner.waitForAllToFinishAndRethrowFirstError();
         }
@@ -6575,7 +6561,7 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space, /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
+        writeToTemporaryFile(result, getTemporaryFileReserveSize(result.memoryUsage(), params.min_free_disk_space), /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
         reseedKeptKeysAfterSpill(result);
     }
 

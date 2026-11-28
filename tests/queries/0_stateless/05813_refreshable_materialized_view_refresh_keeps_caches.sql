@@ -21,7 +21,8 @@ SYSTEM WAIT VIEW mv;
 SELECT count() FROM t WHERE a < 50 FORMAT Null SETTINGS log_comment = '05813_after_refresh';
 
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['MarkCacheHits'] > 0
+-- Served from the mark cache = no marks file loaded: a part read by several readers hits the cache even when cold.
+SELECT log_comment, ProfileEvents['MarkCacheHits'] > 0 AND ProfileEvents['MarkCacheMisses'] = 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05813_cold', '05813_warm', '05813_after_refresh')
 ORDER BY event_time_microseconds;

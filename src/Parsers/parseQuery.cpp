@@ -11,6 +11,7 @@
 #include <Common/levenshteinDistance.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -452,6 +453,7 @@ ASTPtr tryParseQuery(
         diagnostics->expected.highlights.clear();
         diagnostics->expected.failed_keyword_readings.reset();
         diagnostics->expected.failed_subquery_readings.reset();
+        diagnostics->expected.failed_literal_readings.reset();
         diagnostics->error_token = Token{};
     }
 
@@ -523,10 +525,30 @@ ASTPtr tryParseQuery(
     IParser::Pos set_lookahead(token_iterator);
     const bool committed_to_set = parser.consumesRawText() && isCommittedToSetQuery(set_lookahead);
     const bool consumes_raw_text = parser.consumesRawText() && !committed_to_set;
+    /// The walk below also matches the brackets. If they match up to the first `;` or the end, and the parse does not
+    /// look past it, `checkUnmatchedParentheses` would find nothing in this statement, so it is skipped.
+    const char * brackets_match_until = nullptr;
     if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
+        /// A closing bracket that matches nothing stays on the stack, so the stack never gets empty again.
+        VectorWithMemoryTracking<TokenType> open_brackets;
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {
+            const TokenType type = lookahead->type;
+            if (type == TokenType::OpeningRoundBracket || type == TokenType::OpeningSquareBracket)
+            {
+                open_brackets.push_back(type);
+            }
+            else if (type == TokenType::ClosingRoundBracket || type == TokenType::ClosingSquareBracket)
+            {
+                const TokenType opening
+                    = type == TokenType::ClosingRoundBracket ? TokenType::OpeningRoundBracket : TokenType::OpeningSquareBracket;
+                if (!open_brackets.empty() && open_brackets.back() == opening)
+                    open_brackets.pop_back();
+                else
+                    open_brackets.push_back(type);
+            }
+
             if (lookahead->isError() && (!consumes_raw_text || lookahead->type == TokenType::ErrorMaxQuerySizeExceeded))
             {
                 // Advance the position for further processing of possible test hint.
@@ -558,6 +580,9 @@ ASTPtr tryParseQuery(
 
             ++lookahead;
         }
+
+        if (open_brackets.empty())
+            brackets_match_until = lookahead->begin;
 
         /// We should not spoil the info about maximum parsed position in the original iterator.
         tokens.reset();
@@ -592,16 +617,18 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
-    /// Unmatched parentheses. Skipped for raw-text parsers: `TokenIterator::isValid()` stops at
+    /// Unmatched parentheses. Skipped for raw-text parsers: `TokenIterator::isValid` stops at
     /// the first error token, so a lexer-rejected token before a later `)` reads as unmatched.
-    /// A multi-statement parse checks only the current statement to avoid repeatedly lexing
-    /// every subsequent statement.
-    UnmatchedParentheses unmatched_parens
-        = consumes_raw_text ? UnmatchedParentheses{} : checkUnmatchedParentheses(TokenIterator(tokens), allow_multi_statements);
+    /// In multi-statement mode, stop at the first semicolon token even if a bracket is still open.
+    /// This keeps later statements from balancing brackets in the current statement.
+    UnmatchedParentheses unmatched_parens;
+    if (!consumes_raw_text && !(brackets_match_until && last_token.begin <= brackets_match_until))
+        unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), last_token.end, allow_multi_statements);
     if (!unmatched_parens.empty())
     {
-        /// A single-statement parse can still see tokens after a semicolon in invalid input.
-        /// Keep the reported parentheses within the displayed statement.
+        /// In single-statement mode, `checkUnmatchedParentheses` can walk past the current statement.
+        /// Keep diagnostics within the statement so that `writeQueryWithHighlightedErrorPositions`
+        /// never receives positions past `end`.
         const char * statement_end = current_statement_end(last_token.end);
         UnmatchedParentheses scoped_parens;
         for (const auto & paren : unmatched_parens)

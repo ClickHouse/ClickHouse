@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from helpers import keeper_utils
@@ -12,7 +14,12 @@ node = cluster.add_instance(
 )
 node_client_only = cluster.add_instance(
     "node_client_only",
-    main_configs=["configs/keeper_config.xml", "configs/server_unlimited.xml", "configs/client_overrides.xml"],
+    main_configs=[
+        "configs/keeper_config.xml",
+        "configs/server_unlimited.xml",
+        "configs/client_overrides.xml",
+        "configs/keeper_map.xml",
+    ],
     with_zookeeper=False,
     use_keeper=False,
 )
@@ -176,3 +183,25 @@ def test_plain_zookeeper_ignores_user_znode(started_cluster):
     # reconnect so the client re-runs the feature-flag discovery against the poisoned znode
     node_zk.restart_clickhouse()
     _insert(node_zk, "/zk_large", 100, 3000)
+
+
+# a KeeperMap insert exactly at the client limit passes the pre-check in `pushRequest` and is rejected in
+# `sendThread`, which also counts the length prefix: a Keeper error, not a LOGICAL_ERROR
+def test_keeper_map_insert_at_limit(started_cluster):
+    keeper_utils.wait_until_connected(cluster, node_client_only)
+    node_client_only.query("DROP TABLE IF EXISTS t_keeper_map SYNC")
+    node_client_only.query(
+        "CREATE TABLE t_keeper_map (key String, value String) ENGINE = KeeperMap('/t_keeper_map') PRIMARY KEY key"
+    )
+    # an insert over the limit is rejected before it is sent, with its exact size and the limit in the message
+    probe_len = 70000
+    probe = node_client_only.query_and_get_error(
+        f"INSERT INTO t_keeper_map SELECT 'k', repeat('a', {probe_len})"
+    )
+    size, limit = map(int, re.search(r"Request size (\d+) exceeds limit (\d+)", probe).groups())
+    error = node_client_only.query_and_get_error(
+        f"INSERT INTO t_keeper_map SELECT 'k', repeat('a', {probe_len - size + limit})"
+    )
+    assert "KEEPER_EXCEPTION" in error
+    assert node_client_only.query("SELECT count() FROM t_keeper_map") == "0\n"
+    node_client_only.query("DROP TABLE t_keeper_map SYNC")

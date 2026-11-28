@@ -17,6 +17,16 @@ import { CloudOnlyBadge } from "/snippets/fr/components/CloudOnlyBadge/CloudOnly
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## adaptive_aggregator_disable_thaw {#adaptive_aggregator_disable_thaw}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre permettant de maintenir gelées les tables locales de l'agrégateur adaptatif, quelle que soit la répétition des clés mises en tampon, en ignorant tout verdict de dégel mémorisé dans les statistiques de la table de hachage."}]}]} />
+
+Désactive le mécanisme de dégel par fil d’exécution de l&#39;agrégateur adaptatif (voir `enable_adaptive_aggregator`). Par défaut, un fil d’exécution dont les enregistrements en attente répètent sans cesse les mêmes clés peut dégeler sa table et reprendre une agrégation ordinaire. Lorsqu&#39;au moins la moitié des fils d’exécution gelés se dégèlent, ce verdict est mémorisé dans les statistiques de la table de hachage (`collect_hash_table_stats_during_aggregation`), afin que les exécutions ultérieures de la requête n&#39;utilisent pas l&#39;agrégateur adaptatif. Une requête de la forme `GROUP BY ... ORDER BY count() DESC LIMIT n` ne fusionne que les groupes susceptibles de figurer en tête du classement (élagage top-K). Elle mémorise son verdict indépendamment de la même agrégation sans `LIMIT`. Si `count()` est son seul agrégat, un fil d’exécution maintient également sa table gelée tant que l&#39;élagage devrait écarter la plupart des lignes que la table met en tampon.
+
+Lorsque ce paramètre est activé, la répétition des clés mises en tampon ne dégèle pas la table, et tout verdict mémorisé est ignoré. Les paramètres d&#39;agrégation externe permettent toujours d&#39;écrire sur disque une table gelée qui grossit et de la remplacer par une nouvelle table d&#39;apprentissage.
+
 ## adaptive_aggregator_freeze_threshold {#adaptive_aggregator_freeze_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
@@ -29,9 +39,9 @@ Nombre de clés à partir duquel l’agrégateur adaptatif fige la table de hach
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "Nouveau paramètre limitant, en octets, les tables locales figées de l’agrégateur adaptatif : la première limite atteinte entre celle-ci et le seuil du nombre de clés s’applique ; 0 désactive la limite en octets."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "Nouveau paramètre limitant, en octets, les tables locales gelées de l’agrégateur adaptatif : la première limite atteinte entre celle-ci et le seuil du nombre de clés s’applique ; 0 désactive la limite en octets."}]}]} />
 
-Taille de mémoire à partir de laquelle l’agrégateur adaptatif fige la table de hachage locale d’un thread (voir `enable_adaptive_aggregator`). Une table est figée lorsque cette valeur ou `adaptive_aggregator_freeze_threshold` est atteinte en premier. La taille correspond aux octets effectivement alloués par la table locale (son tampon de table de hachage et ses arènes), vérifiés entre les blocs. La limite en octets est importante lorsque les clés ou les états d’agrégation sont volumineux : le seul seuil du nombre de clés permettrait à ces tables de dépasser la capacité des caches CPU. Avec la valeur par défaut, les tables dont les clés et les états sont de taille habituelle continuent d’être figées en fonction du nombre de clés. 0 désactive la limite en octets ; seul le seuil du nombre de clés s’applique alors.
+Taille de mémoire à partir de laquelle l’agrégateur adaptatif gèle la table de hachage locale d’un fil d’exécution (voir `enable_adaptive_aggregator`). Une table est gelée lorsque cette valeur ou `adaptive_aggregator_freeze_threshold` est atteinte en premier. La taille correspond au tampon de table de hachage de la table locale, vérifié entre les blocs : les cellules parcourues par chaque lookup, qui contiennent les clés (des références aux octets des clés de type string) et les pointeurs vers les états d’agrégation, ou les états eux-mêmes lorsqu’ils sont stockés de manière intégrée. La limite en octets est importante lorsque les cellules sont volumineuses : le seul seuil du nombre de clés permettrait à ces tables de dépasser la capacité des caches CPU. La mémoire des états d’agrégation n’est pas comptabilisée, car elle croît par l’intermédiaire des clés que la table contient déjà, ce que le gel n’empêche pas. Avec la valeur par défaut, les tables dont les clés sont de taille habituelle continuent d’être gelées en fonction du nombre de clés. 0 désactive la limite en octets ; c’est alors le seuil du nombre de clés qui s’applique.
 
 ## add_http_cors_header {#add_http_cors_header}
 
@@ -209,7 +219,7 @@ Valide les sommes de contrôle lors de la lecture. Ce paramètre est activé par
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nouveau paramètre permettant d’appliquer une compression générique au corps de la réponse."}]}]} />
 
-Applique une compression générique au corps de la réponse, par exemple `compression=gz`. Notez que ce paramètre est indépendant de `Content-Encoding` (compression HTTP) et de l’ancien paramètre `compress` (compression native de ClickHouse). Indiquer une extension de fichier compressé dans le chemin d’URL produit le même effet.
+Applique une compression générique au corps de la réponse, par exemple `compression=gz`. Notez que ce paramètre est indépendant de `Content-Encoding` (compression HTTP) et de l’ancien paramètre `compress` (compression native de ClickHouse). Pour les requêtes par chemin qui produisent une réponse, indiquer une extension de fichier compressé dans le chemin d’URL produit le même effet. Pour un téléversement HTTP `PUT` par chemin, le suffixe de compression décrit en revanche le corps de la requête, qui est décompressé avant l’insertion.
 
 Il s’agit d’un paramètre de l’interface HTTP qui définit la forme de la réponse : il est pris en compte avant l’exécution de la requête (les tampons de réponse sont configurés à l’avance). Il doit donc être fourni via le paramètre d’URL HTTP, l’extension de fichier du chemin d’URL ou un profil utilisateur, et non via une clause `SETTINGS` dans la requête (où il n’a aucun effet et est rejeté).
 
@@ -253,7 +263,7 @@ Le nombre maximal de tentatives de connexion à effectuer avec chaque réplique 
 
 Lorsqu&#39;elle est définie sur `true`, une requête `SELECT` est convertie en forme normale conjonctive (CNF). Dans certains cas, réécrire une requête en CNF peut accélérer son exécution (voir cette [issue GitHub](https://github.com/ClickHouse/ClickHouse/issues/11749) pour plus d&#39;explications).
 
-Par exemple, notez que la requête `SELECT` suivante n&#39;est pas modifiée (comportement par défaut) :
+Par exemple, notez que la requête `SELECT` suivante n&#39;est pas modifiée (comportement par défaut) :
 
 ```sql
 EXPLAIN SYNTAX
@@ -267,7 +277,7 @@ WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))
 SETTINGS convert_query_to_cnf = false;
 ```
 
-Le résultat est :
+Le résultat est :
 
 ```response
 ┌─explain────────────────────────────────────────────────────────┐
@@ -283,7 +293,7 @@ Le résultat est :
 └────────────────────────────────────────────────────────────────┘
 ```
 
-Définissons `convert_query_to_cnf` à `true` et voyons ce qui change :
+Définissons `convert_query_to_cnf` à `true` et voyons ce qui change :
 
 ```sql
 EXPLAIN SYNTAX
@@ -297,7 +307,7 @@ WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))
 SETTINGS convert_query_to_cnf = true;
 ```
 
-Notez que la clause `WHERE` est réécrite en CNF, mais le jeu de résultats reste identique : la logique booléenne est inchangée.
+Notez que la clause `WHERE` est réécrite en CNF, mais le jeu de résultats reste identique : la logique booléenne est inchangée.
 
 ```response
 ┌─explain───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -313,7 +323,7 @@ Notez que la clause `WHERE` est réécrite en CNF, mais le jeu de résultats res
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Valeurs possibles : true, false
+Valeurs possibles : true, false
 
 ## count_matches_stop_at_empty_match {#count_matches_stop_at_empty_match}
 
@@ -408,9 +418,9 @@ Détermine le dialecte utilisé pour analyser la requête.
 Valeurs prises en charge :
 
 * `clickhouse` (par défaut) — ClickHouse SQL standard.
-* `kusto` — Kusto Query Language. Nécessite le paramètre bêta `allow_experimental_kusto_dialect`.
-* `prql` — PRQL. Nécessite le paramètre expérimental `allow_experimental_prql_dialect`.
-* `polyglot` — convertit le SQL provenant d&#39;autres dialectes (MySQL, PostgreSQL, etc.) en ClickHouse SQL. Nécessite le paramètre expérimental `allow_experimental_polyglot_dialect`.
+* `kusto` — Kusto Query Language. Nécessite le paramètre bêta `enable_kusto_dialect`.
+* `prql` — PRQL. Nécessite le paramètre expérimental `enable_prql_dialect`.
+* `polyglot` — convertit le SQL provenant d&#39;autres dialectes (MySQL, PostgreSQL, etc.) en ClickHouse SQL. Nécessite le paramètre expérimental `enable_polyglot_dialect`.
 * `promql` — PromQL (langage de requêtes Prometheus) évalué sur une table TimeSeries, configurée à l&#39;aide des paramètres `promql_database`, `promql_table` et `promql_evaluation_time`.
 * `clickhouse_json` — au lieu d&#39;un texte SQL, la requête est interprétée comme un AST JSON (la sortie de `parseQueryToJSON`). La requête `SET` reste reconnue sous sa forme habituelle afin de pouvoir rétablir le dialecte. Nécessite le paramètre expérimental `enable_json_ast_dialect`.
 * `logsql` — LogsQL, le langage de requêtes de log de VictoriaLogs, traduit en requêtes `SELECT` sur la table de log configurée à l&#39;aide des paramètres `logsql_database` et `logsql_table`. Nécessite le paramètre expérimental `enable_logsql_dialect`.
@@ -608,6 +618,8 @@ Stratégie de partitionnement par défaut pour les moteurs de type fichier. S’
 <SettingsInfoBlock type="UInt64" default_value="200" />
 
 Nombre maximal de prefetches. Zéro signifie qu&#39;il n&#39;y a pas de limite. Il est toutefois recommandé d&#39;utiliser le paramètre `filesystem_prefetches_max_memory_usage` si vous souhaitez limiter le nombre de prefetches.
+
+Cela s&#39;applique également aux fusions et aux mutations.
 
 ## filter {#filter}
 
@@ -868,6 +880,29 @@ La fonction &#39;h3ToGeo&#39; renvoie (lon, lat) si la valeur est true, sinon (l
 
 Délai d’expiration, en millisecondes, pour la réception du paquet Hello des répliques lors de la négociation initiale.
 
+## hash_join_layout {#hash_join_layout}
+
+<SettingsInfoBlock type="HashJoinLayout" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "Nouveau paramètre permettant de forcer la disposition d’une jointure par hachage. Avec `auto`, elle reste déterminée par `parallel_hash_join_threshold`."}]}]} />
+
+Détermine la manière dont une jointure par hachage `INNER`, `LEFT`, `RIGHT` ou `FULL` construit sa table de hachage.
+Avec `auto`, la valeur par défaut, le planificateur choisit la disposition à l’aide de `parallel_hash_join_threshold` ; définissez `serial` ou `parallel` pour en imposer une.
+
+Valeurs possibles :
+
+* `auto` — `parallel_hash_join_threshold` décide, en fonction du nombre estimé de lignes de la table de droite. Consultez ce paramètre pour le cas d’une jointure sans estimation.
+* `serial` — la table de hachage est constituée d’une seule part, remplie par un seul fil d’exécution, quelle que soit l’estimation.
+* `parallel` — la table de hachage est divisée en parts remplies simultanément par jusqu’à `max_threads` fils d’exécution (un seul fil d’exécution avec `max_threads = 1`), quelle que soit l’estimation.
+
+Certaines jointures construisent toujours une seule part, quelle que soit la valeur :
+
+* les jointures d’autres types, comme `CROSS` ;
+* une jointure avec une table `Join` ou un stockage clé-valeur à droite ;
+* chaque bucket d’une jointure par hachage Grace ;
+* la jointure par hachage par laquelle commence `join_algorithm = 'auto'` lorsque la jointure ne peut pas déverser sur disque (par exemple lorsque `max_bytes_before_external_join` et `max_bytes_ratio_before_external_join` valent tous deux `0`) et peut basculer à la place vers une jointure par fusion partielle ;
+* chaque jointure par shard de `query_plan_join_shard_by_pk_ranges`.
+
 ## hedged_connection_timeout_ms {#hedged_connection_timeout_ms}
 
 <SettingsInfoBlock type="Millisecondes" default_value="50" />
@@ -918,9 +953,9 @@ Valeurs possibles :
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
-Si ce paramètre est activé, &#39;ORDER BY rand()&#39; est injecté dans les requêtes SELECT sans clause ORDER BY.
+Si ce paramètre est activé, `SHUFFLE` est injecté dans les requêtes SELECT sans clause ORDER BY.
 S&#39;applique uniquement à une profondeur de sous-requête = 0. Les sous-requêtes et INSERT INTO ... SELECT ne sont pas affectés.
-Si la structure de premier niveau est UNION, &#39;ORDER BY rand()&#39; est injecté indépendamment dans chacune des branches.
+Si la structure de premier niveau est UNION, `SHUFFLE` est injecté indépendamment dans chacune des branches.
 Utile uniquement pour les tests et le développement (l&#39;absence de ORDER BY est une source de résultats de requête non déterministes).
 
 ## input_format {#input_format}
@@ -952,6 +987,16 @@ Remplit les tuples nommés uniquement à partir d’objets JSON, dans la famille
 Ce paramètre s’applique au JSON transmis sous forme de string. L’extraction depuis une colonne de type de données `JSON` n’est pas concernée, qu’il s’agisse de chemins typés ou non typés : elle lit les sous-colonnes de la colonne au lieu d’analyser un document JSON, et n’atteint donc jamais le code régi par ce paramètre. Les *colonnes* de tuples nommés dans les formats d’entrée JSON relèvent d’un paramètre distinct, [input&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects](/fr/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects) ; le présent paramètre ne concerne que les fonctions d’extraction.
 
 Désactivé par défaut.
+
+## json_extract_use_cast_string_to_date_time_mode {#json_extract_use_cast_string_to_date_time_mode}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`JSONExtract` analyse les valeurs `DateTime` selon `cast_string_to_date_time_mode` au lieu de `date_time_input_format`. Définir `compatibility` sur une version antérieure à 26.8 rétablit le comportement précédent."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant de choisir si la famille `JSONExtract` analyse les valeurs `DateTime` selon `cast_string_to_date_time_mode` (depuis 26.8) ou selon `date_time_input_format` (avant 26.8)."}]}]} />
+
+Détermine le paramètre suivi par la famille de fonctions `JSONExtract` lors de l&#39;analyse d&#39;une chaîne JSON en `DateTime` ou `DateTime64`. Lorsqu&#39;il est activé, le mode d&#39;analyse est déterminé par [cast&#95;string&#95;to&#95;date&#95;time&#95;mode](/fr/reference/settings/session-settings/cast-string#cast_string_to_date_time_mode), de manière cohérente avec `CAST`. Lorsqu&#39;il est désactivé, il est déterminé par [date&#95;time&#95;input&#95;format](/fr/reference/settings/formats/date-time#date_time_input_format), comme avant la version 26.8.
+
+Lorsque le parseur choisi ne parvient pas à lire la valeur, la fonction renvoie la valeur par défaut du type (`1970-01-01 00:00:00`) sans lever d&#39;erreur : une incohérence entre les deux paramètres modifie donc silencieusement les valeurs extraites.
 
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
@@ -1320,9 +1365,11 @@ Par défaut, avec une précision de 1, le vecteur de référence conserve sa ple
 
 ## query_condition_cache_time_condition_grid_factor {#query_condition_cache_time_condition_grid_factor}
 
+<ExperimentalBadge />
+
 <SettingsInfoBlock type="Float" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre : pas de la grille utilisé pour dériver des conditions déterministes à partir de conditions portant sur l'heure actuelle dans le cache des conditions de requête, exprimé en fraction de la distance entre la constante temporelle et l'heure actuelle."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre expérimental : pas de la grille utilisé pour dériver des conditions déterministes à partir de conditions portant sur l'heure actuelle dans le cache des conditions de requête, exprimé en fraction de la distance entre la constante temporelle et l'heure actuelle."}]}]} />
 
 Pour les conditions portant sur l&#39;heure actuelle dans le [cache des conditions de requête](/fr/concepts/features/performance/caches/query-condition-cache) des tables `MergeTree` (voir [`use_query_condition_cache_for_time_conditions`](/fr/reference/settings/session-settings/use-query#use_query_condition_cache_for_time_conditions)) : taille de la grille à laquelle les constantes temporelles sont arrondies, exprimée en fraction de la distance entre la constante et l&#39;heure actuelle. Par exemple, avec le facteur par défaut de 1,0, la constante de `WHERE time >= now() - INTERVAL 10 DAY` est arrondie à une grille d&#39;un jour (plafonnée à un jour), et celle de `WHERE time >= now() - INTERVAL 1 HOUR` à une grille d&#39;une heure.
 
@@ -1810,51 +1857,51 @@ Les définitions existantes et les requêtes `ATTACH` conservent leur sémantiqu
 
 <VersionHistory
   rows={[
-{
-  id: "row-1",
-  items: [
-    { label: "26.9" },
-    { label: "10000" },
-    {
-      label:
-        "La limite du coût de l'estimation de la sélectivité de `IN` avec un grand ensemble est conservée avec `compatibility` pour une version antérieure : la valeur précédente est délibérément égale à la nouvelle, afin que l'estimation non plafonnée, qui pouvait ajouter des centaines de millisecondes à la planification d'une seule requête, ne soit pas rétablie."
-    }
-  ]
-},
-{
-  id: "row-2",
-  items: [
-    { label: "26.8" },
-    { label: "10000" },
-    {
-      label:
-        "Nouveau paramètre qui limite le coût de l'estimation de la sélectivité de `IN` avec un grand ensemble : au-delà de cette limite, l'estimateur utilise la taille de l'ensemble et sa plage englobante plutôt que les plages exactes. La valeur précédente est délibérément égale à la nouvelle, afin que `compatibility` avec une version antérieure conserve la limite au lieu de rétablir l'estimation non plafonnée, qui pouvait ajouter des centaines de millisecondes à la planification d'une seule requête."
-    }
-  ]
-},
-{
-  id: "row-3",
-  items: [
-    { label: "26.7" },
-    { label: "10000" },
-    {
-      label:
-        "La limite du coût de l'estimation de la sélectivité de `IN` avec un grand ensemble est conservée avec `compatibility` pour une version antérieure : la valeur précédente est délibérément égale à la nouvelle, afin que l'estimation non plafonnée, qui pouvait ajouter des centaines de millisecondes à la planification d'une seule requête, ne soit pas rétablie."
-    }
-  ]
-},
-{
-  id: "row-4",
-  items: [
-    { label: "26.6" },
-    { label: "10000" },
-    {
-      label:
-        "La limite du coût de l'estimation de la sélectivité de `IN` avec un grand ensemble est conservée avec `compatibility` pour une version antérieure : la valeur précédente est délibérément égale à la nouvelle, afin que l'estimation non plafonnée, qui pouvait ajouter des centaines de millisecondes à la planification d'une seule requête, ne soit pas rétablie."
-    }
-  ]
-}
-]}
+  {
+    id: "row-1",
+    items: [
+      { label: "26.9" },
+      { label: "10000" },
+      {
+        label:
+          "La limite du coût de l'estimation de la sélectivité de `IN` avec un grand ensemble est conservée avec `compatibility` pour une version antérieure : la valeur précédente est délibérément égale à la nouvelle, afin que l'estimation non plafonnée, qui pouvait ajouter des centaines de millisecondes à la planification d'une seule requête, ne soit pas rétablie."
+      }
+    ]
+  },
+  {
+    id: "row-2",
+    items: [
+      { label: "26.8" },
+      { label: "10000" },
+      {
+        label:
+          "Nouveau paramètre qui limite le coût de l'estimation de la sélectivité de `IN` avec un grand ensemble : au-delà de cette limite, l'estimateur utilise la taille de l'ensemble et sa plage englobante plutôt que les plages exactes. La valeur précédente est délibérément égale à la nouvelle, afin que `compatibility` avec une version antérieure conserve la limite au lieu de rétablir l'estimation non plafonnée, qui pouvait ajouter des centaines de millisecondes à la planification d'une seule requête."
+      }
+    ]
+  },
+  {
+    id: "row-3",
+    items: [
+      { label: "26.7" },
+      { label: "10000" },
+      {
+        label:
+          "La limite du coût de l'estimation de la sélectivité de `IN` avec un grand ensemble est conservée avec `compatibility` pour une version antérieure : la valeur précédente est délibérément égale à la nouvelle, afin que l'estimation non plafonnée, qui pouvait ajouter des centaines de millisecondes à la planification d'une seule requête, ne soit pas rétablie."
+      }
+    ]
+  },
+  {
+    id: "row-4",
+    items: [
+      { label: "26.6" },
+      { label: "10000" },
+      {
+        label:
+          "La limite du coût de l'estimation de la sélectivité de `IN` avec un grand ensemble est conservée avec `compatibility` pour une version antérieure : la valeur précédente est délibérément égale à la nouvelle, afin que l'estimation non plafonnée, qui pouvait ajouter des centaines de millisecondes à la planification d'une seule requête, ne soit pas rétablie."
+      }
+    ]
+  }
+  ]}
 />
 
 La taille maximale de l&#39;ensemble situé à droite de l&#39;opérateur `IN` pour laquelle l&#39;estimateur de sélectivité détermine les plages exactes couvertes par l&#39;ensemble. Cette opération nécessite un `Field` par élément, un tri et une sonde de statistiques par élément, ce qui, pour un grand ensemble, représente la majeure partie de la planification de la requête. Au-delà de cette limite, l&#39;estimateur détermine plutôt la sélectivité à partir de la taille de l&#39;ensemble et de sa plage englobante, en un seul parcours linéaire de l&#39;ensemble, sans tri ni sondes de statistiques par élément. Zéro signifie qu&#39;il n&#39;y a pas de limite.
@@ -1899,10 +1946,29 @@ Lit dans la table d’échantillons récents d’une table [TimeSeries](/fr/refe
 
 ## timeout_before_checking_execution_speed {#timeout_before_checking_execution_speed}
 
-<SettingsInfoBlock type="Secondes" default_value="10" />
+<SettingsInfoBlock type="Seconds" default_value="10" />
 
 Vérifie que la vitesse d&#39;exécution n&#39;est pas trop faible (pas inférieure à `min_execution_speed`),
 une fois le délai spécifié en secondes écoulé.
+
+Si ce paramètre est défini sur `0`, les limites de vitesse d&#39;exécution sont vérifiées dès le début de la requête,
+mais [`max_estimated_execution_time`](/fr/reference/settings/session-settings/max#max_estimated_execution_time)
+n&#39;est jamais vérifié.
+
+## to_start_of_interval_preserves_argument_type {#to_start_of_interval_preserves_argument_type}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "La fonction `toStartOfInterval` renvoie une valeur du même type que son argument au lieu d’un type déterminé par l’unité de l’intervalle, ce qui faisait déborder les valeurs situées hors de la plage du type plus restreint"}]}]} />
+
+Fait en sorte que la fonction `toStartOfInterval` (ainsi que ses alias `time_bucket` et `date_bin`) renvoie une valeur du même type que son premier argument :
+`Date` pour `Date`, `Date32` pour `Date32`, `DateTime` pour `DateTime` et `DateTime64` avec la même scale pour `DateTime64`, quelle que soit l’unité de l’intervalle.
+La seule exception concerne une unité inférieure à la seconde plus fine que la scale d’un argument `DateTime64`, par exemple `INTERVAL 1500 MILLISECOND` pour un `DateTime64(0)` : le résultat prend alors la scale de l’unité, car la scale de l’argument ne permet pas de représenter les bornes des intervalles.
+
+Valeurs possibles :
+
+* `1` — Le résultat a le type du premier argument. Le paramètre `enable_extended_results_for_datetime_functions` est sans effet sur la fonction.
+* `0` — Comportement hérité : le type de résultat dépend de l’unité de l’intervalle. Les unités `WEEK` et supérieures produisent un `Date`, les unités de `DAY` à `SECOND` produisent un `DateTime`, et les unités inférieures à la seconde produisent un `DateTime64` avec la scale de l’unité (pour les arguments `Date32` et `DateTime64`, on obtient `Date32` et `DateTime64` au lieu de `Date` et `DateTime` lorsque `enable_extended_results_for_datetime_functions = 1`). Une valeur qui dépasse la plage du type de résultat plus restreint déborde : par exemple, `toStartOfInterval(toDate32('1900-01-01'), INTERVAL 1 DAY)` renvoie `2036-02-07 06:28:16`. Ce comportement concerne la surcharge sans `origin`. La surcharge avec `origin` conserve le type de l’argument même avec le comportement hérité, à ceci près que, pour un argument `DateTime64` et une unité inférieure à la seconde, le résultat prend la scale de l’unité.
 
 ## transfer_overflow_mode {#transfer_overflow_mode}
 
@@ -2018,7 +2084,23 @@ contrôle ce qui se passe pour les lignes dont le type réel est incompatible av
 
 <SettingsInfoBlock type="TransactionsWaitCSNMode" default_value="wait_unknown" />
 
-Attendre que les modifications validées deviennent réellement visibles dans le snapshot le plus récent
+Ce que `COMMIT` attend :
+
+* `wait_commit` : la requête de validation. Si son issue est inconnue (perte de la connexion à Keeper), `COMMIT` lève `UNKNOWN_STATUS_OF_TRANSACTION`.
+* `wait_unknown` : attend également l’issue d’une validation dont le statut est inconnu.
+* `wait_visible` : attend également qu’une nouvelle transaction sur cette réplique voie les modifications, pendant au plus `wait_changes_become_visible_timeout_ms` ; au-delà, `COMMIT` lève `TIMEOUT_EXCEEDED`, bien que la transaction soit validée.
+
+## wait_changes_become_visible_timeout_ms {#wait_changes_become_visible_timeout_ms}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "10000"},{"label": "Nouveau paramètre limitant la durée pendant laquelle `SYSTEM SYNC TRANSACTION LOG`, `BACKUP` et `COMMIT` attendent que les commits deviennent visibles sur cette réplique."}]}]} />
+
+Durée pendant laquelle `SYSTEM SYNC TRANSACTION LOG`, le `BACKUP` d&#39;une table comportant des transactions et `COMMIT` avec
+`wait_changes_become_visible_after_commit_mode = 'wait_visible'` attendent que les commits soient visibles pour une nouvelle
+transaction sur cette réplique. Une fois ce délai écoulé, ils lèvent l&#39;exception `TIMEOUT_EXCEEDED`.
 
 ## weight {#weight}
 
@@ -2073,7 +2155,7 @@ Priorité de planification de la requête au sein de sa charge de travail, utili
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Nouveau paramètre."}]}]} />
 
-Écrit les chemins complets (y compris s3://) dans les fichiers de métadonnées Iceberg.
+Écrit les chemins complets (y compris s3://) dans les fichiers de métadonnées Iceberg. Les tables créées dans une base de données `DataLakeCatalog` utilisent toujours des chemins complets.
 
 ## zstd_window_log_max {#zstd_window_log_max}
 

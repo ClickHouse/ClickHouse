@@ -4,15 +4,41 @@
 namespace DB
 {
 
-UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, bool stop_at_semicolon)
+const Token & Tokens::lexUntil(size_t index)
+{
+    while (true)
+    {
+        if (index < data.size())
+        {
+            max_pos = std::max(max_pos, index);
+            return data[index];
+        }
+
+        if (!data.empty() && data.back().isEnd())
+        {
+            max_pos = data.size() - 1;
+            return data.back();
+        }
+
+        Token token = lexer.nextToken();
+
+        if (!skip_insignificant || token.isSignificant())
+            data.emplace_back(token);
+    }
+}
+
+UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, const char * statement_end, bool stop_at_semicolon)
 {
     /// We have just two kind of parentheses: () and [].
     UnmatchedParentheses stack;
 
-    /// We have to iterate through the current statement to avoid false positive "Unmatched parentheses" error
-    /// when parser failed in the middle of the query.
-    for (TokenIterator it = begin; it.isValid() && (!stop_at_semicolon || it->type != TokenType::Semicolon); ++it)
+    for (TokenIterator it = begin; it.isValid(); ++it)
     {
+        /// In multi-query mode, the first semicolon ends the scan even if brackets remain open.
+        /// Otherwise, scan through the parsed statement and any open brackets to avoid reporting false mismatches.
+        if (it->type == TokenType::Semicolon && (stop_at_semicolon || (stack.empty() && it->begin >= statement_end)))
+            break;
+
         if (it->type == TokenType::OpeningRoundBracket || it->type == TokenType::OpeningSquareBracket)
         {
             stack.push_back(*it);

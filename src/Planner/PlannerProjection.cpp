@@ -97,7 +97,7 @@ bool collectExpressionsBeforeWindow(const QueryTreeNodePtr & node, QueryTreeNode
 {
     size_t size_before = result.size();
     const auto * function_node = node->as<FunctionNode>();
-    bool has_window_function = function_node && function_node->isWindowFunction();
+    bool has_window_function = function_node && function_node->isWindowCall();
     for (const auto & child : node->getChildren())
         if (child && !isQueryOrUnionNode(child))
             has_window_function |= collectExpressionsBeforeWindow(child, result);

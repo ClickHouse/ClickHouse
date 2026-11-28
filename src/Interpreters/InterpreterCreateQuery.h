@@ -96,9 +96,13 @@ public:
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 
-    /// The engine of a table created from the table function, when its `TABLE ENGINE` grant is required, i.e. when the
-    /// engine has a source. A definition that cannot be a table is refused.
-    static std::optional<String> getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context);
+    /// The grant needed to create a table from the table function, besides `CREATE TABLE`: `TABLE ENGINE` on its engine
+    /// when the engine has a source, or `READ` and `WRITE` on the source of a function that has no engine.
+    /// A definition that cannot be a table is refused. `is_replayed_definition` is passed on to
+    /// `ITableFunction::setReplayedDefinition`: a definition the server stored itself has to load under the rules it was
+    /// accepted by.
+    static std::optional<AccessRightsElement> getRequiredAccessOfTableFunction(
+        const ASTPtr & table_function_ast, const ContextPtr & query_context, bool is_replayed_definition);
 
     static String getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context);
 
@@ -128,6 +132,8 @@ private:
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode);
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
+    /// Analyzes the query of a materialized view as the user. Throws without the rights for a table that it reads.
+    [[nodiscard]] SharedHeader getMaterializedViewSampleBlock(const ASTCreateQuery & create) const;
     void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties);
     void setEngine(ASTCreateQuery & create) const;
     [[nodiscard]] AccessRightsElements getRequiredAccess() const;
