@@ -10661,6 +10661,11 @@ void StorageReplicatedMergeTree::movePartitionToShard(
         /// canUsePartInMerges is overlapping with dropPart, let's try to use the same code.
         if (auto result = merge_predicate->canUsePartInMerges(part); !result.has_value())
             throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: {}", result.error().text);
+
+        auto replicas_parts = getPartsOfAllReplicas(zookeeper, zookeeper_path, format_version);
+        assertSourceHasNoPatchesForPartition(
+            getPatchParts(replicas_parts), format_version, part_info.getPartitionId(), part->info.getDataVersion(), zookeeper_path,
+            "MOVE PART " + part_name + " TO SHARD " + to);
     }
 
     {
