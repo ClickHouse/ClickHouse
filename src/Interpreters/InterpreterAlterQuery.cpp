@@ -19,6 +19,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -106,6 +107,15 @@ namespace ErrorCodes
 namespace
 {
 
+/// An entry of the DDL log of a `Replicated` database was accepted by its initiator, which can be an older
+/// version, so its types are read like those of a stored definition (see `AlterCommand::parse`): refusing
+/// the entry would stop the replay of the log on this replica.
+bool isReplayedDatabaseReplicatedQuery(const ContextPtr & context)
+{
+    const auto metadata_transaction = context->getZooKeeperMetadataTransaction();
+    return metadata_transaction && !metadata_transaction->isInitialQuery();
+}
+
 /// A `Replicated`-database host applies the statement without the submitting user. `ON CLUSTER` does
 /// not reach this: it is refused unless its hosts run as the initiating user.
 void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
@@ -140,7 +150,7 @@ void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & 
         const auto * command_ast = child->as<ASTAlterCommand>();
         std::optional<AlterCommand> command;
         if (command_ast->type != ASTAlterCommand::EXECUTE_COMMAND)
-            command = AlterCommand::parse(command_ast);
+            command = AlterCommand::parse(command_ast, isReplayedDatabaseReplicatedQuery(context));
 
         if (command)
         {
@@ -250,6 +260,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
 {
     SegmentsHolder segments_holder;
     const auto & settings = context->getSettingsRef();
+    const bool is_replayed = isReplayedDatabaseReplicatedQuery(context);
 
     for (const auto & child : alter.command_list->children)
     {
@@ -258,7 +269,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         {
             segments_holder.take<ExecuteCommands>().push_back(command_ast);
         }
-        else if (auto alter_command = AlterCommand::parse(command_ast))
+        else if (auto alter_command = AlterCommand::parse(command_ast, is_replayed))
         {
             auto reset_command = alter_command->extractSettingsResets();
             auto & alter_commands = segments_holder.take<AlterCommands>();

@@ -20,6 +20,7 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -713,7 +714,7 @@ static NameSet collectIndicesRebuiltByMutation(
                 old_type = part_column->type;
             else if (const auto * missing = serialization_infos.getMissingColumnInfo(markerName(command.column_name));
                      missing && !missing->type_name.empty())
-                old_type = DataTypeFactory::instance().get(missing->type_name);
+                old_type = getStoredDataType(missing->type_name);
 
             if (old_type && command.data_type && !old_type->equals(*command.data_type))
                 type_changed_columns.insert(command.column_name);

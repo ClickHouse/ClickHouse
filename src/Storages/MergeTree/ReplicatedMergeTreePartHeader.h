@@ -6,12 +6,14 @@
 #include <IO/ReadBuffer.h>
 #include <IO/Operators.h>
 #include <array>
+#include <optional>
 
 
 namespace DB
 {
 
 class NamesAndTypesList;
+class IMergeTreeDataPart;
 
 /// This class provides a compact representation of part metadata (available columns and checksums)
 /// that is intended to be stored in the part znode in ZooKeeper.
@@ -36,6 +38,18 @@ public:
 
     [[nodiscard]] const std::array<char, 16> & getColumnsHash() const { return columns_hash; }
     [[nodiscard]] const MinimalisticDataPartChecksums & getChecksums() const { return checksums; }
+
+    /// The columns hash of the `columns.txt` of `part` as stored, if it has one. It differs from the hash of the loaded
+    /// columns when loading rewrote a type that an older version stored (see `getStoredDataType`).
+    [[nodiscard]] static std::optional<std::array<char, 16>> getStoredColumnsHash(const IMergeTreeDataPart & part);
+
+    /// The columns hash of the text of a `columns.txt`.
+    [[nodiscard]] static std::array<char, 16> getColumnsHash(const String & columns_text);
+
+    /// The header of a local part. It has the hash of the `columns.txt` of the part as stored when loading rewrote
+    /// a type of it (see `IMergeTreeDataPart::getLegacyColumnsHash`): the part is fetched with that file unchanged,
+    /// so a replica of an older version, which reads it as written, has to find the same hash in ZooKeeper.
+    static ReplicatedMergeTreePartHeader fromPart(const IMergeTreeDataPart & part);
 
 private:
     ReplicatedMergeTreePartHeader(std::array<char, 16> columns_hash_, MinimalisticDataPartChecksums checksums_)

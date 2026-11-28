@@ -204,6 +204,8 @@ void encodeDataTypeForHashCalculation(const DataTypePtr & type, WriteBuffer & bu
 /// receiveQueryPlan) pass the effective `input_format_binary_max_type_complexity` to guard against malicious
 /// input; callers decoding already-stored server data (columns, shared-data) use the default (unlimited).
 DataTypePtr decodeDataType(ReadBuffer & buf, size_t max_complexity = 0);
+/// Decode the type of a stored column, reading older spellings like `getStoredDataType`.
+DataTypePtr decodeStoredDataType(ReadBuffer & buf, size_t max_complexity = 0);
 
 /// Resolve the effective input_format_binary_max_type_complexity from a context, to pass to decodeDataType.
 /// Reads the setting once (not per type node), so it does not reintroduce per-value context contention.

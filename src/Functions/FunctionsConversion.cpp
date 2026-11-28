@@ -648,7 +648,8 @@ FunctionCast::WrapperType FunctionCast::createStringParsingWrapper(bool requeste
         ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
         const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
     {
-        const auto parsing_type = requested_result_is_nullable ? makeNullable(result_type) : result_type;
+        /// `Nullable` cannot wrap a `SimpleAggregateFunction`, so its storage type parses the text.
+        const auto parsing_type = requested_result_is_nullable ? makeNullable(getSimpleAggregateFunctionStorageType(result_type)) : result_type;
         if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
             return ConvertImplGenericFromString<false>::execute(
                 arguments, parsing_type, column_nullable, input_rows_count, settings);
@@ -1490,7 +1491,7 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
     /// nested target so the conversion assembles a consistent column; removeNullable() below strips it.
     const DataTypePtr nested_target_type
         = (cast_type == CastType::accurateOrNull && (isDynamic(from_nested_type) || isVariant(from_nested_type)))
-        ? makeNullable(to_nested_type)
+        ? makeNullable(getSimpleAggregateFunctionStorageType(to_nested_type))
         : to_nested_type;
 
     return [nested_function = prepareUnpackDictionaries(from_nested_type, nested_target_type),
@@ -2560,7 +2561,7 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
 
     auto all_values_convert_exactly = [&]
     {
-        auto probe = castColumnAccurateOrNull({column, from, ""}, makeNullable(to_inner));
+        auto probe = castColumnAccurateOrNull({column, from, ""}, makeNullable(removeSimpleAggregateFunction(to_inner, from)));
         const auto & null_map = assert_cast<const ColumnNullable &>(*probe).getNullMapData();
         return memoryIsZero(null_map.data(), 0, null_map.size());
     };
@@ -3807,7 +3808,8 @@ ColumnPtr convertObjectViaFormatParse(
 
     ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
     if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-        return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, parse_settings);
+        return ConvertImplGenericFromString<false>::execute(
+            args_with_json_string, makeNullable(getSimpleAggregateFunctionStorageType(result_type)), nullable_source, input_rows_count, parse_settings);
 
     return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, parse_settings);
 }
@@ -3833,7 +3835,8 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
         {
             if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-                return ConvertImplGenericFromString<false>::execute(arguments, makeNullable(result_type), nullable_source, input_rows_count, settings);
+                return ConvertImplGenericFromString<false>::execute(
+                    arguments, makeNullable(getSimpleAggregateFunctionStorageType(result_type)), nullable_source, input_rows_count, settings);
 
             return ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, settings);
         };

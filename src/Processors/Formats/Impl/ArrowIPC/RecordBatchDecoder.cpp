@@ -19,6 +19,7 @@
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -182,12 +183,13 @@ DataTypePtr stripHint(const DataTypePtr & type)
 {
     if (!type)
         return nullptr;
-    return removeLowCardinalityAndNullable(type);
+    return removeSimpleAggregateFunction(removeLowCardinalityAndNullable(type));
 }
 
 DataTypePtr arrayElementHint(const DataTypePtr & hint)
 {
-    if (const auto * array = typeid_cast<const DataTypeArray *>(stripHint(hint).get()))
+    const DataTypePtr stripped = stripHint(hint);
+    if (const auto * array = typeid_cast<const DataTypeArray *>(stripped.get()))
         return array->getNestedType();
     return nullptr;
 }
@@ -195,7 +197,9 @@ DataTypePtr arrayElementHint(const DataTypePtr & hint)
 DataTypes tupleElementHints(const DataTypePtr & hint, const Strings & field_names, bool by_position, bool case_insensitive)
 {
     DataTypes hints(field_names.size());
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
+    /// Keep the stripped type alive: `stripHint` may return a new type that `hint` does not own.
+    const DataTypePtr stripped = stripHint(hint);
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripped.get());
     if (!tuple)
         return hints;
     const auto & elements = tuple->getElements();
@@ -214,7 +218,8 @@ DataTypes tupleElementHints(const DataTypePtr & hint, const Strings & field_name
 
 DataTypePtr mapEntriesHint(const DataTypePtr & hint)
 {
-    if (const auto * map = typeid_cast<const DataTypeMap *>(stripHint(hint).get()))
+    const DataTypePtr stripped = stripHint(hint);
+    if (const auto * map = typeid_cast<const DataTypeMap *>(stripped.get()))
         return std::make_shared<DataTypeTuple>(DataTypes{map->getKeyType(), map->getValueType()});
     return nullptr;
 }

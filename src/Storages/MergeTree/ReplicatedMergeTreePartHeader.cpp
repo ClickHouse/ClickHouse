@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <IO/ReadHelpers.h>
 #include <Core/NamesAndTypes.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -30,6 +32,32 @@ ReplicatedMergeTreePartHeader ReplicatedMergeTreePartHeader::fromColumnsAndCheck
     MinimalisticDataPartChecksums checksums;
     checksums.computeTotalChecksums(full_checksums);
     return ReplicatedMergeTreePartHeader(getSipHash(columns.toString()), std::move(checksums));
+}
+
+std::optional<std::array<char, 16>> ReplicatedMergeTreePartHeader::getStoredColumnsHash(const IMergeTreeDataPart & part)
+{
+    auto in = part.readFileIfExists("columns.txt");
+    if (!in)
+        return {};
+    String columns;
+    readStringUntilEOF(columns, *in);
+    return getSipHash(columns);
+}
+
+std::array<char, 16> ReplicatedMergeTreePartHeader::getColumnsHash(const String & columns_text)
+{
+    return getSipHash(columns_text);
+}
+
+ReplicatedMergeTreePartHeader ReplicatedMergeTreePartHeader::fromPart(const IMergeTreeDataPart & part)
+{
+    if (const auto & legacy_columns_hash = part.getLegacyColumnsHash())
+    {
+        MinimalisticDataPartChecksums checksums;
+        checksums.computeTotalChecksums(part.checksums);
+        return ReplicatedMergeTreePartHeader(*legacy_columns_hash, std::move(checksums));
+    }
+    return fromColumnsAndChecksums(part.getColumns(), part.checksums);
 }
 
 void ReplicatedMergeTreePartHeader::read(ReadBuffer & in)

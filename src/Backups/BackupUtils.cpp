@@ -1,11 +1,13 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -205,6 +207,11 @@ bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAS
         adjustCreateQueryForBackup(new_query, global_context);
         new_query->resetUUIDs();
         new_query->if_not_exists = false;
+        /// A backup made by an older version can have a type that is rewritten on restore, see `getStoredDataType`.
+        if (new_query->columns_list && new_query->columns_list->columns)
+            for (const auto & column : new_query->columns_list->columns->children)
+                if (auto * declaration = column->as<ASTColumnDeclaration>(); declaration && declaration->getType())
+                    declaration->setType(getStoredDataTypeAST(declaration->getType()));
         return new_query;
     };
 

@@ -670,7 +670,8 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
 
     if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(from_no_null.get()))
     {
-        const auto * to_variant = typeid_cast<const DataTypeVariant *>(ArrowIPC::stripHint(to_type).get());
+        const DataTypePtr to_stripped = ArrowIPC::stripHint(to_type);
+        const auto * to_variant = typeid_cast<const DataTypeVariant *>(to_stripped.get());
         if (!to_variant || !repair_variants)
             return {col, from_type};
         return repairVariantElements(col, from_type, *from_variant, *to_variant, case_insensitive, format_settings);
@@ -713,13 +714,15 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     {
         if (const auto * str = typeid_cast<const ColumnString *>(&nested))
         {
+            /// The tag names the type with its custom name (e.g. `SimpleAggregateFunction`), which `stripHint` drops.
+            const DataTypePtr tagged_type = removeLowCardinalityAndNullable(to_type);
             if (MutableColumnPtr typed
-                = ArrowIPC::deserializeOpaqueBinaryLeaf(*str, undefined_rows(), to_leaf, *field, format_settings))
+                = ArrowIPC::deserializeOpaqueBinaryLeaf(*str, undefined_rows(), tagged_type, *field, format_settings))
             {
                 if (nullable && to_leaf->canBeInsideNullable())
                     return {ColumnNullable::create(std::move(typed), nullable->getNullMapColumnPtr()),
                             std::make_shared<DataTypeNullable>(to_leaf)};
-                return {ColumnPtr(std::move(typed)), to_leaf};
+                return {ColumnPtr(std::move(typed)), tagged_type};
             }
         }
     }

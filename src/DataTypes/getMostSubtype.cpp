@@ -5,6 +5,7 @@
 #include <DataTypes/getMostSubtype.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -193,7 +194,8 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
         if (have_nullable)
         {
             if (all_nullable || force_support_conversion)
-                return std::make_shared<DataTypeNullable>(getMostSubtype(nested_types, false, force_support_conversion));
+                return std::make_shared<DataTypeNullable>(
+                    removeSimpleAggregateFunction(getMostSubtype(nested_types, false, force_support_conversion)));
 
             return getMostSubtype(nested_types, throw_if_result_is_nothing, force_support_conversion);
         }

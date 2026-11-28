@@ -8,6 +8,7 @@
 #include <Columns/IColumn.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
@@ -250,7 +251,7 @@ inline bool targetTypeRepresentsValue(
     {
         /// Without a common type the pair only compares as numbers, so [value_type] is where they meet.
         const auto common_type = tryGetLeastSupertype(DataTypes{value_type, image_type});
-        const auto compare_type = common_type ? makeNullable(common_type) : makeNullable(value_type);
+        const auto compare_type = makeNullable(removeSimpleAggregateFunction(common_type ? common_type : value_type));
 
         const auto restored = castColumnAccurateOrNull({image, image_type, ""}, compare_type);
         if (restored->empty() || restored->isNullAt(0))

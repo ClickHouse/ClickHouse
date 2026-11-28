@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
@@ -50,7 +51,26 @@ public:
 
 DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters);
 
+/// `SimpleAggregateFunction(f, T)` -> `T`, nested layers too, with the same columns and text serialization; any other type
+/// is returned unchanged.
+DataTypePtr getSimpleAggregateFunctionStorageType(const DataTypePtr & type);
+
+/// `SimpleAggregateFunction(f, T)` -> `T`, nested layers too, but `UInt8` instead of `Bool` unless `isSimpleAggregateFunctionOfBool`
+/// holds for the outermost layer or `from_type`, the type converted to `type`, is text: such a type converts numbers like
+/// `UInt8` but parses text like `Bool`. Any other type is returned unchanged.
+DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type, const DataTypePtr & from_type = nullptr);
+
 /// True for `SimpleAggregateFunction(f, Bool)` whose `f` returns `Bool`; such a type keeps `Bool` values under its own name.
 bool isSimpleAggregateFunctionOfBool(const IDataType & type);
+
+/// The type of a stored definition (table metadata, `columns.txt` of a part, ZooKeeper, a kept mutation, a `Native` header).
+/// `Nullable(SimpleAggregateFunction(f, T))`, which older versions allowed, is read as `SimpleAggregateFunction(f, Nullable(T))`,
+/// with the same columns, and likewise for `LowCardinality`, except inside a `Variant`, whose data is located by its names.
+DataTypePtr getStoredDataType(const ASTPtr & ast);
+DataTypePtr getStoredDataType(const String & name);
+/// The AST of a stored type as `getStoredDataType` reads it: `ast` itself, or a rewritten copy.
+ASTPtr getStoredDataTypeAST(const ASTPtr & ast);
+/// Whether `getStoredDataType` reads the stored type `name` as a type with another name.
+bool isRewrittenStoredDataType(const String & name);
 
 }

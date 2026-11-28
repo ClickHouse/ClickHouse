@@ -10,6 +10,7 @@
 #include <DataTypes/getLeastSupertype.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -587,7 +588,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             /// Common type for Nullable(Nothing) and Variant(...) is Variant(...)
             if (isVariant(nested_type))
                 return nested_type;
-            return std::make_shared<DataTypeNullable>(nested_type);
+            return std::make_shared<DataTypeNullable>(removeSimpleAggregateFunction(nested_type));
         }
     }
 

@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -328,7 +329,7 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
 
     if (is_numeric_or_string)
     {
-        auto type_nullable_nested = makeNullable(type_nested);
+        auto type_nullable_nested = makeNullable(removeSimpleAggregateFunction(type_nested));
         nullable_return_type = std::make_shared<DataTypeArray>(type_nullable_nested);
     }
 

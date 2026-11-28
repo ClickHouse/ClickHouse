@@ -1,17 +1,24 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
+#include <Core/Defines.h>
 
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameTypePair.h>
+#include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ParserDataType.h>
+#include <Parsers/parseQuery.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -202,10 +209,135 @@ DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & funct
     return DataTypeFactory::instance().getCustom(std::move(custom_desc));
 }
 
+DataTypePtr getSimpleAggregateFunctionStorageType(const DataTypePtr & type)
+{
+    DataTypePtr result = type;
+    while (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(result->getCustomName()))
+        result = simple->getArgumentsDataTypes()[0];
+    return result;
+}
+
+DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type, const DataTypePtr & from_type)
+{
+    DataTypePtr result = getSimpleAggregateFunctionStorageType(type);
+    if (result != type && isBool(result) && !isSimpleAggregateFunctionOfBool(*type)
+        && !(from_type && isStringOrFixedString(removeLowCardinalityAndNullable(from_type))))
+        return std::make_shared<DataTypeUInt8>();
+    return result;
+}
+
 bool isSimpleAggregateFunctionOfBool(const IDataType & type)
 {
     const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type.getCustomName());
     return simple && isBool(simple->getArgumentsDataTypes().front()) && isBool(simple->getFunction()->getResultType());
+}
+
+namespace
+{
+
+bool isSimpleAggregateFunctionAST(const IAST & ast)
+{
+    const auto * type = ast.as<ASTDataType>();
+    return type && type->name == "SimpleAggregateFunction" && type->getArguments() && type->getArguments()->children.size() == 2;
+}
+
+/// The `SimpleAggregateFunction(f, T)` node of `Nullable(SimpleAggregateFunction(f, T))` or `LowCardinality(...)`.
+ASTDataType * getWrappedSimpleAggregateFunction(const IAST & ast)
+{
+    const auto * wrapper = ast.as<ASTDataType>();
+    if (!wrapper || (wrapper->name != "Nullable" && wrapper->name != "LowCardinality"))
+        return nullptr;
+    const auto arguments = wrapper->getArguments();
+    if (!arguments || arguments->children.size() != 1)
+        return nullptr;
+    if (!isSimpleAggregateFunctionAST(*arguments->children[0]))
+        return nullptr;
+    return arguments->children[0]->as<ASTDataType>();
+}
+
+/// The name of a `Variant` alternative names its streams and orders its discriminators.
+bool isVariantAST(const IAST & ast)
+{
+    const auto * type = ast.as<ASTDataType>();
+    return type && type->name == "Variant";
+}
+
+bool hasWrappedSimpleAggregateFunction(const IAST & ast)
+{
+    if (getWrappedSimpleAggregateFunction(ast))
+        return true;
+    if (isVariantAST(ast))
+        return false;
+    for (const auto & child : ast.children)
+        if (hasWrappedSimpleAggregateFunction(*child))
+            return true;
+    return false;
+}
+
+void moveWrappersIntoSimpleAggregateFunction(ASTPtr & ast)
+{
+    if (isVariantAST(*ast))
+        return;
+
+    for (auto & child : ast->children)
+    {
+        const ASTPtr old_child = child;
+        moveWrappersIntoSimpleAggregateFunction(child);
+        if (child == old_child)
+            continue;
+
+        /// These nodes also keep the type in a named member, which is what the type creators read
+        /// (a typed path of `JSON`, an element of `Nested` or of a named `Tuple`).
+        if (auto * typed_path = ast->as<ASTObjectTypedPathArgument>(); typed_path && typed_path->type == old_child)
+            typed_path->type = child;
+        else if (auto * name_type_pair = ast->as<ASTNameTypePair>(); name_type_pair && name_type_pair->type == old_child)
+            name_type_pair->type = child;
+    }
+
+    if (auto * simple = getWrappedSimpleAggregateFunction(*ast))
+    {
+        ASTPtr * argument = &simple->getArguments()->children[1];
+        while (isSimpleAggregateFunctionAST(**argument))
+            argument = &(*argument)->as<ASTDataType &>().getArguments()->children[1];
+        *argument = makeASTDataType(ast->as<ASTDataType &>().name, *argument);
+        ASTPtr inner = ast->as<ASTDataType &>().getArguments()->children[0];
+        ast = std::move(inner);
+    }
+}
+
+}
+
+bool isRewrittenStoredDataType(const String & name)
+{
+    if (!name.contains("SimpleAggregateFunction"))
+        return false;
+
+    ParserDataType parser;
+    return hasWrappedSimpleAggregateFunction(*parseQuery(parser, name, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
+}
+
+ASTPtr getStoredDataTypeAST(const ASTPtr & ast)
+{
+    if (!hasWrappedSimpleAggregateFunction(*ast))
+        return ast;
+
+    ASTPtr rewritten = ast->clone();
+    moveWrappersIntoSimpleAggregateFunction(rewritten);
+    return rewritten;
+}
+
+DataTypePtr getStoredDataType(const ASTPtr & ast)
+{
+    return DataTypeFactory::instance().get(getStoredDataTypeAST(ast));
+}
+
+DataTypePtr getStoredDataType(const String & name)
+{
+    if (!name.contains("SimpleAggregateFunction"))
+        return DataTypeFactory::instance().get(name);
+
+    ParserDataType parser;
+    return getStoredDataType(parseQuery(parser, name, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
 }
 
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)
@@ -276,6 +408,9 @@ so unlike with the `AggregateFunction` type there is no need to apply
 
 The `SimpleAggregateFunction` type has better performance than the `AggregateFunction`
 for the same aggregate functions.
+
+Like `AggregateFunction`, a `SimpleAggregateFunction` cannot be inside `Nullable` or `LowCardinality`. To store `NULL`
+values, use a `Nullable` argument type, for example `SimpleAggregateFunction(sum, Nullable(UInt64))`.
 </Note>
 
 ## Example {#example}

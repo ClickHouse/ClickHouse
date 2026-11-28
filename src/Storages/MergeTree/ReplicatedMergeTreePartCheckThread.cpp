@@ -380,8 +380,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(
     auto zookeeper = storage.getZooKeeper();
     auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage.getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
-    auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
-        part->getColumns(), part->checksums);
+    auto local_part_header = ReplicatedMergeTreePartHeader::fromPart(*part);
 
 
     /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
@@ -408,7 +407,8 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(
                     columns_znode, checksums_znode);
             }
 
-            if (local_part_header.getColumnsHash() != zk_part_header.getColumnsHash())
+            if (local_part_header.getColumnsHash() != zk_part_header.getColumnsHash()
+                && zk_part_header.getColumnsHash() != ReplicatedMergeTreePartHeader::getStoredColumnsHash(*part))
                 throw Exception(ErrorCodes::TABLE_DIFFERS_TOO_MUCH, "Columns of local part {} are different from ZooKeeper", part_name);
 
             zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true, part_name);
