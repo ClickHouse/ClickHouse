@@ -14,12 +14,15 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/sort.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/intExp2.h>
@@ -886,18 +889,95 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
 /// Calls IDatabase::backupTable() for all the tables found to make backup entries for tables.
 void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
 {
+    /// The metadata version of a replicated table is saved next to its definition. A missing file means version 0.
+    auto add_metadata_version_entry = [&](const String & metadata_path_in_backup, Int32 metadata_version)
+    {
+        if (metadata_version > 0)
+            backup_entries.emplace_back(
+                BackupUtils::getMetadataVersionPathInBackup(metadata_path_in_backup),
+                std::make_shared<BackupEntryFromMemory>(toString(metadata_version)));
+    };
+
+    /// Pairs of a table's `metadata` znode and its metadata path in the backup, grouped by ZooKeeper for batched reads.
+    std::unordered_map<String, std::vector<std::pair<String, String>>> metadata_znodes_by_zookeeper;
+
     for (auto & [table_name, table_info] : table_infos)
     {
         LOG_TRACE(log, "Adding the definition of {} to backup", tableNameWithTypeToString(table_name.database, table_name.table, false));
         checkIsQueryCancelled();
 
         ASTPtr new_create_query = table_info.create_table_query;
-        table_info.replicated_table_zk_path = extractZooKeeperPathFromReplicatedTableDef(new_create_query->as<const ASTCreateQuery &>(), context);
+        const auto & create = new_create_query->as<const ASTCreateQuery &>();
+        table_info.replicated_table_zk_path = extractZooKeeperPathFromReplicatedTableDef(create, context);
         adjustCreateQueryForBackup(new_create_query, context->getGlobalContext());
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
         backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
+
+        if (!table_info.replicated_table_zk_path)
+            continue;
+
+        /// The version is read from ZooKeeper, as the definition is: the in-memory version of a lagging replica is older,
+        /// and a table of a `Replicated` database may not be created on this host yet.
+        /// Only `ReplicatedMergeTree` tables get a version: inner tables are not in the backup as tables of their own.
+        String zookeeper_name;
+        String metadata_znode_path;
+        if (table_info.storage)
+        {
+            /// The path from the definition can differ from the actual one, e.g. after the database was renamed.
+            auto replicated_storage = castStorage<StorageReplicatedMergeTree>(table_info.storage, DeferredTable::Load);
+            if (!replicated_storage)
+                continue;
+            zookeeper_name = replicated_storage->getZooKeeperName();
+            metadata_znode_path = fs::path(replicated_storage->getZooKeeperPath()) / "metadata";
+        }
+        else
+        {
+            /// A table of a `Replicated` database which is not created on this host yet.
+            if (create.is_materialized_view)
+                continue;
+            zookeeper_name = zkutil::extractZooKeeperName(*table_info.replicated_table_zk_path);
+            metadata_znode_path
+                = fs::path(zkutil::extractZooKeeperPath(*table_info.replicated_table_zk_path, /* check_starts_with_slash= */ false)) / "metadata";
+        }
+        metadata_znodes_by_zookeeper[zookeeper_name].emplace_back(metadata_znode_path, metadata_path_in_backup);
+    }
+
+    /// The table's metadata version equals the ZooKeeper stat version of its `metadata` znode.
+    for (const auto & [zookeeper_name, metadata_znodes] : metadata_znodes_by_zookeeper)
+    {
+        checkIsQueryCancelled();
+
+        auto component_guard = Coordination::setCurrentComponent("BackupEntriesCollector::makeBackupEntriesForTablesDefs");
+
+        Strings metadata_znode_paths;
+        metadata_znode_paths.reserve(metadata_znodes.size());
+        for (const auto & metadata_znode : metadata_znodes)
+            metadata_znode_paths.push_back(metadata_znode.first);
+
+        std::vector<Int32> metadata_versions(metadata_znode_paths.size());
+        ZooKeeperRetriesControl retries_ctl("getReplicatedTablesMetadataVersions", log, zookeeper_retries_info);
+        retries_ctl.retryLoop([&]
+        {
+            auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
+            for (size_t batch_start = 0; batch_start < metadata_znode_paths.size(); batch_start += zkutil::MULTI_BATCH_SIZE)
+            {
+                size_t batch_end = std::min(batch_start + zkutil::MULTI_BATCH_SIZE, metadata_znode_paths.size());
+                auto responses = zookeeper->exists(metadata_znode_paths.begin() + batch_start, metadata_znode_paths.begin() + batch_end);
+                for (size_t i = batch_start; i != batch_end; ++i)
+                {
+                    /// The `metadata` znode must exist for a live replicated table.
+                    const auto & response = responses[i - batch_start];
+                    if (response.error != Coordination::Error::ZOK)
+                        throw zkutil::KeeperException::fromPath(response.error, metadata_znode_paths[i]);
+                    metadata_versions[i] = response.stat.version;
+                }
+            }
+        });
+
+        for (size_t i = 0; i != metadata_znodes.size(); ++i)
+            add_metadata_version_entry(metadata_znodes[i].second, metadata_versions[i]);
     }
 }
 
