@@ -1169,6 +1169,17 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object)
     return result;
 }
 
+String getManifestListPathForWrite(const Poco::JSON::Object::Ptr & snapshot)
+{
+    if (!snapshot->has(f_manifest_list))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Writing to an Iceberg table is not supported when its snapshot {} lists its manifests in '{}' instead of a manifest list",
+            snapshot->getValue<Int64>(f_metadata_snapshot_id),
+            f_manifests);
+    return snapshot->getValue<String>(f_manifest_list);
+}
+
 static Poco::JSON::Object::Ptr getMetadataJSONObjectImpl(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,

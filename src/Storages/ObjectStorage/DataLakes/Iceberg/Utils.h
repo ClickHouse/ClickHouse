@@ -177,6 +177,8 @@ void validateTableMetadata(const Poco::JSON::Object & metadata, const String & m
 
 Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 
+/// The `manifest-list` of a snapshot that a writer builds on; writing on top of a snapshot that lists its `manifests` itself is not supported.
+String getManifestListPathForWrite(const Poco::JSON::Object::Ptr & snapshot);
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
 bool isIcebergVariantType(const DataTypePtr & type);
