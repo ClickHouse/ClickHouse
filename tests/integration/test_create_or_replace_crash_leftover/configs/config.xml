@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- The leftover of an interrupted `CREATE OR REPLACE` is dropped like any dropped table, so do not wait 8 minutes for it. -->
+    <database_atomic_delay_before_drop_table_sec>0</database_atomic_delay_before_drop_table_sec>
+    <!-- Load all tables before the server accepts queries, so `system.tables` is complete right after a restart. -->
+    <async_load_databases>false</async_load_databases>
+</clickhouse>
