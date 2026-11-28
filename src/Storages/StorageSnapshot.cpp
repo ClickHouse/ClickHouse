@@ -81,9 +81,15 @@ ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
     return ColumnsDescription{column_names_and_types};
 }
 
+static GetColumnsOptions withoutEphemeral(GetColumnsOptions options)
+{
+    options.kind = static_cast<GetColumnsOptions::Kind>(options.kind & ~GetColumnsOptions::Ephemeral);
+    return options;
+}
+
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
 {
-    auto all_columns = metadata->getColumns().get(options);
+    auto all_columns = metadata->getColumns().get(withoutEphemeral(options));
 
     if (options.virtuals_kind == VirtualsKind::None || metadata->virtuals.empty())
         return all_columns;
@@ -122,7 +128,7 @@ NamesAndTypesList StorageSnapshot::getColumnsByNames(const GetColumnsOptions & o
 std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOptions & options, const String & column_name) const
 {
     const auto & columns = metadata->getColumns();
-    if (auto column = columns.tryGetColumn(options, column_name))
+    if (auto column = columns.tryGetColumn(withoutEphemeral(options), column_name))
         return column;
 
     if (options.virtuals_kind != VirtualsKind::None)
@@ -156,7 +162,7 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
     const auto & columns = metadata->getColumns();
     for (const auto & column_name : column_names)
     {
-        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysicalAndAliases, column_name);
         if (column)
         {
             res.insert({column->type->createColumn(), column->type, column_name});
@@ -183,7 +189,7 @@ ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & colum
     const auto & columns = metadata->getColumns();
     for (const auto & name : column_names)
     {
-        auto column = columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::All, name);
+        auto column = columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::AllPhysicalAndAliases, name);
         if (column)
         {
             res.add(*column, "", false, false);
