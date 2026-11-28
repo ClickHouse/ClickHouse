@@ -1109,7 +1109,7 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
         /// predicate applies only one cast, so the inner cast would be lost.
         const auto * key_arg = node->children[1];
         size_t casts = 0;
-        FunctionBasePtr cast;
+        const ActionsDAG::Node * cast = nullptr;
         while (!key_arg->children.empty())
         {
             if (key_arg->type == ActionsDAG::ActionType::ALIAS)
@@ -1118,7 +1118,7 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
                      && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST"))
             {
                 ++casts;
-                cast = key_arg->function_base;
+                cast = key_arg;
                 key_arg = key_arg->children.front();
             }
             else
@@ -1133,6 +1133,10 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
         /// the negating filter exposes neither recorded key values nor a key range.)
         if (casts > 1)
             continue;
+
+        /// the key as an expression over the columns of the read
+        ActionsDAG key_dag;
+        const ActionsDAG::Node * key = nullptr;
 
         /// The global row index of the read, `_part_starting_offset + _part_offset` in either order, is reported
         /// as a global row index key: it is not a column, but granules can be skipped easily using that.
@@ -1152,16 +1156,28 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
             if (lhs && rhs
                 && ((*lhs == "_part_offset" && *rhs == "_part_starting_offset") || (*lhs == "_part_starting_offset" && *rhs == "_part_offset")))
             {
-                res.push_back(
-                    {std::move(filter_id), String(runtime_filter_global_row_index_key_name), key_arg->result_type, /*is_global_row_index=*/true, cast});
+                /// the reader finds this key by its name, so the arguments are always in this order (both are UInt64)
+                const auto & type = key_arg->children.front()->result_type;
+                const auto & part_offset = key_dag.addInput("_part_offset", type);
+                const auto & part_starting_offset = key_dag.addInput("_part_starting_offset", type);
+                key = &key_dag.addFunction(
+                    key_arg->function_base, {&part_offset, &part_starting_offset}, String(runtime_filter_global_row_index_node_name));
             }
-            continue;
         }
+        else if (key_arg->type == ActionsDAG::ActionType::INPUT)
+            key = &key_dag.addInput(key_arg->result_name, key_arg->result_type);
 
-        if (key_arg->type != ActionsDAG::ActionType::INPUT)
+        if (!key)
             continue;
 
-        res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type, /*is_global_row_index=*/false, cast});
+        if (cast)
+        {
+            const auto & type_name = *cast->children.back();
+            key = &key_dag.addFunction(
+                cast->function_base, {key, &key_dag.addColumn(type_name.column, type_name.result_type, type_name.result_name)}, {});
+        }
+        key_dag.getOutputs().push_back(key);
+        res.push_back({std::move(filter_id), std::make_shared<const ActionsDAG>(std::move(key_dag))});
     }
 
     return res;

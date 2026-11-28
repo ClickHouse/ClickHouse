@@ -3457,29 +3457,28 @@ static bool isRuntimeFilterGlobalRowIndexUsable(const StorageInMemoryMetadata & 
 
 void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor)
 {
-    const auto & column_name = descriptor.key_column_name;
+    const auto & key_name = descriptor.getKeyNode().result_name;
     const auto & filter_id = descriptor.filter_id;
     const auto & metadata = *storage_snapshot->metadata;
-    if (descriptor.is_global_row_index)
+    if (descriptor.isGlobalRowIndex())
     {
         if (!isRuntimeFilterGlobalRowIndexUsable(metadata))
             return;
         join_runtime_filters_for_index_analysis.push_back(descriptor);
-        LOG_DEBUG(log, "Registered join runtime filter {} on {}", filter_id, column_name);
+        LOG_DEBUG(log, "Registered join runtime filter {} on {}", filter_id, key_name);
         return;
     }
 
     /// Prunable only if in the primary key or has a minmax/set/bloom_filter skip index.
     const auto & primary_key_columns = metadata.getPrimaryKey().column_names;
-    const bool is_primary_key_column
-        = std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
+    const bool is_primary_key_column = descriptor.readsAnyOf(primary_key_columns);
 
     bool has_applicable_skip_index = false;
     for (const auto & index : metadata.getSecondaryIndices())
     {
         if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
             continue;
-        if (std::find(index.column_names.begin(), index.column_names.end(), column_name) != index.column_names.end())
+        if (descriptor.readsAnyOf(index.column_names))
         {
             has_applicable_skip_index = true;
             break;
@@ -3491,7 +3490,7 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const Runtim
 
     join_runtime_filters_for_index_analysis.push_back(descriptor);
     LOG_DEBUG(log, "Registered join runtime filter {} on column {} (primary_key={}, skip_index={})",
-        filter_id, column_name, is_primary_key_column, has_applicable_skip_index);
+        filter_id, key_name, is_primary_key_column, has_applicable_skip_index);
 }
 
 void ReadFromMergeTree::copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step)
@@ -6309,7 +6308,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         const NameSet safe_columns = getSortingKeyNamesSafeBeforeFinal(storage_snapshot);
         std::erase_if(
             runtime_filters_for_data_read,
-            [&](const auto & descr) { return descr.is_global_row_index || !safe_columns.contains(descr.key_column_name); });
+            [&](const auto & descr)
+            {
+                return std::ranges::any_of(descr.key->getInputs(), [&](const auto * column) { return !safe_columns.contains(column->result_name); });
+            });
     }
 
     /// A projection read built by `optimizeUseNormalProjections` arrives with its analysis result already
@@ -6379,12 +6381,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         UnorderedSetWithMemoryTracking<String> seen_index_names;
         for (const auto & descr : runtime_filters_for_data_read)
         {
-            if (descr.is_global_row_index)
+            if (descr.isGlobalRowIndex())
             {
                 runtime_prune_global_row_index = isRuntimeFilterGlobalRowIndexUsable(metadata);
                 continue;
             }
-            if (std::find(pk_columns.begin(), pk_columns.end(), descr.key_column_name) != pk_columns.end())
+            if (descr.readsAnyOf(pk_columns))
             {
                 runtime_prune_primary_key = true;
                 continue;
@@ -6397,7 +6399,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     continue;
                 if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
                     continue;
-                if (std::find(index.column_names.begin(), index.column_names.end(), descr.key_column_name) == index.column_names.end())
+                if (!descr.readsAnyOf(index.column_names))
                     continue;
                 if (seen_index_names.insert(index.name).second)
                     runtime_skip_indexes.push_back(MergeTreeIndexFactory::instance().get(storage_snapshot->metadata, index, *data_settings));
@@ -6456,7 +6458,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> key_descriptors;
         VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> global_row_index_descriptors;
         for (const auto & descr : runtime_filters_for_data_read)
-            (descr.is_global_row_index ? global_row_index_descriptors : key_descriptors).push_back(descr);
+            (descr.isGlobalRowIndex() ? global_row_index_descriptors : key_descriptors).push_back(descr);
 
         if (!key_descriptors.empty())
             dynamic_predicate_builder =
@@ -6483,7 +6485,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     return true;
                 for (const auto & descr : descriptors)
                 {
-                    if (std::find(index.index.column_names.begin(), index.index.column_names.end(), descr.key_column_name) == index.index.column_names.end())
+                    if (!descr.readsAnyOf(index.index.column_names))
                         continue;
                     auto filter = lookup->find(descr.filter_id);
                     if (!filter)

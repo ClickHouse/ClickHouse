@@ -718,7 +718,7 @@ void collectAppliedJoinRuntimeFiltersImpl(const Stack & stack, const NameSet * d
             return;
         if (read_step)
             read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
-        else if (object_storage_read_step && !descr.is_global_row_index)
+        else if (object_storage_read_step && descr.tryGetKeyColumn())
             object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
     };
 
