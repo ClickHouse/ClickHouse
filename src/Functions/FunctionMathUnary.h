@@ -10,14 +10,6 @@
 
 #include "config.h"
 
-/** FastOps is a fast vector math library from Mikhail Parakhin, https://www.linkedin.com/in/mikhail-parakhin/
-  * Enabled by default.
-  */
-#if USE_FASTOPS
-#    include <fastops/fastops.h>
-#endif
-
-
 namespace DB
 {
 
@@ -84,10 +76,10 @@ private:
     {
         if constexpr (Impl::rows_per_iteration == 0)
         {
-            /// Process all data as a whole and use FastOps implementation
+            /// Process all data as a whole with a vectorized implementation (see `HighwayMath.h`)
 
-            /// If the argument is integer, convert to Float64 beforehand
-            if constexpr (!is_floating_point<T>)
+            /// If the argument is an integer or `BFloat16`, convert to Float64 beforehand
+            if constexpr (!std::is_same_v<T, ReturnType>)
             {
                 PODArray<Float64> tmp_vec(size);
                 for (size_t i = 0; i < size; ++i)
@@ -198,7 +190,8 @@ private:
         {
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;
-            using ReturnType = std::conditional_t<Impl::always_returns_float64 || !is_floating_point<Type>, Float64, Type>;
+            /// As in `getReturnTypeImpl`: only the native floating point types (not `BFloat16`) keep their width.
+            using ReturnType = std::conditional_t<Impl::always_returns_float64 || !std::is_floating_point_v<Type>, Float64, Type>;
             using ColVecType = ColumnVectorOrDecimal<Type>;
 
             const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());

@@ -1,0 +1,21 @@
+exact
+1	0	0.5	0	1	0	0.5
+special values
+1	inf	0	inf	0	1
+-inf	-inf	1	1	inf	1	1
+1	-1	1	-0	1	-1
+1	0	1	1	0
+1	inf	inf	0	-inf	1	1	0
+tiny arguments
+1	1	1
+1	1
+accuracy
+1	1	1
+1
+1	1	1
+1	1
+argument types
+Float32	Float64	Float64	Float64
+1	1	1	1
+1	\N	1
+1	1	1	1	Float64

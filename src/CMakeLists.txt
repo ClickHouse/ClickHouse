@@ -1092,6 +1092,11 @@ if (ENABLE_TESTS)
 
     target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::heks)
 
+    # `gtest_highway_math` switches between the instruction sets of Highway's dynamic dispatch.
+    if (TARGET ch_contrib::highway)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::highway)
+    endif()
+
     if (USE_PULSAR)
         target_link_libraries(unit_tests_dbms PRIVATE clickhouse_pulsar_proto)
     endif()

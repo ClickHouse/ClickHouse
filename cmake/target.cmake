@@ -107,7 +107,7 @@ if (OS_WASM)
     set (ENABLE_DWARF_PARSER OFF CACHE INTERNAL "")
     set (ENABLE_ROCKSDB OFF CACHE INTERNAL "")
     set (ENABLE_VECTORSCAN OFF CACHE INTERNAL "")
-    set (ENABLE_FASTOPS OFF CACHE INTERNAL "")
+    set (ENABLE_HIGHWAY OFF CACHE INTERNAL "")
     # BLAKE3 is Rust, and its build pulls in a subset of llvm-project.
     set (ENABLE_BLAKE3 OFF CACHE INTERNAL "")
     # No assembler, so OpenSSL has to come from its portable C sources.
@@ -163,9 +163,7 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL ${CMAKE_HOST_SYSTEM_NAME} AND ${CMAKE_SYSTEM_P
 endif ()
 
 if (CMAKE_CROSSCOMPILING)
-    if (OS_DARWIN)
-        set (ENABLE_FASTOPS OFF CACHE INTERNAL "")
-    elseif (OS_LINUX OR OS_ANDROID)
+    if (OS_LINUX OR OS_ANDROID)
         if (ARCH_PPC64LE)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
             set (ENABLE_ARROW_FLIGHT OFF CACHE INTERNAL "")

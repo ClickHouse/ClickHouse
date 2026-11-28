@@ -110,8 +110,8 @@ if (TARGET ch_contrib::icu)
     list (APPEND PRIVATE_LIBS ch_contrib::icu)
 endif ()
 
-if (TARGET ch_contrib::fastops)
-    list (APPEND PRIVATE_LIBS ch_contrib::fastops)
+if (TARGET ch_contrib::highway)
+    list (APPEND PRIVATE_LIBS ch_contrib::highway)
 endif ()
 
 if (TARGET ch_contrib::llvm)

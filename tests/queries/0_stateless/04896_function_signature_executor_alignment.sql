@@ -10,8 +10,7 @@ SELECT
     toTypeName(tanh(materialize(toBFloat16(1))));
 
 -- `UnaryFunctionVectorized` returns `Float64` for every numeric argument. Note that `exp`, `log`,
--- `sigmoid` and `tanh` are deliberately not used here: with `USE_FASTOPS` they keep the native
--- float width of the argument instead, so only their `BFloat16` behaviour above is build-independent.
+-- `sigmoid` and `tanh` are deliberately not used here: they keep the native float width of the argument.
 SELECT
     toTypeName(cos(materialize(toFloat32(1)))),
     toTypeName(cos(materialize(toFloat64(1)))),
