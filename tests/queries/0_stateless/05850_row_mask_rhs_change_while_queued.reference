@@ -1,0 +1,22 @@
+rhs_off_rhs	1	1	1
+rhs_off_dispatch	1	1	1
+rhs_off_mask	0	0	0	10
+rhs_off_mask	1	1	0	20
+rhs_off_mask	2	2	0	30
+rhs_off_mask	3	3	0	40
+rhs_off_mask	4	4	0	50
+rhs_off_mask	5	5	0	60
+rhs_off_mask	6	6	1	70
+rhs_off_mask	7	7	1	80
+rhs_off_visible	[6,7]	150
+rhs_on_rhs	1	1	1
+rhs_on_dispatch	1	1	1
+rhs_on_mask	0	0	0	10
+rhs_on_mask	1	1	0	20
+rhs_on_mask	2	2	0	30
+rhs_on_mask	3	3	0	40
+rhs_on_mask	4	4	0	50
+rhs_on_mask	5	5	0	60
+rhs_on_mask	6	6	1	70
+rhs_on_mask	7	7	1	80
+rhs_on_visible	[6,7]	150

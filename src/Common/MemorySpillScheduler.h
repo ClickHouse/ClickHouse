@@ -18,6 +18,8 @@ public:
     explicit MemorySpillScheduler(bool enable_ = false) : enable(enable_) {}
     ~MemorySpillScheduler() = default;
 
+    bool isEnabled() const { return enable; }
+
     size_t checkAndSpill(ISpillable * processor);
     void registerSpillable(ISpillable * spillable);
     void unregisterSpillable(ISpillable * spillable);

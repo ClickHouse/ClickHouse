@@ -1,0 +1,32 @@
+partitioned_off_source_parts	1	1	1
+partitioned_off_events	1	1	1	1	1
+partitioned_off_mask	0	0	1	0	10
+partitioned_off_mask	0	1	2	0	20
+partitioned_off_mask	0	2	3	1	30
+partitioned_off_mask	0	3	4	1	40
+partitioned_off_mask	1	4	1	1	100
+partitioned_off_mask	1	5	2	0	200
+partitioned_off_mask	1	6	3	1	300
+partitioned_off_mask	2	7	1	1	700
+partitioned_off_mask	2	8	2	1	800
+partitioned_off_active_parts	1	1	1
+partitioned_off_visible	1	1
+partitioned_on_source_parts	1	1	1
+partitioned_on_events	1	1	1	1	1
+partitioned_on_mask	0	0	1	0	10
+partitioned_on_mask	0	1	2	0	20
+partitioned_on_mask	0	2	3	1	30
+partitioned_on_mask	0	3	4	1	40
+partitioned_on_mask	1	4	1	1	100
+partitioned_on_mask	1	5	2	0	200
+partitioned_on_mask	1	6	3	1	300
+partitioned_on_mask	2	7	1	1	700
+partitioned_on_mask	2	8	2	1	800
+partitioned_on_active_parts	1	1	1
+partitioned_on_visible	1	1
+same_off_source_parts	1	1	1
+same_off_ids	1
+same_off_visible	1	1
+same_on_source_parts	1	1	1
+same_on_ids	1
+same_on_visible	1	1

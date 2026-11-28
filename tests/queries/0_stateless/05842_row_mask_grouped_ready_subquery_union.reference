@@ -1,0 +1,22 @@
+off_dispatch	1	1	1	1	1
+off_mask	0	0	10	0	10
+off_mask	1	1	11	0	20
+off_mask	2	2	12	0	30
+off_mask	3	3	13	0	40
+off_mask	4	4	14	0	50
+off_mask	5	5	15	0	60
+off_mask	6	6	16	1	70
+off_mask	7	7	17	0	80
+off_mask	8	8	18	1	90
+off_visible	1	1
+on_dispatch	1	1	1	1	1
+on_mask	0	0	10	0	10
+on_mask	1	1	11	0	20
+on_mask	2	2	12	0	30
+on_mask	3	3	13	0	40
+on_mask	4	4	14	0	50
+on_mask	5	5	15	0	60
+on_mask	6	6	16	1	70
+on_mask	7	7	17	0	80
+on_mask	8	8	18	1	90
+on_visible	1	1

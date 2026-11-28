@@ -1,0 +1,10 @@
+mixed_dispatch	1	1	1
+mixed_mask	-1	0	18446744073709551617	0	10
+mixed_mask	-1	1	2	1	20
+mixed_mask	-1	1	18446744073709551617	0	70
+mixed_mask	0	0	18446744073709551617	1	30
+mixed_mask	0	1	2	0	40
+mixed_mask	1	0	3	0	50
+mixed_mask	1	1	4	0	60
+mixed_visible	-1	1	2	20
+mixed_visible	0	0	18446744073709551617	30

@@ -14,6 +14,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/Logger_fwd.h>
 
+#include <span>
 
 namespace DB
 {
@@ -174,6 +175,16 @@ public:
     void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
 
     static DataTypes getElementTypes(DataTypes types, bool transform_null_in);
+
+    /// Unites ready, resident integer scalar or tuple sets with the same key layout into a private set.
+    /// Returns null if any input exceeds `max_rows` or a conservative estimate exceeds a finite result limit.
+    /// Zero result limits mean unlimited.
+    static std::shared_ptr<Set> tryUniteReadyFixedWidthSets(
+        std::span<const std::shared_ptr<Set>> sets,
+        const ColumnsWithTypeAndName & header,
+        size_t max_rows,
+        size_t max_result_rows,
+        size_t max_result_bytes);
 
     /// Limitations on the maximum size of the set
     const SizeLimits limits;

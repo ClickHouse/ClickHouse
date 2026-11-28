@@ -1,0 +1,7 @@
+barrier_mask	1	0
+barrier_mask	2	0
+barrier_mask	3	0
+barrier_mask	4	0
+barrier_mask	5	0
+barrier_mask	6	1
+barrier	6	\N	60

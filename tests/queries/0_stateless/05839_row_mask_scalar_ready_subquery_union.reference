@@ -1,0 +1,32 @@
+u8_off_dispatch	1	1	1
+u8_off_mask	0	0	0	10
+u8_off_mask	1	2	0	20
+u8_off_mask	2	0	0	30
+u8_off_mask	3	3	1	40
+u8_off_mask	4	4	0	50
+u8_off_mask	5	5	0	60
+u8_off_visible	1	1
+u8_on_dispatch	1	1	1
+u8_on_mask	0	0	0	10
+u8_on_mask	1	2	0	20
+u8_on_mask	2	0	0	30
+u8_on_mask	3	3	1	40
+u8_on_mask	4	4	0	50
+u8_on_mask	5	5	0	60
+u8_on_visible	1	1
+u16_on_dispatch	1	1	1
+u16_on_mask	0	0	0	10
+u16_on_mask	1	2	0	20
+u16_on_mask	2	0	0	30
+u16_on_mask	3	3	1	40
+u16_on_mask	4	4	0	50
+u16_on_mask	5	5	0	60
+u16_on_visible	1	1
+u32_on_dispatch	1	1	1
+u32_on_mask	0	0	0	10
+u32_on_mask	1	2	0	20
+u32_on_mask	2	0	0	30
+u32_on_mask	3	3	1	40
+u32_on_mask	4	4	0	50
+u32_on_mask	5	5	0	60
+u32_on_visible	1	1

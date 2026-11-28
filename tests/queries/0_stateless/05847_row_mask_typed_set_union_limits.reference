@@ -1,0 +1,64 @@
+off_dispatch	1	1	1
+off_mask	0	10	0	10
+off_mask	1	11	0	20
+off_mask	5000	12	0	30
+off_mask	6000	13	0	40
+off_mask	7000	14	0	50
+off_mask	8000	15	1	60
+off_visible	1	1
+default_rows_dispatch	1	1	1
+default_rows_mask	0	10	0	10
+default_rows_mask	1	11	0	20
+default_rows_mask	5000	12	0	30
+default_rows_mask	6000	13	0	40
+default_rows_mask	7000	14	0	50
+default_rows_mask	8000	15	1	60
+default_rows_visible	1	1
+raised_rows_dispatch	1	1	1
+raised_rows_mask	0	10	0	10
+raised_rows_mask	1	11	0	20
+raised_rows_mask	5000	12	0	30
+raised_rows_mask	6000	13	0	40
+raised_rows_mask	7000	14	0	50
+raised_rows_mask	8000	15	1	60
+raised_rows_visible	1	1
+low_bytes_dispatch	1	1	1
+low_bytes_mask	0	10	0	10
+low_bytes_mask	1	11	0	20
+low_bytes_mask	5000	12	0	30
+low_bytes_mask	6000	13	0	40
+low_bytes_mask	7000	14	0	50
+low_bytes_mask	8000	15	1	60
+low_bytes_visible	1	1
+one_group_dispatch	1	1	1
+one_group_mask	0	10	0	10
+one_group_mask	1	11	0	20
+one_group_mask	5000	12	0	30
+one_group_mask	6000	13	0	40
+one_group_mask	7000	14	0	50
+one_group_mask	8000	15	1	60
+one_group_visible	1	1
+zero_rows_dispatch	1	1	1
+zero_rows_mask	0	10	0	10
+zero_rows_mask	1	11	0	20
+zero_rows_mask	5000	12	0	30
+zero_rows_mask	6000	13	0	40
+zero_rows_mask	7000	14	0	50
+zero_rows_mask	8000	15	1	60
+zero_rows_visible	1	1
+single_raised_dispatch	1	1	1
+single_raised_mask	0	10	0	10
+single_raised_mask	1	11	0	20
+single_raised_mask	5000	12	0	30
+single_raised_mask	6000	13	0	40
+single_raised_mask	7000	14	0	50
+single_raised_mask	8000	15	1	60
+single_raised_visible	1	1
+single_low_bytes_dispatch	1	1	1
+single_low_bytes_mask	0	10	0	10
+single_low_bytes_mask	1	11	0	20
+single_low_bytes_mask	5000	12	0	30
+single_low_bytes_mask	6000	13	0	40
+single_low_bytes_mask	7000	14	0	50
+single_low_bytes_mask	8000	15	1	60
+single_low_bytes_visible	1	1

@@ -1,0 +1,32 @@
+source_off_dispatch	1	1	1
+source_off_mask	0	0	0	10
+source_off_mask	1	1	1	20
+source_off_mask	2	2	0	30
+source_off_mask	3	3	1	40
+source_off_mask	4	4	0	50
+source_off_mask	5	5	0	60
+source_off_visible	1	1
+source_on_dispatch	1	1	1
+source_on_mask	0	0	0	10
+source_on_mask	1	1	1	20
+source_on_mask	2	2	0	30
+source_on_mask	3	3	1	40
+source_on_mask	4	4	0	50
+source_on_mask	5	5	0	60
+source_on_visible	1	1
+empty_on_dispatch	1	1	1
+empty_on_mask	0	0	1	10
+empty_on_mask	1	1	1	20
+empty_on_mask	2	2	0	30
+empty_on_mask	3	3	1	40
+empty_on_mask	4	4	0	50
+empty_on_mask	5	5	0	60
+empty_on_visible	1	1
+notin_on_dispatch	1	1	1
+notin_on_mask	0	0	1	10
+notin_on_mask	1	1	0	20
+notin_on_mask	2	2	0	30
+notin_on_mask	3	3	0	40
+notin_on_mask	4	4	0	50
+notin_on_mask	5	5	0	60
+notin_on_visible	1	1

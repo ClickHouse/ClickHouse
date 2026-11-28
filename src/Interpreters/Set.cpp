@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <optional>
 #include <shared_mutex>
@@ -8,10 +9,12 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/replaceNegativeZeros.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/ServerOwnedMemory.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -19,6 +22,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -434,6 +438,171 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
     }
 
     return types;
+}
+
+std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
+    std::span<const std::shared_ptr<Set>> sets,
+    const ColumnsWithTypeAndName & header,
+    size_t max_rows,
+    size_t max_result_rows,
+    size_t max_result_bytes)
+{
+    if (sets.empty() || !sets.front() || !max_rows || header.empty())
+        return {};
+
+    for (const auto & column : header)
+    {
+        if (!column.type || !column.column || column.column->size() != 0 || !WhichDataType(column.type).isInteger())
+            return {};
+    }
+
+    const auto & first = *sets.front();
+    const auto same_type = [](const DataTypePtr & lhs, const DataTypePtr & rhs)
+    {
+        /// `equals` ignores custom names, but `Bool` and `UInt8` keys have different membership conversions.
+        return lhs->equals(*rhs) && lhs->getName() == rhs->getName();
+    };
+    const auto matches_header = [&same_type](const Set & set, const ColumnsWithTypeAndName & expected_header)
+    {
+        if (set.data_types.size() != expected_header.size() || set.set_elements_types.size() != expected_header.size())
+            return false;
+
+        for (size_t i = 0; i < expected_header.size(); ++i)
+        {
+            if (!same_type(set.data_types[i], expected_header[i].type)
+                || !same_type(set.set_elements_types[i], expected_header[i].type))
+                return false;
+        }
+
+        return true;
+    };
+
+    const auto is_ready_in_memory = [](const Set & set)
+    {
+        /// The caller holds the shared lock. A spill can start concurrently, but it cannot replace
+        /// the table until the lock is released.
+        return set.isCreated() && !set.isTruncated() && set.data && !set.data->empty()
+            && !set.disk_set && !set.spill_after_build_started.load();
+    };
+
+    using Type = SetVariants::Type;
+    Type expected_type = Type::EMPTY;
+    Sizes expected_key_sizes;
+    ColumnsWithTypeAndName tuple_header;
+    size_t input_rows = 0;
+    /// Hold at most one source lock at a time. Created sets are immutable except for a transition to disk.
+    for (const auto & set : sets)
+    {
+        if (!set)
+            return {};
+
+        std::shared_lock lock(set->rwlock);
+        if (!is_ready_in_memory(*set) || set->limits != first.limits || set->transform_null_in != first.transform_null_in
+            || set->max_elements_to_fill != first.max_elements_to_fill)
+            return {};
+
+        if (expected_type == Type::EMPTY)
+        {
+            expected_type = set->data->type;
+            if (expected_type == Type::hashed)
+            {
+                /// An IN subquery may return one Tuple column instead of separate key columns.
+                if (header.size() < 2 || set->data_types.size() != 1)
+                    return {};
+                const auto & type = set->data_types.front();
+                const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get());
+                if (!tuple || tuple->getElements().size() != header.size())
+                    return {};
+                for (size_t i = 0; i < header.size(); ++i)
+                {
+                    if (!same_type(tuple->getElements()[i], header[i].type))
+                        return {};
+                }
+                tuple_header.emplace_back(type->createColumn(), type, "");
+            }
+            else if (expected_type != Type::key8 && expected_type != Type::key16
+                && expected_type != Type::key32 && expected_type != Type::key64
+                && expected_type != Type::keys32 && expected_type != Type::keys64
+                && expected_type != Type::keys128 && expected_type != Type::keys256)
+                return {};
+
+            expected_key_sizes = set->key_sizes;
+        }
+        else if (set->data->type != expected_type || set->key_sizes != expected_key_sizes)
+            return {};
+
+        if (!matches_header(*set, tuple_header.empty() ? header : tuple_header))
+            return {};
+        const size_t rows = set->data->getTotalRowCount();
+        if (!rows || rows > max_rows - input_rows)
+            return {};
+        input_rows += rows;
+    }
+
+    /// Assume all source keys are distinct. Overlapping sources may be rejected conservatively.
+    if (max_result_rows && input_rows > max_result_rows)
+        return {};
+
+    auto united = std::make_shared<Set>(SizeLimits(max_rows, 0, OverflowMode::THROW), 0, first.transform_null_in);
+    united->setHeader(tuple_header.empty() ? header : tuple_header);
+    if (united->data->type != expected_type || united->key_sizes != expected_key_sizes)
+        return {};
+
+    if (max_result_bytes)
+    {
+        /// The fixed-width methods store keys in the hash-table buffer. The growth estimate
+        /// includes the old and new buffers simultaneously during a rehash.
+        const size_t initial_bytes = united->data->getTotalByteCount();
+        if (initial_bytes > max_result_bytes
+            || united->data->estimateGrowthMemory({}, 0, input_rows) > max_result_bytes - initial_bytes)
+            return {};
+    }
+
+    const auto copy_keys = [&](auto member)
+    {
+        auto & destination = ((*united->data).*member)->data;
+        size_t copied_keys = 0;
+        for (const auto & set : sets)
+        {
+            std::shared_lock lock(set->rwlock);
+            if (!is_ready_in_memory(*set))
+                return false;
+
+            const auto & source = ((*set->data).*member)->data;
+            for (const auto & cell : source)
+            {
+                if ((copied_keys++ & 4095) == 0)
+                    CurrentThread::checkIfNotCancelled();
+
+                using HashSet = std::decay_t<decltype(destination)>;
+                typename HashSet::LookupResult lookup;
+                bool inserted = false;
+                destination.emplace(cell.getValue(), lookup, inserted);
+            }
+        }
+        return true;
+    };
+
+    bool copied = false;
+    switch (expected_type)
+    {
+        case Type::key8: copied = copy_keys(&SetVariants::key8); break;
+        case Type::key16: copied = copy_keys(&SetVariants::key16); break;
+        case Type::key32: copied = copy_keys(&SetVariants::key32); break;
+        case Type::key64: copied = copy_keys(&SetVariants::key64); break;
+        case Type::keys32: copied = copy_keys(&SetVariants::keys32); break;
+        case Type::keys64: copied = copy_keys(&SetVariants::keys64); break;
+        case Type::keys128: copied = copy_keys(&SetVariants::keys128); break;
+        case Type::keys256: copied = copy_keys(&SetVariants::keys256); break;
+        /// Membership in the original hashed Sets already compares these fingerprints.
+        case Type::hashed: copied = copy_keys(&SetVariants::hashed); break;
+        default: return {};
+    }
+    if (!copied)
+        return {};
+
+    united->finishInsert();
+    return united;
 }
 
 

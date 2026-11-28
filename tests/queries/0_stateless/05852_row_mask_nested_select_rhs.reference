@@ -1,0 +1,18 @@
+off_rhs	1	1
+off_dispatch	1	1	1
+off_mask	0	0	0	10
+off_mask	1	1	1	20
+off_mask	2	2	0	30
+off_mask	3	3	1	40
+off_mask	4	4	0	50
+off_mask	5	5	1	60
+off_visible	1	1	1
+on_rhs	1	1
+on_dispatch	1	1	1
+on_mask	0	0	0	10
+on_mask	1	1	1	20
+on_mask	2	2	0	30
+on_mask	3	3	1	40
+on_mask	4	4	0	50
+on_mask	5	5	1	60
+on_visible	1	1	1
