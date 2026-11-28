@@ -9162,8 +9162,7 @@ void StorageReplicatedMergeTree::forgetPartition(const ASTPtr & partition, Conte
 
     String partition_id = getPartitionIDFromQuery(partition, query_context);
 
-    /// Patch parts of the partition would be applied to new parts, whose block numbers restart from 0.
-    /// A patch part may be present only on another replica, so the parts of all replicas are checked.
+    /// A patch part of the partition on any replica would be applied to new parts, whose block numbers restart from 0.
     for (const auto & patch_part : getPatchParts(getPartsOfAllReplicas(zookeeper, zookeeper_path, format_version)))
     {
         if (isPatchForPartition(MergeTreePartInfo::fromPartName(patch_part, format_version), partition_id))
