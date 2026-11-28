@@ -52,6 +52,11 @@ namespace DB
     class PageCache;
 }
 
+namespace ProfileEvents
+{
+    class Counters;
+}
+
 /** Tracks memory consumption.
   * It throws an exception if amount of consumed memory become greater than certain limit.
   * The same memory tracker could be simultaneously used in different threads.
@@ -143,9 +148,45 @@ private:
 
     bool updatePeak(Int64 will_be, bool log_memory_usage) noexcept;
     void logMemoryUsage(Int64 current) const;
-    Int64 decrementLocalUsage(Int64 size) noexcept;
+    enum class LocalUsageDecrement : uint8_t
+    {
+        /// Memory is freed by the thread that is attached to this tracker (or to one of its descendants).
+        Free,
+        /// Undoing the increment made by `allocImpl` for an allocation that has failed (memory limit, fault injection,
+        /// overcommit, or a parent tracker throwing): those bytes were never obtained, so they must not be counted as held
+        /// in `MemoryCredits`.
+        RollbackOfFailedAllocation,
+        /// Bytes moved off this tracker without a free (drift settlement, `reparent`, `handOverToServer`). This may run on a
+        /// thread that belongs to another query, so `MemoryCredits` are not charged through `CurrentThread`.
+        Adjustment,
+    };
+
+    Int64 decrementLocalUsage(Int64 size, LocalUsageDecrement kind) noexcept;
+
+    /// Whether this tracker accumulates `MemoryCredits`: only the outermost Process-level tracker of a query or
+    /// merge does (see `takeMemoryCreditsDelta`).
+    bool tracksMemoryCredits() const;
     void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
     void traceLargeAllocation(Int64 size) noexcept;
+
+    /// Compute and return the `MemoryCredits` increment (byte-seconds) for the interval that just
+    /// elapsed, advancing the last-update timestamp. `current_amount` is the amount held during that interval.
+    /// Returns 0 when nothing should be charged (not the outermost Process tracker, first update, or no memory
+    /// held). This does the accounting only; the caller decides which profile counters to charge.
+    UInt64 takeMemoryCreditsDelta(Int64 current_amount);
+
+    /// Accumulate the `MemoryCredits` profile event on allocation/free into the counters of the owner of this tracker
+    /// (see `setMemoryCreditsCounters`), so Thread / nested Process scopes do not receive the query-scoped value.
+    /// `current_amount` is the amount that was held during the interval that just elapsed.
+    void updateMemoryCredits(Int64 current_amount);
+
+    /// Add `delta` byte-seconds to the counters of the owner of this tracker. Returns false if there are none.
+    bool publishMemoryCredits(UInt64 delta, bool trace);
+
+    /// Keep `MemoryCredits` computed on a thread that may not belong to this tracker until the next update or flush.
+    void addPendingMemoryCredits(UInt64 delta);
+    /// Return `delta` plus the `MemoryCredits` kept by `addPendingMemoryCredits`, which are taken.
+    UInt64 takePendingMemoryCredits(UInt64 delta);
 
     void setOrRaiseProfilerLimit(Int64 value);
 
@@ -153,7 +194,7 @@ private:
 
     /// Takes `size` off this tracker alone (saturating at zero, negative gives back), as `free` does before
     /// moving on to the parent. Returns what was actually removed. The total does not change.
-    Int64 adjustLocally(Int64 size);
+    Int64 adjustLocally(Int64 size, LocalUsageDecrement kind = LocalUsageDecrement::Adjustment);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     std::atomic_bool drift_expected = false;
@@ -185,6 +226,23 @@ private:
     /// The value of `amount` right after the last tick of the worker, either the corrected
     /// value it was set to or the value it had when the tick just took a snapshot of it.
     int64_t last_corrected_amount = 0;
+
+    /// Timestamp (in microseconds) of the previous `MemoryCredits` accumulation, used to measure
+    /// the elapsed interval. Atomic because several threads of the same query update it concurrently;
+    /// only the outermost Process-level tracker ever touches it, so it is kept out of the hot cache line above.
+    std::atomic<UInt64> memory_credits_last_update_us {0};
+    /// The amount integrated into `MemoryCredits`: `amount` without the allocations that are in flight. `allocImpl` adds
+    /// to `amount` before the limit checks and the parent trackers, which may still reject the allocation (possibly after
+    /// waiting in the overcommit tracker), so the bytes are added here only once the allocation has passed all of them.
+    /// It is always equal to `amount` minus the in-flight bytes. Maintained only when `tracksMemoryCredits`.
+    std::atomic<Int64> memory_credits_held_amount {0};
+    /// Sum of the sub-second parts (in byte-microseconds) of the `MemoryCredits` intervals, see `convertMemoryCreditsToByteSeconds`.
+    std::atomic<UInt64> memory_credits_remainder {0};
+    /// `MemoryCredits` (byte-seconds) of intervals that ended with an adjustment, see `addPendingMemoryCredits`.
+    std::atomic<UInt64> memory_credits_pending {0};
+    /// Where `MemoryCredits` of this tracker are published, see `setMemoryCreditsCounters`.
+    ProfileEvents::Counters * memory_credits_counters = nullptr;
+    bool memory_credits_charge_enclosing_counters = true;
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
@@ -246,6 +304,43 @@ public:
     {
         return peak.load(std::memory_order_relaxed);
     }
+
+    /// Set the profile counters that receive the `MemoryCredits` of this tracker: the counters of the thread group that
+    /// owns it, so that the integral of the memory is always reported by the owner of the memory, whichever thread
+    /// allocates or frees it and whatever the counters of that thread are attached to. Both must have the same
+    /// lifetime (they are members of the same `ThreadGroup`). It must be called before the tracker is used.
+    ///
+    /// The counters and the memory trackers of nested thread groups do not always form the same hierarchy: the group
+    /// of a dictionary load (`ThreadGroup::createWithoutQueryMemoryTracker`) and the group of a merge run by `OPTIMIZE`
+    /// keep their counters under the counters of the query, while their memory is not charged to the query and its
+    /// user. For such a group `charge_enclosing_counters` is false: the value is added to `counters` alone and to the
+    /// server-wide counters, so the query and the user do not receive byte-seconds of memory that their memory
+    /// trackers do not account.
+    void setMemoryCreditsCounters(ProfileEvents::Counters * counters, bool charge_enclosing_counters = true)
+    {
+        memory_credits_counters = counters;
+        memory_credits_charge_enclosing_counters = charge_enclosing_counters;
+    }
+
+    /// Charge the final interval of the `MemoryCredits` integral (the time memory was held between the last
+    /// allocation/free and now) into the counters of the owner of this tracker (see `setMemoryCreditsCounters`).
+    /// Meant to be called on the outermost Process tracker of a query or merge right before its thread group's
+    /// counters are snapshotted, so the event reflects the whole execution instead of stopping at the last
+    /// allocation/free. A no-op on other trackers.
+    void flushMemoryCredits();
+
+    /// Convert an interval of `bytes` held for `microseconds` into the `MemoryCredits` increment in byte-seconds without
+    /// overflowing, carrying the sub-second part across calls in `remainder` (which must start at zero).
+    static UInt64 convertMemoryCreditsToByteSeconds(UInt64 bytes, UInt64 microseconds, std::atomic<UInt64> & remainder);
+
+    /// Advance `last_update_us` to `now_us` if it is newer and return the elapsed interval in microseconds. Returns 0 when
+    /// there is nothing to charge: on the first update (which only seeds the timestamp), or when another thread has
+    /// already advanced the timestamp to `now_us` or past it (the timestamp never moves backward, so a caller that read
+    /// the clock and was descheduled before the update cannot make an interval be charged twice).
+    static UInt64 advanceMemoryCreditsTimestamp(std::atomic<UInt64> & last_update_us, UInt64 now_us);
+
+    /// The amount integrated into `MemoryCredits`: `amount` without the allocations still in flight, which may fail.
+    Int64 getMemoryCreditsHeldAmount() const { return memory_credits_held_amount.load(std::memory_order_relaxed); }
 
     void setSoftLimit(Int64 value);
     void setHardLimit(Int64 value);

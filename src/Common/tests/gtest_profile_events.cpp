@@ -98,6 +98,34 @@ TEST(ProfileEvents, ChainAccountsWithPerCPUDisabled)
     EXPECT_EQ(global[ProfileEvents::Query], num_threads * increments_per_thread);
 }
 
+/// `MemoryCredits` of a group whose memory is not charged to the enclosing query are added to its own counters alone.
+TEST(ProfileEvents, IncrementLocalDoesNotReachParents)
+{
+    ProfileEvents::Counters global(VariableContext::Global, nullptr);
+    ProfileEvents::Counters query_process(VariableContext::Process, &global);
+    ProfileEvents::Counters nested_process(VariableContext::Process, &query_process);
+
+    const ProfileEvents::Count amount = 42;
+    nested_process.incrementLocal(ProfileEvents::Query, amount);
+
+    EXPECT_EQ(nested_process[ProfileEvents::Query], amount);
+    EXPECT_EQ(query_process[ProfileEvents::Query], 0u);
+    EXPECT_EQ(global[ProfileEvents::Query], 0u);
+}
+
+TEST(ProfileEvents, SnapshotSetOverwritesSingleEvent)
+{
+    ProfileEvents::Counters counters(VariableContext::Process, nullptr);
+    counters.increment(ProfileEvents::Query, 5);
+
+    auto snapshot = counters.getPartiallyAtomicSnapshot();
+    EXPECT_EQ(snapshot[ProfileEvents::Query], 5u);
+
+    snapshot.set(ProfileEvents::Query, 99);
+    EXPECT_EQ(snapshot[ProfileEvents::Query], 99u);
+    EXPECT_EQ(counters[ProfileEvents::Query], 5u);
+}
+
 TEST(ProfileEvents, TraceProfileEventPublishedWhileIncrementing)
 {
     ProfileEvents::Counters counters(VariableContext::Thread, nullptr);

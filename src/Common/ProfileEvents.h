@@ -131,6 +131,10 @@ namespace ProfileEvents
         void incrementNoTrace(Event event, Count amount = 1);
         void incrementSignalSafe(Event event, Count amount = 1);
 
+        /// Add to these counters alone, without the parents and without tracing. Used for `MemoryCredits` of a thread
+        /// group whose memory is not charged to the query that its counters are nested in.
+        void incrementLocal(Event event, Count amount = 1);
+
         struct Snapshot
         {
             Snapshot();
@@ -140,6 +144,11 @@ namespace ProfileEvents
             Count operator[] (Event event) const noexcept
             {
                 return counters_holder[event];
+            }
+
+            void set(Event event, Count value) noexcept
+            {
+                counters_holder[event] = value;
             }
 
             Snapshot & operator=(Snapshot &&) = default;

@@ -259,6 +259,7 @@ namespace ProfileEvents
     extern const Event LoadedDataPartsMicroseconds;
     extern const Event RestorePartsSkippedFiles;
     extern const Event RestorePartsSkippedBytes;
+    extern const Event MemoryCredits;
     extern const Event LoadedStatistics;
 }
 
@@ -14786,6 +14787,18 @@ void MergeTreeData::writePartLog(
     const std::map<String, UInt64> & projections_duration_ms)
 try
 {
+    /// MemoryCredits advances only on allocation/free transitions, so charge the final interval (from the last
+    /// alloc/free of the merge or mutation until now) into the thread group's own counters first. This is the
+    /// single finish path shared by all merge and mutation tasks, so `system.part_log` sees the whole execution
+    /// of the operation. It is done before the `part_log` check, so that `system.events` is charged also when
+    /// `part_log` is disabled. The memory of a merge is charged to the background tracker also when a query
+    /// (`OPTIMIZE`) runs it, so the value is reported by the merge and not by that query.
+    if (merge_entry && profile_counters)
+    {
+        const auto & thread_group = (*merge_entry)->thread_group;
+        thread_group->memory_tracker.flushMemoryCredits();
+    }
+
     auto table_id = getStorageID();
     auto part_log = getContext()->getPartLog();
     if (!part_log)
@@ -14855,6 +14868,17 @@ try
         if (profile_counters)
         {
             element.profile_counters = *profile_counters;
+
+            /// MemoryCredits is charged to the merge/mutation Process counters, not the task-local scope.
+            /// Preserve the local events and copy only MemoryCredits into the part-log snapshot. The
+            /// snapshot the caller passed in is left alone: it may be shared with other part-log events.
+            if (merge_entry)
+            {
+                const auto & thread_group = (*merge_entry)->thread_group;
+                element.profile_counters->set(
+                    ProfileEvents::MemoryCredits,
+                    thread_group->performance_counters[ProfileEvents::MemoryCredits]);
+            }
         }
 
         element.mutation_ids = mutation_ids;
