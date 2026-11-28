@@ -18,13 +18,14 @@ INSERT INTO j_left SELECT number FROM numbers(20000);
 INSERT INTO j_right SELECT number * 2 FROM numbers(5000);
 
 SET log_query_plans = 1;
+-- The plan is captured on the initiator only, and with parallel replicas its share of the join can be empty.
 SELECT count() FROM j_left JOIN j_right USING (k)
-SETTINGS log_comment = '05048_hash', join_algorithm = 'hash' FORMAT Null;
+SETTINGS log_comment = '05048_hash', join_algorithm = 'hash', enable_parallel_replicas = 0 FORMAT Null;
 SET log_query_plans = 0;
 
 -- The same query without plan logging must not pay for the counters.
 SELECT count() FROM j_left JOIN j_right USING (k)
-SETTINGS log_comment = '05048_off', join_algorithm = 'hash' FORMAT Null;
+SETTINGS log_comment = '05048_off', join_algorithm = 'hash', enable_parallel_replicas = 0 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 

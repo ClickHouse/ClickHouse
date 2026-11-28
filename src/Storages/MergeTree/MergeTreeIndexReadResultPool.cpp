@@ -119,7 +119,16 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
     auto ranges = input.ranges;
-    [[maybe_unused]] size_t total_granules = ranges.getNumberOfMarks();
+    size_t total_granules = ranges.getNumberOfMarks();
+
+    /// index analysis lists only the indexes that it applies itself
+    auto add_used_index = [&](const String & index_name)
+    {
+        /// a borrowed part on a stateless worker has no data part
+        auto data_part = part_info->getDataPart();
+        if (data_part && context->hasQueryContext())
+            context->getQueryContext()->addUsedDataSkippingIndex(data_part->storage.getStorageID(), index_name);
+    };
 
     IndexGranulesMap index_granules;
 
@@ -129,6 +138,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
     if (rpn_template_for_part)
         partial_eval_results.resize(part_info->getIndexGranularity().getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
+
+    /// in a disjunction the indexes exclude granules together in the merge below
+    Names indexes_without_own_drops;
 
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
@@ -159,9 +171,14 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             vector_similarity_index_cache.get(),
             use_for_disjunctions,
             partial_eval_results,
+            context->getProcessListElementSafe(),
             log);
 
         ranges = std::move(filtered_ranges);
+        if (ranges.getNumberOfMarks() < total_granules)
+            add_used_index(index_and_condition.index->index.name);
+        else if (rpn_template_for_part && index_and_condition.index->getDeserializedFormat(*part_info, index_and_condition.index->getFileName()))
+            indexes_without_own_drops.push_back(index_and_condition.index->index.name);
 
         for (auto & [name, granule] : filtered_hints.index_granules)
             index_granules[name] = std::move(granule);
@@ -176,6 +193,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
                             *part_info, ranges, *rpn_template_for_part,
                             partial_eval_results, reader_settings, log);
+
+        if (ranges.getNumberOfMarks() < total_granules)
+            for (const auto & index_name : indexes_without_own_drops)
+                add_used_index(index_name);
 
         LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
                         ranges.getNumberOfMarks(), total_granules, part_info->getPartName());
@@ -242,6 +263,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     /*pk_to_minmax_slot=*/nullptr,
                     context->getSettingsRef(),
                     log);
+                total_granules = ranges.getNumberOfMarks();
             }
 
             MergeTreeDataSelectExecutor::PartialDisjunctionResult no_disjunctions;
@@ -271,8 +293,12 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     vector_similarity_index_cache.get(),
                     /*use_skip_indexes_for_disjunctions=*/false,
                     no_disjunctions,
+                    context->getProcessListElementSafe(),
                     log);
                 ranges = std::move(filtered_ranges);
+                if (ranges.getNumberOfMarks() < total_granules)
+                    add_used_index(index_helper->index.name);
+                total_granules = ranges.getNumberOfMarks();
             }
 
             const size_t granules_after = ranges.getNumberOfMarks();
@@ -322,6 +348,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             vector_similarity_index_cache.get());
 
         res->threshold_tracker = skip_indexes.threshold_tracker;
+        if (res->min_max_index_for_top_k && !ranges.empty())
+            add_used_index(skip_indexes.skip_index_for_top_k_filtering->index.name);
     }
 
     res->may_skip_granules_besides_top_k_primary_key

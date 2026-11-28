@@ -1,4 +1,5 @@
 #include <IO/ReadBuffer.h>
+#include <IO/ByteRangeSet.h>
 #include <IO/ReadBufferWrapperBase.h>
 
 #include <Common/Logger.h>
@@ -17,6 +18,10 @@ namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
+}
+
+void ReadBuffer::setRequestMap(ByteRangeSet /* ranges */)
+{
 }
 
 namespace

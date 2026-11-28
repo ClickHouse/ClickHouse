@@ -112,7 +112,7 @@ S3TablesCatalog::S3TablesCatalog(
         /* opt_disk_name = */ {},
         /* request_throttler = */ {});
 
-    Aws::Auth::AWSCredentials credentials(catalog_settings_.aws_access_key_id, catalog_settings_.aws_secret_access_key);
+    Aws::Auth::AWSCredentials credentials{Aws::String(catalog_settings_.aws_access_key_id), Aws::String(catalog_settings_.aws_secret_access_key)};
     credentials_provider = DB::S3::getCredentialsProvider(poco_config, credentials, creds_config);
 
     signer = std::make_unique<Aws::Client::AWSAuthV4Signer>(
@@ -144,11 +144,13 @@ CatalogTables S3TablesCatalog::getTables() const
 {
     auto namespaces = listChildNamespaces("");
 
-    auto & pool = getContext()->getIcebergCatalogThreadpool();
-    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
-
+    /// Must outlive `runner`: its jobs capture them by reference.
     DB::Names tables;
     std::mutex mutex;
+
+    auto & pool = getContext()->getIcebergCatalogThreadpool();
+    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
+    runner.reserve(namespaces.size());
     for (const auto & ns : namespaces)
     {
         runner.enqueueAndKeepTrack(

@@ -66,6 +66,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -147,8 +148,6 @@ void fillBufferWithRandomPrintableASCIIBytes(char * __restrict data, size_t size
         data[pos + 1] = static_cast<char>(32 + ((rand2 * 95) >> 16));
         data[pos + 2] = static_cast<char>(32 + ((rand3 * 95) >> 16));
         data[pos + 3] = static_cast<char>(32 + ((rand4 * 95) >> 16));
-
-        /// NOTE gcc failed to vectorize this code (aliasing of char?)
     }
 
     if (pos < size)
@@ -192,7 +191,7 @@ T fuzzyRandomInteger(pcg64 & rng)
     {
         UInt64 low_mask = num_bits == 64 ? ~UInt64(0) : (UInt64(1) << num_bits) - 1;
         UInt64 u_number = static_cast<UInt64>(static_cast<std::make_unsigned_t<T>>(number));
-        UInt64 sign = -(u_number >> (sizeof(T) * 8 - 1));
+        UInt64 sign = common::negateIgnoreOverflow(u_number >> (sizeof(T) * 8 - 1));
         return static_cast<T>((u_number & low_mask) | (sign & ~low_mask));
     }
     else
@@ -1464,7 +1463,7 @@ ColumnPtr fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const
                 fillBufferWithRandomNumbers<UInt32>(reinterpret_cast<char *>(column->getData().data()), limit, rng, fuzzy);
             else
                 for (size_t i = 0; i < limit; ++i)
-                    column->getData()[i] = (rng() % static_cast<UInt64>(DATE_LUT_SIZE)) - DAYNUM_OFFSET_EPOCH;
+                    column->getData()[i] = static_cast<Int32>(static_cast<Int64>(rng() % static_cast<UInt64>(DATE_LUT_SIZE)) - DAYNUM_OFFSET_EPOCH);
 
             return column;
         }
@@ -2124,7 +2123,7 @@ Pipe StorageGenerateRandom::read(
     }
 
     UInt64 query_limit = query_info.trivial_limit;
-    if (query_limit && num_streams * max_block_size > query_limit)
+    if (query_limit)
     {
         /// We want to avoid spawning more streams than necessary
         num_streams = std::min(

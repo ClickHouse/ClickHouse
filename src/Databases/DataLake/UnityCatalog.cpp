@@ -27,42 +27,18 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-    bool hasValueAndItsNotNone(const std::string value, const Poco::JSON::Object::Ptr & object)
-    {
-        return object->has(value) && !object->isNull(value) && !object->get(value).isEmpty();
-    }
-}
 namespace DataLake
 {
 
 static const auto SCHEMAS_ENDPOINT = "schemas";
 static const auto TABLES_ENDPOINT = "tables";
 static const auto TEMPORARY_CREDENTIALS_ENDPOINT = "temporary-table-credentials";
-static const std::unordered_set<std::string> READABLE_TABLES = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL"};
-static const auto READABLE_DATA_SOURCE_FORMAT = "DELTA";
 
 /// A Unity table is readable only if it is a DeltaLake table. `securable_kind`,
 /// `data_source_format` and `storage_location` are in the bulk listing, so this matches `tryGetTableMetadata`.
 static bool isReadableUnityTable(const Poco::JSON::Object::Ptr & table)
 {
-    if (!hasValueAndItsNotNone("storage_location", table))
-        return false;
-
-    const bool has_securable_kind = hasValueAndItsNotNone("securable_kind", table);
-    const bool has_data_source_format = hasValueAndItsNotNone("data_source_format", table);
-
-    if (has_securable_kind && !READABLE_TABLES.contains(table->get("securable_kind").extract<String>()))
-        return false;
-
-    if (has_data_source_format && table->get("data_source_format").extract<String>() != READABLE_DATA_SOURCE_FORMAT)
-        return false;
-
-    if (!has_securable_kind && !has_data_source_format)
-        return false;
-
-    return true;
+    return hasValueAndItsNotNone("storage_location", table) && isUnityDeltaTable(table);
 }
 
 struct UnityCatalogFullSchemaName
@@ -234,18 +210,18 @@ bool UnityCatalog::tryGetTableMetadata(
 
             bool has_securable_kind = hasValueAndItsNotNone("securable_kind", object);
             bool has_data_source_format = hasValueAndItsNotNone("data_source_format", object);
-            if (has_securable_kind && !READABLE_TABLES.contains(object->get("securable_kind").extract<String>()))
+            if (has_securable_kind && !UNITY_DELTA_SECURABLE_KINDS.contains(object->get("securable_kind").extract<String>()))
             {
                 result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has unsupported securable_kind: '{}'. " \
                     "It means that it's unreadable with Unity catalog in ClickHouse, readable tables are: [{}]",
-                    full_table_name, object->get("securable_kind").extract<String>(), fmt::join(READABLE_TABLES, ", ")));
+                    full_table_name, object->get("securable_kind").extract<String>(), fmt::join(UNITY_DELTA_SECURABLE_KINDS, ", ")));
             }
 
-            if (has_data_source_format && object->get("data_source_format").extract<String>() != READABLE_DATA_SOURCE_FORMAT)
+            if (has_data_source_format && object->get("data_source_format").extract<String>() != UNITY_DELTA_DATA_SOURCE_FORMAT)
             {
                 result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has unsupported data_source_format '{}'. " \
                     "It means that it's unreadable with Unity catalog in ClickHouse, readable tables must have data_source_format == '{}'",
-                    full_table_name, object->get("data_source_format").extract<String>(), READABLE_DATA_SOURCE_FORMAT));
+                    full_table_name, object->get("data_source_format").extract<String>(), UNITY_DELTA_DATA_SOURCE_FORMAT));
             }
 
             if (!has_data_source_format && !has_securable_kind)
@@ -279,7 +255,8 @@ bool UnityCatalog::tryGetTableMetadata(
                         /// NOTE: Weird case with OSS Unity catalog, when instead of JSON for simple we have just string with type name
                         if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
                         {
-                            String type_name = type_json_str.substr(1, type_json_str.size() - 2);
+                            /// A lone `"` both starts and ends with a quote: its name is empty, which raises `BAD_ARGUMENTS` below.
+                            String type_name = type_json_str.size() >= 2 ? type_json_str.substr(1, type_json_str.size() - 2) : String{};
                             auto data_type_from_str = DB::getDeltaLakeSimpleTypeByName(type_name);
                             data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
                         }
@@ -452,6 +429,7 @@ CatalogTables UnityCatalog::getTablesForSchema(const std::string & schema, size_
     params.push_back({"max_results", DB::toString(limit)});
 
     CatalogTables tables;
+    std::unordered_set<String> seen_tokens;
     do
     {
         String json_str;
@@ -492,6 +470,8 @@ CatalogTables UnityCatalog::getTablesForSchema(const std::string & schema, size_
                 if (continuation_token.empty())
                     break;
 
+                checkUnityPageTokenIsNew(seen_tokens, continuation_token, fmt::format("the tables of schema `{}.{}`", warehouse, schema));
+
                 if (params.size() == 4)
                     params.pop_back();
 
@@ -519,6 +499,7 @@ DataLake::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base
     params.push_back({"catalog_name", warehouse});
 
     DataLake::ICatalog::Namespaces schemas;
+    std::unordered_set<String> seen_tokens;
     do
     {
         String json_str;
@@ -536,7 +517,8 @@ DataLake::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base
             for (size_t i = 0; i < schemas_object->size(); ++i)
             {
                 auto schema_info = schemas_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
-                chassert(schema_info->get("catalog_name").extract<String>() == warehouse);
+                if (!isUnitySchemaOfCatalog(schema_info, warehouse))
+                    continue;
                 UnityCatalogFullSchemaName schema_name = parseFullSchemaName(schema_info->get("full_name").extract<String>());
 
                 if (schema_name.schema_name.starts_with(base_prefix))
@@ -555,6 +537,8 @@ DataLake::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base
 
                 if (continuation_token.empty())
                     break;
+
+                checkUnityPageTokenIsNew(seen_tokens, continuation_token, fmt::format("the schemas of catalog `{}`", warehouse));
 
                 if (params.size() == 2)
                     params.pop_back();
@@ -580,7 +564,7 @@ DataLake::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base
 UnityCatalog::UnityCatalog(
     const std::string & catalog_,
     const std::string & base_url_,
-    const std::string & catalog_credential_,
+    std::string_view catalog_credential_,
     DB::ContextPtr context_)
     : ICatalog(catalog_)
     , DB::WithContext(context_)
@@ -618,7 +602,8 @@ ICatalog::CredentialsRefreshCallback UnityCatalog::getWriteCredentialsConfigurat
 
 ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsCallbackForOperation(const String & unity_table_id, const String & operation)
 {
-    return [this, unity_table_id, operation] () -> std::shared_ptr<IStorageCredentials>
+    /// `self` keeps catalog alive while S3 client holds this callback.
+    return [this, self = shared_from_this(), unity_table_id, operation] () -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Update {} credentials in the catalog", operation);
 

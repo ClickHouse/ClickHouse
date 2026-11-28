@@ -824,6 +824,21 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+        {
+            /// SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster] [FOR TABLE [db.]table]
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+
+            if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
+            {
+                if (!ParserKeyword{Keyword::TABLE}.ignore(pos, expected))
+                    return false;
+                if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+                    return false;
+            }
+            break;
+        }
         case Type::CLEAR_FILESYSTEM_CACHE:
         {
             ParserLiteral path_parser;
@@ -1230,7 +1245,7 @@ std::map<String, Documentation> ParserSystemQuery::getDocumentation() const
 
     documentation["SYSTEM"] =
     {
-        .description = R"DOCS_MD(
+        .description = String(R"DOCS_MD(
 ## SYSTEM RELOAD EMBEDDED DICTIONARIES {#reload-embedded-dictionaries}
 
 Reload all [Internal dictionaries](/reference/statements/create/dictionary).
@@ -1384,7 +1399,15 @@ Clears the userspace page cache, ClickHouse's own in-memory cache of data read f
 
 ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
 
-Clears the vector similarity index cache.
+Clears the cache of [vector similarity indexes](/reference/engines/table-engines/mergetree-family/annindexes), which holds the deserialized vector index granules in memory.
+
+```sql
+SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [db.]table]
+```
+
+With `FOR TABLE`, only the cache entries of the given `MergeTree` table are removed.
+
+Requires the `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` privilege for all or a single table.
 
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 
@@ -1513,7 +1536,7 @@ Clears the query condition cache.
 
 ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
 
-Clears the encryption headers cache. This cache holds the encryption headers read from the front of encrypted files and is used by the experimental `use_reader_executor` read path to avoid re-reading them; its size is configured by the `encryption_header_cache_size` server setting.
+Clears the encryption headers cache. This cache holds the encryption headers read from the front of encrypted files to avoid re-reading them; its size is configured by the `encryption_header_cache_size` server setting.
 
 ## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
 
@@ -1867,7 +1890,8 @@ However, if the server on the specified port and protocol was not stopped using 
 ```sql
 SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
 ```
-
+)DOCS_MD") +
+R"DOCS_MD(
 ## Managing MergeTree Tables {#managing-mergetree-tables}
 
 ClickHouse can manage background processes in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.
@@ -2246,6 +2270,29 @@ Parts present on a replica before metadata loss are not re-fetched from other on
 Parts in all states are moved to `detached/` folder. Parts active before data loss (committed) are attached.
 </Note>
 
+The statement also clears the server-wide data caches: the restored parts get new names, which can be the former names and paths of other parts, so cached entries for these names would be stale.
+
+This affects all tables on the server, not only the restored one: queries on them have to fill the caches again. With `ON CLUSTER`, the caches are cleared on every server where the replica is restored.
+
+The cleared caches include:
+
+- [mark](#drop-mark-cache)
+- [uncompressed](#drop-uncompressed-cache)
+- [primary index](#drop-primary-index-cache)
+- [statistics](#drop-statistics-cache)
+- [index mark](#drop-index-mark-cache)
+- [index uncompressed](#drop-index-uncompressed-cache)
+- [vector similarity index](#drop-vector-similarity-index-cache)
+- [text index](#drop-text-index-caches)
+- [mmap](#drop-mmap-cache)
+- [page](#drop-page-cache)
+- [columns](#drop-columns-cache)
+- [query condition](#drop-query-condition-cache)
+- [encryption headers](#drop-encryption-headers-cache)
+- `UNIQUE KEY` delete bitmap caches
+
+The [query cache](#drop-query-cache) and the [filesystem cache](#drop-filesystem-cache) are kept.
+
 ### SYSTEM RESTORE DATABASE REPLICA {#restore-database-replica}
 
 Restores a replica if data is [possibly] present but Zookeeper metadata is lost.
@@ -2422,7 +2469,7 @@ SYSTEM REFRESH VIEW [db.]name
 
 ### SYSTEM WAIT VIEW {#wait-view}
 
-Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
+Waits for the running refresh to complete, including a due refresh that is still waiting for its `refresh_coordination_jitter_ms` delay. If no refresh is running or due, returns immediately. If the latest refresh attempt failed, reports an error.
 
 Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
 

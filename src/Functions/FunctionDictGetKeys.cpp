@@ -537,7 +537,9 @@ private:
         value_hash_to_bucket_id.reserve(input_rows_count);
 
         SipHash sip;
+        sip.update(dict_name.size());
         sip.update(dict_name.data(), dict_name.size());
+        sip.update(attr_name.size());
         sip.update(attr_name.data(), attr_name.size());
         const UInt128 domain_id = sip.get128();
 

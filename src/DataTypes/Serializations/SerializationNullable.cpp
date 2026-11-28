@@ -169,15 +169,24 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 
     if (use_default_null_map)
-        col.getNullMapData().resize_fill(col.getNestedColumn().size());
+    {
+        /// Read the nested column size via the const overload — the substream cache may hold a reference
+        /// to the nested column (so its `use_count() >= 2`), which would trip
+        /// `chassert(use_count() == 1)` in the non-const `getNestedColumn`
+        /// (it goes through `WrappedPtr::operator*` -> `assumeMutableRef`).
+        col.getNullMapData().resize_fill(std::as_const(col).getNestedColumn().size());
+    }
 
-    if (col.getNullMapColumn().size() != col.getNestedColumn().size())
+    /// Size-only reads again: by now both the null map and the nested column may be referenced from
+    /// the substreams cache, so stay on the const accessors here as well.
+    const auto & const_col = std::as_const(col);
+    if (const_col.getNullMapColumn().size() != const_col.getNestedColumn().size())
         throw Exception(
             settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
             "Sizes of nested column and null map of Nullable column are not equal after deserialization (null map size = {}, nested "
             "column size = {})",
-            col.getNullMapColumn().size(),
-            col.getNestedColumn().size());
+            const_col.getNullMapColumn().size(),
+            const_col.getNestedColumn().size());
 }
 
 
@@ -326,7 +335,12 @@ void SerializationNullable::serializeNullRaw(DB::WriteBuffer & ostr, const DB::F
 
 bool SerializationNullable::tryDeserializeNullRaw(DB::ReadBuffer & istr, const DB::FormatSettings & settings)
 {
-    return checkString(settings.tsv.null_representation, istr);
+    if (!checkString(settings.tsv.null_representation, istr))
+        return false;
+    /// A raw field read with `readString` keeps the trailing CRLF terminator, so consume it to reach the field end.
+    if (settings.tsv.crlf_end_of_line_input && !istr.eof() && *istr.position() == '\r')
+        ++istr.position();
+    return true;
 }
 
 template<typename ReturnType, bool escaped>
@@ -421,10 +435,13 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
                 "containing '\\r' may not work correctly for large input.");
 
         WriteBufferFromOwnString parsed_value;
-        if constexpr (escaped)
-            nested_serialization->serializeTextEscaped(nested_column, nested_column.size() - 1, parsed_value, settings);
-        else
-            nested_serialization->serializeTextRaw(nested_column, nested_column.size() - 1, parsed_value, settings);
+        if (!nested_column.empty())
+        {
+            if constexpr (escaped)
+                nested_serialization->serializeTextEscaped(nested_column, nested_column.size() - 1, parsed_value, settings);
+            else
+                nested_serialization->serializeTextRaw(nested_column, nested_column.size() - 1, parsed_value, settings);
+        }
         throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
                                    " at position {}: got \"{}\", which was deserialized as \"{}\". "
                                    "It seems that input data is ill-formatted.",
@@ -810,7 +827,8 @@ ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const For
                                        "format_csv_delimiter, '\\r' or '\\n' may not work correctly for large input.");
 
         WriteBufferFromOwnString parsed_value;
-        nested_serialization->serializeTextCSV(nested_column, nested_column.size() - 1, parsed_value, settings);
+        if (!nested_column.empty())
+            nested_serialization->serializeTextCSV(nested_column, nested_column.size() - 1, parsed_value, settings);
         throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
                                    " at position {}: got \"{}\", which was deserialized as \"{}\". "
                                    "It seems that input data is ill-formatted.",

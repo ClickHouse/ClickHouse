@@ -34,7 +34,7 @@ private:
     /// ETag observed at read setup; each GET response ETag is checked against it to catch an
     /// in-place overwrite mid-read (instead of stitching two object generations). Empty means skip.
     String expected_etag;
-    /// `getETagHash` of the ETag each GET response must have, when only the hash is known (on a
+    /// `getCacheTokenHash` of the ETag each GET response must have, when only the hash is known (on a
     /// distributed cache server). 0 means skip.
     UInt64 expected_etag_hash;
     const S3::S3RequestSettings request_settings;

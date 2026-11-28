@@ -4,35 +4,58 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumn_fwd.h>
+#include <Core/Block_fwd.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
+
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
+
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
+
 #include <Interpreters/Context.h>
 #include <Columns/ColumnString.h>
+
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Elasticsearch/ElasticsearchConfiguration.h>
 #include <Storages/Elasticsearch/ElasticsearchSettings.h>
 #include <Storages/Elasticsearch/StorageElasticsearch.h>
 #include <Storages/Elasticsearch/ElasticsearchClient.h>
+
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/Transforms/ExtractColumnsTransform.h>
+
 #include <Storages/IStorage.h>
 #include <Core/Block.h>
 #include <Storages/StorageInMemoryMetadata.h>
+
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
+
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/assert_cast.h>
 #include <Common/Documentation.h>
+#include <Common/JSONBuilder.h>
+
 #include <Storages/StorageFactory.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -40,12 +63,100 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_elasticsearch;
+    extern const SettingsBool json_type_escape_dots_in_keys;
+    extern const SettingsBool parallelize_output_from_storages;
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+std::optional<String> tryGetSourcePath(const NameAndTypePair & column, bool escape_dots_in_keys)
+{
+    if (!column.isSubcolumn())
+        return std::nullopt;
+
+    String path = column.getSubcolumnName();
+
+    if (path.size() >= 2 && path[1] == '`'
+        && (path[0] == DataTypeObject::SUB_OBJECT_SUBCOLUMN_PREFIX || path[0] == DataTypeObject::COMBINED_SUBCOLUMN_PREFIX))
+    {
+        ReadBufferFromMemory buf(std::string_view(path).substr(1));
+        String first_element;
+        if (!tryReadBackQuotedString(first_element, buf))
+            return std::nullopt;
+        path = first_element + String(buf.position(), buf.available());
+    }
+
+    if (path.starts_with(":`"))
+        return std::nullopt;
+
+    if (auto pos = path.find(".:`"); pos != String::npos)
+        path.resize(pos);
+
+    if (path.empty() || path.contains('`'))
+        return std::nullopt;
+
+    if (escape_dots_in_keys && path.contains("%2E"))
+        return std::nullopt;
+
+    const auto & typed_paths = assert_cast<const DataTypeObject &>(*column.getTypeInStorage()).getTypedPaths();
+    if (typed_paths.contains(path))
+        return path;
+
+    std::optional<String> enclosing_typed_path;
+    for (const auto & [typed_path, _] : typed_paths)
+    {
+        bool is_inside = path.size() > typed_path.size() && path.starts_with(typed_path) && path[typed_path.size()] == '.';
+        if (is_inside && (!enclosing_typed_path || typed_path.size() < enclosing_typed_path->size()))
+            enclosing_typed_path = typed_path;
+    }
+
+    if (enclosing_typed_path)
+        return enclosing_typed_path;
+
+    return path;
+}
+
+ElasticsearchSourceFilter buildSourceFilter(const NamesAndTypesList & requested_columns, bool escape_dots_in_keys)
+{
+    ElasticsearchSourceFilter filter{.kind = ElasticsearchSourceFilter::Kind::None, .includes={}};
+
+    for (const auto & column : requested_columns)
+    {
+        if (!isObject(column.getTypeInStorage()))
+            continue;
+
+        auto path = tryGetSourcePath(column, escape_dots_in_keys);
+        if (!path)
+            return {.kind = ElasticsearchSourceFilter::Kind::All, .includes={}};
+
+        filter.kind = ElasticsearchSourceFilter::Kind::Includes;
+        if (!std::ranges::contains(filter.includes, *path))
+            filter.includes.push_back(std::move(*path));
+    }
+
+    return filter;
+}
+
+String formatSourceFilter(const ElasticsearchSourceFilter & filter)
+{
+    switch (filter.kind)
+    {
+        case ElasticsearchSourceFilter::Kind::None:
+            return "false";
+        case ElasticsearchSourceFilter::Kind::All:
+            return "true";
+        case ElasticsearchSourceFilter::Kind::Includes:
+            return fmt::format("{}", fmt::join(filter.includes, ", "));
+    }
+}
+
 }
 
 class ElasticsearchSource : public ISource
@@ -65,10 +176,9 @@ public:
             hit_columns.source_serialization = sample_block->getByPosition(*hit_columns.source_pos).type->getDefaultSerialization();
     }
 
-    String getName() const override { return "Elasticsearch"; }
+    String getName() const override { return "ElasticsearchSource"; }
 
 private:
-
     Chunk generate() override
     {
         if (!has_data)
@@ -97,6 +207,107 @@ private:
     std::shared_ptr<ElasticsearchClient> client;
 };
 
+class ReadFromElasticsearch : public SourceStepWithFilter
+{
+public:
+    [[nodiscard]] std::string getName() const override { return "ReadFromElasticsearch"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void describeActions(FormatSettings & format_settings) const override;
+    void describeActions(JSONBuilder::JSONMap & map) const override;
+
+    ReadFromElasticsearch(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        SharedHeader source_header_,
+        SharedHeader output_header_,
+        NamesAndTypesList requested_columns_,
+        const ContextPtr & context_,
+        ElasticsearchConfiguration config_,
+        ElasticsearchSettings settings_,
+        size_t num_streams_)
+        : SourceStepWithFilter(std::move(output_header_), column_names_, query_info_, storage_snapshot_, context_)
+        , source_header(std::move(source_header_))
+        , requested_columns(std::move(requested_columns_))
+        , source_filter(buildSourceFilter(requested_columns, context->getSettingsRef()[Setting::json_type_escape_dots_in_keys]))
+        , es_settings(std::move(settings_))
+        , es_config(std::move(config_))
+        , max_num_streams(num_streams_)
+    {
+    }
+
+private:
+    SharedHeader source_header;
+    NamesAndTypesList requested_columns;
+    ElasticsearchSourceFilter source_filter;
+    ElasticsearchSettings es_settings;
+    ElasticsearchConfiguration es_config;
+    const size_t max_num_streams;
+};
+
+void ReadFromElasticsearch::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
+{
+    const auto & settings = context->getSettingsRef();
+
+    String json_column_name = storage_snapshot->metadata->getColumns().getOrdinary().front().name;
+
+    auto client = std::make_shared<ElasticsearchClient>(source_filter, es_config, context, es_settings);
+    auto source = std::make_shared<ElasticsearchSource>(std::move(client), source_header, json_column_name);
+
+    source->setStorageLimits(query_info.storage_limits);
+
+    Pipe pipe(std::move(source));
+
+    size_t output_ports = pipe.numOutputPorts();
+    const bool parallelize_output = settings[Setting::parallelize_output_from_storages];
+
+    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
+    if (parallelize_output && output_ports > 0 && output_ports < resize_to)
+        pipe.resize(resize_to);
+
+    pipe.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+    });
+
+    for (const auto & processor : pipe.getProcessors())
+        processors.emplace_back(processor);
+
+    pipeline.init(std::move(pipe));
+}
+
+void ReadFromElasticsearch::describeActions(FormatSettings & format_settings) const
+{
+    const std::string & prefix = format_settings.detail_prefix;
+
+    SourceStepWithFilter::describeActions(format_settings);
+
+    format_settings.out << prefix << "Source: " << formatSourceFilter(source_filter) << '\n';
+
+    if (!es_config.named_collection_name.empty())
+    {
+        format_settings.out << prefix << "Named collection: " << es_config.named_collection_name << '\n';
+        return;
+    }
+    format_settings.out << prefix << "Index: " << es_config.index << '\n';
+    format_settings.out << prefix << "Query: " << es_config.query << '\n';
+}
+
+void ReadFromElasticsearch::describeActions(JSONBuilder::JSONMap & map) const
+{
+    SourceStepWithFilter::describeActions(map);
+
+    map.add("Source", formatSourceFilter(source_filter));
+
+    if (!es_config.named_collection_name.empty())
+    {
+        map.add("Named collection", es_config.named_collection_name);
+        return;
+    }
+    map.add("Index", es_config.index);
+    map.add("Query", es_config.query);
+}
+
 StorageElasticsearch::StorageElasticsearch(
     const StorageID & table_id_,
     ElasticsearchConfiguration configuration_,
@@ -123,25 +334,35 @@ StorageElasticsearch::StorageElasticsearch(
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipe StorageElasticsearch::read(
+void StorageElasticsearch::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr context,
+    SelectQueryInfo & query_info,
+    ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
-    size_t /*num_streams*/)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
+    auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    auto requested_columns = storage_snapshot->getColumnsByNames(options, column_names);
 
-    Block sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
+    Names columns_to_read;
+    for (const auto & column_name_and_type : requested_columns)
+    {
+        auto name = column_name_and_type.getNameInStorage();
+        if (!std::ranges::contains(columns_to_read, name))
+            columns_to_read.push_back(std::move(name));
+    }
 
-    String json_column_name = storage_snapshot->metadata->getColumns().getOrdinary().front().name;
+    auto source_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_to_read));
+    auto output_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
 
-    auto client = std::make_shared<ElasticsearchClient>(config, context, *storage_settings);
-    return Pipe(std::make_shared<ElasticsearchSource>(
-        std::move(client),
-        std::make_shared<Block>(std::move(sample_block)), json_column_name));
+    auto reading = std::make_unique<ReadFromElasticsearch>(
+        column_names, query_info, storage_snapshot, std::move(source_header), std::move(output_header), std::move(requested_columns), context_, config, *storage_settings, num_streams);
+
+    query_plan.addStep(std::move(reading));
 }
 
 VirtualColumnsDescription StorageElasticsearch::createVirtuals()

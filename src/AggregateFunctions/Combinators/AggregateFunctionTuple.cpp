@@ -659,8 +659,11 @@ void AggregateFunctionTuple::insertMergeResultInto(AggregateDataPtr __restrict p
 void AggregateFunctionTuple::rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept
 {
     auto & tuple_to = assert_cast<ColumnTuple &>(to);
-    for (size_t i = nested_functions.size(); i-- > 0;)
+    for (size_t j = nested_functions.size(); j > 0; --j)
+    {
+        const size_t i = j - 1;
         nested_functions[i]->rollbackInsertResult(place + state_offsets[i], tuple_to.getColumn(i));
+    }
 }
 
 bool AggregateFunctionTuple::allocatesMemoryInArena() const
@@ -727,60 +730,6 @@ DataTypePtr AggregateFunctionTuple::getNormalizedStateType() const
     auto normalized_function = std::make_shared<AggregateFunctionTuple>(
         normalized_nested_name, std::move(normalized_nested_functions), argument_types, Array{});
     return std::make_shared<DataTypeAggregateFunction>(std::move(normalized_function), nested_normalized_state_types, Array{});
-}
-
-bool AggregateFunctionTuple::isOnlyWindowFunction() const
-{
-    return std::ranges::any_of(nested_functions, [](const auto & nested) { return nested->isOnlyWindowFunction(); });
-}
-
-AggregateFunctionStateVariant AggregateFunctionTuple::getStateVariant() const
-{
-    /// All elements are resolved together under one requested variant, so any element reporting
-    /// Window means the whole state uses the window representation; only elements without a window
-    /// implementation (including `Nothing` placeholders) report Aggregation unconditionally.
-    for (const auto & func : nested_functions)
-        if (func->getStateVariant() == AggregateFunctionStateVariant::Window)
-            return AggregateFunctionStateVariant::Window;
-    return AggregateFunctionStateVariant::Aggregation;
-}
-
-bool AggregateFunctionTuple::canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const
-{
-    const auto * rhs_tuple = typeid_cast<const AggregateFunctionTuple *>(&rhs);
-    if (!rhs_tuple)
-        return false;
-
-    if (nested_functions.size() != rhs_tuple->nested_functions.size())
-        return false;
-
-    for (size_t i = 0; i < nested_functions.size(); ++i)
-    {
-        const auto & lhs_nested = nested_functions[i];
-        const auto & rhs_nested = rhs_tuple->nested_functions[i];
-        if (!lhs_nested->haveSameStateRepresentation(*rhs_nested) && !lhs_nested->canMergeStateFromDifferentVariant(*rhs_nested))
-            return false;
-    }
-    return true;
-}
-
-void AggregateFunctionTuple::mergeStateFromDifferentVariant(
-    AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const
-{
-    chassert(canMergeStateFromDifferentVariant(rhs));
-
-    const auto & rhs_tuple = assert_cast<const AggregateFunctionTuple &>(rhs);
-    for (size_t i = 0; i < nested_functions.size(); ++i)
-    {
-        const auto & lhs_nested = nested_functions[i];
-        const auto & rhs_nested = rhs_tuple.nested_functions[i];
-        AggregateDataPtr lhs_element = place + state_offsets[i];
-        ConstAggregateDataPtr rhs_element = rhs_place + rhs_tuple.state_offsets[i];
-        if (lhs_nested->getStateVariant() == rhs_nested->getStateVariant())
-            lhs_nested->merge(lhs_element, rhs_element, arena);
-        else
-            lhs_nested->mergeStateFromDifferentVariant(lhs_element, *rhs_nested, rhs_element, arena);
-    }
 }
 
 namespace

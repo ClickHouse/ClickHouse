@@ -1,0 +1,946 @@
+---
+slug: /clickstack/self-configured/managing/performance-tuning
+title: '性能调优'
+sidebarTitle: '性能调优'
+description: 'Self-managed ClickHouse Observability 的性能调优'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', '可观测性', '日志', '性能', '优化']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import OtelLogsSchema from '/snippets/zh/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/zh/clickstack/_schema_otel_traces.mdx';
+
+<Note>
+  本页介绍的是 **Self-managed ClickHouse Observability**。如需使用推荐的全托管方案，请参阅[此处](/zh/clickstack/observability/overview)的文档。
+</Note>
+
+## 简介 {#introduction}
+
+本指南重点介绍 Self-managed ClickHouse Observability 最常用且最有效的性能优化方法，足以满足绝大多数实际可观测性工作负载的优化需求，通常可覆盖每天高达数十 TB 的数据量。
+
+这些优化方法经过精心排序：从最简单、收效最显著的技术入手，逐步深入到更高级、更专业的调优。建议先应用靠前的优化，这些优化单独使用往往就能带来显著提升。随着数据量增长、工作负载要求不断提高，后面的技术也越来越值得深入探索。
+
+## ClickHouse 概念 {#clickhouse-concepts}
+
+在应用本指南所述的任何优化之前，务必先熟悉几个 ClickHouse 核心概念。
+
+在该服务中，每个**数据源都直接映射到一个或多个 ClickHouse 表**。使用 OpenTelemetry 时，该服务会创建并管理一组默认表，用于存储日志、链路追踪和指标数据。如果您使用自定义 schema 或自行管理表，可能已经熟悉这些概念。但如果您只是通过 OpenTelemetry 收集器发送数据，这些表会自动创建，下文所述的所有优化也都将应用于这些表。
+
+| 数据类型        | 表                                                                                                                      |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 日志          | [otel&#95;logs](/zh/clickstack/self-configured/ingesting-data/schemas#logs)                                               |
+| 链路追踪        | [otel&#95;traces](/zh/clickstack/self-configured/ingesting-data/schemas#traces)                                           |
+| 指标 (Gauge)  | [otel&#95;metrics&#95;gauge](/zh/clickstack/self-configured/ingesting-data/schemas#gauge)                                 |
+| 指标 (总和)     | [otel&#95;metrics&#95;sum](/zh/clickstack/self-configured/ingesting-data/schemas#sum)                                     |
+| 指标 (直方图)    | [otel&#95;metrics&#95;histogram](/zh/clickstack/self-configured/ingesting-data/schemas#histogram)                         |
+| 指标 (指数直方图)  | [otel&#95;metrics&#95;exponentialhistogram](/zh/clickstack/self-configured/ingesting-data/schemas#exponential-histograms) |
+| 指标 (摘要)     | [otel&#95;metrics&#95;summary](/zh/clickstack/self-configured/ingesting-data/schemas#summary-table)                       |
+| 会话          | [hyperdx&#95;sessions](/zh/clickstack/self-configured/ingesting-data/schemas#sessions)                                    |
+
+在 ClickHouse 中，表归属于[数据库](/zh/reference/statements/create/database)。默认使用 `default` 数据库，也可以[在 OpenTelemetry 采集器中修改](/zh/clickstack/self-configured/managing/config#otel-collector)。
+
+<Warning>
+  **重点关注日志和链路追踪**
+
+  在大多数情况下，性能调优主要针对日志表和链路追踪表。指标表虽然也可以针对过滤进行优化，但其 schema 是专门为 Prometheus 风格的工作负载设计的，用于标准图表展示时通常无需修改。相比之下，日志和链路追踪支持的访问模式更加多样，因此从调优中获益最大。会话数据的用户体验是固定的，其 schema 很少需要修改。
+</Warning>
+
+您至少应了解以下 ClickHouse 基础知识：
+
+| 概念                 | 说明                                                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| **表**              | 该服务中的数据源如何对应底层的 ClickHouse 表。ClickHouse 中的表主要使用 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 引擎。 |
+| **Parts**          | 数据如何以不可变的 parts 形式写入，并随时间推移不断合并。                                                                                             |
+| **分区**             | 分区将表的数据 parts 组织为有序的逻辑单元，便于管理、查询和优化。                                                                                         |
+| **合并**             | 将多个 parts 合并在一起的内部过程，用于减少查询时需要处理的 parts 数量，对维持查询性能至关重要。                                                                      |
+| **粒度**             | ClickHouse 在查询执行期间读取和裁剪的最小数据单元。                                                                                              |
+| **主键 (排序键)&#x20;**&#x20;| `ORDER BY` 键如何决定磁盘上的数据布局、压缩以及查询裁剪。                                                                                           |
+
+这些概念是 ClickHouse 性能的核心，决定了数据如何写入、如何在磁盘上组织，以及 ClickHouse 在查询时能多高效地跳过无需读取的数据。本指南中的每一项优化，无论是物化列、跳过索引、主键、投影还是物化视图，都建立在这些核心机制之上。
+
+建议您在进行任何调优之前，先阅读以下 ClickHouse 文档：
+
+* [在 ClickHouse 中创建表](/zh/get-started/quickstarts/creating-tables) - 表的入门介绍。
+* [Parts](/zh/concepts/core-concepts/parts)
+* [分区](/zh/concepts/core-concepts/partitions)
+* [合并](/zh/concepts/core-concepts/merges)
+* [主键/索引](/zh/concepts/core-concepts/primary-indexes)
+* [ClickHouse 如何存储数据：parts 和粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes) - 介绍 ClickHouse 中数据如何组织和查询的进阶指南，详细讲解了粒度和主键。
+* [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree)- MergeTree 进阶参考指南，便于查阅命令和内部实现细节。
+
+下文介绍的所有优化均可通过标准 ClickHouse SQL 直接应用到底层表上，可在 [ClickHouse Cloud SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console)中执行，也可通过 [ClickHouse 客户端](/zh/concepts/features/interfaces/client)执行。
+
+## 优化 1. 物化常用查询的属性 {#materialize-frequently-queried-attributes}
+
+对用户而言，首要且最简单的优化是找出 `LogAttributes`、`ScopeAttributes` 和 `ResourceAttributes` 中经常被查询的属性，并通过物化列将其提升为顶层列。
+
+仅这一项优化，通常就足以让部署扩展到每天处理数十 TB 数据的规模。在考虑更高级的调优手段之前，应优先采用此项优化。
+
+### 为什么要物化属性 {#why-materialize-attributes}
+
+该服务将 Kubernetes 标签、服务元数据和自定义属性等元数据存储在 `Map(String, String)` 列中。这种方式虽然灵活，但查询 Map 子键会对性能产生显著影响。
+
+从 Map 列中查询单个键时，ClickHouse 必须从磁盘读取整个 Map 列。如果 Map 中包含大量键，与读取专用列相比，这会产生不必要的 IO，并拖慢查询速度。
+
+对频繁访问的属性进行物化，可以在写入时提取其值并存储为独立的一等列，从而避免这一开销。
+
+物化列：
+
+* 在插入操作期间自动计算
+* 不能在 INSERT 语句中显式赋值
+* 支持任意 ClickHouse 表达式
+* 支持将 String 转换为更高效的数值或日期类型
+* 可以利用跳过索引和主键
+* 无需访问完整 Map，从而减少磁盘读取
+
+<Note>
+  该服务会自动识别从 Map 中提取的物化列，并在查询执行期间透明地使用这些列，即使用户仍然查询原始属性路径也是如此。
+</Note>
+
+### 示例 {#materialize-column-example}
+
+以链路追踪的默认可观测性 schema 为例，其中 Kubernetes 元数据存储在 `ResourceAttributes` 中：
+
+<OtelTracesSchema />
+
+用户可以使用 Lucene 语法筛选链路追踪，例如 `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`：
+
+<div className="ch-image-lg">
+  <Frame>
+    ![链路追踪筛选](/images/clickstack/performance_guide/trace_filtering.webp)
+  </Frame>
+</div>
+
+这会生成类似如下的 SQL 谓词：
+
+```sql
+ResourceAttributes['k8s.pod.name'] = 'checkout-675775c4cc-f2p9c'
+```
+
+由于这里访问的是 Map 中的键，ClickHouse 必须为每个匹配的行读取完整的 `ResourceAttributes` 列——如果该 Map 包含大量键，这一列可能非常大。
+
+如果需要频繁查询该属性，应将其物化为顶层列。
+
+要在写入时提取 pod (容器组) 名称，请添加一个物化列：
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+ADD COLUMN PodName String
+MATERIALIZED ResourceAttributes['k8s.pod.name']
+```
+
+从现在起，**新**数据会将 pod (容器组) 名称存储在专用列 `PodName` 中。
+
+用户现在可以使用 Lucene 语法高效地查询 pod (容器组) 名称，例如 `PodName:"checkout-675775c4cc-f2p9c"`
+
+<div className="ch-image-lg">
+  <Frame>
+    ![链路追踪筛选 v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
+  </Frame>
+</div>
+
+对于新插入的数据，这样可以完全避免访问 Map，并显著降低 I/O。
+
+不过，即使用户仍然查询原始属性路径，例如 `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`，**服务也会在内部自动重写该查询**，改用 materialized 的 `PodName` 列，即使用如下谓词：
+
+```sql
+PodName = 'checkout-675775c4cc-f2p9c'
+```
+
+这样，用户无需修改仪表盘、告警或已保存的查询，即可享受这项优化带来的好处。
+
+<Note>
+  默认情况下，物化列不会出现在 `SELECT * queries` 的结果中。这样可以保持一个不变量：查询结果始终可以重新插入到表中。
+</Note>
+
+### 物化历史数据 {#materializing-historical-data}
+
+物化列仅自动作用于该列创建之后插入的数据。对于已有数据，针对物化列的查询会透明地回退到从原始 Map 中读取。
+
+如果历史数据的查询性能至关重要，可以通过变更 (mutation) 对该列进行历史数据回填，例如：
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+MATERIALIZE COLUMN PodName
+```
+
+这会重写现有的 [分片](/zh/concepts/core-concepts/parts) 以填充该列。变更在每个分片内以单线程方式执行，在大型数据集上可能耗时较长。为降低影响，可以将变更限定在特定分区内执行：
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+MATERIALIZE COLUMN PodName
+IN PARTITION '2026-01-02'
+```
+
+可以通过 `system.mutations` 表监控变更进度，例如：
+
+```sql
+SELECT *
+FROM system.mutations
+WHERE database = 'otel'
+  AND table = 'otel_traces'
+ORDER BY create_time DESC;
+```
+
+等待对应变更的 `is_done = 1` 即可。
+
+<Warning>
+  变更会带来额外的 IO 和 CPU 开销，应谨慎使用。很多情况下，让旧数据自然过期，并依靠新摄取数据所获得的性能提升就已足够。
+</Warning>
+
+## 优化 2. 添加跳过索引 {#adding-skip-indexes}
+
+在物化常用查询属性之后，下一步优化是添加数据跳过索引，进一步减少 ClickHouse 在查询执行期间需要读取的数据量。
+
+当 ClickHouse 能够确定某个数据块中不存在匹配值时，跳过索引可使其免于扫描整个数据块。与传统的二级索引不同，跳过索引在粒度级别上工作，当查询筛选条件能够排除数据集的大部分数据时效果最佳。使用得当时，跳过索引可以在不改变查询语义的前提下，显著加速对 high-cardinality 属性的过滤。
+
+以包含跳过索引的默认链路追踪 schema 为例：
+
+<OtelTracesSchema />
+
+这些索引主要针对以下三种常见模式：
+
+* 高基数字符串过滤，例如 TraceId、会话标识符、属性键或属性值
+* Map 子键过滤，由 [`*AttributeItems`](#map-direct-read-optimization) 列上的[文本索引](#text-indexes)加速
+* 数值范围过滤，例如 span 耗时
+
+日志表全部使用 `text(tokenizer = 'array')` 索引代替布隆过滤器，并在 `lower(Body)` 上添加了 `text(tokenizer = 'splitByNonAlpha')` 索引以支持全文搜索。完整 DDL 请参见[“表与 schema”](/zh/clickstack/self-configured/ingesting-data/schemas#logs)。
+
+### 布隆过滤器 {#bloom-filters}
+
+布隆过滤器索引是该服务中最常用的跳过索引类型，非常适合高基数的字符串列，通常指至少包含数万个不同值的列。将假阳性率设为 0.01、粒度设为 1 是不错的默认起点，可在存储开销与有效裁剪之间取得平衡。
+
+沿用优化 1 中的示例，假设 Kubernetes pod (容器组) 名称已从 ResourceAttributes 中物化：
+
+```sql
+ALTER TABLE otel_traces
+ADD COLUMN PodName String
+MATERIALIZED ResourceAttributes['k8s.pod.name']
+```
+
+随后可以添加布隆过滤器跳过索引，以加速针对该列的过滤：
+
+```sql
+ALTER TABLE otel_traces
+ADD INDEX idx_pod_name PodName
+TYPE bloom_filter(0.01)
+GRANULARITY 1
+```
+
+添加跳过索引后，必须对其进行物化——参见 [&quot;物化跳数索引&quot;](#materialize-skip-index)。
+
+完成创建和物化后，ClickHouse 即可跳过那些确定不包含所请求 pod (容器组) 名称的整个粒度，从而有望减少 `PodName:"checkout-675775c4cc-f2p9c"` 等查询所读取的数据量。
+
+当值的分布使某个给定值只出现在相对较少的 parts 中时，布隆过滤器的效果最佳。这种情况在可观测性工作负载中往往会自然出现：pod (容器组) 名称、追踪 ID 或会话标识符等元数据与时间相关，因而会按表的排序键聚集在一起。
+
+与所有跳过索引一样，布隆过滤器应有选择地添加，并结合真实的查询模式进行验证，以确保其能带来可衡量的收益——参见 [&quot;评估跳过索引的有效性&quot;](#evaluating-skip-index-effectiveness)。
+
+### 文本索引 {#text-indexes}
+
+[文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)可以作为布隆过滤器的替代方案。布隆过滤器是一种概率型数据结构，能够确定性地排除粒度，但存在一定的假阳性率，因此未被排除的粒度仍需加载，并依据 `WHERE` 条件逐一判断。文本索引是一种倒排索引，它将标记映射到分片内的精确偏移量。由于文本索引基于偏移量而非粒度进行判断，且不会产生假阳性，因此通常无需加载底层列即可直接求解 `WHERE` 条件。这一优化称为[直接读取](https://github.com/ClickHouse/clickhouse-docs/pull/6356/%E2%80%A6)。加载数据往往是查询耗时的最主要来源，因此直接读取可以显著降低查询延迟。
+
+此外，文本索引本身也可以被查询，从而为服务中的自动补全及其他内部信息功能提供支持。
+
+以下两种分词器可覆盖大多数可观测性查询模式：
+
+| 分词器               | 用途                             | 典型列                               |
+| ----------------- | ------------------------------ | --------------------------------- |
+| `array`           | 将 `Array(String)` 元素作为完整标记进行索引 | `mapKeys(...)`, `*AttributeItems` |
+| `splitByNonAlpha` | 对自然语言文本字符串进行词级全文搜索             | `Body`, `lower(Body)`, `SpanName` |
+
+#### 用于 Map 和数组列的 array 分词器 {#array-tokenizer}
+
+默认的日志表结构使用 `array` 分词器，为 `mapKeys` 以及 materialized 的元素数组建立索引：
+
+```sql
+INDEX idx_log_attr_key mapKeys(LogAttributes) TYPE text(tokenizer = 'array'),
+INDEX idx_log_attr_items LogAttributeItems TYPE text(tokenizer = 'array')
+```
+
+每个 Map 键 (或数组元素) 都会成为一个独立的标记。这样，按已知的属性键进行筛选时，
+所有不包含该键的行都会被剪枝，而无需扫描其所在的 Map 列。
+正是这一机制使 [Map 直接读取优化](#map-direct-read-optimization)
+能够带来实际收益。
+
+#### 为日志正文使用 `splitByNonAlpha` {#text-index-body}
+
+对 `Body` 列进行全文搜索时，可借助 `splitByNonAlpha` 文本
+索引提升性能。该服务在 `lower(Body)` 上定义了此索引，使不区分大小写的
+Lucene 搜索也能利用该索引：
+
+```sql
+INDEX idx_lower_body lower(Body) TYPE text(tokenizer = 'splitByNonAlpha')
+```
+
+当服务检测到 `lower(Body)` 上存在 `text(tokenizer = 'splitByNonAlpha')` 索引时，会将 `error` 或
+`"connection refused"` 这类隐式列 Lucene 查询重写为 `hasAllTokens(lower(Body), lower(...))`，
+从而直接由索引完成匹配，无需读取完整的 `Body` 列。对于大多数
+可观测性日志工作负载而言，这是提升过滤性能最显著的单项优化。
+
+<Info>
+  **文本索引与 `tokenbf_v1` 对比**
+
+  较旧的 `tokenbf_v1` 索引类型 (默认链路追踪 schema 中仍将其用于
+  `lower(SpanName)`) 在功能上与之类似，但自 ClickHouse 26.2
+  起已弃用。新建文本搜索索引应使用 `text(tokenizer = ...)`。
+</Info>
+
+如需深入了解分词器选项、预处理器和验证等内容，请参阅[全文搜索文档](/zh/reference/engines/table-engines/mergetree-family/textindexes)。
+
+#### 默认日志表结构中的文本索引 {#text-indexes-in-default-logs-schema}
+
+从上游同步而来的默认 `otel_logs` schema 已包含上文讨论的全部文本索引：在 `TraceId`、每个 `mapKeys(...)` 以及每个 `*AttributeItems` array 上使用 `text(tokenizer = 'array')`，并在 `lower(Body)` 上使用 `text(tokenizer = 'splitByNonAlpha')` 以支持全文搜索。规范形式的 DDL 请参见[“表和 schema”](/zh/clickstack/self-configured/ingesting-data/schemas#logs)，下方也附上了同一 schema。
+
+<OtelLogsSchema />
+
+### 最小值-最大值索引 {#min-max-indexes}
+
+Minmax 索引存储每个粒度的最小值和最大值，非常轻量级。它们对数值列和范围查询尤为有效。虽然未必能加速所有查询，但开销很低，对于数值字段几乎总是值得添加。
+
+当数值天然有序，或在每个分片内集中于较窄的范围时，Minmax 索引的效果最佳。
+
+假设需要频繁从 `SpanAttributes` 中查询 Kafka 偏移量：
+
+```sql
+SpanAttributes['messaging.kafka.offset']
+```
+
+可以将该值物化并转换为数值类型：
+
+```sql
+ALTER TABLE otel_traces
+ADD COLUMN KafkaOffset UInt64
+MATERIALIZED toUInt64(SpanAttributes['messaging.kafka.offset'])
+```
+
+然后即可添加一个 minmax 索引：
+
+```sql
+ALTER TABLE otel_traces
+ADD INDEX idx_kafka_offset KafkaOffset TYPE minmax GRANULARITY 1
+```
+
+这样一来，ClickHouse 在按 Kafka 偏移量范围进行过滤时 (例如调试消费滞后或重放行为时) ，便能高效地跳过 parts。
+
+同样，该索引必须先[物化](#materialize-skip-index)后才能生效。
+
+### 物化跳数索引 {#materialize-skip-index}
+
+添加跳过索引后，该索引仅对新摄取的数据生效。历史数据需要显式物化该索引后才能从中受益。
+
+如果您已经添加了跳过索引，例如：
+
+```sql
+ALTER TABLE otel_traces ADD INDEX idx_kafka_offset KafkaOffset TYPE minmax GRANULARITY 1;
+```
+
+对于已有数据，必须显式构建该索引：
+
+```sql
+ALTER TABLE otel_traces MATERIALIZE INDEX idx_kafka_offset;
+```
+
+<Info>
+  **物化跳过索引**
+
+  物化跳过索引通常是轻量级操作，可以放心执行，对于 minmax 索引尤其如此。对于大型数据集上的布隆过滤器索引，用户可以选择逐个分区进行物化，以便更好地控制资源用量，例如：
+
+  ```sql
+  ALTER TABLE otel_v2.otel_traces
+  MATERIALIZE INDEX idx_kafka_offset
+  IN PARTITION '2026-01-02';
+  ```
+</Info>
+
+物化跳过索引会以变更 (mutation) 的形式执行，可通过系统表监控其进度。
+
+```sql
+
+SELECT *
+FROM system.mutations
+WHERE database = 'otel'
+  AND table = 'otel_traces'
+ORDER BY create_time DESC;
+```
+
+等待对应变更的 `is_done` 变为 `1`。
+
+完成后，确认索引数据已创建：
+
+```sql
+SELECT database, table, name,
+       data_compressed_bytes,
+       data_uncompressed_bytes,
+       marks_bytes
+FROM system.data_skipping_indices
+WHERE database = 'otel'
+  AND table = 'otel_traces'
+  AND name = 'idx_kafka_offset';
+```
+
+非零值表示索引已成功物化。
+
+需要注意的是，跳过索引的大小会直接影响查询性能。体量过大的跳过索引 (达到数十甚至数百 GB 量级) 在查询执行期间可能需要较长时间进行评估，从而削弱甚至完全抵消其带来的收益。
+
+在实践中，minmax 索引通常非常小，评估开销也很低，因此物化它们几乎总是安全的。而布隆过滤器索引的大小则可能因基数、粒度和假阳性概率的不同而显著增长。
+
+提高允许的假阳性率可以减小布隆过滤器的大小。例如，将概率参数从 `0.01` 提高到 `0.05` 会生成更小的索引，评估速度更快，但代价是裁剪效果有所减弱。虽然可跳过的粒度可能会减少，但由于索引评估更快，整体查询延迟反而可能有所改善。
+
+因此，布隆过滤器参数的调优是一项取决于工作负载的优化，应基于真实的查询模式和接近生产环境的数据量进行验证。
+
+有关跳过索引的更多详细信息，请参阅指南 [&quot;理解 ClickHouse 数据跳过索引&quot;](/zh/concepts/features/performance/skip-indexes/skipping-indexes-examples)。
+
+### 评估跳过索引的效果 {#evaluating-skip-index-effectiveness}
+
+评估跳过索引裁剪效果最可靠的方法是使用 `EXPLAIN indexes = 1`，它会显示查询规划的每个阶段分别排除了多少 [parts](/zh/concepts/core-concepts/parts) 和[粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)。在大多数情况下，理想的结果是在 Skip 阶段看到粒度数量大幅减少，并且最好是在主键已经缩小搜索范围之后。跳过索引在分区裁剪和主键裁剪之后才会参与评估，因此衡量其效果时，最好以剩余的 parts 和粒度为基准。
+
+`EXPLAIN` 可以确认是否发生了裁剪，但并不能保证整体速度一定提升。跳过索引的评估本身也有开销，在索引较大时尤为明显。请务必在添加并物化索引前后分别对查询进行基准测试，以确认性能确实有所提升。
+
+例如，来看默认链路追踪 schema 中为 TraceId 预置的默认布隆过滤器跳过索引：
+
+```sql
+INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1
+```
+
+您可以使用 `EXPLAIN indexes = 1` 查看该索引对高选择性查询的实际效果：
+
+```sql
+EXPLAIN indexes = 1
+SELECT *
+FROM otel_v2.otel_traces
+WHERE (ServiceName = 'accounting')
+  AND (TraceId = 'aeea7f401feb75fc5af8eb25ebc8e974');
+
+ReadFromMergeTree (otel_v2.otel_traces)
+Indexes:
+  PrimaryKey
+    Keys:
+      ServiceName
+    Parts: 6/18
+    Granules: 255/35898
+  Skip
+    Name: idx_trace_id
+    Description: bloom_filter GRANULARITY 1
+    Parts: 1/6
+    Granules: 1/255
+```
+
+在本例中，主键过滤器首先大幅缩减了数据集 (从 35898 个粒度减少到 255 个) ，随后布隆过滤器进一步将其裁剪至仅剩单个粒度 (1/255) 。这正是跳过索引的理想模式：先通过主键裁剪缩小搜索范围，再由跳过索引剔除剩余数据中的绝大部分。
+
+为验证实际效果，请在固定不变的设置下对该查询进行基准测试，并比较执行时间。使用 `FORMAT Null` 避免结果序列化开销，同时禁用查询条件缓存，确保每次运行的结果可复现：
+
+```sql
+SELECT *
+FROM otel_traces
+WHERE (ServiceName = 'accountingservice') AND (TraceId = '4512e822ca3c0c68bbf5d4a263f9943d')
+SETTINGS use_query_condition_cache = 0
+```
+
+```response
+2 rows in set. Elapsed: 0.025 sec. Processed 8.52 thousand rows, 299.78 KB (341.22 thousand rows/s., 12.00 MB/s.)
+Peak memory usage: 41.97 MiB.
+```
+
+现在禁用跳过索引，再运行一次相同的查询：
+
+```sql
+SELECT *
+FROM otel_traces
+WHERE (ServiceName = 'accountingservice') AND (TraceId = '4512e822ca3c0c68bbf5d4a263f9943d')
+FORMAT Null
+SETTINGS use_query_condition_cache = 0, use_skip_indexes = 0;
+```
+
+```response
+0 rows in set. Elapsed: 0.702 sec. Processed 1.62 million rows, 56.62 MB (2.31 million rows/s., 80.71 MB/s.)
+Peak memory usage: 198.39 MiB.
+```
+
+禁用 `use_query_condition_cache` 可确保结果不受已缓存的过滤决策影响，而设置 `use_skip_indexes = 0` 则可提供一个干净的对比基线。如果裁剪效果显著且索引评估开销较低，那么使用索引的查询应当会明显更快，如上面的示例所示。
+
+<Tip>
+  如果 `EXPLAIN` 显示粒度裁剪很少，或者跳过索引非常大，那么评估索引的开销可能会抵消其带来的全部收益。请先使用 `EXPLAIN indexes = 1` 确认裁剪效果，再进行基准测试，以确认端到端的性能提升。
+</Tip>
+
+### 何时添加跳过索引 {#when-to-add-skip-indexes}
+
+跳过索引应有选择地添加，具体取决于用户最常使用的过滤器类型，以及数据在 parts 和粒度中的分布特征。目标是剪枝足够多的粒度，以抵消评估索引本身的成本，因此在接近生产环境的数据上进行基准测试至关重要。
+
+**对于用于过滤的数值列，minmax 跳过索引几乎总是不错的选择。** 它轻量、评估成本低，对范围谓词也可能很有效——尤其是当值大致有序，或在 parts 内分布在较窄范围时。即使 minmax 对某个特定查询模式没有帮助，其开销通常也足够低，仍值得保留。
+
+**对于字符串列，在支持的情况下优先使用文本索引；否则回退到布隆过滤器。** 文本索引同样能加速布隆过滤器所支持的相等和 `IN` 过滤，此外还支持全文搜索和 [Map 直接读取优化](#map-direct-read-optimization) 所用的基于标记的谓词 (`hasToken`、`hasAllTokens`、`has`) 。在尚不支持文本索引的旧版集群上，布隆过滤器仍是可靠的选择。
+
+布隆过滤器最适用于 high-cardinality 的字符串列，即每个值出现频率相对较低的列，这意味着大多数 parts 和粒度都不包含所搜索的值。根据经验，当列至少有 10,000 个不同值时，布隆过滤器最有可能发挥作用，而在 100,000+ 个不同值时通常效果最佳。如果匹配值集中在少数几个连续的 parts 中，布隆过滤器也会更有效，这种情况通常出现在该列与排序键相关时。同样，实际效果因场景而异——任何方法都无法替代真实环境下的测试。
+
+## 优化 3. Map 直接读取 {#map-direct-read-optimization}
+
+当您按 Map 子键进行过滤时 (例如 `LogAttributes['k8s.pod.name'] =
+'checkout'`) ，ClickHouse 必须从磁盘读取整个 `LogAttributes` Map 列，
+并逐行解包才能计算该谓词。[物化常用查询属性](#materialize-frequently-queried-attributes)
+可以解决预先已知的键的这一问题，但无法推广到用户临时过滤的
+任意属性。
+
+即使 schema 在 `mapKeys` 和 `mapValues` 上建有索引，这些索引也只能告诉您某一行是否包含给定的键、是否包含给定的值，却无法判断该键和值是否属于同一条目。换言之，`mapKeys` 可以回答 `mapContainsKey(ResourceAttributes, 'foo')`，`mapValues` 可以回答 `mapContainsValue(ResourceAttributes, 'bar')`，但两者都无法回答 `ResourceAttributes['foo'] = 'bar'`。
+
+Map 直接读取优化将键和值拼接到单个 `Array(String)` 列中，
+从而无需加载底层 Map 即可求解 `ResourceAttributes['foo'] = 'bar'`。
+Map 通常很大，并且会随着数据量的增长而
+不断膨胀。配合应用层的查询重写，任意 Map 子键上的相等过滤器
+都会转换为由该索引支撑的单个 `has(...)` 调用，查询时无需对 Map 进行反序列化。此外，
+由于底层列是 `ALIAS` 列，不会被实际存储，
+因此唯一的存储开销仅来自文本索引。
+
+此优化会自动生效。该服务已在默认的日志表和 trace 表中预置了所需的列和
+索引，并会在所连接的 ClickHouse 服务器支持相应底层
+基本类型时，于运行时重写 Map 下标过滤器。如果您的 schema 不包含这些列，或者您希望在默认配置之外
+加速其他 Map 列，请继续阅读，了解如何
+启用它们。
+
+### Schema {#map-direct-read-schema}
+
+对于每个需要加速的 Map 列，该服务都会定义一个
+`Array(String)` 类型的 `ALIAS` 列，以 `=` 将每个键与值拼接起来：
+
+```sql
+ALTER TABLE otel_logs
+ADD COLUMN LogAttributeItems Array(String)
+ALIAS arrayMap(
+  (arr) -> concat(arr.1, '=', arr.2),
+  LogAttributes::Array(Tuple(String, String))
+)
+```
+
+采用 ALIAS 形式时，该 array 不会在磁盘上占用任何额外字节。ClickHouse 会在
+查询时和构建索引时计算它。`ALIAS` 列上的 `text(tokenizer = 'array')` 跳过索引
+会为每个 `key=value` 键值对存储一个标记，ClickHouse 借此对粒度进行剪枝，
+而无需读取源 Map：
+
+```sql
+ALTER TABLE otel_logs
+ADD INDEX idx_log_attr_items LogAttributeItems
+TYPE text(tokenizer = 'array')
+```
+
+在现有表上创建索引后，需要对其进行物化，历史数据才能使用该索引 (参见[“物化跳数索引”](#materialize-skip-index)) 。
+
+默认的可观测性 schema 自带以下列和索引：
+
+| 表             | ALIAS 列                                                            | 文本索引                                                             |
+| ------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `otel_logs`   | `ResourceAttributeItems`、`ScopeAttributeItems`、`LogAttributeItems` | `idx_res_attr_items`、`idx_scope_attr_items`、`idx_log_attr_items` |
+| `otel_traces` | `ResourceAttributeItems`、`SpanAttributeItems`                      | `idx_res_attr_items`、`idx_span_attr_items`                       |
+
+### 查询重写 {#map-direct-read-rewrite}
+
+当用户通过 UI 或 SDK 按 Map 子键进行筛选时，该服务
+会将以下形式重写：
+
+```sql
+LogAttributes['k8s.pod.name'] = 'checkout'
+```
+
+改写为：
+
+```sql
+has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
+```
+
+重写后的查询会命中 `LogAttributeItems` 上的文本索引，直接剪枝掉不包含 `key=value` 标记的整行，
+并且对于不匹配的行，完全不会反序列化原始的
+`LogAttributes` Map。对于 high-cardinality
+可观测性工作负载，与 Map 下标访问相比，这通常可将 I/O
+降低一个数量级。
+
+该重写会自动完成——引用 `LogAttributes['key']` 的已保存的查询、仪表盘和告警
+无需任何改动即可获得性能提升。
+
+### ClickHouse 版本要求 {#map-direct-read-version}
+
+该查询重写要求 ClickHouse 版本支持在建有文本索引的数组列上直接进行
+标记级裁剪。该服务会检测所连接的服务器版本 (`SELECT version()`，按连接缓存) ，
+仅当服务器版本达到下方相应阈值时才生成重写后的形式。较旧的版本会自动回退到
+原始的 Map 下标形式。
+
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    ClickHouse Cloud 构建与开源发行版采用相互独立的版本线。
+    请以下方的 Cloud 最低版本为准。
+
+    | ClickHouse 分支 | Cloud 最低版本    |
+    | ------------- | ------------- |
+    | 26.2          | `26.2.1.307`  |
+    | 26.3          | `26.3.0.0`    |
+    | 26.4          | `26.4.1.1740` |
+    | 26.5+         | 所有版本          |
+
+    最低版本 `26.3.0.0` 即该分支的起始版本，因此所有 `26.3` 构建均
+    受支持。
+  </Tab>
+
+  <Tab title="开源版">
+    | ClickHouse 分支 | 开源版最低版本      |
+    | ------------- | ------------ |
+    | 26.2          | `26.2.19.43` |
+    | 26.3          | `26.3.12.3`  |
+    | 26.4          | `26.4.3.37`  |
+    | 26.5+         | 所有版本         |
+  </Tab>
+</Tabs>
+
+<Info>
+  **为什么使用 ALIAS 而非 MATERIALIZED**
+
+  items 数组只是 Map 列中已有数据的一个视图。
+  将数据存储两次 (Map 中一份，数组中一份) 会使写入 I/O 翻倍，
+  却无法支持任何新的查询模式。`ALIAS` 列上的文本索引在写入时基于相同的源数据
+  构建，因此该优化仅会额外占用索引本身的磁盘空间。
+</Info>
+
+## 优化 4. 修改主键 {#modifying-the-primary-key}
+
+对于大多数工作负载而言，主键是 ClickHouse 性能调优中最重要的环节之一。要有效调优主键，必须理解其工作原理，以及它与查询模式之间的相互影响。归根结底，主键应与用户访问数据的方式相匹配，尤其要考虑哪些列最常用于过滤。
+
+虽然主键也会影响压缩和存储布局，但其主要作用是提升查询性能。在该服务中，开箱即用的主键已针对最常见的可观测性访问模式进行了优化，并能实现出色的压缩效果。日志、链路追踪和指标表的默认键均经过设计，能够在典型工作流中表现良好。
+
+按主键中靠前的列进行过滤，比按靠后的列过滤更高效。虽然默认配置足以满足大多数用户的需求，但在某些情况下，修改主键可以提升特定工作负载的性能。
+
+<Info>
+  **术语说明**
+
+  在本文档中，“排序键”与“主键”两个术语可互换使用。严格来说，二者在 ClickHouse 中有所区别，但对于自托管的 ClickHouse 可观测性而言，它们通常指的是表的 `ORDER BY` 子句中指定的同一组列。有关详细信息，请参阅 [ClickHouse 文档](/zh/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key)中关于选择与排序键不同的主键的内容。
+</Info>
+
+在修改任何主键之前，强烈建议先阅读我们的[指南，了解 ClickHouse 中主键索引的工作原理](/zh/concepts/core-concepts/primary-indexes)：
+
+主键调优因表和数据类型而异。对某个表和数据类型有益的更改，未必适用于其他表和数据类型。调优的目标始终是针对特定数据类型 (例如日志) 进行优化。
+
+**通常需要优化的是日志表和链路追踪表，很少需要修改其他数据类型的主键。**
+
+以下是可观测性表中日志表和链路追踪表的默认主键。
+
+* 日志 ([`otel_logs`](/zh/clickstack/self-configured/ingesting-data/schemas#logs)) - `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)`
+* 链路追踪 ([`otel_traces`](/zh/clickstack/self-configured/ingesting-data/schemas#traces)) - `(ServiceName, SpanName, toDateTime(Timestamp))`
+
+其他数据类型的表所使用的主键，请参阅[“表和 schema”](/zh/clickstack/self-configured/ingesting-data/schemas)。链路追踪表针对按服务名称和 span 名称、再按时间戳进行过滤的场景做了优化。日志表以五分钟时间桶开头，使时间范围扫描首先命中主键索引，再在每个桶内按服务名称进一步缩小范围——这种布局非常适合常见的“服务 X 在过去 N 分钟内发生了什么”这类工作流。虽然最理想的做法是按主键顺序应用过滤条件，但无论以何种顺序按其中任意列进行过滤，查询仍能显著受益，因为 ClickHouse 会[在读取之前裁剪数据](/zh/concepts/features/performance/skip-indexes/skipping-indexes)。
+
+选择主键时，还需考虑其他因素，以确定列的最佳排列顺序。请参阅[“选择主键”](#choosing-a-primary-key)。
+
+**主键应针对每个表单独修改。适用于日志的设置未必适用于链路追踪或指标。**
+
+### 选择主键 {#choosing-a-primary-key}
+
+首先，判断您针对特定表的访问模式是否与默认设置存在显著差异。例如，如果您最常先按 Kubernetes 节点、再按服务名称过滤日志，且这是主要工作流，则可能有理由更改主键。
+
+<Info>
+  **修改默认主键**
+
+  在大多数情况下，默认主键已经足够。只有在清楚了解查询模式的前提下，才应谨慎进行更改。修改主键可能会降低其他工作流的性能，因此务必进行测试。
+</Info>
+
+提取所需的列后，即可开始优化排序键/主键。
+
+以下几条简单规则可帮助您选择排序键。这些规则有时会相互冲突，因此请按顺序考虑。通过此过程，最多选出 4-5 个键：
+
+1. 选择与常用过滤条件和访问模式相匹配的列。如果您通常先按特定列 (例如 pod 名称) 过滤来开始可观测性调查，那么该列将频繁出现在 `WHERE` 子句中。应优先将这类列纳入键中，而非使用频率较低的列。
+2. 优先选择过滤时能排除大部分行的列，从而减少需要读取的数据量。服务名称和状态码通常是不错的候选列——但对于状态码，仅当您按能排除大多数行的值进行过滤时才适用。例如，在大多数系统中，按 200 状态码过滤会匹配大多数行，而 500 错误则只对应很小的子集。
+3. 优先选择可能与表中其他列高度关联的列。这有助于确保这些值也连续存储，从而提升压缩效果。
+4. 对排序键中的列执行 `GROUP BY` (用于图表的聚合) 和 `ORDER BY` (排序) 操作时，内存使用效率更高。
+
+确定排序键所用的列子集后，必须按特定顺序声明这些列。该顺序会显著影响查询中对次级键列过滤的效率，以及表数据文件的压缩率。一般来说，最好按基数升序排列键。但同时也要考虑到：对排序键中靠后的列进行过滤，效率会低于对元组中靠前的列进行过滤。请权衡这些因素，并结合您的访问模式进行考虑。最重要的是，要对不同方案进行测试。如需进一步了解排序键及其优化方法，建议阅读 [&quot;选择主键&quot;](/zh/concepts/best-practices/choosing-a-primary-key)；如需深入了解主键调优及内部数据结构，请参阅 [&quot;ClickHouse 主键索引实用简介&quot;](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
+
+### 更改主键 {#changing-the-primary-key}
+
+如果在数据摄取之前就已明确访问模式，只需针对相应的数据类型删除并重新创建表即可。
+
+以下示例展示了一种简单的做法：沿用现有 schema 创建一个新的日志表，但使用新的主键，在 `ServiceName` 之前加入列 `SeverityText`。
+
+<Steps>
+  <Step title="创建新表" id="create-new-table-with-key">
+    ```sql
+    CREATE TABLE otel_logs_temp AS otel_logs
+    PRIMARY KEY (SeverityText, ServiceName, Timestamp)
+    ORDER BY (SeverityText, ServiceName, Timestamp)
+    ```
+
+    <Info>
+      **排序键与主键**
+
+      请注意，在上述示例中，需要同时指定 `PRIMARY KEY` 和 `ORDER BY`。
+      在该服务中，二者几乎总是相同的。
+      `ORDER BY` 决定物理数据布局，而 `PRIMARY KEY` 定义稀疏索引。
+      在极少数超大规模的工作负载中，二者可能不同，但大多数用户应保持二者一致。
+    </Info>
+  </Step>
+
+  <Step title="交换并删除表" id="exhange-and-drop-table">
+    `EXCHANGE` 语句用于[原子性地](/zh/concepts/core-concepts/glossary#atomicity)交换两张表的表名。之后即可删除临时表 (此时为旧的默认表) 。
+
+    ```sql
+    EXCHANGE TABLES otel_logs_temp AND otel_logs
+    DROP TABLE otel_logs_temp
+    ```
+  </Step>
+</Steps>
+
+不过，**现有表的主键无法修改**。要更改主键，必须创建新表。
+
+可按以下流程操作，既能保留旧数据并继续对其进行透明查询 (如有需要，可在 UI 中沿用其现有键) ，又能通过一张针对用户访问模式优化的新表来提供新数据。采用此方法，无需修改摄取管道，数据仍写入默认表名，且所有更改对用户完全透明。
+
+<Note>
+  在大规模场景下，将现有数据历史数据回填到新表中通常得不偿失：计算资源和 IO 开销往往很高，带来的性能收益难以抵消这些成本。更好的做法是让旧数据[通过生存时间 (TTL)](/zh/clickstack/self-configured/managing/ttl) 自然过期，而新数据则受益于改进后的键。
+</Note>
+
+下文沿用同一示例，将 `SeverityText` 设为主键的第一列。这里会为新数据创建一张新表，同时保留旧表用于历史分析。
+
+<Steps>
+  <Step title="创建新表" id="create-new-table-with-key-2">
+    使用所需的主键创建新表。注意 `_23_01_2025` 后缀——请将其改为当前日期。例如：
+
+    ```sql
+    CREATE TABLE otel_logs_23_01_2025 AS otel_logs
+    PRIMARY KEY (SeverityText, ServiceName, Timestamp)
+    ORDER BY (SeverityText, ServiceName, Timestamp)
+    ```
+  </Step>
+
+  <Step title="创建 Merge 表" id="create-merge-table">
+    [Merge 引擎](/zh/reference/engines/table-engines/special/merge) (请勿与 MergeTree 混淆) 本身不存储数据，但可以同时从任意数量的其他表中读取数据。
+
+    ```sql
+    CREATE TABLE otel_logs_merge
+    AS otel_logs
+    ENGINE = Merge(currentDatabase(), 'otel_logs*')
+    ```
+
+    <Note>
+      `currentDatabase()` 假定该命令在正确的数据库中运行。否则，请显式指定数据库名称。
+    </Note>
+
+    现在可以查询此表，确认其能返回 `otel_logs` 中的数据。
+  </Step>
+
+  <Step title="更新 UI 以从 Merge 表读取" id="update-clickstack-ui-to-read-from-merge-tree">
+    在 UI 中将日志数据源所用的表配置为 `otel_logs_merge`。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![选择 Merge 表](/images/clickstack/performance_guide/select_merge_table.webp)
+      </Frame>
+    </div>
+
+    此时，数据仍写入使用原始主键的 `otel_logs`，而读取则通过 Merge 表进行。用户不会察觉到任何变化，摄取也不受影响。
+  </Step>
+
+  <Step title="交换表" id="exchange-the-tables">
+    接下来使用 `EXCHANGE` 语句，以原子方式交换 `otel_logs` 和 `otel_logs_23_01_2025` 两张表的名称。
+
+    ```sql
+    EXCHANGE TABLES otel_logs AND otel_logs_23_01_2025
+    ```
+
+    此后，数据将写入使用新主键的新 `otel_logs` 表。现有数据保留在 `otel_logs_23_01_2025` 中，仍可通过 Merge 表访问。该后缀表示应用此变更的日期，也代表该表中数据的最新时间戳。
+
+    通过此流程，可以在不中断摄取、对用户无感知的情况下更改主键。
+  </Step>
+</Steps>
+
+如果后续需要再次更改主键，也可以沿用此流程。例如，一周后您决定将 `SeverityNumber` (而非 `SeverityText`) 纳入主键。每次需要更改主键时，都可以重复套用以下流程。
+
+<Steps>
+  <Step title="创建新表" id="create-new-table-with-key-3">
+    使用所需的主键创建新表。
+    下面的示例使用 `30_01_2025` 作为后缀来标识该表的日期。例如：
+
+    ```sql
+    CREATE TABLE otel_logs_30_01_2025 AS otel_logs
+    PRIMARY KEY (SeverityNumber, ServiceName, TimestampTime)
+    ORDER BY (SeverityNumber, ServiceName, TimestampTime)
+    ```
+  </Step>
+
+  <Step title="交换表" id="exchange-the-tables-v2">
+    接下来使用 `EXCHANGE` 语句，以原子方式交换 `otel_logs` 和 `otel_logs_30_01_2025` 两张表的名称。
+
+    ```sql
+    EXCHANGE TABLES otel_logs AND otel_logs_30_01_2025
+    ```
+
+    此后，数据将写入使用新主键的新 `otel_logs` 表。旧数据保留在 `otel_logs_30_01_2025` 中，可通过 Merge 表访问。
+  </Step>
+</Steps>
+
+<Info>
+  **冗余表**
+
+  如果已配置 生存时间 (TTL) 策略 (推荐配置) ，使用旧主键且不再有数据写入的表会随着数据过期而逐渐清空。应对这些表进行监控，并在其数据清空后定期清理。目前，此清理过程需要手动执行。
+</Info>
+
+### 使用数据块列加速行查找 {#row-lookup-block-columns}
+
+默认的可观测性日志表结构启用了两个 MergeTree 设置。它们虽不直接影响查询性能，
+却能显著加快 UI 中行详情的查找速度：
+
+```sql
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1
+```
+
+启用这些设置后，表中的每一行都带有一个隐式的
+`(_block_number, _block_offset)` 对，可在
+分片内唯一标识该行。当您在 UI 中点击某条日志行以打开详情面板时，服务
+会再发出一条查询来拉取这一行。如果没有数据块列，该
+行的 `WHERE` 子句必须包含足够多的列 (通常是主键
+加上 `Body` 和 `SeverityText`) ，才能唯一确定该行。使用数据块列后，
+只需主键加上 `_block_number` 和 `_block_offset` 即可。查找时
+不会读取 `Body` 等大列，从而有效加快查询速度。
+
+服务会根据表的 `CREATE` 语句检测该设置，并在两列均已启用时
+自动生成更精简的 WHERE 子句，无需
+修改应用程序 config。
+
+要在现有的日志表或链路追踪表上启用此优化：
+
+```sql
+ALTER TABLE otel_logs
+MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1
+```
+
+这些设置仅对 `ALTER` 之后写入的数据生效。现有的 parts 会继续
+使用原有的逐行查找方式，直到在合并过程中被重写为止。
+
+## 优化 5. 利用物化视图 {#exploiting-materialized-views}
+
+<BetaBadge />
+
+该服务可以利用[增量物化视图](/zh/concepts/features/materialized-views/incremental-materialized-view)来加速依赖大量聚合查询的可视化，例如按分钟计算平均请求耗时随时间的变化。此功能可显著提升查询性能，通常对较大规模的部署 (约每天 10 TB 及以上) 收益最为明显，并可支持扩缩容至每天 PB 级的数据量。增量物化视图目前处于 Beta 阶段，请谨慎使用。
+
+有关在该服务中使用此功能的详细信息，请参阅专门指南[“物化视图”](/zh/clickstack/self-configured/managing/materialized-views)。
+
+## 优化 6. 利用投影 {#exploting-projections}
+
+投影是最后一项高级优化手段，适合在评估完物化列、跳过索引、主键和物化视图之后再考虑。尽管投影和物化视图看起来相似，但在该服务中，二者的用途不同，适用场景也各不相同。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+实际上，可以将**投影视为表的一个额外的隐藏副本**，它以**不同的物理顺序**存储相同的行。因此，投影拥有独立于基表 `ORDER BY` 键的主索引，使 ClickHouse 能够针对与原始排序不一致的访问模式更有效地剪枝数据。
+
+物化视图也可以通过将行显式写入使用不同排序键的独立 target table 来实现类似效果。关键区别在于，**投影由 ClickHouse 自动、透明地维护**，而物化视图是显式的表，必须由该服务专门注册并主动选用。
+
+当查询以基表为目标时，ClickHouse 会评估基础布局及所有可用的投影，对它们的主键索引进行采样，并选择能在读取最少粒度的前提下得出正确结果的布局。这一决策由查询分析器自动完成。
+
+因此，在该服务中，投影最适合用于**纯粹的数据重排序**，即以下场景：
+
+* 访问模式与默认主键存在根本差异
+* 难以用单一排序键覆盖所有工作流
+* 希望由 ClickHouse 透明地选择最优物理布局
+
+对于预聚合和指标加速，该服务强烈推荐使用**显式物化视图**，以便应用层完全掌控视图的选择和使用。
+
+更多背景信息，请参阅：
+
+* [投影指南](/zh/concepts/features/projections/projections)
+* [何时使用投影](/zh/concepts/features/projections/projections#when-to-use-projections)
+* [物化视图与投影对比](/zh/concepts/features/projections/materialized-views-versus-projections)
+
+### 投影示例 {#example-projections}
+
+假设您的链路追踪表已针对默认的可观测性访问模式进行了优化：
+
+```sql
+ORDER BY (ServiceName, SpanName, toDateTime(Timestamp))
+```
+
+如果您还有一种主要工作流需要按 TraceId 进行过滤 (或经常围绕 TraceId 进行分组和过滤) ，可以添加一个投影，将行按 TraceId 和时间排序存储：
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+ADD PROJECTION prj_traceid_time
+(
+    SELECT *
+    ORDER BY (TraceId, toDateTime(Timestamp))
+);
+```
+
+<Info>
+  **使用通配符**
+
+  上面的示例投影使用了通配符 (`SELECT *`) 。虽然只选择部分列可以降低写入开销，但也会限制投影的适用场景，因为只有能够完全由这些列满足的查询才能使用该投影。在服务中，这往往会使投影仅适用于极少数场景。因此，通常建议使用通配符，以尽可能扩大投影的适用范围。
+</Info>
+
+与其他数据布局变更一样，投影只对新写入的 parts 生效。要为现有数据构建投影，请对其进行物化：
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+MATERIALIZE PROJECTION prj_traceid_time;
+```
+
+<Note>
+  物化投影可能耗时较长，并消耗大量资源。由于可观测性数据通常会通过生存时间 (TTL) 过期，因此仅应在确有必要时执行此操作。大多数情况下，只需让投影作用于新摄取的数据即可，这样便能优化最常查询的时间范围，例如最近 24 小时。
+</Note>
+
+当 ClickHouse 估算出投影需要扫描的粒度少于基础布局时，可能会自动选用该投影。如果投影只是对完整行集 (`SELECT *`) 的简单重排序，且查询的筛选条件与投影的 `ORDER BY` 高度吻合，投影的效果最为可靠。
+
+按 TraceId 进行过滤 (尤其是相等比较) 并包含时间范围的查询可以从上述投影中受益。例如：
+
+```sql
+-- Fetch a specific trace quickly
+SELECT *
+FROM otel_traces
+WHERE TraceId = 'aeea7f401feb75fc5af8eb25ebc8e974'
+  AND Timestamp >= now() - INTERVAL 1 DAY
+ORDER BY Timestamp;
+
+-- Trace-scoped aggregation
+SELECT
+  toStartOfMinute(Timestamp) AS t,
+  count() AS spans
+FROM otel_traces
+WHERE TraceId = 'aeea7f401feb75fc5af8eb25ebc8e974'
+  AND Timestamp >= now() - INTERVAL 1 DAY
+GROUP BY t
+ORDER BY t;
+```
+
+未对 `TraceId` 进行约束的查询，或主要基于投影排序键中非前导维度进行过滤的查询，通常无法从中受益 (并且可能会改为通过基础布局读取数据) 。
+
+<Note>
+  投影也可以存储聚合结果 (类似于物化视图) 。在该服务中，通常不建议使用基于投影的聚合，因为是否选用投影取决于 ClickHouse analyzer，其使用情况也更难以控制和推断。建议优先使用显式的物化视图，以便服务能够在应用层有针对性地注册和选用这些视图。
+</Note>
+
+在实践中，投影最适合这样的工作流：经常需要从较宽泛的搜索切换到以 trace 为中心的深入分析 (例如，拉取某个特定 TraceId 的所有 span) 。
+
+### 成本与建议 {#projection-costs-and-guidance}
+
+* **插入开销**：使用不同排序键的 `SELECT *` 投影实际上相当于将数据写入两次，这会增加写入 I/O，并且可能需要额外的 CPU 和磁盘吞吐量才能维持摄取速率。
+* **谨慎使用**：投影最好仅用于访问模式确实差异较大的场景，即第二种物理排序能为大部分查询带来显著的裁剪效果，例如两个团队以截然不同的方式查询同一数据集。
+* **通过基准测试验证**：与所有调优一样，应在添加并物化投影前后，对比实际的查询延迟和资源用量。
+
+如需了解更多背景信息，请参阅：
+
+* [ClickHouse 投影指南](/zh/concepts/features/projections/projections#when-to-use-projections)
+* [物化视图与投影对比](/zh/concepts/features/projections/materialized-views-versus-projections)
+
+### 基于 `_part_offset` 的轻量级投影 {#lightweight-projections}
+
+<BetaBadge />
+
+<Info>
+  **轻量级投影在 Self-managed ClickHouse Observability 中处于 Beta 阶段**
+
+  不建议在可观测性工作负载中使用 `_part_offset-based` 轻量级投影。虽然它们可以减少存储和写入 I/O，但可能会在查询时引入更多随机访问，而且其在可观测性规模下的生产环境表现仍在评估中。随着该功能逐步成熟、我们积累更多运维数据，此建议可能会有所调整。
+</Info>
+
+较新的 ClickHouse 版本还支持更轻量级的投影：这类投影仅存储投影的 sorting key 以及指向基表的 `_part_offset` 指针，而不复制完整的行。这可以大幅降低存储开销；此外，近期的改进还支持粒度级裁剪，使其表现更接近真正的二级索引。参见：
+
+* [借助 &#95;part&#95;offset 实现更智能的存储](/zh/concepts/features/projections/projections#smarter_storage_with_part_offset)
+* [博客讲解与示例](https://clickhouse.com/blog/projections-secondary-indices#example-combining-multiple-projection-indexes)
+
+### 替代方案 {#projection-alternatives}
+
+如果需要多个排序键，投影并不是唯一的选择。根据运维约束以及希望服务如何路由查询，可以考虑以下方案：
+
+* 配置 OpenTelemetry 采集器，将数据写入两个 `ORDER BY` 键不同的表，并为每个表分别创建数据源。
+* 创建一个 materialized view 作为复制管道，即在主表上附加一个 materialized view，将原始行查询出来并写入排序键不同的辅助表 (一种反规范化或路由模式) ，然后为该 target table 创建一个 source。示例请参见[此处](/zh/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation)。

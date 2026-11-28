@@ -7,6 +7,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
+#include <Common/FiberLocal.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/QueryProfiler.h>
 #include <Common/SignalUnsafeMutationGuard.h>
@@ -328,7 +329,7 @@ void ThreadStatus::flushUntrackedMemory()
     if (current_untracked_memory == 0)
         return;
 
-    MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
+    MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level, MemoryTrackerBlockerInThread::ExactLevel{});
     untracked_memory.store(0);
     untracked_memory_flushed_unchecked = std::max<Int64>(0, untracked_memory_flushed_unchecked + current_untracked_memory);
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
@@ -342,12 +343,15 @@ void ThreadStatus::publishUntrackedMemory()
 
 namespace
 {
-thread_local bool query_cancellation_blocked = false;
+/// Per fiber: a fiber that suspends inside a blocker must neither block the cancellation of the other fibers on its
+/// thread nor lose its own blocker when it resumes on another thread.
+constinit FiberLocal<bool, FiberLocalSlot::QUERY_CANCELLATION_BLOCKED> query_cancellation_blocked;
 }
 
 ThreadStatus::QueryCancellationBlocker::QueryCancellationBlocker()
-    : previous(std::exchange(query_cancellation_blocked, true))
+    : previous(query_cancellation_blocked)
 {
+    query_cancellation_blocked = true;
 }
 
 ThreadStatus::QueryCancellationBlocker::~QueryCancellationBlocker()

@@ -34,13 +34,53 @@ REPO_PATH = "/ClickHouse"
 
 OUTPUT_DIR = f"{Utils.cwd()}/ci/tmp"
 
-# BOLT profile collection settings: time-limited to avoid filling disk
-# with fdata files (~15 MB per compilation unit)
-BOLT_PROFILE_TIMEOUT = 1200  # 20 minutes
-BOLT_PROFILE_PARALLELISM = 4
+# BOLT profile collection is time-limited to avoid filling disk with fdata files
+# (~15 MB per clang process). It runs at full parallelism: the limit is on the
+# number of profiles, so idle cores would only stretch the same work out in time.
+# Four jobs for 20 minutes collected ~1600 profiles on amd64; 150 seconds at full
+# parallelism collected 755 on amd64 and 1248 on aarch64, so this collects about as many.
+BOLT_PROFILE_TIMEOUT = 300
 
-# All LLVM projects for the final toolchain (note: "all" doesn't work with cmake)
-STAGE2_LLVM_PROJECTS = "clang;clang-tools-extra;lld;bolt;polly"
+# LLVM projects for the final toolchain (note: "all" doesn't work with cmake).
+# `bolt` is needed by the BOLT stage of this job and by the ClickHouse BOLT builds.
+STAGE2_LLVM_PROJECTS = "clang;lld;bolt"
+
+# Backends of the final toolchain: the architectures ClickHouse is built for
+# (Linux, FreeBSD and Darwin targets). Emscripten ships its own LLVM for wasm.
+STAGE2_LLVM_TARGETS = "X86;AArch64;PowerPC;SystemZ;RISCV;LoongArch"
+
+# What the toolchain archive contains, i.e. what gets built and installed in stage 2.
+# Everything that CI invokes from the toolchain must be listed here: ClickHouse's CMake
+# looks up `ld.lld`, `llvm-ar` and the other binutils in the compiler's directory first, and
+# `/usr/local/bin` precedes the distro LLVM on `PATH`, so `llvm-profdata`, `llvm-cov` and
+# `llvm-bolt` must match the compiler's profile formats. `clang-tidy` comes from the distro
+# package: `cmake/clang_tidy.cmake` prefers the versioned name.
+STAGE2_DISTRIBUTION_COMPONENTS = [
+    "clang",
+    "clang-resource-headers",
+    "lld",
+    "builtins",
+    "runtimes",
+    "bolt",
+    "llvm-ar",
+    "llvm-ranlib",
+    "llvm-objcopy",
+    "llvm-strip",
+    "llvm-install-name-tool",
+    "llvm-nm",
+    "llvm-profdata",
+    "llvm-cov",
+    "llvm-symbolizer",
+    "llvm-addr2line",
+    "llvm-cxxfilt",
+    "llvm-objdump",
+    "llvm-readobj",
+    "llvm-readelf",
+    "llvm-dwarfdump",
+    "llvm-dwp",
+    "llvm-size",
+    "llvm-strings",
+]
 
 # Cross-target triples for compiler-rt builtins. Builtins are freestanding C code
 # (no sysroot needed), built via LLVM_BUILTIN_TARGETS so the toolchain is
@@ -328,6 +368,10 @@ def main():
                 f" -DENABLE_THINLTO=0"
                 f" -DCMAKE_C_COMPILER={STAGE1_INSTALL_DIR}/bin/clang"
                 f" -DCMAKE_CXX_COMPILER={STAGE1_INSTALL_DIR}/bin/clang++"
+                # Link with the distro lld: the instrumented one never writes a profile
+                # (lld exits with `_Exit`), and its multithreaded value profiling uses
+                # non-atomic updates on aarch64, which can make a link spin forever.
+                f" -DLINKER_NAME=ld.lld-{LLVM_VERSION}"
                 f" -DCOMPILER_CACHE=disabled"
                 f" -DENABLE_TESTS=0"
                 f" -DENABLE_UTILS=0"
@@ -444,7 +488,10 @@ def main():
             f"cmake -G Ninja"
             f' -DLLVM_ENABLE_PROJECTS="{STAGE2_LLVM_PROJECTS}"'
             f' -DLLVM_ENABLE_RUNTIMES="compiler-rt"'
-            f" -DLLVM_TARGETS_TO_BUILD=all"
+            f' -DLLVM_TARGETS_TO_BUILD="{STAGE2_LLVM_TARGETS}"'
+            f' -DLLVM_DISTRIBUTION_COMPONENTS="{";".join(STAGE2_DISTRIBUTION_COMPONENTS)}"'
+            # Otherwise the runtimes depend on the test tools (`opt`, `lli`, `FileCheck`, ...)
+            f" -DLLVM_INCLUDE_TESTS=OFF"
             f" -DCMAKE_BUILD_TYPE=Release"
             f" -DLLVM_PROFDATA_FILE={PROFDATA_PATH}"
             f" -DCMAKE_C_COMPILER=clang-{LLVM_VERSION}"
@@ -472,11 +519,13 @@ def main():
         )
         res = results[-1].is_ok()
 
+        # The default target would build every LLVM tool, test utility and fuzzer, each
+        # one a separate ThinLTO link, so build only the distribution
         if res:
             results.append(
                 Result.from_commands_run(
                     name="Stage 2 Build",
-                    command=f"{CUSTOM_NINJA} -C {STAGE2_BUILD_DIR}",
+                    command=f"{CUSTOM_NINJA} -C {STAGE2_BUILD_DIR} distribution",
                 )
             )
             res = results[-1].is_ok()
@@ -485,7 +534,7 @@ def main():
             results.append(
                 Result.from_commands_run(
                     name="Stage 2 Install",
-                    command=f"{CUSTOM_NINJA} -C {STAGE2_BUILD_DIR} install",
+                    command=f"{CUSTOM_NINJA} -C {STAGE2_BUILD_DIR} install-distribution",
                 )
             )
             res = results[-1].is_ok()
@@ -496,7 +545,7 @@ def main():
 
     # Stage 4: BOLT optimization (best-effort)
     # BOLT can fail due to architecture-specific issues (e.g., ADR relaxation
-    # on aarch64 with AMDGPU code) or disk space constraints (fdata files are
+    # on aarch64 with AMDGPU code, before that backend was dropped) or disk space constraints (fdata files are
     # ~15 MB per compilation unit). If BOLT fails, we still have a PGO-optimized
     # toolchain which provides ~23% compilation speedup.
     if res and JobStages.BOLT_OPTIMIZATION in stages:
@@ -542,7 +591,7 @@ def main():
             bolt_ok = False
             print(
                 "BOLT instrumentation failed"
-                " (known issue on aarch64 with AMDGPU backend code)."
+                " (it used to fail on aarch64 with the AMDGPU backend, which is no longer built)."
                 " Continuing with PGO-only toolchain."
             )
 
@@ -585,16 +634,14 @@ def main():
                 print("BOLT profile collection cmake failed. Continuing with PGO-only.")
 
         # Step 4: Time-limited build to collect BOLT profiles
-        # Each compilation unit writes ~15 MB fdata file. With -j4 and a 20 minute
-        # timeout, we expect ~300 compilations producing ~4.5 GB of profiles,
-        # which gives BOLT enough data to optimize hot code paths.
+        # Each clang process writes a ~15 MB fdata file; see BOLT_PROFILE_TIMEOUT.
         if bolt_ok:
             result = Result.from_commands_run(
                 name="BOLT profile collection build (time-limited)",
                 command=(
                     f"bash -c 'timeout --signal=INT --kill-after=120"
                     f" {BOLT_PROFILE_TIMEOUT}"
-                    f" {CUSTOM_NINJA} -j{BOLT_PROFILE_PARALLELISM} -k0"
+                    f" {CUSTOM_NINJA} -k0"
                     f" -C {CH_BOLT_BUILD_DIR} clickhouse"
                     f" ; exit 0'"
                 ),

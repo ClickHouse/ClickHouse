@@ -8,7 +8,7 @@ doc_type: 'reference'
 ---
 
 <div id="customer-managed-vpc-aws">
-  ## 适用于 AWS 的客户管理的 VPC (BYO-VPC)
+  ## 适用于 AWS 的客户管理的 VPC (BYO-VPC) {#customer-managed-vpc-aws}
 </div>
 
 如果您希望使用现有 VPC 部署 ClickHouse BYOC，而不是由 ClickHouse Cloud 预配新的 VPC，请按照以下步骤操作。这样做可以让您更好地掌控网络配置，并将 ClickHouse BYOC 集成到现有的网络基础设施中。
@@ -21,23 +21,15 @@ doc_type: 'reference'
     4. 为每个子网添加标签 `kubernetes.io/role/internal-elb=1` 和 `clickhouse-byoc="true"`，以启用正确的负载均衡器配置。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![BYOC VPC 子网](/images/cloud/reference/byoc-subnet-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![BYOC VPC 子网](/images/cloud/reference/byoc-subnet-1.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![BYOC VPC 子网标签](/images/cloud/reference/byoc-subnet-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![BYOC VPC 子网标签](/images/cloud/reference/byoc-subnet-2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -45,13 +37,9 @@ doc_type: 'reference'
     如果您的 VPC 尚未配置 S3 Gateway Endpoint，则需要创建一个，以便在 VPC 与 Amazon S3 之间启用安全的私有通信。此端点可让您的 ClickHouse 服务在不经过公共互联网的情况下访问 S3。示例配置请参见下方截图。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![BYOC S3 端点](/images/cloud/reference/byoc-s3-endpoint.webp)
-
-    </Frame>
-
+      <Frame>
+        ![BYOC S3 端点](/images/cloud/reference/byoc-s3-endpoint.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -81,7 +69,7 @@ doc_type: 'reference'
       运行 ClickHouse 所需的存储桶、Kubernetes 集群和计算资源不包含在此初始设置中。它们将在后续步骤中预配。虽然 VPC 由您自行控制，但 ClickHouse Cloud 仍需要 IAM 权限来创建和管理 Kubernetes 集群、服务账号的 IAM 角色、S3 bucket 以及您 AWS 账户中的其他必要资源。
     </Note>
 
-#### Terraform 模块
+#### Terraform 模块 {#terraform-module-aws}
 
     如果您希望使用 Terraform 而不是 CloudFormation，请使用 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 模块：
 
@@ -118,13 +106,9 @@ doc_type: 'reference'
     5. 点击 **Set up Infrastructure** 开始预配。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![已选择 Use existing VPC 的 ClickHouse Cloud BYOC 设置界面](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
-
-    </Frame>
-
+      <Frame>
+        ![已选择 Use existing VPC 的 ClickHouse Cloud BYOC 设置界面](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
+      </Frame>
     </div>
 
     <Note>

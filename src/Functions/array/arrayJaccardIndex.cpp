@@ -38,12 +38,12 @@ private:
         if constexpr (left_is_const)
             left_size = left_offsets[0];
         else
-            left_size = left_offsets[i] - left_offsets[i - 1];
+            left_size = left_offsets[i] - left_offsets[static_cast<ssize_t>(i) - 1];
 
         if constexpr (right_is_const)
             right_size = right_offsets[0];
         else
-            right_size = right_offsets[i] - right_offsets[i - 1];
+            right_size = right_offsets[i] - right_offsets[static_cast<ssize_t>(i) - 1];
 
         return {left_size, right_size};
     }
@@ -56,7 +56,7 @@ private:
     {
         for (size_t i = 0; i < res.size(); ++i)
         {
-            size_t intersect_size = intersect_offsets[i] - intersect_offsets[i - 1];
+            size_t intersect_size = intersect_offsets[i] - intersect_offsets[static_cast<ssize_t>(i) - 1];
             size_t union_size = static_cast<size_t>(left_unique_sizes[i])
                 + static_cast<size_t>(right_unique_sizes[i]) - intersect_size;
             res[i] = static_cast<ResultType>(intersect_size) / static_cast<ResultType>(union_size);

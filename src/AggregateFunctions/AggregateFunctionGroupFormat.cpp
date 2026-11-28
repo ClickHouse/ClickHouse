@@ -98,11 +98,12 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        new (place) GroupFormatData;
-        auto & state = data(place);
-        state.columns.reserve(argument_types.size());
+        /// Build the columns first, so that nothing is left in `place` if an allocation throws.
+        MutableColumns columns;
+        columns.reserve(argument_types.size());
         for (const auto & type : argument_types)
-            state.columns.emplace_back(type->createColumn());
+            columns.emplace_back(type->createColumn());
+        new (place) GroupFormatData{std::move(columns)};
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override

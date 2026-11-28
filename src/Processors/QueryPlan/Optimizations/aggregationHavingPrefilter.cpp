@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -65,7 +66,7 @@ const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
 }
 
 /// Each conjunct of an `and` is a necessary condition for the row to survive the filter.
-void collectConjuncts(const ActionsDAG::Node * node, std::vector<const ActionsDAG::Node *> & out)
+void collectConjuncts(const ActionsDAG::Node * node, VectorWithMemoryTracking<const ActionsDAG::Node *> & out)
 {
     node = unwrapAlias(node);
     if (!node)
@@ -127,7 +128,7 @@ size_t tryPushHavingPrefilterIntoAggregation(
     if (!filter_node)
         return 0;
 
-    std::vector<const ActionsDAG::Node *> conjuncts;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> conjuncts;
     collectConjuncts(filter_node, conjuncts);
 
     for (const auto * conjunct : conjuncts)

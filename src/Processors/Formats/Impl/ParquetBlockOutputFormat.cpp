@@ -52,11 +52,13 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.output_enum_as_byte_array = format_settings.parquet.output_enum_as_byte_array;
     options.variant_settings = Parquet::VariantSettings(format_settings);
     options.data_page_size = format_settings.parquet.data_page_size;
+    options.data_page_row_limit = format_settings.parquet.data_page_row_limit;
     options.write_batch_size = format_settings.parquet.write_batch_size;
     options.write_page_index = format_settings.parquet.write_page_index;
     options.write_bloom_filter = format_settings.parquet.write_bloom_filter;
     options.write_checksums = format_settings.parquet.write_checksums;
     options.use_alp_encoding = format_settings.parquet.use_alp_encoding;
+    options.use_data_page_v2 = format_settings.parquet.use_data_page_v2;
     options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
     options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
     options.write_geometadata = format_settings.parquet.write_geometadata;
@@ -117,8 +119,9 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
             /// If there's too much work in flight, wait for some of it to complete.
             if (row_groups.size() < 2)
                 break;
-            if (bytes_in_flight <= format_settings.parquet.row_group_bytes * 4 &&
-                task_queue.size() <= format_settings.max_threads * 4)
+            /// Compare by division: the settings can be huge, and multiplying them would overflow.
+            if (bytes_in_flight / 4 <= format_settings.parquet.row_group_bytes &&
+                task_queue.size() / 4 <= format_settings.max_threads)
                 break;
 
             CurrentThread::checkIfNotCancelled();
@@ -145,7 +148,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
 
     /// In the rare case that more than `row_group_rows` rows arrived in one chunk, split the
     /// staging chunk into multiple row groups.
-    if (staging_rows >= target_rows * 2)
+    if (staging_rows / 2 >= target_rows)
     {
         /// Increase row group size slightly (by < 2x) to avoid a small row group at the end.
         size_t num_row_groups = std::max(static_cast<size_t>(1), staging_rows / target_rows);

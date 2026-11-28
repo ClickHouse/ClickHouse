@@ -36,7 +36,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
 
         if (value_index != value_index_not_found)
         {
-            ValueType value = attribute_container[value_index];
+            AttributeLookupValue<ValueType> value = attribute_container[value_index];
 
             if constexpr (is_nullable)
             {

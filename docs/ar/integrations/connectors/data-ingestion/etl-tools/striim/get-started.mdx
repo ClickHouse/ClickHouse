@@ -1,0 +1,218 @@
+---
+title: "بدء استخدام Striim for ClickHouse"
+sidebarTitle: "بدء الاستخدام"
+slug: /integrations/connectors/data-ingestion/etl-tools/striim/get-started
+description: "سجّل في Striim for ClickHouse، وهيّئ المصدر وهدف ClickHouse، ثم شغّل مسار تنفيذ للنسخ المتماثل."
+doc_type: guide
+keywords: ['striim', 'clickhouse', 'cdc', 'data ingestion', 'real-time replication']
+---
+
+يرشدك هذا الدليل إلى خطوات التسجيل وبدء نسخ البيانات من قاعدة البيانات المصدر إلى مثيل ClickHouse الخاص بك. وللاطلاع على مثال متكامل، راجع [نموذج مسار التنفيذ لـ SQL Server](/ar/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline).
+
+## المتطلبات المسبقة {#prerequisites}
+
+| **ما تحتاج إليه** | **التفاصيل**                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ClickHouse        | خدمة ClickHouse Cloud قيد التشغيل أو نشر مُدار ذاتيًا، مع صلاحيات المسؤول اللازمة لإنشاء قاعدة بيانات ومستخدم. يتطلب `CoalescingMergeTree` الإصدار 25.6 أو أحدث من خادم ClickHouse.                                                                                                                                                                                 |
+| المصدر            | صلاحيات المسؤول على نظام بيانات المصدر لتهيئة CDC ومنح صلاحيات القارئ المطلوبة.                                                                                                                                                                                                                                                                                     |
+| مسار الشبكة       | مسار شبكة معتمد من Striim على AWS إلى المصدر وإلى ClickHouse. ويتيح Striim for ClickHouse عند الحاجة الاتصال عبر شبكة خاصة باستخدام إدراج عناوين IP في قائمة السماح، أو AWS PrivateLink، أو إنشاء أنفاق SSH. لمزيد من التفاصيل، راجع وثائق Striim حول [الأمان والشبكات](https://www.striim.com/docs/striimforclickhouse/en/security-and-networking-for-striim.html) |
+
+## إنشاء حساب Striim {#create-your-striim-account}
+
+سجّل مباشرةً لدى Striim أو عبر AWS Marketplace. تبدأ فترتك التجريبية المجانية البالغة 14 يومًا فور تفعيل حسابك، ولا تحتاج إلى بطاقة ائتمان خلال الفترة التجريبية.
+
+1. افتح [نموذج التسجيل في Striim for ClickHouse](https://go2.striim.com/trial-clickhouse)، وأدخل البيانات المطلوبة، ثم اختر **Sign up**.
+2. افتح رسالة تفعيل الحساب الواردة إلى بريدك الإلكتروني، وفعّل الحساب، ثم سجّل الدخول إلى وحدة تحكم Striim السحابية.
+
+إذا كانت مؤسستك تشتري عبر AWS Marketplace، فاتبع خطوات [الاشتراك والتسجيل](https://www.striim.com/docs/striimforclickhouse/en/subscribe-and-sign-up.html#id211623)، وأكمل إعداد حساب Striim بعد الاشتراك في Striim for ClickHouse على AWS Marketplace.
+
+## إنشاء خدمتك {#create-your-service}
+
+الخدمة هي بيئة Striim مُدارة على AWS، تُنشئ فيها مسارات معالجة البيانات التي تكتب إلى ClickHouse وتشغّلها وتراقبها. لا يمكن أن يضم حسابك سوى خدمة Striim for ClickHouse نشطة واحدة في الوقت نفسه.
+
+1. عند تسجيل الدخول إلى Striim for ClickHouse لأول مرة، اختر **Get Started**. أو اختر بدلاً من ذلك **Marketplace** من الشريط الجانبي، ثم اختر **Create** ضمن **Striim for ClickHouse**.
+2. هيّئ ما يلي:
+   * **Service Name:** اسم يُعرّف عبء العمل أو البيئة.
+   * **AWS Region:** المنطقة التي تعمل فيها الخدمة. اختر منطقة ClickHouse الخاصة بك إن كانت متاحة، لتقليل زمن الانتقال ورسوم النقل cross-region. وإلا فاختر أقرب منطقة متاحة.
+3. لا يمكن تغيير الاسم والمنطقة بعد الإنشاء. ولتغيير أيٍّ منهما، يجب حذف الخدمة وإنشاء خدمة جديدة.
+4. اختر **Create a service**. قد يستغرق تجهيز الموارد بضع دقائق. تستخدم الخدمات الجديدة خطة **Premium** افتراضيًا، ويمكنك تغيير الخطة من صفحة **Billing**.
+5. عندما تصبح الخدمة جاهزة، اختر طريقة تشغيلها:
+   * **Start building with Striim Clara AI:** التشغيل باستخدام Clara AI المُدار من Striim، دون الحاجة إلى مفتاح API.
+   * **Review your service settings before launch:** تهيئة مزود خدمات الذكاء الاصطناعي الخاص بك، أو إدارة المستخدمين، أو إعداد SSH أو AWS PrivateLink قبل التشغيل.
+
+عند تسجيل الدخول في المرات اللاحقة، افتح الخدمة من قائمة **Services** لإنشاء مسارات معالجة البيانات أو إدارة إعداداتها.
+
+![إنشاء خدمة Striim for ClickHouse](/images/integrations/striim/create-service.png)
+
+## تجهيز ClickHouse كوجهة للبيانات {#prepare-your-clickhouse-target}
+
+<Steps>
+  <Step title="احصل على بيانات الاتصال" id="get-connection-details">
+    في ClickHouse Cloud، اختر الخدمة، ثم اختر **Connect**، ثم **HTTPS** لعرض المضيف والمنفذ (8443). أما في ClickHouse المُدار ذاتيًا، فاحصل على المضيف والمنفذ من مسؤول النظام لديك.
+  </Step>
+
+  <Step title="اختر قاعدة البيانات المستهدفة أو أنشئها" id="create-target-database">
+    لا يُنشئ Striim قاعدة البيانات المستهدفة، ويتوقف التطبيق عند بدء التشغيل إذا لم تكن موجودة. لذا استخدم قاعدة بيانات موجودة أو أنشئ واحدة جديدة:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS <your_database>;
+    ```
+  </Step>
+
+  <Step title="أنشئ مستخدمًا مخصصًا لـ Striim" id="create-target-user">
+    استخدم مستخدمًا مخصصًا بدلًا من المستخدم الإداري الافتراضي:
+
+    ```sql
+    CREATE USER <user> IDENTIFIED BY '<password>';
+    ```
+
+    في ClickHouse المُدار ذاتيًا، يمكنك أيضًا تهيئة المصادقة عبر شهادات SSL X.509.
+  </Step>
+
+  <Step title="امنح الامتيازات المطلوبة" id="grant-target-privileges">
+    امنح المستخدم الامتيازات التالية، وفقًا لما هو مذكور في [وثائق Striim](https://www.striim.com/docs/striimforclickhouse/en/initial-setup-to-write-to-clickhouse.html):
+
+    ```sql
+    GRANT CREATE TABLE ON <your_database>.* TO <user>;
+    GRANT ALTER TABLE ON <your_database>.* TO <user>;
+    GRANT DROP TABLE ON <your_database>.* TO <user>;
+    GRANT TRUNCATE ON <your_database>.* TO <user>;
+    GRANT CREATE DATABASE ON *.* TO <user>;
+    GRANT SHOW TABLES ON *.* TO <user>;
+    GRANT SHOW DATABASES ON *.* TO <user>;
+    GRANT SELECT ON information_schema.* TO <user>;
+    GRANT SELECT ON system.tables TO <user>;
+    GRANT SELECT ON system.columns TO <user>;
+    GRANT SELECT ON system.parts TO <user>;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON <your_database>.* TO <user>;
+    ```
+  </Step>
+</Steps>
+
+### تهيئة ClickHouse الموصى بها {#recommended-clickhouse-configuration}
+
+| الإعداد               | **ClickHouse Cloud**                                                | **مُدار ذاتيًا**                                                               |
+| --------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| المنفذ                | 8443 (مفتوح افتراضيًا؛ تتولى ClickHouse Cloud إدارته)               | افتح المنافذ حسب الحاجة: 8123 (HTTP)، و9000 (أصلي)، و8443 (HTTPS)، و9440 (TLS) |
+| التشفير               | TLS دائمًا                                                          | هيّئ TLS بنفسك، ثم مكّنه في ملف تعريف الاتصال عبر الخاصية `EnableSSL`          |
+| محرك قاعدة البيانات   | `Shared`                                                            | `Atomic` (افتراضي)                                                             |
+| المصادقة              | اسم المستخدم وكلمة المرور                                           | اسم المستخدم وكلمة المرور، أو SSL X.509 (TLS المتبادل)                         |
+| الاتصال عبر شبكة خاصة | AWS PrivateLink (في خطتي Scale وEnterprise من ClickHouse Cloud فقط) | نفق SSH أو إدراج عناوين IP في قائمة السماح                                     |
+
+## إنشاء ملف تعريف اتصال {#create-a-connection-profile}
+
+أنشئ ملف تعريف اتصال ClickHouse تشير إليه مسارات معالجة البيانات باسمه. في معالج ملف تعريف الاتصال، هيّئ ما يلي:
+
+| **الخاصية**                                             | **القيمة**                                                                                                  |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| عنوان URL للاتصال                                       | `jdbc:clickhouse://<host>:<port>` باستخدام المضيف والمنفذ من القسم السابق (المنفذ 8443 في ClickHouse Cloud) |
+| نوع المصادقة                                            | كلمة المرور (الخيار الافتراضي) أو SSL X.509                                                                 |
+| اسم المستخدم / كلمة المرور                              | بيانات مستخدم Striim for ClickHouse المخصص الذي أنشأته في الخطوة السابقة لتجهيز هدف ClickHouse.             |
+| شهادة SSL للعميل، مفتاح SSL للعميل، شهادة المرجع المصدق | مطلوبة مع SSL X.509 فقط. يجب أن يكون المفتاح الخاص بتنسيق PKCS#8 PEM.                                       |
+
+لتدوير بيانات الاعتماد أو الشهادات، افتح **Connection Profiles**، ثم عدّل ملف التعريف واحفظ التغييرات.
+
+عند استخدام AWS PrivateLink، أبقِ على عنوان URL للاتصال الذي يوفره ClickHouse Cloud، وهيّئ منطقة مستضافة خاصة (private hosted zone) في Route 53 بحيث يُحَلّ اسم المضيف إلى نقطة النهاية الخاصة من خدمة Striim لديك. راجع [الإعداد الأولي للكتابة إلى ClickHouse](https://www.striim.com/docs/striimforclickhouse/en/initial-setup-to-write-to-clickhouse.html).
+
+## تجهيز المصدر {#prepare-your-source}
+
+لكل نوع مصدر خطوات إعداد خاصة به. ابحث عن مصدرك ضمن [المصادر](https://www.striim.com/docs/striimforclickhouse/en/sources.html) في وثائق Striim for ClickHouse واتبع صفحة التهيئة الخاصة به. في المصادر التي تدعم CDC (التقاط تغييرات البيانات)، قد تحتاج إلى تمكين التقاط التغييرات على المصدر، وإنشاء مستخدم مخصص لـ Striim يتمتع بالامتيازات المحددة لذلك المصدر. دوّن ما يلي قبل المتابعة:
+
+* المضيف والمنفذ وبيانات الاعتماد الخاصة بمستخدم Striim.
+* المخططات والجداول التي تريد نسخها نسخًا متماثلًا. اختر جداول بعينها بدلًا من مخططات كاملة كلما أمكن ذلك.
+* التحقق من أن Striim يستطيع الوصول إلى المصدر من AWS (جدار الحماية، أو شبكة VPC، أو PrivateLink، أو SSH، أو قائمة السماح لعناوين IP).
+* خطتك: يتطلب CDC لكلٍّ من Oracle وSQL Server وSnowflake وSalesforce خطة Premium.
+
+## إنشاء مسار تنفيذ الاستعلام وتشغيله {#build-and-start-a-pipeline}
+
+يمكنك إنشاء مسار تنفيذ الاستعلام بإحدى الطرق التالية:
+
+* **Striim Clara AI:** اختر **Ask Clara** وصِف مسار تنفيذ الاستعلام المطلوب. مثال: «Build a pipeline from &lt;source&gt; to ClickHouse for &lt;schema.table&gt;.» سيطلب منك Clara تحديد استراتيجية القراءة وبيانات الاتصال، ثم ينشئ خطة TQL. راجع الخطة، ثم اختر **Accept TQL**، وبعدها **Deploy and Start this App**. لمزيد من التفاصيل، راجع [Build your first application](https://www.striim.com/docs/striimforclickhouse/en/build-your-first-application.html).
+* **المعالج الآلي لمسار تنفيذ الاستعلام:** أنشئ تطبيقين مرتبطين: أحدهما للتحميل الأولي والآخر لـ CDC (التقاط تغييرات البيانات). يشغّل Striim تطبيق CDC تلقائيًا فور اكتمال التحميل الأولي. [راجع الإجراء أدناه](#using-the-automated-pipeline-wizard).
+* **Flow Designer:** أنشئ التطبيقات وعدّلها من خلال واجهة مرئية، وأضف التحويلات قبل وصول البيانات إلى ClickHouse. يمكنك أيضًا تصدير TQL الخاص بالتطبيق وتعديله، ثم استيراد التهيئة المحدّثة.
+
+### استخدام معالج خط الأنابيب المؤتمت {#using-the-automated-pipeline-wizard}
+
+1. اختر **Apps &gt; Create an App**، ثم ابحث عن المصدر الخاص بك واختره.
+2. اختر **Get Started** ثم اختر خط الأنابيب المؤتمت (التحميل الأولي إضافةً إلى CDC)، إن كان متاحًا للمصدر الخاص بك.
+3. أدخل اسمًا لخط الأنابيب، واختر مساحة أسماء، ثم اختر **Next**.
+4. أدخل خصائص الاتصال بالمصدر. تظهر تعليمات مساعدة مضمّنة بجوار كل إعداد. يتحقق Striim من صحة الاتصال، ويجب معالجة أي إخفاقات قبل المتابعة.
+5. اختر المخططات المراد نسخها نسخًا متماثلًا، مع استبعاد مخططات النظام، ثم اختر **Next**.
+6. اختر الجداول في كل مخطط، ثم اختر **Next**.
+7. اختر ملف تعريف اتصال ClickHouse الخاص بك و**Table Engine**. راجع [كيفية وصول البيانات إلى ClickHouse](#how-data-lands-in-clickhouse) للاطلاع على سلوك المحرك.
+8. راجع مطابقات الجداول وعدّلها عند الحاجة، ثم اختر **Save &amp; Start**.
+
+يُشغّل Striim التحميل الأولي أولًا، وعند اكتماله يوقف تطبيق التحميل الأولي ويبدأ تلقائيًا تشغيل تطبيق CDC المرتبط به.
+
+لا تُشغّل عبارات DDL على جداول المصدر أثناء التحميل الأولي. احتفظ بسجلات التغييرات أو تدفقاتها في المصدر منذ بدء التحميل الأولي إلى أن يلحق تطبيق CDC بأحدث التغييرات. إذا توقف خط الأنابيب، فراجع الخطأ وأي إجراءات تصحيحية مقترحة قبل استئنافه.
+
+## التحقق من البيانات في ClickHouse {#verify-data-in-clickhouse}
+
+1. في عرض المراقبة في Striim، تأكد من أن الأحداث تُقرأ وتُكتب. يمكنك أيضًا أن تسأل Clara عن قيمة التأخر الحالية.
+
+2. في ClickHouse، افحص الجدول الذي أنشأه Striim:
+
+   ```sql
+   SHOW CREATE TABLE <your_database>.<your_table>;
+   ```
+
+3. قارن عدد الصفوف بعددها في المصدر. وبالنسبة إلى جداول `ReplacingMergeTree`، استخدم الاستعلام الموضح في القسم التالي.
+
+4. أجرِ تغييرًا بسيطًا في المصدر (عمليات إدراج وتحديث وحذف على صف تجريبي) وتأكد من ظهوره في ClickHouse.
+
+## كيفية وصول البيانات إلى ClickHouse {#how-data-lands-in-clickhouse}
+
+اختر **Table Engine** عند تهيئة هدف ClickHouse. يستخدم ClickHouse Writer المحرك **`MergeTree`** افتراضيًا. ويحدد المحرك طريقة تطبيق التغييرات، وما إذا كان بإمكان Striim إنشاء جدول الهدف.
+
+| **محرك الجدول**                                     | **السلوك**                                                                                                                                            | **الأنسب لـ**                                                                                                  |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `ReplacingMergeTree`                                | تُكتب التحديثات وعمليات الحذف في صورة صفوف جديدة تحمل رقم إصدار وعلامة حذف منطقي؛ وتُزال التكرارات عبر عمليات الدمج في الخلفية أو `FINAL`.            | مصادر CDC التي ترسل صورة كاملة للصف عند التحديث. أبسط أنماط CDC وأعلاها في معدل النقل، وآمن عند إعادة التنفيذ. |
+| `MergeTree`                                         | إلحاق فقط افتراضيًا. عند ضبط Mode = `MERGE`، تُطبَّق التحديثات وعمليات الحذف على الجدول (حذف خفيف أو حذف عبر التعديل).                                | عمليات التحميل الأولي، والسجلات والأحداث، أو CDC عندما تريد حذف الصفوف فعليًا دون إضافة أعمدة.                 |
+| `CollapsingMergeTree`                               | يكتب عمود إشارة: ‎+1 للحالة الحالية، و‎-1 للإلغاء.                                                                                                    | مصادر CDC التي ترسل صورتَي الصف قبل التغيير وبعده. غير آمن لإعادة التنفيذ بعد الاسترداد.                       |
+| `CoalescingMergeTree`                               | تحديثات جزئية للصفوف؛ وتعني القيمة `NULL` &quot;دون تغيير&quot;. يتطلب إصدار الخادم 25.6 أو أحدث، وأن تكون الأعمدة غير المفتاحية من النوع `Nullable`. | مصادر CDC التي ترسل صفوفًا جزئية.                                                                              |
+| `SummingMergeTree`                                  | إدراج فقط. يتوقف التطبيق عند تنفيذ `UPDATE` أو `DELETE`.                                                                                              | القيم التجميعية الرقمية التي تُلحَق فقط، مثل العدادات.                                                         |
+| `AggregatingMergeTree`، `Replicated`، `Distributed` | كتابة البيانات فقط. عليك إنشاء الجداول المستهدفة بنفسك قبل النشر.                                                                                     | الجداول الداعمة لطرق العرض المُجسَّدة؛ وعمليات النشر المُدارة ذاتيًا القائمة على العناقيد والتجزئة (sharding). |
+
+لإنشاء المخطط تلقائيًا ودعم تطور المخطط، استخدم `MergeTree` أو `ReplacingMergeTree` أو `CollapsingMergeTree` أو `CoalescingMergeTree` أو `SummingMergeTree`. في حالة `ReplacingMergeTree`، يضيف Striim العمودين `__STRIIM_VERSION` و`__STRIIM_ISDELETED`، وفي حالة `CollapsingMergeTree` يضيف العمود `__STRIIM_SIGN`. استعلم عن جداول `ReplacingMergeTree` باستخدام `FINAL` واستبعد الصفوف المحذوفة منطقيًا:
+
+```sql
+SELECT * FROM <your_database>.<your_table> FINAL WHERE __STRIIM_ISDELETED = 0;
+```
+
+تُربط أنواع بيانات المصدر بأنواع بيانات ClickHouse المقابلة لها تلقائيًا. راجع [أنواع البيانات المدعومة](https://www.striim.com/docs/striimforclickhouse/en/clickhouse-writer-programmer-s-reference.html#supported-data-types-787538).
+
+## مراقبة مسار البيانات {#monitor-your-pipeline}
+
+يعرض Striim مقاييس ClickHouse Writer في واجهة مستخدم الويب، ومنها الأحداث المقبولة، والأحداث التي أكّد ClickHouse استلامها، وحداثة البيانات في الهدف، وآخر نشاط كتابة، وأعداد الدفعات، وأوقات الدمج لكل جدول. تُفعَّل تنبيهات النظام تلقائيًا، ويمكنك إضافة تنبيهات مخصصة عبر البريد الإلكتروني أو Slack أو Microsoft Teams. كما يمكنك طرح أسئلة على Clara، مثل: «ما مقدار التأخر الحالي في تطبيقي؟»
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+<Accordion title="يتوقف التطبيق عند بدء التشغيل مع الإشارة إلى قاعدة بيانات مفقودة">
+  لا يُنشئ Striim قاعدة البيانات المستهدفة. أنشئها في ClickHouse ثم أعد تشغيل التطبيق.
+</Accordion>
+
+<Accordion title="تعذّر العثور على الجدول أو العمود، رغم أن المخطط نفسه يعمل في بيئة أخرى">
+  أسماء الأعمدة حساسة لحالة الأحرف دائمًا، أما أسماء قواعد البيانات وأسماء الجداول فتخضع لنظام الملفات على الخادم (وهو حساس لحالة الأحرف في معظم أنظمة Linux). استخدم حالة الأحرف نفسها المعرّفة في ClickHouse.
+</Accordion>
+
+<Accordion title="يعرض CollapsingMergeTree صفوفًا مكررة أو مجاميع سالبة بعد إعادة التشغيل">
+  يعتمد التسليم ضمان at-least-once، ولا يدعم هذا المحرك إزالة التكرار. إذا كنت تستخدم الاسترداد، فيُفضَّل استخدام `ReplacingMergeTree`، أو `MergeTree` مع ضبط Mode على `MERGE`.
+</Accordion>
+
+<Accordion title="PrivateLink: انتهت مهلة الاتصال">
+  تحقّق من أن مجموعة الأمان الخاصة بنقطة نهاية VPC تسمح بحركة المرور الواردة على المنافذ 443 و8443 و9440 و3306، وأن قواعد حركة المرور الصادرة تسمح بالاتصال.
+</Accordion>
+
+<Accordion title="PrivateLink: أعاد النظير ضبط الاتصال">
+  أضف معرّف نقطة نهاية AWS إلى قائمة السماح الخاصة بالخدمة في ClickHouse Cloud.
+</Accordion>
+
+<Accordion title="يفشل التطبيق مع استثناء غير مألوف">
+  اطلب من Clara شرح الخطأ واقتراح حلول له، وراجع توصياتها قبل إجراء أي تغييرات على بيئة الإنتاج.
+</Accordion>
+
+## الخطوات التالية {#next-steps}
+
+* مثال على مسار بيانات: [من SQL Server إلى ClickHouse](/ar/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline)
+* [وثائق Striim for ClickHouse](https://www.striim.com/docs/striimforclickhouse/en/index-en.html) للاطلاع على المصادر والتحويلات وتطور المخطط
+* هل تحتاج إلى نسخ البيانات نسخًا متماثلًا إلى أهداف أخرى إلى جانب ClickHouse؟ راجع [Striim Platform](https://www.striim.com/striim-platform/) أو [Striim Cloud](https://www.striim.com/striim-cloud/).
