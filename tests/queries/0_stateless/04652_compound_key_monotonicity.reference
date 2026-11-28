@@ -44,3 +44,7 @@ Tuple(Interval) + Date answers	1	1
 Tuple(Interval) + DateTime still prunes	1
 modulo over Array answers	2	2
 multiply(Array key, scalar const) answers	1	1
+Date DESC + Tuple(Interval) answers	1	1
+Date DESC + Tuple(Interval) still prunes	1
+Date DESC - Tuple(Interval) answers	1	1
+Date + Tuple(Interval) at the last granule answers	1	1

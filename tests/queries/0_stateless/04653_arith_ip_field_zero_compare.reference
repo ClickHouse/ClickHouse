@@ -1,0 +1,98 @@
+-- IP constant over a numeric key, single-value granules
+oracle_plus_ip4_right_g1	1
+oracle_plus_ip4_left_g1	1
+oracle_minus_ip4_right_g1	1
+oracle_minus_ip4_left_g1	1
+oracle_multiply_ip4_right_g1	1
+oracle_multiply_ip4_left_g1	1
+oracle_plus_ip6_right_g1	1
+oracle_minus_ip6_left_g1	1
+oracle_multiply_ip6_right_g1	1
+oracle_multiply_ip6_left_g1	1
+-- IP constant over a numeric key must keep pruning, single-value granules
+oracle_plus_ip4const_right_g1	1
+prune_plus_ip4const_right_g1_2of4	1
+prune_plus_numconst_right_g1_2of4	1
+oracle_plus_ip4const_left_g1	1
+prune_plus_ip4const_left_g1_2of4	1
+oracle_minus_ip4const_right_g1	1
+prune_minus_ip4const_right_g1_2of4	1
+prune_minus_numconst_right_g1_2of4	1
+prune_minus_ip6const_left_g1_2of4	1
+oracle_plus_ip6const_right_g1	1
+prune_plus_ip6const_right_g1_2of4	1
+oracle_minus_ip6const_right_g1	1
+prune_minus_ip6const_right_g1_2of4	1
+-- IP constant over a numeric key, multi-value granules
+oracle_multiply_ip4_right_g4	1
+oracle_multiply_ip4_left_g4	1
+oracle_multiply_ip6_right_g4	1
+oracle_multiply_ip6_left_g4	1
+oracle_plus_ip4_right_g4	1
+oracle_minus_ip4_right_g4	1
+-- Nullable and LowCardinality wrappers around the IP constant
+oracle_plus_nullable_ip4	1
+oracle_plus_lc_ip4	1
+oracle_multiply_nullable_ip4	1
+oracle_multiply_lc_ip4	1
+oracle_multiply_nullable_ip6	1
+-- numeric constant over an IP key, single-value granules
+oracle_plus_const_left_ipkey	1
+oracle_minus_const_left_ipkey	1
+oracle_multiply_const_left_ipkey	1
+oracle_plus_const_right_ipkey	1
+oracle_minus_const_right_ipkey	1
+oracle_multiply_const_right_ipkey	1
+-- multiplying an IP key by a numeric constant must prune like the identical numeric key
+oracle_multiply_ip4key	1
+prune_multiply_ip4key_2of4	1
+prune_multiply_u32key_2of4	1
+oracle_multiply_ip6key	1
+prune_multiply_ip6key_2of4	1
+oracle_multiply_nullable_ip4key	1
+prune_multiply_nullable_ip4key_2of4	1
+oracle_multiply_ip6key_byteorder	1
+prune_multiply_ip6key_byteorder_2of4	1
+oracle_multiply_ip4key_ip4const	1
+oracle_plus_ip4key_ip4const	1
+-- a genuine overflow must still reject monotonicity
+oracle_multiply_ip6key_overflow	1
+noprune_multiply_ip6key_overflow_4of4	1
+-- plus/minus over an IP key already pruned and must keep doing so
+prune_plus_ip4key_2of4	1
+oracle_plus_ip4key	1
+prune_minus_ip4key_2of4	1
+oracle_minus_ip4key	1
+-- every IP-carrying arithmetic shape keeps its measured granule count
+prune_multiply_ip4const_right_g1_2of4	1
+prune_multiply_ip4const_left_g1_2of4	1
+prune_multiply_numconst_right_g1_2of4	1
+prune_multiply_numconst_left_g1_2of4	1
+oracle_multiply_ip6const_right_g1	1
+prune_multiply_ip6const_right_g1_2of4	1
+oracle_multiply_ip6const_left_g1	1
+prune_multiply_ip6const_left_g1_2of4	1
+prune_multiply_ip4const_right_g2_2of4	1
+prune_multiply_numconst_right_g2_2of4	1
+prune_multiply_numconst_left_g2_2of4	1
+prune_minus_ip4const_left_g1_2of4	1
+prune_minus_numconst_left_g1_2of4	1
+prune_multiply_ip4key_ip4const_2of4	1
+prune_plus_ip4key_ip4const_2of4	1
+prune_plus_nullable_ip4const_g1_2of4	1
+prune_plus_lc_ip4const_g1_2of4	1
+prune_multiply_nullable_ip4const_g1_2of4	1
+prune_multiply_lc_ip4const_g1_2of4	1
+prune_multiply_nullable_ip6const_g1_2of4	1
+prune_plus_const_left_ip4key_2of4	1
+prune_plus_const_left_u32key_2of4	1
+prune_minus_const_left_ip4key_2of4	1
+prune_minus_const_left_u32key_2of4	1
+prune_multiply_const_left_ip4key_2of4	1
+prune_multiply_const_left_u32key_2of4	1
+-- numeric constants stay unaffected
+oracle_multiply_zero	1
+oracle_multiply_negative	1
+oracle_multiply_decimal	1
+oracle_multiply_bool	1
+oracle_multiply_two_g1	1
