@@ -653,8 +653,10 @@ function get_profiles
 
     # Just check that the servers are alive so that we return a proper exit code.
     # We don't consistently check the return codes of the above background jobs.
-    clickhouse-client --port $LEFT_SERVER_PORT --receive_timeout=5 --query "select 1"
-    clickhouse-client --port $RIGHT_SERVER_PORT --receive_timeout=5 --query "select 1"
+    # The caller runs us with errexit disabled, so only the last command's status
+    # counts: chain the checks, so that a dead server on either side fails us.
+    clickhouse-client --port $LEFT_SERVER_PORT --receive_timeout=5 --query "select 1" \
+        && clickhouse-client --port $RIGHT_SERVER_PORT --receive_timeout=5 --query "select 1"
 }
 
 # Build and analyze randomization distribution for all queries.
