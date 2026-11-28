@@ -18,6 +18,7 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/StringUtils.h>
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
@@ -33,6 +34,7 @@ namespace Setting
     extern const SettingsBool cloud_mode;
     extern const SettingsBool database_replicated_allow_only_replicated_engine;
     extern const SettingsBool log_queries;
+    extern const SettingsBool throw_on_unknown_storage_setting;
 }
 
 namespace ErrorCodes
@@ -82,11 +84,22 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
     const auto & features = StorageFactory::instance().getStorageFeatures(args.engine_name);
     chassert(features.has_builtin_setting_fn != nullptr);
     const Settings & query_settings = local_context->getSettingsRef();
+    const bool throw_on_unknown = query_settings[Setting::throw_on_unknown_storage_setting];
     auto check = [&](std::string_view name)
     {
-        if (!features.has_builtin_setting_fn(name) && !query_settings.has(name))
+        if (features.has_builtin_setting_fn(name) || query_settings.has(name))
+            return;
+
+        if (throw_on_unknown)
             throw Exception(
-                ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for storage {}", name, args.engine_name);
+                ErrorCodes::UNKNOWN_SETTING,
+                "Unknown setting '{}': for storage {}. Set `throw_on_unknown_storage_setting = 0` to ignore it",
+                name, args.engine_name);
+
+        LOG_WARNING(
+            getLogger("StorageFactory"),
+            "Ignoring unknown setting '{}' for storage {} of table {}, because `throw_on_unknown_storage_setting` is disabled",
+            name, args.engine_name, args.table_id.getNameForLogs());
     };
 
     for (const auto & change : args.storage_def->settings->changes)

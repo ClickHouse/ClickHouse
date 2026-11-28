@@ -1,0 +1,7 @@
+--- disabled explicitly ---
+t_unknown_compat
+--- disabled by compatibility ---
+0
+t_unknown_compat
+--- enabled by compatibility of the release that introduced the check ---
+1
