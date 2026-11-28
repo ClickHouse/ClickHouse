@@ -44,7 +44,7 @@ namespace ErrorCodes
 }
 
 
-std::string toContentEncodingName(CompressionMethod method)
+std::string toContentEncodingName(CompressionMethod method, std::optional<SnappyMode> snappy_mode)
 {
     switch (method)
     {
@@ -63,6 +63,8 @@ std::string toContentEncodingName(CompressionMethod method)
         case CompressionMethod::Bzip2:
             return "bz2";
         case CompressionMethod::Snappy:
+            if (snappy_mode.has_value())
+                return *snappy_mode == SnappyMode::Framed ? "snappy:framed" : "snappy:basic";
             return "snappy";
         case CompressionMethod::None:
             return "";

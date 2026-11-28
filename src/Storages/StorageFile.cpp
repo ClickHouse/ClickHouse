@@ -1366,16 +1366,20 @@ std::unique_ptr<ReadBuffer> takeArchiveEntryReadBuffer(std::unique_ptr<ReadBuffe
     return std::move(archive_entry_buf);
 }
 
+}
+
 /// The schema and row-count cache key of an archive entry. The same entry gives different rows under
 /// different member compression methods, so the effective method is part of the key.
-std::string getArchiveEntryCacheKey(const std::string & path, std::optional<size_t> position, CompressionMethod method)
+std::string getArchiveEntryCacheKey(
+    const std::string & path,
+    std::optional<size_t> position,
+    CompressionMethod method,
+    std::optional<SnappyMode> snappy_mode)
 {
     /// An entry read without decompression keeps the plain key, so the key of a not compressed entry does not change.
     if (method == CompressionMethod::None)
         return getArchiveEntryKey(path, position);
-    return getArchiveEntryKey(fmt::format("{}#compression_method={}", path, toContentEncodingName(method)), position);
-}
-
+    return getArchiveEntryKey(fmt::format("{}#compression_method={}", path, toContentEncodingName(method, snappy_mode)), position);
 }
 
 namespace
@@ -1468,7 +1472,8 @@ namespace
             if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
                 return;
 
-            auto key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext());
+            auto compression_name = toContentEncodingName(chooseCompressionMethod(paths[current_index - 1], compression_method), getContext()->getSettingsRef()[Setting::snappy_mode]);
+            auto key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext(), compression_name);
             StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
@@ -1479,7 +1484,8 @@ namespace
 
             /// For union mode, schema can be different for different files, so we need to
             /// cache last inferred schema only for last processed file.
-            auto cache_key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext());
+            auto compression_name = toContentEncodingName(chooseCompressionMethod(paths[current_index - 1], compression_method), getContext()->getSettingsRef()[Setting::snappy_mode]);
+            auto cache_key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext(), compression_name);
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
         }
 
@@ -1525,9 +1531,10 @@ namespace
                     return file_stat.st_mtime;
                 };
 
+                auto compression_name = toContentEncodingName(chooseCompressionMethod(path, compression_method), context->getSettingsRef()[Setting::snappy_mode]);
                 if (format)
                 {
-                    auto cache_key = getKeyForSchemaCache(path, *format, format_settings, context);
+                    auto cache_key = getKeyForSchemaCache(path, *format, format_settings, context, compression_name);
                     if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         return columns;
                 }
@@ -1538,7 +1545,7 @@ namespace
                     /// If we have such entry for some format, we can use this format to read the file.
                     for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
                     {
-                        auto cache_key = getKeyForSchemaCache(path, format_name, format_settings, context);
+                        auto cache_key = getKeyForSchemaCache(path, format_name, format_settings, context, compression_name);
                         if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         {
                             /// Now format is known. It should be the same for all files.
@@ -1585,11 +1592,15 @@ namespace
             {
                 for (const auto & archive : archive_info.paths_to_archives)
                 {
+                    auto method = chooseCompressionMethod(archive_info.path_in_archive, compression_method);
+                    auto snappy_mode = getContext()->getSettingsRef()[Setting::snappy_mode];
+                    auto comp_name = toContentEncodingName(method, snappy_mode);
                     auto cache_key = getArchiveEntryCacheKey(
                         fmt::format("{}::{}", archive, archive_info.path_in_archive),
                         std::nullopt,
-                        chooseCompressionMethod(archive_info.path_in_archive, compression_method));
-                    if (auto cached_schema = tryGetSchemaFromCache(archive, cache_key))
+                        method,
+                        snappy_mode);
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, cache_key, comp_name))
                         return {nullptr, cached_schema, format};
                 }
             }
@@ -1652,10 +1663,12 @@ namespace
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), archive_info.path_in_archive));
                     auto method = chooseCompressionMethod(archive_info.path_in_archive, compression_method);
-                    last_read_file_cache_key = getArchiveEntryCacheKey(last_read_file_path, std::nullopt, method);
+                    auto snappy_mode = getContext()->getSettingsRef()[Setting::snappy_mode];
+                    last_read_file_compression_name = toContentEncodingName(method, snappy_mode);
+                    last_read_file_cache_key = getArchiveEntryCacheKey(last_read_file_path, std::nullopt, method, snappy_mode);
                     is_first = false;
 
-                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_cache_key))
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_cache_key, last_read_file_compression_name))
                         return {nullptr, cached_schema, format};
 
                     decompressArchiveEntryReadBuffer(read_buf, archive_entry_read_buffer, method, getContext());
@@ -1703,7 +1716,9 @@ namespace
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), *filename));
                     auto method = chooseCompressionMethod(*filename, compression_method);
-                    last_read_file_cache_key = getArchiveEntryCacheKey(last_read_file_path, entry_position, method);
+                    auto snappy_mode = getContext()->getSettingsRef()[Setting::snappy_mode];
+                    last_read_file_compression_name = toContentEncodingName(method, snappy_mode);
+                    last_read_file_cache_key = getArchiveEntryCacheKey(last_read_file_path, entry_position, method, snappy_mode);
                     is_first = false;
 
                     /// If format is unknown we can try to determine it by the file name.
@@ -1715,7 +1730,7 @@ namespace
                             format = format_from_file;
                     }
 
-                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_cache_key))
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_cache_key, last_read_file_compression_name))
                     {
                         /// For union mode next() will be called again even if we found cached columns,
                         /// so we need to remember last_read_buffer to continue iterating through files in archive.
@@ -1745,7 +1760,7 @@ namespace
             if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
                 return;
 
-            auto key = getKeyForSchemaCache(last_read_file_cache_key, *format, format_settings, getContext());
+            auto key = getKeyForSchemaCache(last_read_file_cache_key, *format, format_settings, getContext(), last_read_file_compression_name);
             StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
@@ -1757,7 +1772,7 @@ namespace
             /// For union mode, schema can be different for different files in archive, so we need to
             /// cache last inferred schema only for last processed file.
             auto & schema_cache = StorageFile::getSchemaCache(getContext());
-            auto cache_key = getKeyForSchemaCache(last_read_file_cache_key, *format, format_settings, getContext());
+            auto cache_key = getKeyForSchemaCache(last_read_file_cache_key, *format, format_settings, getContext(), last_read_file_compression_name);
             schema_cache.addColumns(cache_key, columns);
         }
 
@@ -1809,7 +1824,7 @@ namespace
         }
 
     private:
-        std::optional<ColumnsDescription> tryGetSchemaFromCache(const std::string & archive_path, const std::string & full_path)
+        std::optional<ColumnsDescription> tryGetSchemaFromCache(const std::string & archive_path, const std::string & full_path, const std::string & compression_name)
         {
             auto context = getContext();
             if (!context->getSettingsRef()[Setting::schema_inference_use_cache_for_file])
@@ -1827,7 +1842,7 @@ namespace
 
             if (format)
             {
-                auto cache_key = getKeyForSchemaCache(full_path, *format, format_settings, context);
+                auto cache_key = getKeyForSchemaCache(full_path, *format, format_settings, context, compression_name);
                 if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                     return columns;
             }
@@ -1838,7 +1853,7 @@ namespace
                 /// If we have such entry for some format, we can use this format to read the file.
                 for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
                 {
-                    auto cache_key = getKeyForSchemaCache(full_path, format_name, format_settings, context);
+                    auto cache_key = getKeyForSchemaCache(full_path, format_name, format_settings, context, compression_name);
                     if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                     {
                         /// Now format is known. It should be the same for all files.
@@ -1859,6 +1874,7 @@ namespace
 
         std::string last_read_file_path;
         std::string last_read_file_cache_key;
+        std::string last_read_file_compression_name;
 
         std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
         ArchiveEntryPositions entry_positions;
@@ -2562,7 +2578,10 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
         return false;
 
-    auto num_rows_from_cache = tryGetNumRowsFromCache(current_archive_entry_cache_key.value_or(current_path), file_stat.st_mtime);
+    auto num_rows_from_cache = tryGetNumRowsFromCache(
+        current_archive_entry_cache_key.value_or(current_path),
+        file_stat.st_mtime,
+        current_file_compression_name);
     if (!num_rows_from_cache)
         return false;
 
@@ -2628,8 +2647,11 @@ Chunk StorageFileSource::generate()
                         filename_override = files_iterator->getFileNameInArchive();
 
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
+                        auto method = chooseCompressionMethod(*filename_override, storage->compression_method);
+                        auto snappy_mode = getContext()->getSettingsRef()[Setting::snappy_mode];
+                        current_file_compression_name = toContentEncodingName(method, snappy_mode);
                         current_archive_entry_cache_key = getArchiveEntryCacheKey(
-                            current_path, std::nullopt, chooseCompressionMethod(*filename_override, storage->compression_method));
+                            current_path, std::nullopt, method, snappy_mode);
                         if (need_only_count && tryGetCountFromCache(file_stat))
                             continue;
 
@@ -2706,8 +2728,11 @@ Chunk StorageFileSource::generate()
 
                         chassert(file_enumerator);
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
+                        auto method = chooseCompressionMethod(*filename_override, storage->compression_method);
+                        auto snappy_mode = getContext()->getSettingsRef()[Setting::snappy_mode];
+                        current_file_compression_name = toContentEncodingName(method, snappy_mode);
                         current_archive_entry_cache_key = getArchiveEntryCacheKey(
-                            current_path, entry_position, chooseCompressionMethod(*filename_override, storage->compression_method));
+                            current_path, entry_position, method, snappy_mode);
                         current_file_size = file_enumerator->getFileInfo().uncompressed_size;
                         current_file_last_modified = file_enumerator->getFileInfo().last_modified;
                         if (need_only_count && tryGetCountFromCache(current_archive_stat))
@@ -2743,9 +2768,14 @@ Chunk StorageFileSource::generate()
                     current_archive_entry_cache_key.reset();
                     if (current_path.empty())
                     {
+                        current_file_compression_name.clear();
                         read_buf.reset();
                         return {};
                     }
+
+                    current_file_compression_name = toContentEncodingName(
+                        chooseCompressionMethod(storage->use_table_fd ? "" : current_path, storage->compression_method),
+                        getContext()->getSettingsRef()[Setting::snappy_mode]);
 
                     if (!existsOrFileNameTooLong([&] { return fs::exists(current_path); }))
                     {
@@ -3193,7 +3223,10 @@ Chunk StorageFileSource::generate()
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied()
             && !split_file)
-            addNumRowsToCache(current_archive_entry_cache_key.value_or(current_path), total_rows_in_file);
+            addNumRowsToCache(
+                current_archive_entry_cache_key.value_or(current_path),
+                total_rows_in_file,
+                current_file_compression_name);
 
         total_rows_in_file = 0;
 
@@ -3398,22 +3431,22 @@ void StorageFileSource::checkTopKQueryConditionCacheKeyHolds(bool still_holds) c
 
 void StorageFileSource::onFinish() { parser_shared_resources->finishStream(); }
 
-void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) const
+void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows, const String & compression_name) const
 {
     if (!canUseNumRowsFromSchemaCache(storage->format_settings, getContext()))
         return;
 
-    auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
+    auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext(), compression_name);
     StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
 }
 
-std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const
+std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & path, time_t last_mod_time, const String & compression_name) const
 {
     if (!canUseNumRowsFromSchemaCache(storage->format_settings, getContext()))
         return std::nullopt;
 
     auto & schema_cache = StorageFile::getSchemaCache(getContext());
-    auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
+    auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext(), compression_name);
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
         return last_mod_time;

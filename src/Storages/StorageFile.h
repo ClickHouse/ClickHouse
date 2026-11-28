@@ -5,6 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/Archives/ArchiveEntryPositions.h>
 #include <IO/Archives/IArchiveReader.h>
+#include <IO/CompressionMethod.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/LazilyReadFromFile.h>
@@ -40,6 +41,14 @@ struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
 struct ParquetCachedStatisticsFilter;
+
+/// The schema and row-count cache key of an archive entry. The same entry gives different rows under
+/// different member compression methods, so the effective method is part of the key.
+std::string getArchiveEntryCacheKey(
+    const std::string & path,
+    std::optional<size_t> position,
+    CompressionMethod method,
+    std::optional<SnappyMode> snappy_mode = std::nullopt);
 
 class StorageFile final : public IStorage
 {
@@ -414,9 +423,9 @@ private:
 
     void onFinish() override;
 
-    void addNumRowsToCache(const String & path, size_t num_rows) const;
+    void addNumRowsToCache(const String & path, size_t num_rows, const String & compression_name) const;
 
-    std::optional<size_t> tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const;
+    std::optional<size_t> tryGetNumRowsFromCache(const String & path, time_t last_mod_time, const String & compression_name) const;
 
     /// The TopK query condition cache key if it applies to the version of the file being read.
     std::optional<UInt64> getTopKConditionHashForCurrentFile() const;
@@ -490,6 +499,8 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
     ArchiveEntryPositions entry_positions;
+    /// The effective decoder name ('gzip', 'snappy:basic', etc.) for the file or archive entry currently being read.
+    String current_file_compression_name;
     /// The row count cache key of the archive entry being read, unset for a plain file.
     std::optional<String> current_archive_entry_cache_key;
 
