@@ -7,6 +7,8 @@
 #include <base/scope_guard.h>
 #include <Common/Stopwatch.h>
 #include <Core/Joins.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Analyzer/Utils.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
@@ -30,6 +32,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -70,6 +73,16 @@ extern const Event AutoParallelReplicasBytesPerReplica;
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char auto_parallel_replicas_pause_before_building_replicas_plan[];
+}
+
+namespace Setting
+{
+extern const SettingsBool enable_shared_storage_snapshot_in_query;
+}
 
 namespace
 {
@@ -765,6 +778,55 @@ bool transplantAnalysisToAllReads(
         }
     }
 
+    /// The transplanted analysis names parts of the single-node read's snapshot, but the candidate keeps
+    /// its own snapshot, and the reader takes alter conversions, patch parts and on-the-fly mutations from
+    /// it. Two snapshots taken at different moments would pair one moment's ranges with another's
+    /// mutations, which reads rows neither moment has. Require both to be the very same capture, for every
+    /// read before any is handed an analysis. `metadata` is not compared: a read may legitimately clone it
+    /// to add virtual columns, while `data` - the parts and the mutations snapshot - was built against the
+    /// metadata it was captured with.
+    for (const auto & [replicas_read, single_node_read] : paired_by_replicas_read)
+    {
+        /// A read of projection parts selects that projection's parts and columns, and its snapshot is
+        /// its own: the projection optimizers and `mergeTreeProjection` build it with a `cloneEmpty`
+        /// mutations snapshot, so it never equals the snapshot its counterpart has. Decline it before
+        /// the snapshots are compared. The pairing cannot tell it from a base read: it keeps the table
+        /// and the table expression name of the read it replaced, and the hash of the matched node sets
+        /// them apart only inside its subtree, not, for example, on the other side of a `JOIN`.
+        if (single_node_read->readsProjectionParts() || replicas_read->readsProjectionParts())
+        {
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
+                "Read of {} reads projection parts, which have a storage snapshot of their own; not transplanting "
+                "index analysis. Skipping optimization",
+                single_node_read->getStorageID().getNameForLogs());
+            return false;
+        }
+
+        const bool same_snapshot = single_node_read->getStorageSnapshot()->data == replicas_read->getStorageSnapshot()->data
+            && single_node_read->getMutationsSnapshot() == replicas_read->getMutationsSnapshot();
+        if (!same_snapshot)
+        {
+            /// A read takes its snapshot from the query-wide cache when its own context enables it, and a
+            /// `SETTINGS` clause of a subquery may disable it for some reads only. Two reads that both took
+            /// it from the cache have the same snapshot; projection reads, which have their own, are
+            /// declined above.
+            [[maybe_unused]] const auto shares_cached_snapshot = [](const ReadFromMergeTree & read)
+            {
+                const auto & context = read.getContext();
+                return context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] && context->hasQueryContext()
+                    && context->getQueryMetadataCache();
+            };
+            chassert(!shares_cached_snapshot(*single_node_read) || !shares_cached_snapshot(*replicas_read));
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
+                "Read of {} in the replicas plan has another storage snapshot than its counterpart in the "
+                "single-node plan; not transplanting index analysis. Skipping optimization",
+                replicas_read->getStorageID().getNameForLogs());
+            return false;
+        }
+    }
+
     for (auto * replicas_read : replicas_reads)
     {
         auto * single_node_read = paired_by_replicas_read.at(replicas_read);
@@ -773,25 +835,6 @@ bool transplantAnalysisToAllReads(
         /// read either way, and this way it is done once and shared instead of being repeated by the
         /// replicas plan.
         auto analyzed = single_node_read->getOrCreateAnalyzedResult();
-
-        /// A read that a projection answered selects that projection's parts and columns. The
-        /// candidate is built with `optimize_projection` off, so its reads are of the base table and
-        /// none of that applies to them. The pairing cannot tell the two apart: a projection read
-        /// keeps the table and the table expression name of the base read it replaced. What keeps them
-        /// apart today is the hash of the node the decision is matched on, taken bottom-up over its
-        /// subtree: a read contributes only its name, its table and its `PREWHERE`, but the steps above
-        /// a projection read serialize differently and the hash disagrees, so the optimization stops
-        /// long before here. Decline rather than rest on that, for a read outside that subtree would
-        /// reach this point.
-        if (analyzed && analyzed->readFromProjection())
-        {
-            LOG_TRACE(
-                getLogger("AutoParallelReplicas"),
-                "Read of {} in the single-node plan is answered from a projection, which the plan for parallel "
-                "replicas does not use; not transplanting index analysis. Skipping optimization",
-                single_node_read->getStorageID().getNameForLogs());
-            return false;
-        }
 
         if (analyzed)
         {
@@ -1175,6 +1218,8 @@ void considerEnablingParallelReplicas(
     /// `selectRangesToRead` below reuses those `indexes` (it builds them only `if (!indexes)`), so it
     /// adds no set that collecting later would catch.
     auto built_sets = collectBuiltSets(query_plan);
+    /// The reads of this plan already hold their storage snapshots; the plan built below takes its own.
+    FailPointInjection::pauseFailPoint(FailPoints::auto_parallel_replicas_pause_before_building_replicas_plan);
     Stopwatch plan_build_watch;
     auto build_result = optimization_settings.query_plan_with_parallel_replicas_builder(
         built_sets, makeSingleNodeReadFinder(root), getLogger("AutoParallelReplicas"));
