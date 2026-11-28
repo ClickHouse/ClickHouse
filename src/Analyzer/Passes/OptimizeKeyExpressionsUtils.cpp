@@ -4,11 +4,15 @@
 #include <queue>
 #include <vector>
 
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ValidationUtils.h>
+#include <Common/checkStackSize.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
 #include <Functions/IFunction.h>
@@ -204,6 +208,100 @@ bool isGroupByKeyAfterAggregation(const QueryTreeNodePtr & node, const QueryTree
     if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->isConvertedToNullable())
         return true;
     return std::ranges::any_of(group_by_keys, [&](const auto & key) { return compareGroupByKeys(node, key); });
+}
+
+namespace
+{
+
+/// In which way the planner writes the constant in names.
+bool hasCastInName(const ConstantNode & node)
+{
+    if (node.hasSourceExpression())
+        return true;
+
+    try
+    {
+        return ConstantNode::requiresCastCall(applyVisitor(FieldToDataType(), node.getValue()), node.getResultType());
+    }
+    catch (...)
+    {
+        /// `FieldToDataType` can throw for arrays of mixed types.
+        return true;
+    }
+}
+
+template <typename Predicate>
+bool allConstantsInEqualNodes(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs, const Predicate & predicate)
+{
+    checkStackSize();
+
+    if (lhs == rhs)
+        return true;
+
+    return std::ranges::equal(
+        lhs->getChildren(),
+        rhs->getChildren(),
+        [&](const auto & lhs_child, const auto & rhs_child)
+        {
+            if (!lhs_child || !rhs_child)
+                return !lhs_child && !rhs_child;
+
+            const auto * lhs_constant = lhs_child->template as<ConstantNode>();
+            const auto * rhs_constant = rhs_child->template as<ConstantNode>();
+            return lhs_constant && rhs_constant ? predicate(*lhs_constant, *rhs_constant)
+                                                : allConstantsInEqualNodes(lhs_child, rhs_child, predicate);
+        });
+}
+
+/// Equal constants can have types with different time zones, and can be 0 and -0.
+bool haveSameValueName(const ConstantNode & lhs, const ConstantNode & rhs)
+{
+    return lhs.getResultType()->getName() == rhs.getResultType()->getName() && lhs.getValueName({}) == rhs.getValueName({});
+}
+
+}
+
+bool areConstantsWrittenAlike(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+{
+    return allConstantsInEqualNodes(
+        lhs,
+        rhs,
+        [](const ConstantNode & lhs_constant, const ConstantNode & rhs_constant)
+        { return hasCastInName(lhs_constant) == hasCastInName(rhs_constant) && haveSameValueName(lhs_constant, rhs_constant); });
+}
+
+bool canBeCalculatedFromKeys(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys)
+{
+    checkStackSize();
+
+    const auto is_key = [&](const QueryTreeNodePtr & key) { return compareGroupByKeys(node, key) && areConstantsWrittenAlike(key, node); };
+    if (std::ranges::any_of(group_by_keys, is_key))
+        return true;
+
+    switch (node->getNodeType())
+    {
+        case QueryTreeNodeType::COLUMN:
+        {
+            const auto source = node->as<ColumnNode &>().getColumnSourceOrNull();
+            return source && source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
+        }
+        case QueryTreeNodeType::QUERY:
+        case QueryTreeNodeType::UNION:
+        case QueryTreeNodeType::TABLE:
+        case QueryTreeNodeType::TABLE_FUNCTION:
+            return true;
+        case QueryTreeNodeType::FUNCTION:
+        {
+            if (node->as<FunctionNode &>().isAggregateFunction())
+                return true;
+            break;
+        }
+        default:
+            break;
+    }
+
+    return std::ranges::all_of(
+        node->getChildren(), [&](const auto & child) { return !child || canBeCalculatedFromKeys(child, group_by_keys); });
 }
 
 }

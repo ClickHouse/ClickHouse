@@ -5,16 +5,23 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/Utils.h>
+#include <Common/checkStackSize.h>
 #include <Core/Settings.h>
+#include <Core/SortDescription.h>
+#include <Interpreters/Context.h>
+
+#include <algorithm>
 
 namespace DB
 {
 
 namespace Setting
 {
+    extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool optimize_truncate_order_by_after_group_by_keys;
 }
 
@@ -90,11 +97,117 @@ public:
             }
         }
 
-        if (truncate_after < order_by_nodes.size())
+        if (truncate_after == order_by_nodes.size())
+            return;
+
+        /// Different groups can be equal in the comparison: 0 and -0.
+        bool has_merged_keys = false;
+        QueryTreeNodePtrWithHashSet columns_of_merged_keys;
+        for (const auto & key : group_by_nodes)
+        {
+            if (comparisonCanMergeDistinctValues(*key->getResultType()))
+            {
+                has_merged_keys = true;
+                collectColumns(key, columns_of_merged_keys);
+            }
+        }
+
+        /// After the keys, ORDER BY elements can order the rows of a group, and the groups that are equal in the comparison. Also, the
+        /// value of a stateful function depends on whether it is calculated before the sorting.
+        const auto has_stateful_function
+            = [](const auto & sort_elem) { return hasStatefulFunction(sort_elem->template as<SortNode &>().getExpression()); };
+        if (!canHaveSeveralRowsPerGroup(*query) && !has_merged_keys
+            && std::none_of(order_by_nodes.begin() + truncate_after, order_by_nodes.end(), has_stateful_function))
+        {
             order_by_nodes.resize(truncate_after);
+            return;
+        }
+
+        /// Remove only the elements that are functions of the keys, and those that cannot be calculated: a part of it is already replaced
+        /// by another pass, or it has a correlated subquery.
+        const auto is_removed = [&](const QueryTreeNodePtr & sort_elem)
+        {
+            const auto & expression = sort_elem->as<SortNode &>().getExpression();
+            return isFunctionOfKeys(expression, columns_of_merged_keys) || !canBeCalculatedFromKeys(expression, group_by_nodes)
+                || containsCorrelatedSubquery(expression);
+        };
+        order_by_nodes.erase(
+            std::remove_if(order_by_nodes.begin() + truncate_after, order_by_nodes.end(), is_removed), order_by_nodes.end());
+
+        /// A positional argument keeps the aliases that the projection loses, so a remote server can find different definitions of them.
+        for (size_t i = truncate_after; i < order_by_nodes.size(); ++i)
+            removeAliasesRecursive(order_by_nodes[i]->as<SortNode &>().getExpression());
     }
 
 private:
+    /// `arrayJoin` in the projection and in ORDER BY is checked above.
+    [[nodiscard]] bool canHaveSeveralRowsPerGroup(const QueryNode & query) const
+    {
+        /// The groups of different shards or replicas are not merged.
+        if (getSettings()[Setting::distributed_group_by_no_merge] || getContext()->canUseParallelReplicasCustomKey())
+            return true;
+
+        return (query.hasHaving() && hasFunctionNode(query.getHaving(), "arrayJoin"))
+            || (query.hasQualify() && hasFunctionNode(query.getQualify(), "arrayJoin"))
+            || hasFunctionNode(query.getLimitByNode(), "arrayJoin");
+    }
+
+    static void collectColumns(const QueryTreeNodePtr & node, QueryTreeNodePtrWithHashSet & columns)
+    {
+        checkStackSize();
+
+        if (node->getNodeType() == QueryTreeNodeType::COLUMN)
+            columns.insert(node);
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                collectColumns(child, columns);
+    }
+
+    static bool hasStatefulFunction(const QueryTreeNodePtr & node)
+    {
+        checkStackSize();
+
+        if (const auto * function_node = node->as<FunctionNode>())
+        {
+            const auto function = function_node->getFunction();
+            if (function && function->isStateful())
+                return true;
+        }
+
+        return std::ranges::any_of(node->getChildren(), [](const auto & child) { return child && hasStatefulFunction(child); });
+    }
+
+    /// An expression in ORDER BY of a query with GROUP BY is a function of keys, unless it has aggregate or window functions, or
+    /// functions that return different values for the same arguments. It is not necessarily written with the keys, because it can
+    /// be already replaced: `toYear(d) = 2024` with a condition on `d`.
+    static bool isFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & columns_to_exclude)
+    {
+        checkStackSize();
+
+        switch (node->getNodeType())
+        {
+            case QueryTreeNodeType::CONSTANT:
+                return true;
+            case QueryTreeNodeType::COLUMN:
+                return !columns_to_exclude.contains(node);
+            case QueryTreeNodeType::FUNCTION:
+            {
+                const auto & function_node = node->as<FunctionNode &>();
+                const auto function = function_node.isOrdinaryFunction() ? function_node.getFunction() : nullptr;
+                if (!function || !function->isDeterministic() || function->isServerConstant() || function->isStateful()
+                    || function_node.getFunctionName() == "arrayJoin")
+                    return false;
+
+                return std::ranges::all_of(
+                    function_node.getArguments().getNodes(),
+                    [&](const auto & argument) { return isFunctionOfKeys(argument, columns_to_exclude); });
+            }
+            default:
+                return false;
+        }
+    }
+
     /// Check if an expression covers any GROUP BY keys.
     /// An expression covers a key if it equals the key directly,
     /// or if it is an injective function whose arguments cover the key(s).
