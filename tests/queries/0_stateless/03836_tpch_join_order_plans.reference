@@ -274,7 +274,7 @@ Expression (Project names)
                 Expression (Change column names to column identifiers)
                   ShuffleExchange
                     ReadFromMergeTree (ParallelRead default.orders)
-                Filter ((WHERE + Change column names to column identifiers))
+                Expression ((WHERE + Change column names to column identifiers))
                   ShuffleExchange
                     ReadFromMergeTree (ParallelRead default.lineitem)
 -- Q13
