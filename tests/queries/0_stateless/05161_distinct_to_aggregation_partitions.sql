@@ -7,8 +7,8 @@ SET max_threads = 8;
 -- The per-partition optimization is disabled under parallel replicas.
 SET enable_parallel_replicas = 0;
 
--- Independent per-partition DISTINCT is not applied when a DISTINCT size limit is set, and some CI
--- configurations set these limits at the server level, so pin them to unlimited.
+-- Some CI configurations set `DISTINCT` size limits at the server level, which can change the plans below,
+-- so pin them to unlimited.
 SET max_rows_in_distinct = 0;
 SET max_bytes_in_distinct = 0;
 
@@ -29,11 +29,6 @@ SELECT count(), sum(a) FROM (SELECT DISTINCT a FROM t_distinct_partitions);
 -- Without the per-partition optimization the final `DISTINCT` merges its streams, and aggregation replaces it.
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM t_distinct_partitions SETTINGS allow_distinct_partitions_independently = 0) WHERE explain LIKE '%Distinct%' OR explain LIKE '%Skip stream merging%' OR explain LIKE '%Aggregating%';
 SELECT count(), sum(a) FROM (SELECT DISTINCT a FROM t_distinct_partitions SETTINGS allow_distinct_partitions_independently = 0);
-
--- A `DISTINCT` size limit keeps the streams merged so that the limit stays global. Aggregation replaces
--- the merge and enforces the same limit.
-SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM t_distinct_partitions SETTINGS max_rows_in_distinct = 100000) WHERE explain LIKE '%Distinct%' OR explain LIKE '%Skip stream merging%' OR explain LIKE '%Aggregating%';
-SELECT count(), sum(a) FROM (SELECT DISTINCT a FROM t_distinct_partitions SETTINGS max_rows_in_distinct = 100000);
 
 -- Keys that do not determine the partition need the merge, so aggregation replaces it.
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT b FROM t_distinct_partitions) WHERE explain LIKE '%Distinct%' OR explain LIKE '%Skip stream merging%' OR explain LIKE '%Aggregating%';

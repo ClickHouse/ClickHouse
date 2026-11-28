@@ -56,7 +56,7 @@ SELECT arraySort(groupArray(tuple(*))) FROM (SELECT DISTINCT if(number % 3 = 0, 
 SELECT arraySort(groupArray(tuple(*))) FROM (SELECT DISTINCT [number % 3, number % 2] FROM numbers_mt(10000));
 SELECT arraySort(groupArray(tuple(*))) FROM (SELECT DISTINCT map('k', number % 3) FROM numbers_mt(10000));
 SELECT arraySort(groupArray(tuple(*))) FROM (SELECT DISTINCT tuple(number % 3, toString(number % 2)) FROM numbers_mt(10000));
--- Staged floating-point keys retain the binary identity of signed zero and NaN payloads.
+-- Staged floating-point keys keep the hash equality of `DISTINCT`: NaN payloads stay apart, and `-0.0` is `0.0`.
 SELECT arraySort(groupArray(reinterpretAsUInt64(k))) FROM
 (
     SELECT DISTINCT reinterpretAsFloat64(arrayElement(
