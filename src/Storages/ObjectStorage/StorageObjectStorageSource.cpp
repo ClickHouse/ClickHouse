@@ -130,7 +130,6 @@ extern const char object_storage_source_pause_before_virtual_columns[];
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_UNPACK_ARCHIVE;
     extern const int LOGICAL_ERROR;
@@ -1206,10 +1205,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         std::optional<Strings> validated_paths;
         if (paths)
         {
-            re2::RE2 matcher(makeRegexpPatternFromGlobs(reading_path.path));
-            if (!matcher.ok())
-                throw Exception(
-                    ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
+            const GlobMatcher matcher(reading_path.path, local_context->getSettingsRef());
 
             validated_paths.emplace();
             for (const auto & path : paths.value())
@@ -1218,7 +1214,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 for (auto & candidate : candidateKeysUnderPrefix(configuration->getNamespace(), path))
                 {
                     const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching(candidate) : candidate;
-                    if (!RE2::FullMatch(path_for_matching, matcher))
+                    if (!matcher.matches(path_for_matching))
                         continue;
 
                     if (matched_key)
@@ -3210,11 +3206,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
 
         hidden_check_prefix_size = getHiddenCheckOffset(key_with_globs.path);
 
-        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.path));
-        if (!matcher->ok())
-        {
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key_with_globs.path, matcher->error());
-        }
+        matcher.emplace(key_with_globs.path, local_context->getSettingsRef());
 
         recursive = key_with_globs.path == "/**";
 
@@ -3331,7 +3323,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 /* max_buffered_keys */ page_size * parallelism * 2,
                 std::move(list_level),
                 std::move(probe_level),
-                makeShouldDescendPredicate(key_with_globs.path),
+                makeShouldDescendPredicate(key_with_globs.path, GlobMatcher::chooseEngine(local_context->getSettingsRef())),
                 /* allow_keyspace_split */ object_storage->supportsListingKeyspaceSplit(),
                 std::move(check_cancellation),
                 ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
@@ -3437,7 +3429,7 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
                 const auto path_for_matching = match_web_paths_only
                     ? getPathComponentForGlobMatching((*it)->relative_path_with_metadata.getPathForGlobMatching())
                     : (*it)->getPath();
-                if (!recursive && !re2::RE2::FullMatch(path_for_matching, *matcher))
+                if (!recursive && !matcher->matches(path_for_matching))
                     it = new_batch.erase(it);
                 else
                     ++it;
@@ -3819,16 +3811,10 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
         archive_object, path_in_archive, archive_reader, std::move(file_info), archive_entry_index);
 }
 
-static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern)
+static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern, const Settings & settings)
 {
-    auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(archive_pattern));
-    if (!matcher->ok())
-    {
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                        "Cannot compile regex from glob ({}): {}",
-                        archive_pattern, matcher->error());
-    }
-    return [matcher](const std::string & p) mutable { return re2::RE2::FullMatch(p, *matcher); };
+    auto matcher = std::make_shared<const GlobMatcher>(archive_pattern, settings);
+    return [matcher](const std::string & p) { return matcher->matches(p); };
 }
 
 StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::ObjectInfoInArchive(
@@ -3861,7 +3847,9 @@ StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
     , object_storage(object_storage_)
     , is_path_in_archive_with_globs(configuration_->isPathInArchiveWithGlobs())
     , archives_iterator(std::move(archives_iterator_))
-    , filter(is_path_in_archive_with_globs ? createArchivePathFilter(configuration_->getPathInArchive()) : IArchiveReader::NameFilter{})
+    , filter(is_path_in_archive_with_globs
+        ? createArchivePathFilter(configuration_->getPathInArchive(), context_->getSettingsRef())
+        : IArchiveReader::NameFilter{})
     , log(getLogger("ArchiveIterator"))
     , path_in_archive(is_path_in_archive_with_globs ? "" : configuration_->getPathInArchive())
     , read_keys(read_keys_)

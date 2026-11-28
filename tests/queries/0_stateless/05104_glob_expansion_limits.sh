@@ -33,7 +33,8 @@ ${CLICKHOUSE_CLIENT} -q "SELECT * FROM file('{' || repeat('a,', 1000000) || 'a}'
 
 # A `{N..M}` range glob is not enumerated into separate paths, but into a regexp alternation of
 # every number of the range, which is just as unbounded: this one asks for a regexp of gigabytes.
-${CLICKHOUSE_CLIENT} -q "SELECT * FROM file('{1..100000000}.csv')" 2>&1 | grep -q -F 'covers more than' && echo 'OK' || echo 'FAIL'
+# Only where that regexp is built: without it a range of any size is fine.
+${CLICKHOUSE_CLIENT} --use_regexp_free_glob_matcher 0 -q "SELECT * FROM file('{1..100000000}.csv')" 2>&1 | grep -q -F 'covers more than' && echo 'OK' || echo 'FAIL'
 
 # The server is still fine after refusing these patterns.
 ${CLICKHOUSE_CLIENT} -q "SELECT 1"

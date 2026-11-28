@@ -34,7 +34,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/parseGlobs.h>
-#include <Common/re2.h>
+#include <Common/GlobMatcher.h>
 #include <base/errnoToString.h>
 
 #include <sys/stat.h>
@@ -76,7 +76,6 @@ namespace ErrorCodes
     extern const int TABLE_METADATA_ALREADY_EXISTS;
     extern const int CANNOT_SELECT;
     extern const int QUERY_NOT_ALLOWED;
-    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace
@@ -330,10 +329,7 @@ void StorageFileLog::loadFiles()
             if (!std::filesystem::is_directory(directory))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The directory {} of the path {} does not exist", directory.c_str(), absolute_path.c_str());
 
-            auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(glob));
-            if (!matcher->ok())
-                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", glob, matcher->error());
-            file_name_matcher = std::move(matcher);
+            file_name_matcher = std::make_shared<const GlobMatcher>(glob, getContext()->getSettingsRef());
             root_data_path = directory;
         }
 
@@ -1234,7 +1230,7 @@ void StorageFileLog::onFileAppeared(const String & file_name, UInt64 inode)
 
 bool StorageFileLog::fileNameMatches(const String & file_name) const
 {
-    return !file_name_matcher || re2::RE2::FullMatch(file_name, *file_name_matcher);
+    return !file_name_matcher || file_name_matcher->matches(file_name);
 }
 
 bool StorageFileLog::isReadUnderOtherName(const String & file_name, UInt64 inode) const
