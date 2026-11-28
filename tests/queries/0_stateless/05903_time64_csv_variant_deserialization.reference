@@ -1,0 +1,9 @@
+1_quoted_single	Time64(3)	12:34:56.789
+2_quoted_double	Time64(3)	01:02:03.004
+3_unquoted	Time64(3)	23:59:59.999
+4_quoted_trailing	String	01:02:03.004x
+5_unquoted_trailing	String	12:34:56.789x
+6_not_a_time	String	notatime
+7_empty	String	
+8_negative	Time64(3)	-01:02:03.123
+9_normalized	Time64(3)	26:11:10.500

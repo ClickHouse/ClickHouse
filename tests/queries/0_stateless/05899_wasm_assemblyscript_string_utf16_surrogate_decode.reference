@@ -1,0 +1,16 @@
+three-byte code point: returned string, its UTF-8 bytes, its code points
+Hello, →!	48656C6C6F2C20E2869221	9
+one code point above U+FFFF: the surrogate pair becomes four UTF-8 bytes
+Hello, 🦀!	48656C6C6F2C20F09FA68021	9
+all four UTF-8 widths in one returned string
+Hello, aé→🦀!	48656C6C6F2C2061C3A9E28692F09FA68021	12
+three adjacent pairs: each low surrogate is consumed, not decoded on its own
+🦀🦀🦀	F09FA680F09FA680F09FA680	3	12
+lossless at every UTF-8 width boundary: input bytes, bytes of the returned string
+7F	48656C6C6F2C207F21
+C280	48656C6C6F2C20C28021
+DFBF	48656C6C6F2C20DFBF21
+E0A080	48656C6C6F2C20E0A08021
+EFBFBD	48656C6C6F2C20EFBFBD21
+F0908080	48656C6C6F2C20F090808021
+F48FBFBF	48656C6C6F2C20F48FBFBF21

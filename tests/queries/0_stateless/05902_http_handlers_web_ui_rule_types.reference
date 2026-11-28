@@ -1,0 +1,7 @@
+/ui_index 200 Ok. same_as_default=1
+/ui_index as a browser 200 ClickHouse same_as_default=1
+/ui_jemalloc 200 ClickHouse Jemalloc Stats same_as_default=1
+/ui_schema 200 ClickHouse Schema Visualizer same_as_default=1
+/ui_docs 200 ClickHouse Reference same_as_default=1
+/ui_not_configured 404
+/ui_acme as HEAD 404

@@ -1,0 +1,22 @@
+-- every latitude band decodes back to the point it was encoded from
+-76	C	C	1
+-68	D	D	1
+-60	E	E	1
+-52	F	F	1
+-44	G	G	1
+-36	H	H	1
+-28	J	J	1
+-20	K	K	1
+-12	L	L	1
+-4	M	M	1
+4	N	N	1
+12	P	P	1
+20	Q	Q	1
+28	R	R	1
+36	S	S	1
+44	T	T	1
+52	U	U	1
+60	V	V	1
+68	W	W	1
+78	X	X	1
+-- a band letter outside C..X is rejected before the band table is consulted
