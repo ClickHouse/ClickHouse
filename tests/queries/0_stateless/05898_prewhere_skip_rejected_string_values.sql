@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: read_bytes and ProfileEvents in the initiator's query_log do not include the replicas' reads.
+-- Random settings limits: max_block_size=(8192, None)
+-- A `max_block_size` below the granule size starts reads inside a granule, and the rows before the start are still read.
 -- The String values a PREWHERE filter rejects at the start of a granule are not read when the column has a size stream:
 -- `t_size` takes that path, `t_single` (sizes inline) reads them as before, and both must return the same rows.
 -- `t_sparse` stores `flag` sparse, so the filter of `PREWHERE flag` is sparse.
