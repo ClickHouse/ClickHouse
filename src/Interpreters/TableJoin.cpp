@@ -234,6 +234,8 @@ TableJoin::TableJoin(
     , max_bytes_before_external_join(JoinSettings::getMaxBytesBeforeExternalJoin(
           settings[Setting::max_bytes_before_external_join],
           settings[Setting::max_bytes_ratio_before_external_join]))
+    , max_bytes_in_query_before_external_join(
+          JoinSettings::getMaxBytesBeforeExternalJoin(0, settings[Setting::max_bytes_ratio_before_external_join]))
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , enable_join_key_only_hash_tables(settings[Setting::enable_join_key_only_hash_tables])
     , enable_robin_hood_hash_for_joins(settings[Setting::enable_robin_hood_hash_for_joins])
@@ -271,6 +273,8 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , enable_software_prefetch_in_join(settings.enable_software_prefetch_in_join)
     , legacy_join_size_limits_trigger_spilling(settings.legacy_join_size_limits_trigger_spilling)
     , max_bytes_before_external_join(settings.getEffectiveMaxBytesBeforeExternalJoin())
+    , max_bytes_in_query_before_external_join(
+          JoinSettings::getMaxBytesBeforeExternalJoin(0, settings.max_bytes_ratio_before_external_join))
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
     , enable_robin_hood_hash_for_joins(settings.enable_robin_hood_hash_for_joins)

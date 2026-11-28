@@ -107,6 +107,8 @@ public:
     const Int32 os_threads_nice_value;
 
     MemorySpillSchedulerPtr memory_spill_scheduler;
+    /// The hash joins building in this group that can spill; they share the spill budget compared with `memory_tracker`.
+    std::atomic<size_t> spill_capable_hash_joins{0};
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 

@@ -20,6 +20,7 @@ class HashJoin;
 class GraceHashJoin;
 struct HashJoinBuildLayout;
 class MergeJoin;
+class QueryJoinSpillBudget;
 
 /// An IJoin wrapper that automatically switches to an external join to spill to disk when memory limits are exceeded.
 /// The external join is GraceHashJoin, or MergeJoin (partial merge) when the query plan requires
@@ -159,6 +160,8 @@ private:
     size_t max_num_buckets;
     bool any_take_last_row;
     size_t max_bytes_before_external_join;
+    /// Shared with the `GraceHashJoin` this join switches to, so the two count as one join of the query.
+    std::shared_ptr<QueryJoinSpillBudget> spill_budget;
 
     SharedMutex switch_mutex;
     std::atomic<size_t> next_build_stream_to_convert{0};
