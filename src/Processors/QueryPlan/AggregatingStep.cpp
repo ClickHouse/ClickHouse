@@ -1726,24 +1726,12 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats],
         ctx.settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation]);
 
-    size_t max_bytes_to_group_by = 0;
-    Aggregator::Params::LimitErrors limit_errors;
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS)
-    {
-        readVarUInt(max_bytes_to_group_by, ctx.in);
-        readStringBinary(limit_errors.description, ctx.in);
-        readIntBinary(limit_errors.rows, ctx.in);
-        readIntBinary(limit_errors.bytes, ctx.in);
-    }
-
     Aggregator::Params params{
         keys,
         aggregates,
         overflow_row,
         ctx.settings[QueryPlanSerializationSetting::max_rows_to_group_by],
         ctx.settings[QueryPlanSerializationSetting::group_by_overflow_mode],
-        max_bytes_to_group_by,
-        std::move(limit_errors),
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold],
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold_bytes],
         ctx.settings[QueryPlanSerializationSetting::max_bytes_before_external_group_by],
@@ -1777,6 +1765,14 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
             : bool(ctx.context->getSettingsRef()[Setting::use_aggregation_memory_tracker])};
 
     params.top_k = std::move(top_k);
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS)
+    {
+        readVarUInt(params.max_bytes_to_group_by, ctx.in);
+        readStringBinary(params.limit_errors.description, ctx.in);
+        readIntBinary(params.limit_errors.rows, ctx.in);
+        readIntBinary(params.limit_errors.bytes, ctx.in);
+    }
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),

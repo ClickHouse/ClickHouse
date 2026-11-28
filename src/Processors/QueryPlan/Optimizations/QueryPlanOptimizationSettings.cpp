@@ -50,10 +50,14 @@ namespace Setting
     extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool enable_parallel_single_level_merge;
+    extern const SettingsBool enable_parallel_single_level_merge_by_index;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
+    extern const SettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+    extern const SettingsBool adaptive_aggregator_disable_thaw;
+    extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsBool enable_group_by_top_k_dynamic_filtering;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
     extern const SettingsUInt64 distributed_group_by_top_k;
@@ -465,10 +469,14 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         .enable_prefetch = from[Setting::enable_software_prefetch_in_aggregation],
         .serialize_string_with_zero_byte = from[Setting::serialize_string_in_memory_with_zero_byte],
         .enable_parallel_single_level_merge = from[Setting::enable_parallel_single_level_merge],
+        .enable_parallel_single_level_merge_by_index = from[Setting::enable_parallel_single_level_merge_by_index],
         .enable_packed_string_keys = from[Setting::enable_packed_string_keys_in_aggregation],
+        .enable_fixed_and_packed_string_keys = from[Setting::enable_fixed_and_packed_string_keys_in_aggregation],
         .enable_adaptive_aggregator = from[Setting::enable_adaptive_aggregator],
         .adaptive_aggregator_freeze_threshold = from[Setting::adaptive_aggregator_freeze_threshold],
         .adaptive_aggregator_freeze_threshold_bytes = from[Setting::adaptive_aggregator_freeze_threshold_bytes],
+        .adaptive_aggregator_disable_thaw = from[Setting::adaptive_aggregator_disable_thaw],
+        .use_aggregation_memory_tracker = from[Setting::use_aggregation_memory_tracker],
     };
     use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
     set_settings = FutureSetSettings(from);

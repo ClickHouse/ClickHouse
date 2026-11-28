@@ -179,11 +179,10 @@ bool tryConvertDistinctToAggregation(
         /*overflow_row=*/false,
         limits.max_rows,
         limits.overflow_mode,
-        limits.max_bytes,
-        {"DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED, ErrorCodes::SET_SIZE_LIMIT_EXCEEDED},
         aggregation_settings.group_by_two_level_threshold,
         aggregation_settings.group_by_two_level_threshold_bytes,
         /*max_bytes_before_external_group_by=*/0,
+        /*min_bytes_before_external_group_by=*/0,
         /*empty_result_for_aggregation_by_empty_set=*/true,
         /*tmp_data_scope=*/nullptr,
         /*max_threads=*/0,
@@ -199,10 +198,16 @@ bool tryConvertDistinctToAggregation(
         /*enable_producing_buckets_out_of_order_in_aggregation=*/true,
         aggregation_settings.serialize_string_with_zero_byte,
         aggregation_settings.enable_parallel_single_level_merge,
+        aggregation_settings.enable_parallel_single_level_merge_by_index,
         aggregation_settings.enable_packed_string_keys,
+        aggregation_settings.enable_fixed_and_packed_string_keys,
         aggregation_settings.enable_adaptive_aggregator,
         aggregation_settings.adaptive_aggregator_freeze_threshold,
-        aggregation_settings.adaptive_aggregator_freeze_threshold_bytes);
+        aggregation_settings.adaptive_aggregator_freeze_threshold_bytes,
+        aggregation_settings.adaptive_aggregator_disable_thaw,
+        aggregation_settings.use_aggregation_memory_tracker);
+    params.max_bytes_to_group_by = limits.max_bytes;
+    params.limit_errors = {"DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED, ErrorCodes::SET_SIZE_LIMIT_EXCEEDED};
 
     auto aggregation = std::make_unique<AggregatingStep>(
         header,

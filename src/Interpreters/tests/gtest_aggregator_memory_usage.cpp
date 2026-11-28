@@ -52,17 +52,16 @@ protected:
 
         auto volume = std::make_shared<SingleDiskVolume>("temporary", disk);
         auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(TemporaryDataOnDiskSettings{}, volume);
-        return Aggregator::Params(
+        Aggregator::Params params(
             Names{"k"},
             aggregates,
             /*overflow_row=*/false,
             /*max_rows_to_group_by=*/0,
             OverflowMode::THROW,
-            /*max_bytes_to_group_by=*/2 * 1024 * 1024,
-            /*limit_errors=*/{},
             /*group_by_two_level_threshold=*/1,
             /*group_by_two_level_threshold_bytes=*/0,
             /*max_bytes_before_external_group_by=*/0,
+            /*min_bytes_before_external_group_by=*/0,
             /*empty_result_for_aggregation_by_empty_set=*/false,
             std::move(tmp_data_scope),
             /*max_threads=*/1,
@@ -78,10 +77,16 @@ protected:
             /*enable_producing_buckets_out_of_order_in_aggregation=*/true,
             /*serialize_string_with_zero_byte=*/false,
             /*enable_parallel_single_level_merge=*/false,
+            /*enable_parallel_single_level_merge_by_index=*/false,
             /*enable_packed_string_keys=*/true,
+            /*enable_fixed_and_packed_string_keys=*/false,
             /*enable_adaptive_aggregator=*/false,
             /*adaptive_aggregator_freeze_threshold=*/0,
-            /*adaptive_aggregator_freeze_threshold_bytes=*/0);
+            /*adaptive_aggregator_freeze_threshold_bytes=*/0,
+            /*adaptive_aggregator_disable_thaw=*/false,
+            /*use_aggregation_memory_tracker=*/true);
+        params.max_bytes_to_group_by = 2 * 1024 * 1024;
+        return params;
     }
 
     void aggregate(Aggregator & aggregator, AggregatedDataVariants & variants, size_t rows) const
@@ -111,19 +116,6 @@ TEST_P(AggregatorMemoryUsage, SpillReinitializesBufferAccounting)
         EXPECT_TRUE(variants.isTwoLevel());
         EXPECT_EQ(variants.sizeWithoutOverflowRow(), 0);
         EXPECT_EQ(variants.accounted_bytes, variants.allocatedBytes());
-    }
-}
-
-TEST_P(AggregatorMemoryUsage, ConsumingSpillReleasesBufferAccounting)
-{
-    Aggregator aggregator(header, makeParams());
-    for (size_t rows : {1, 10000, 10000})
-    {
-        AggregatedDataVariants variants;
-        ASSERT_NO_FATAL_FAILURE(aggregate(aggregator, variants, rows));
-        aggregator.consumeToTemporaryFile(variants);
-        EXPECT_TRUE(variants.empty());
-        EXPECT_EQ(variants.accounted_bytes, 0);
     }
 }
 

@@ -245,10 +245,14 @@ struct QueryPlanOptimizationSettings
         bool enable_prefetch;
         bool serialize_string_with_zero_byte;
         bool enable_parallel_single_level_merge;
+        bool enable_parallel_single_level_merge_by_index;
         bool enable_packed_string_keys;
+        bool enable_fixed_and_packed_string_keys;
         bool enable_adaptive_aggregator;
         UInt64 adaptive_aggregator_freeze_threshold;
         UInt64 adaptive_aggregator_freeze_threshold_bytes;
+        bool adaptive_aggregator_disable_thaw;
+        bool use_aggregation_memory_tracker;
     } distinct_aggregation_settings;
 
     bool optimize_use_implicit_projections;
