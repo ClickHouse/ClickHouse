@@ -11,6 +11,8 @@
 #include <base/errnoToString.h>
 #include <base/getPageSize.h>
 
+#include <atomic>
+
 #include <Poco/Environment.h>
 #include <Poco/Logger.h>
 #include <sys/mman.h> /// MADV_POPULATE_WRITE
@@ -22,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int CANNOT_MUNMAP;
     extern const int LOGICAL_ERROR;
 }
 
@@ -56,6 +59,124 @@ const bool is_supported_by_kernel = madviseSupportsMadvPopulateWrite();
 
 #endif
 
+/// Large hash tables are accessed at random, and with 4 KiB pages almost every probe of a table that is much larger
+/// than the TLB reach also misses the TLB and needs a page walk. On distributions that ship with
+/// `transparent_hugepage/enabled = madvise` the tables never get transparent huge pages unless we ask for them.
+/// So the buffers of `HashTableAllocator` (the only user of `populate = true`) that are at least one huge page large
+/// are mapped directly, aligned to the huge page size, and advised with `MADV_HUGEPAGE` before they are populated.
+/// Returns 0 if this is disabled or not supported.
+size_t readHugePageSizeForHashTables()
+{
+#if defined(OS_LINUX) && defined(MADV_HUGEPAGE)
+    /// Experiment knob, off by default: `CLICKHOUSE_HASH_TABLE_HUGE_PAGES=1` enables it.
+    /// Every qualifying buffer gets a fresh mapping instead of memory reused by jemalloc, and that makes
+    /// workloads that create and drop many large tables (dictionaries, `DISTINCT`, aggregation) slower.
+    if (const char * env = getenv("CLICKHOUSE_HASH_TABLE_HUGE_PAGES"); !env || env[0] != '1') // NOLINT(concurrency-mt-unsafe)
+        return 0;
+
+    auto read_first_line = [](const char * path) -> std::string
+    {
+        FILE * f = fopen(path, "r");
+        if (!f)
+            return {};
+        char line[128] = {};
+        std::string result;
+        if (fgets(line, sizeof(line), f))
+            result = line;
+        (void)fclose(f);
+        return result;
+    };
+
+    const std::string enabled = read_first_line("/sys/kernel/mm/transparent_hugepage/enabled");
+    if (enabled.empty() || enabled.contains("[never]"))
+        return 0;
+
+    const std::string huge_page_size_str = read_first_line("/sys/kernel/mm/transparent_hugepage/hpage_pmd_size");
+    if (huge_page_size_str.empty())
+        return 0;
+    char * end = nullptr;
+    errno = 0;
+    const uint64_t value = std::strtoull(huge_page_size_str.c_str(), &end, 10);
+    if (errno != 0 || end == huge_page_size_str.c_str())
+        return 0;
+    const size_t huge_page_size = value;
+
+    /// With 64 KiB base pages a PMD huge page is 512 MiB - too coarse to be useful for hash tables.
+    if (huge_page_size == 0 || huge_page_size > 32 * 1024 * 1024 || !isPowerOf2(huge_page_size) || huge_page_size <= static_cast<size_t>(::getPageSize()))
+        return 0;
+    return huge_page_size;
+#else
+    return 0;
+#endif
+}
+
+/// Minimum size for which we even consider huge pages, to avoid touching the function-local static on small allocations.
+constexpr size_t MIN_HUGE_PAGE_SIZE = 2 * 1024 * 1024;
+
+size_t hugePageSizeForHashTables()
+{
+    static const size_t value = readHugePageSizeForHashTables();
+    return value;
+}
+
+template <bool populate>
+bool useHugePages(size_t size)
+{
+    if constexpr (!populate)
+        return false;
+    if (size < MIN_HUGE_PAGE_SIZE)
+        return false;
+    const size_t huge_page_size = hugePageSizeForHashTables();
+    return huge_page_size && size >= huge_page_size;
+}
+
+size_t roundUpToPageSize(size_t size)
+{
+    const size_t page_size = static_cast<size_t>(::getPageSize());
+    return (size + page_size - 1) / page_size * page_size;
+}
+
+std::atomic<size_t> directly_mapped_bytes = 0;
+
+/// The memory is zero-filled by the kernel.
+void * mmapWithHugePages(size_t size, size_t alignment)
+{
+#if defined(OS_LINUX) && defined(MADV_HUGEPAGE)
+    const size_t huge_page_size = std::max(hugePageSizeForHashTables(), alignment);
+    const size_t length = roundUpToPageSize(size);
+    const size_t map_length = length + huge_page_size;
+
+    void * map = ::mmap(nullptr, map_length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (MAP_FAILED == map)
+        return nullptr;
+
+    /// Trim the mapping to a huge-page-aligned region.
+    const uintptr_t begin = reinterpret_cast<uintptr_t>(map);
+    const uintptr_t aligned = (begin + huge_page_size - 1) & ~(huge_page_size - 1);
+    const uintptr_t end = begin + map_length;
+    if (aligned != begin)
+        ::munmap(map, aligned - begin);
+    if (aligned + length != end)
+        ::munmap(reinterpret_cast<void *>(aligned + length), end - (aligned + length));
+
+    /// Only an advice: if it fails, the memory is still usable with regular pages.
+    ::madvise(reinterpret_cast<void *>(aligned), length, MADV_HUGEPAGE);
+    directly_mapped_bytes.fetch_add(length, std::memory_order_relaxed);
+    return reinterpret_cast<void *>(aligned);
+#else
+    UNUSED(size, alignment);
+    return nullptr;
+#endif
+}
+
+void munmapWithHugePages(void * buf, size_t size)
+{
+    const size_t length = roundUpToPageSize(size);
+    if (0 != ::munmap(buf, length))
+        DB::ErrnoException::throwWithErrno(DB::ErrorCodes::CANNOT_MUNMAP, errno, "Allocator: Cannot munmap {}.", ReadableSize(size));
+    directly_mapped_bytes.fetch_sub(length, std::memory_order_relaxed);
+}
+
 void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
 {
 #if defined(MADV_POPULATE_WRITE)
@@ -76,7 +197,18 @@ void * allocImpl(size_t size, size_t alignment)
     auto trace = CurrentMemoryTracker::alloc(size);
 
     void * buf = nullptr;
-    if (alignment <= MALLOC_MIN_ALIGNMENT) [[likely]]
+    if (useHugePages<populate>(size))
+    {
+        /// Fresh anonymous memory is already zero-filled, so `clear_memory` needs no work here.
+        buf = mmapWithHugePages(size, alignment);
+        if (nullptr == buf) [[unlikely]]
+        {
+            [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(size);
+            DB::ErrnoException::throwWithErrno(
+                DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, errno, "Allocator: Cannot mmap {}.", ReadableSize(static_cast<double>(size)));
+        }
+    }
+    else if (alignment <= MALLOC_MIN_ALIGNMENT) [[likely]]
     {
         if constexpr (clear_memory)
             buf = __real_calloc(size, 1);
@@ -114,9 +246,13 @@ void * allocImpl(size_t size, size_t alignment)
     return buf;
 }
 
-void freeImpl(void * buf)
+template <bool populate>
+void freeImpl(void * buf, size_t size)
 {
-    __real_free(buf);
+    if (useHugePages<populate>(size))
+        munmapWithHugePages(buf, size);
+    else
+        __real_free(buf);
 }
 
 void checkSize(size_t size)
@@ -146,7 +282,7 @@ void Allocator<clear_memory_, populate>::free(void * buf, size_t size, size_t /*
     try
     {
         checkSize(size);
-        freeImpl(buf);
+        freeImpl<populate>(buf, size);
         auto trace = CurrentMemoryTracker::free(size);
         trace.onFree(buf, size);
     }
@@ -169,7 +305,7 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         return buf;
     }
 
-    if (alignment <= MALLOC_MIN_ALIGNMENT) [[likely]]
+    if (alignment <= MALLOC_MIN_ALIGNMENT && !useHugePages<populate>(old_size) && !useHugePages<populate>(new_size)) [[likely]]
     {
         /// Resize malloc'd memory region with no special alignment requirement.
         /// Realloc can do 2 possible things:
@@ -214,6 +350,11 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
     return buf;
 }
 
+
+size_t getAllocatorDirectlyMappedBytes()
+{
+    return directly_mapped_bytes.load(std::memory_order_relaxed);
+}
 
 template class Allocator<false, false>;
 template class Allocator<true, false>;
