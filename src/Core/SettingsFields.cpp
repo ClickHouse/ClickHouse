@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/parseURI.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Common/DateLUTImpl.h>
@@ -469,14 +470,7 @@ void SettingFieldURI::readBinary(ReadBuffer & in)
 
 Poco::URI SettingFieldURI::parseURI(const String & str)
 {
-    try
-    {
-        return Poco::URI{str};
-    }
-    catch (const Poco::SyntaxException & e)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse URI: {}", e.displayText());
-    }
+    return DB::parseURI(str);
 }
 
 

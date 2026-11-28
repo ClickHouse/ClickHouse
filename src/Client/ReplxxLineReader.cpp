@@ -17,13 +17,16 @@
 #include <cerrno>
 #include <cstring>
 #include <unistd.h>
+
+#if defined(OS_DARWIN)
+#    include <dlfcn.h>
+#endif
 #include <functional>
 #include <limits>
 #include <sys/file.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <csignal>
-#include <dlfcn.h>
 #include <fcntl.h>
 #include <fstream>
 #include <filesystem>
@@ -86,28 +89,24 @@ std::string getEditor()
 }
 
 /// See comments in ShellCommand::executeImpl()
-/// (for the vfork via dlsym())
 int executeCommand(char * const argv[])
 {
-#if !defined(USE_MUSL)
-    /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
-      *  because of the resolving of symbols in the shared library
-      * https://web.archive.org/web/20191016050435/https://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
-      * Therefore, separate the resolving of the symbol from the call.
-      */
+#if defined(OS_DARWIN)
+    /// x86_64 macOS binds library symbols lazily (there is no `-z now` there), and binding `vfork` in the call itself
+    /// can deadlock in a multithreaded program. So resolve it before the call. Elsewhere everything is bound at startup.
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
-#else
-    /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
-    static void * real_vfork = reinterpret_cast<void *>(&vfork); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c)
-#endif
     if (!real_vfork)
         throw std::runtime_error("Cannot find vfork symbol");
-
     pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
+#else
+    pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c,clang-analyzer-security.insecureAPI.vfork)
+#endif
 
     if (-1 == pid)
         throw std::runtime_error(fmt::format("Cannot vfork {}: {}", argv[0], errnoToString()));
 
+    /// The child only calls async-signal-safe functions before `exec`.
+    // NOLINTBEGIN(clang-analyzer-unix.Vfork)
     /// Child
     if (0 == pid)
     {
@@ -119,6 +118,7 @@ int executeCommand(char * const argv[])
         execvp(argv[0], argv);
         _exit(-1);
     }
+    // NOLINTEND(clang-analyzer-unix.Vfork)
 
     int status = 0;
     do

@@ -14,35 +14,27 @@ Dictionary は、次のような用途で役立ちます。
 * インジェスト処理を遅くすることなく、取り込みデータをその場でエンリッチする
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse における Dictionary のユースケース](/images/dictionary/dictionary-use-cases.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse における Dictionary のユースケース](/images/dictionary/dictionary-use-cases.webp)
+  </Frame>
 </div>
 
-## Dictionary を使用した JOIN の高速化 {#speeding-up-joins-using-a-dictionary}
+## Dictionary を使用した 結合 の高速化 {#speeding-up-joins-using-a-dictionary}
 
 Dictionary は、特定の種類の `JOIN` を高速化するために使用できます。具体的には、結合キーが基盤となるキー・バリュー ストレージのキー属性と一致している必要がある [`LEFT ANY` 型](/ja/reference/statements/select/join#supported-types-of-join) です。
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![LEFT ANY JOIN で Dictionary を使用する](/images/dictionary/dictionary-left-any-join.webp)
-
-</Frame>
-
+  <Frame>
+    ![LEFT ANY JOIN で Dictionary を使用する](/images/dictionary/dictionary-left-any-join.webp)
+  </Frame>
 </div>
 
-この条件に該当する場合、ClickHouse は Dictionary を利用して [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join) を実行できます。これは ClickHouse で最も高速な JOIN アルゴリズムで、右側のテーブルの基盤となる[テーブルエンジン](/ja/reference/engines/table-engines/index)が低レイテンシのキー・バリュー リクエストをサポートしている場合に適用できます。ClickHouse には、これを実現する 3 つのテーブルエンジンがあります: [Join](/ja/reference/engines/table-engines/special/join) (基本的には事前計算済みの hash table)、[EmbeddedRocksDB](/ja/reference/engines/table-engines/integrations/embedded-rocksdb)、および [Dictionary](/ja/reference/engines/table-engines/special/dictionary) です。ここでは Dictionary ベースのアプローチを説明しますが、仕組みはこれら 3 つのエンジンすべてで同じです。
+この条件に該当する場合、ClickHouse は Dictionary を利用して [直接結合](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join) を実行できます。これは ClickHouse で最も高速な 結合 アルゴリズムで、右側のテーブルの基盤となる[テーブルエンジン](/ja/reference/engines/table-engines/index)が低レイテンシのキー・バリュー リクエストをサポートしている場合に適用できます。ClickHouse には、これを実現する 3 つのテーブルエンジンがあります: [Join](/ja/reference/engines/table-engines/special/join) (基本的には事前計算済みの hash table)、[EmbeddedRocksDB](/ja/reference/engines/table-engines/integrations/embedded-rocksdb)、および [Dictionary](/ja/reference/engines/table-engines/special/dictionary) です。ここでは Dictionary ベースのアプローチを説明しますが、仕組みはこれら 3 つのエンジンすべてで同じです。
 
-Direct Join アルゴリズムでは、右側のテーブルが Dictionary を基盤としている必要があります。つまり、そのテーブルの JOIN 対象データが、低レイテンシのキー・バリュー データ構造として、あらかじめメモリ上に存在している必要があります。
+直接結合 アルゴリズムでは、右側のテーブルが Dictionary を基盤としている必要があります。つまり、そのテーブルの 結合 対象データが、低レイテンシのキー・バリュー データ構造として、あらかじめメモリ上に存在している必要があります。
 
 <div id="example">
-  ### 例
+  ### 例 {#example}
 </div>
 
 [Stack Overflow データセット](/ja/get-started/sample-datasets/stackoverflow)を使って、次の問いに答えてみましょう。
@@ -99,9 +91,7 @@ Peak memory usage: 3.18 GiB.
 
 このクエリは高速ですが、高いパフォーマンスを得るには、`JOIN` を注意深く記述する必要があります。理想的には、まず投稿のうち &quot;SQL&quot; を含むものだけに絞り込み、そのうえで、その投稿の部分集合について `UpVote` と `DownVote` の件数を確認し、メトリクスを計算できるのが望ましいです。
 
-<div id="applying-a-dictionary">
-  #### Dictionary の適用
-</div>
+#### Dictionary の適用 {#applying-a-dictionary}
 
 これらの概念を説明するために、投票データに Dictionary を使用します。Dictionary は通常メモリ上に保持されるため (例外は [ssd&#95;cache](/ja/reference/statements/create/dictionary/layouts/ssd-cache) です) 、データサイズを意識する必要があります。まず、`votes` テーブルのサイズを確認します。
 
@@ -123,7 +113,7 @@ GROUP BY table
 
 データは Dictionary 内に非圧縮で保存されるため、すべてのカラムを Dictionary に格納する場合 (実際にはそうしません) 、少なくとも 4GB のメモリが必要になります。Dictionary はクラスター全体にレプリケートされるため、このメモリ容量は *ノードごとに* 確保しておく必要があります。
 
-> 以下の例では、Dictionary の元データは ClickHouse テーブルです。これは Dictionary で最も一般的なデータソースですが、[さまざまなソース](/ja/reference/statements/create/dictionary/sources/overview#dictionary-sources) がサポートされており、ファイル、HTTP、[Postgres](/ja/reference/statements/create/dictionary/sources/postgresql) などのデータベースも利用できます。後で示すように、Dictionary は自動的に更新できるため、頻繁に変更される小規模なデータセットを direct joins で使える状態に保つのに最適です。
+> 以下の例では、Dictionary の元データは ClickHouse テーブルです。これは Dictionary で最も一般的なデータソースですが、[さまざまなソース](/ja/reference/statements/create/dictionary/sources/overview#dictionary-sources) がサポートされており、ファイル、HTTP、[Postgres](/ja/reference/statements/create/dictionary/sources/postgresql) などのデータベースも利用できます。後で示すように、Dictionary は自動的に更新できるため、頻繁に変更される小規模なデータセットを 直接結合 で使える状態に保つのに最適です。
 
 この Dictionary では、ルックアップを行うための主キーが必要です。これは概念的にはトランザクションデータベースの主キーと同じで、一意である必要があります。上記のクエリでは、結合キー `PostId` に対するルックアップが必要です。したがって、Dictionary には `votes` テーブルから `PostId` ごとの賛成票と反対票の合計を格納する必要があります。この Dictionary 用のデータを取得するクエリは次のとおりです。
 
@@ -134,6 +124,10 @@ SELECT PostId,
 FROM votes
 GROUP BY PostId
 ```
+
+<Note title="ClickHouse Cloud">
+  ClickHouse テーブルから読み取る Dictionary を作成する場合は、`SOURCE` 句に専用ユーザーのユーザー名とパスワードを指定してください。このユーザーには、ソーステーブルに対する `SELECT` アクセス許可が必要です。詳しくは [ClickHouse Dictionary ソースの例](/ja/reference/statements/create/dictionary/sources/clickhouse) を参照してください。
+</Note>
 
 このDictionaryを作成するには、以下のDDLが必要です。先ほどのクエリを使用している点に注目してください。
 
@@ -209,7 +203,7 @@ Peak memory usage: 552.26 MiB.
 このクエリはかなりシンプルになるだけでなく、速度も2倍以上に向上します！ さらに、賛成票と反対票がそれぞれ10票を超える投稿だけをDictionaryに読み込み、事前計算した `controversial` の値だけを保存するようにすれば、さらに最適化できます。
 
 <div id="query-time-enrichment">
-  ## クエリ時エンリッチメント
+  ## クエリ時エンリッチメント {#query-time-enrichment}
 </div>
 
 Dictionariesを使用すると、クエリ時に値を参照できます。これらの値は結果として返したり、集計に使用したりできます。たとえば、ユーザーIDを所在地に対応付けるDictionaryを作成するとします。
@@ -356,13 +350,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## Dictionary の高度なトピック
+  ## Dictionary の高度なトピック {#advanced-dictionary-topics}
 </div>
 
 Dictionary レイアウトの選び方、Dictionary と JOIN の使い分け、Dictionary の使用状況の監視については、[Dictionary のベストプラクティス](/ja/concepts/features/dictionaries/best-practices)を参照してください。
 
 <div id="refreshing-dictionaries">
-  ### Dictionary の更新
+  ### Dictionary の更新 {#refreshing-dictionaries}
 </div>
 
 Dictionary に `MIN 600 MAX 900` の `LIFETIME` を指定しました。LIFETIME はDictionaryの更新間隔で、ここでの値を指定すると、600〜900 秒のランダムな間隔で定期的に再読み込みされます。このランダムな間隔は、多数のサーバーで更新する際に Dictionary ソースへの負荷を分散するために必要です。更新中もDictionaryの古いバージョンに対して引き続きクエリを実行できますが、クエリがブロックされるのは初期ロード時だけです。なお、`(LIFETIME(0))` を設定するとDictionaryは更新されなくなります。
@@ -371,7 +365,7 @@ Dictionary は `SYSTEM RELOAD DICTIONARY` コマンドを使って強制的に�
 ClickHouse や Postgres などのデータベースソースでは、一定間隔で更新する代わりに、Dictionary が実際に変更された場合にのみ更新するクエリを設定できます (これを判定するのはそのクエリの応答です) 。詳しくは [こちら](/ja/reference/statements/create/dictionary/lifetime) を参照してください。
 
 <div id="other-dictionary-types">
-  ### その他の Dictionary の種類
+  ### その他の Dictionary の種類 {#other-dictionary-types}
 </div>
 
 ClickHouse は、[Hierarchical](/ja/reference/statements/create/dictionary/layouts/hierarchical)、[Polygon](/ja/reference/statements/create/dictionary/layouts/polygon)、[Regular Expression](/ja/reference/statements/create/dictionary/layouts/regexp-tree) の Dictionary にも対応しています。

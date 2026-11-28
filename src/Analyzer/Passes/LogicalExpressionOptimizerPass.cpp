@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/TypeTree.h>
 #include <Functions/ComparisonOrderDomain.h>
@@ -26,6 +27,7 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -275,7 +277,7 @@ static bool hasNonDeterministicFunction(const QueryTreeNodePtr & node)
         {
             /// Only ordinary functions can be non-deterministic here (e.g. `rand`); aggregate and
             /// window functions are deterministic within the scope of the query.
-            if (function_node->isOrdinaryFunction() && !function_node->getFunctionOrThrow()->isDeterministicInScopeOfQuery())
+            if (function_node->isOrdinaryCall() && !function_node->getFunctionOrThrow()->isDeterministicInScopeOfQuery())
                 return true;
         }
 
@@ -896,6 +898,7 @@ static const QueryTreeNodePtr & getComparisonFilterExpressionNode(const QueryTre
 /// for the column type or is implied by existing filters, or ADDED otherwise.
 /// `expression` is a precomputed key, or a node that is hashed only when `filter_map` is accessed.
 template <typename Expression>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static AddComparisonFilterResult addComparisonFilter(
     ComparisonFilterMap & filter_map,
     const Expression & expression,
@@ -2067,10 +2070,16 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
-        auto original_node = node;
+        /// A node with a single reference is not reached again, so it needs no entry.
+        QueryTreeNodePtr original_node;
+        if (node.use_count() > 1)
+            original_node = node;
+
         if (mode == Mode::OTHER_REWRITES)
             rewriteFunction(node);
-        visited_nodes.emplace(std::move(original_node), node);
+
+        if (original_node)
+            visited_nodes.emplace(std::move(original_node), node);
 
         if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
             return;
@@ -2914,6 +2923,13 @@ private:
 
             bool is_any_nullable = false;
             bool all_constants_convert_losslessly = true;
+            /// A `Field` does not keep the type of a `Dynamic` value or a `Variant` alternative, so the set may
+            /// put such a constant into a different type than the one `equals` compares.
+            const auto loses_type_in_field = [](const IDataType & type)
+            {
+                const auto * variant = typeid_cast<const DataTypeVariant *>(&type);
+                return isDynamic(type) || (variant && variant->getVariants().size() > 1);
+            };
             Tuple args;
             args.reserve(equals_functions.size());
             DataTypes tuple_element_types;
@@ -2940,6 +2956,9 @@ private:
                 /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
                 /// A NULL constant is excluded above, so it never reaches this check.
                 if (!tryConvertToColumnType(literal, expr_type))
+                    all_constants_convert_losslessly = false;
+
+                if (anyInTypeTree(*literal->getResultType(), loses_type_in_field))
                     all_constants_convert_losslessly = false;
             }
 
@@ -3096,9 +3115,12 @@ void LogicalExpressionOptimizerPass::run(QueryTreeNodePtr & query_tree_node, Con
 {
     /// The JOIN ON rewrites and the derivation of transitive comparisons run first: the derivation sees the rewritten JOIN ON,
     /// and the conflict detector of the other rewrites sees the derived conjuncts (`x = 3 AND x = y AND y = 5` -> FALSE).
-    LogicalExpressionOptimizerVisitor and_compare_chain_visitor(context, LogicalExpressionOptimizerVisitor::Mode::JOIN_ON_AND_COMPARE_CHAIN);
-    and_compare_chain_visitor.visit(query_tree_node);
-    and_compare_chain_visitor.revertAndCompareChainIfBudgetExceeded();
+    {
+        /// Destroyed before the next visitor: the references its caches hold would make unshared nodes look shared.
+        LogicalExpressionOptimizerVisitor and_compare_chain_visitor(context, LogicalExpressionOptimizerVisitor::Mode::JOIN_ON_AND_COMPARE_CHAIN);
+        and_compare_chain_visitor.visit(query_tree_node);
+        and_compare_chain_visitor.revertAndCompareChainIfBudgetExceeded();
+    }
 
     LogicalExpressionOptimizerVisitor visitor(std::move(context), LogicalExpressionOptimizerVisitor::Mode::OTHER_REWRITES);
     visitor.visit(query_tree_node);

@@ -48,6 +48,7 @@
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <base/EnumReflection.h>
+#include <base/unaligned.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -859,11 +860,24 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             }
             if (target.isUUID())
             {
+                if (fixed_size == sizeof(UUID))
+                {
+                    /// RFC 4122 binary form: 16 big-endian bytes.
+                    return [tmp_fixed = std::vector<uint8_t>(sizeof(UUID))](IColumn & column, avro::Decoder & decoder) mutable // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::Decoder` returns and fills std::vector
+                    {
+                        decoder.decodeFixed(tmp_fixed.size(), tmp_fixed);
+                        UUID uuid;
+                        UUIDHelpers::getHighBytes(uuid) = unalignedLoadBigEndian<UInt64>(tmp_fixed.data());
+                        UUIDHelpers::getLowBytes(uuid) = unalignedLoadBigEndian<UInt64>(tmp_fixed.data() + sizeof(UInt64));
+                        assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
+                        return true;
+                    };
+                }
                 return [tmp = std::vector<uint8_t>(), fixed_size](IColumn & column, avro::Decoder & decoder) mutable // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::Decoder` returns and fills std::vector
                 {
                     decoder.decodeFixed(fixed_size, tmp);
                     if (tmp.size() != 36)
-                        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse UUID from type Fixed, because it's size ({}) is not equal to the size of UUID (36)", fixed_size);
+                        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse UUID from Avro type Fixed of size {}, expected size 16 (binary) or 36 (text)", fixed_size);
 
                     const UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size()});
                     assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
@@ -914,11 +928,14 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return [nested_deserializers](IColumn & column, avro::Decoder & decoder)
                 {
                     ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(column);
-                    auto nested_columns = column_tuple.getColumns();
+                    /// Do not copy the column vector — copying the `WrappedPtr`s bumps each
+                    /// element's `use_count()` to 2, which then trips `chassert(use_count() == 1)`
+                    /// in `WrappedPtr::operator*` -> `assumeMutableRef` inside the deserializer.
+                    /// Access elements directly via `getColumn` to keep `use_count == 1`.
                     auto read_tuple=[&]()
                     {
                         for (const auto & [nested_deserializer, pos] : nested_deserializers)
-                            nested_deserializer(*nested_columns[pos], decoder);
+                            nested_deserializer(column_tuple.getColumn(pos), decoder);
                     };
                     SerializationTuple::readElementsSafe(column, read_tuple);
                     return true;
@@ -1271,6 +1288,7 @@ AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & co
     Block header;
     header.insert({data_type->createColumn(), data_type, column_name});
 
+    column_types = header.getDataTypes();
     column_found.resize(header.columns());
     row_action = createAction(header, schema_root, column_name);
     // fail on missing fields when allow_missing_fields = false
@@ -1315,6 +1333,7 @@ AvroDeserializer::AvroDeserializer(
         }
     }
 
+    column_types = header.getDataTypes();
     column_found.resize(header.columns());
     row_action = createAction(header, schema_root);
     // fail on missing fields when allow_missing_fields = false
@@ -1346,7 +1365,7 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
             ext.read_columns[i] = true;
         }
         else
-            columns[i]->insertDefault();
+            column_types[i]->insertDefaultInto(*columns[i]);
     }
 }
 

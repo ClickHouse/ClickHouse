@@ -164,6 +164,7 @@ public:
         auto * i8_ptr_ptr = i8_ptr->getPointerTo();
         auto * func_type = llvm::FunctionType::get(b.getInt8Ty(), {i8_ptr, i8_ptr, i8_ptr, i8_ptr_ptr, i8_ptr_ptr}, false);
         function = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "regexp_match", module);
+        setJITFunctionType<JITRegexpMatcherFunc>(*function);
 
         begin_arg = function->getArg(0);
         end_arg = function->getArg(1);

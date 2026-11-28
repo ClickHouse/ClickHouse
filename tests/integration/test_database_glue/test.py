@@ -1228,6 +1228,42 @@ def test_schema_evolution(started_cluster):
     assert node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY ALL") == "123\t1\t\\N\n456\t2\thello\n"
 
 
+def test_writes_table_statistics_ndv(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_table_statistics_ndv_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        "iceberg_write_table_statistics_ndv": 1,
+    }
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+    node.query(f"INSERT INTO {table_ref} SELECT toString(number % 10), toInt32(number) FROM numbers(100)", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} SELECT toString(number % 20), toInt32(number) FROM numbers(50, 100)", settings=write_settings)
+
+    # The metadata Glue points at has statistics of its current snapshot that count the values of both inserts.
+    def read_object(path):
+        bucket, key = path.split("://", 1)[1].split("/", 1)
+        return started_cluster.minio_client.get_object(bucket, key).read()
+
+    metadata_location = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["Parameters"]["metadata_location"]
+    metadata = json.loads(read_object(metadata_location))
+    schema = next(s for s in metadata["schemas"] if s["schema-id"] == metadata["current-schema-id"])
+    names = {field["id"]: field["name"] for field in schema["fields"]}
+    entry = next(e for e in metadata["statistics"] if e["snapshot-id"] == metadata["current-snapshot-id"])
+    assert {names[blob["fields"][0]]: int(blob["properties"]["ndv"]) for blob in entry["blob-metadata"]} == {"x": 20, "y": 150}
+    assert len(read_object(entry["statistics-path"])) == entry["file-size-in-bytes"]
+
+
 def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1949,7 +1985,7 @@ def test_sts_smoke(started_cluster):
     try:
         result = node.query(
             f"SELECT sum(value) FROM {db_name_fail}.`{root_namespace}.{table_name}` "
-            f"SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000"
+            f"SETTINGS s3_max_single_read_retries = 1, s3_request_timeout_ms = 1000"
         )
         assert False, f"Expected query to fail with wrong session name but got result: {result}"
     except Exception as e:
@@ -2174,7 +2210,7 @@ def test_sts_external_id(started_cluster):
     try:
         result = node.query(
             f"SELECT sum(value) FROM {db_name_fail}.`{root_namespace}.{table_name}` "
-            f"SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000"
+            f"SETTINGS s3_max_single_read_retries = 1, s3_request_timeout_ms = 1000"
         )
         assert False, f"Expected query to fail with wrong external id but got result: {result}"
     except Exception as e:

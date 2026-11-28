@@ -416,8 +416,11 @@ struct SimdJSONParser
         {
             chassert(index < size());
             auto it = object.begin();
-            while (index--)
+            while (index != 0)
+            {
+                --index;
                 ++it;
+            }
             const auto & res = *it;
             return {res.key, res.value};
         }
@@ -430,6 +433,20 @@ struct SimdJSONParser
     bool parse(std::string_view json, Element & result)
     {
         auto document = parser.parse(json.data(), json.size());
+        if (document.error())
+            return false;
+
+        result = document.value_unsafe();
+        return true;
+    }
+
+    /// Same as above, for a document followed in memory by `readable_bytes_after` initialized bytes, such as the next rows
+    /// of a `ColumnString`. simdjson reads up to `SIMDJSON_PADDING` bytes past the end of the document, and it does not
+    /// matter what they contain. When enough bytes follow, the document is parsed where it is, without being copied
+    /// into the padded buffer of the parser.
+    bool parse(std::string_view json, size_t readable_bytes_after, Element & result)
+    {
+        auto document = parser.parse(json.data(), json.size(), readable_bytes_after < simdjson::SIMDJSON_PADDING);
         if (document.error())
             return false;
 

@@ -27,6 +27,8 @@ import { DeprecatedBadge } from "/snippets/ko/components/DeprecatedBadge/Depreca
 도입 버전: v20.1.0
 
 ClickHouse 서버의 정규화된 도메인 이름을 반환합니다.
+분산 테이블 컨텍스트에서 실행되면 각 세그먼트에 해당하는 값을 가진 일반 열(normal column)을 생성합니다.
+그 외에는 상수 값을 생성합니다.
 
 <Note>
   이 함수는 비결정적입니다. 즉, 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
@@ -6341,7 +6343,7 @@ LIMIT 10
 
 ## uniqThetaIntersect {#uniqThetaIntersect}
 
-Introduced in: v22.9.0
+도입 버전: v22.9.0
 
 두 uniqThetaSketch 객체의 교집합(집합 연산 ∩)을 계산합니다. 결과는 새로운 uniqThetaSketch 객체입니다.
 
@@ -6353,11 +6355,11 @@ uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)
 
 **인수**
 
-* `uniqThetaSketch` — uniqThetaSketch 객체입니다. [`Tuple`](/ko/reference/data-types/tuple) 또는 [`Array`](/ko/reference/data-types/array) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`String`](/ko/reference/data-types/string) 또는 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal)
+* `uniqThetaSketch` — uniqThetaSketch 객체입니다. [`AggregateFunction(uniqTheta, T)`](/ko/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/ko/reference/data-types/aggregatefunction)
 
 **반환 값**
 
-교집합 결과를 포함하는 새로운 uniqThetaSketch입니다. [`UInt64`](/ko/reference/data-types/int-uint)
+교집합 결과를 포함하는 새로운 uniqThetaSketch입니다. [`AggregateFunction(uniqTheta, T)`](/ko/reference/data-types/aggregatefunction)
 
 **예시**
 
@@ -6389,11 +6391,11 @@ uniqThetaNot(uniqThetaSketch,uniqThetaSketch)
 
 **인수**
 
-* `uniqThetaSketch` — uniqThetaSketch 객체입니다. [`Tuple`](/ko/reference/data-types/tuple) 또는 [`Array`](/ko/reference/data-types/array) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`String`](/ko/reference/data-types/string) 또는 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal)
+* `uniqThetaSketch` — uniqThetaSketch 객체입니다. [`AggregateFunction(uniqTheta, T)`](/ko/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/ko/reference/data-types/aggregatefunction)
 
 **반환 값**
 
-a&#95;not&#95;b 결과를 포함하는 새 uniqThetaSketch를 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint)
+a&#95;not&#95;b 결과를 포함하는 새 uniqThetaSketch를 반환합니다. [`AggregateFunction(uniqTheta, T)`](/ko/reference/data-types/aggregatefunction)
 
 **예시**
 
@@ -6415,7 +6417,7 @@ FROM
 
 도입 버전: v22.9.0
 
-두 개의 uniqThetaSketch 객체에 대해 union 계산(집합 연산 ∪)을 수행하며, 결과로 새로운 uniqThetaSketch가 반환됩니다.
+두 개의 uniqThetaSketch 객체에 대해 유니온(union) 계산(집합 연산 ∪)을 수행하며, 결과로 새로운 uniqThetaSketch가 반환됩니다.
 
 **구문**
 
@@ -6425,11 +6427,11 @@ uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)
 
 **인수**
 
-* `uniqThetaSketch` — uniqThetaSketch 객체. [`Tuple`](/ko/reference/data-types/tuple) 또는 [`Array`](/ko/reference/data-types/array) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`String`](/ko/reference/data-types/string) 또는 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal`](/ko/reference/data-types/decimal)
+* `uniqThetaSketch` — uniqThetaSketch 객체. [`AggregateFunction(uniqTheta, T)`](/ko/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/ko/reference/data-types/aggregatefunction)
 
 **반환 값**
 
-합집합 결과를 포함하는 새로운 uniqThetaSketch를 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint)
+유니온(union) 결과를 포함하는 새로운 uniqThetaSketch를 반환합니다. [`AggregateFunction(uniqTheta, T)`](/ko/reference/data-types/aggregatefunction)
 
 **예시**
 

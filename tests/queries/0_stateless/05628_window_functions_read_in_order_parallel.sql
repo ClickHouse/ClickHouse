@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the reference pins the pipeline, and the storage ordering is reused for window functions only with an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- A window sorting that reuses the storage order (`query_plan_reuse_storage_ordering_for_window_functions`) runs the
 -- window functions in parallel instead of in a single stream: by ranges of the primary key when `PARTITION BY`
 -- determines its prefix, otherwise by scattering the merged stream by the `PARTITION BY` columns.

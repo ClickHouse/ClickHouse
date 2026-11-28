@@ -6,7 +6,7 @@
 # manifest bounds and NULL counts. The test checks that the min/max, NULL fraction and NDV come out as our rules compute
 # them: bounds decoded per type and merged over the files, NULLs counted per file, the NDV by the first rule that
 # applies, clamped to the non-NULL rows; and that the min/max reach an optimizer decision.
-# - T1: `ie_join` picks its two key conditions by the min/max (port of `05023` to Iceberg).
+# - T1: `inequality` picks its two key conditions by the min/max (port of `05023` to Iceberg).
 # - T2: the `Estimated statistics` trace line: rows, then NDV [NULL fraction] per column.
 # - T3: files without values of a column count as NULLs, and a range above the non-NULL rows counts nothing; such files
 #   have no bounds, but no values outside the bounds of the others either, so the range still describes every row.
@@ -28,8 +28,8 @@ PINS="--query_plan_optimize_join_order_randomize=0
     --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1 --max_block_size=1000000
     --allow_insert_into_iceberg=1 --session_timezone=UTC
     --use_datalake_metadata_statistics=1 --use_statistics=1"
-# The printed conditions are mirrored when the join order optimizer swaps the sides, so it is off for `ie_join`.
-IE_JOIN="--join_algorithm=ie_join --join_use_nulls=0 --query_plan_optimize_join_order_limit=0"
+# The printed conditions are mirrored when the join order optimizer swaps the sides, so it is off for `inequality`.
+INEQUALITY="--join_algorithm=inequality --join_use_nulls=0 --query_plan_optimize_join_order_limit=0"
 REORDER="--query_plan_optimize_join_order_limit=10"
 
 LAKE="${CLICKHOUSE_USER_FILES_UNIQUE}"
@@ -62,11 +62,11 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT table, count(), sum(record_count) FROM system.iceberg_files
     WHERE database = currentDatabase() GROUP BY table ORDER BY table"
 
-# `ie_join` sweeps on two inequality conditions and checks the rest after the join, and it picks the two most selective
+# `inequality` sweeps on two inequality conditions and checks the rest after the join, and it picks the two most selective
 # by the columns' min/max: the one decision where the manifest min/max visibly change the plan, without reading logs.
-echo '--- T1: ie_join keys chosen by the min/max from the manifests'
+echo '--- T1: inequality keys chosen by the min/max from the manifests'
 echo 'Expect a1 < b1 AND a3 < b3, the two most selective by the min/max; without statistics a1, a2 in syntax order.'
-${CLICKHOUSE_CLIENT} ${PINS} ${IE_JOIN} --query "
+${CLICKHOUSE_CLIENT} ${PINS} ${INEQUALITY} --query "
     SELECT extract(explain, 'Conditions: .*') FROM (EXPLAIN actions = 1
         SELECT count() FROM ice_left JOIN ice_right
         ON ice_left.a1 < ice_right.b1 AND ice_left.a2 < ice_right.b2 AND ice_left.a3 < ice_right.b3)

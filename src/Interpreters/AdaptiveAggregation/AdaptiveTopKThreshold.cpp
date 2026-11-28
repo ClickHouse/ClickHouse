@@ -29,6 +29,19 @@ void AdaptiveTopKThreshold::offer(std::span<const UInt64> ranks)
         offerImpl<std::greater<>>(ranks);
 }
 
+void AdaptiveTopKThreshold::replaceOffer(UInt64 offered, UInt64 rank)
+{
+    {
+        std::lock_guard lock(mutex);
+        if (const auto kept_offered = std::ranges::find(kept, offered); kept_offered != kept.end())
+        {
+            *kept_offered = rank;
+            return;
+        }
+    }
+    offer({&rank, 1});
+}
+
 template <typename Better>
 void AdaptiveTopKThreshold::offerImpl(std::span<const UInt64> ranks)
 {

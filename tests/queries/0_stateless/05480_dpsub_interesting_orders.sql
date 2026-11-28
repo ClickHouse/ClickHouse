@@ -1,6 +1,8 @@
 -- DPsub with `query_plan_join_order_use_interesting_orders` picks `full_sorting_merge` for joins of inputs sorted by the join key.
 -- The tables are small; the statistics hint below gives the sizes the plans are chosen for.
 
+-- Disable force_primary_key_reverse_order: Query plan output depends on sort direction
+SET force_primary_key_reverse_order = 0;
 SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_algorithm = 'dpsub';
 SET query_plan_join_order_use_interesting_orders = 1;
@@ -267,7 +269,7 @@ SETTINGS join_algorithm = 'parallel_hash,full_sorting_merge';
 SELECT '-- join_algorithm set explicitly to its default: the optimizer still chooses, a merge join';
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1 SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)
 WHERE explain LIKE '%Algorithm:%'
-SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join';
+SETTINGS join_algorithm = 'direct,parallel_hash,hash,inequality';
 
 SELECT '-- the setting is off: hash join';
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1 SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)

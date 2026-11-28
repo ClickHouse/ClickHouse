@@ -1,5 +1,7 @@
 -- Graphite FINAL rolls up rows with different times, so a time bound inside indexHint must not prune either
 SET optimize_on_insert = 0;
+-- Disable force_primary_key_reverse_order: Graphite rollup keeps the version of the row which comes first in the sort order
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_graphite_final_hint;
 
@@ -16,6 +18,9 @@ SELECT 'hint', Value, Version FROM t_graphite_final_hint FINAL WHERE Path = 'sum
 -- optimize_and_compare_chain derives toUInt32(Time) + 3600 < 960004000 as an indexHint
 SELECT 'chain', Value, Version FROM t_graphite_final_hint FINAL WHERE toUInt32(Time) + 3600 < Version AND Version < 960004000 SETTINGS optimize_and_compare_chain = 1;
 SELECT 'no chain', Value, Version FROM t_graphite_final_hint FINAL WHERE toUInt32(Time) + 3600 < Version AND Version < 960004000 SETTINGS optimize_and_compare_chain = 0;
+
+-- a subquery column named like the path column is still the time column
+SELECT 'chain alias', Value, Version FROM (SELECT Time AS Path, Value, Version FROM t_graphite_final_hint FINAL) WHERE toUInt32(Path) + 3600 < Version AND Version < 960004000 SETTINGS optimize_and_compare_chain = 1;
 
 -- a hint on the path still prunes
 SELECT 'path hint', Path, Value FROM t_graphite_final_hint FINAL WHERE indexHint(Path = 'sum_2') ORDER BY ALL;

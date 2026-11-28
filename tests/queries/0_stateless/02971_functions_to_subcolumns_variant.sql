@@ -1,6 +1,7 @@
-DROP TABLE IF EXISTS t_func_to_subcolumns_variant;
+-- Disable force_primary_key_reverse_order: Query plan output depends on sort direction
+SET force_primary_key_reverse_order = 0;
 
-SET allow_experimental_variant_type = 1;
+DROP TABLE IF EXISTS t_func_to_subcolumns_variant;
 
 CREATE TABLE t_func_to_subcolumns_variant (id UInt64, v Variant(String, UInt64)) ENGINE = MergeTree ORDER BY id;
 

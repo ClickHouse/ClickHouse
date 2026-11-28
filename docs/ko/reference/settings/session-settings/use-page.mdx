@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="use_page_cache_for_disks_without_file_cache">
-  ## use_page_cache_for_disks_without_file_cache
-</div>
+## use_page_cache_for_disks_without_file_cache {#use_page_cache_for_disks_without_file_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 파일 시스템 캐시가 활성화되지 않은 원격 디스크에 사용자 공간 페이지 캐시를 사용합니다.
 
-<div id="use_page_cache_for_local_disks">
-  ## use_page_cache_for_local_disks
-</div>
+## use_page_cache_for_local_disks {#use_page_cache_for_local_disks}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,9 +29,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 로컬 디스크에서 읽을 때 사용자 공간 페이지 캐시를 사용합니다. 테스트용으로 사용되며, 실제 환경에서 성능이 향상될 가능성은 낮습니다. `local_filesystem_read_method = 'pread'` 또는 `'read'`가 필요합니다. 이 설정은 OS 페이지 캐시를 비활성화하지 않으며, 이를 위해서는 `min_bytes_to_use_direct_io`를 사용할 수 있습니다. 일반 테이블에만 영향을 미치며, file() 테이블 함수 또는 File() 테이블 엔진에는 영향을 주지 않습니다.
 
-<div id="use_page_cache_for_object_storage">
-  ## use_page_cache_for_object_storage
-</div>
+## use_page_cache_for_object_storage {#use_page_cache_for_object_storage}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,9 +37,15 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 객체 스토리지 테이블 함수(s3, azure, hdfs)와 테이블 엔진(S3, Azure, HDFS)에서 읽을 때 사용자 공간 페이지 캐시를 사용합니다.
 
-<div id="use_page_cache_with_distributed_cache">
-  ## use_page_cache_with_distributed_cache
-</div>
+## use_page_cache_lookahead_for_text_index {#use_page_cache_lookahead_for_text_index}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+파일 순서대로 읽히지 않는 텍스트 인덱스 파일(딕셔너리(dictionary), 포스팅 목록(postings), 위치(positions))은 기본적으로 사용자 공간 페이지 캐시를 통해 1개 블록 단위의 선행 읽기(lookahead)로 읽히므로, 매번 읽은 후 원격 연결을 재사용할 수 있습니다. 이 설정을 활성화하면 해당 파일들도 다른 파일과 마찬가지로 `page_cache_lookahead_blocks`를 사용합니다.
+
+## use_page_cache_with_distributed_cache {#use_page_cache_with_distributed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

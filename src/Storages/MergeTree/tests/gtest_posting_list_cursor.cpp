@@ -3740,14 +3740,17 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
         .codec_type = IPostingListCodec::Type::None,
         .has_positions = true,
         .positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor),
+        .position_increment_gap = 63,
         .sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr()),
     };
 
     WriteBufferFromOwnString out_with_positions;
     TextIndexSerialization::serializeHeader(header_with_positions, out_with_positions);
 
-    /// A positional `WithPositions` header adds the positions flag and the positions codec byte.
-    EXPECT_EQ(out_with_codec.str().size() + 2, out_with_positions.str().size());
+    /// Positions add the flag, codec and gap bytes and the block size.
+    EXPECT_EQ(
+        out_with_codec.str().size() + 3 + getLengthOfVarUInt(TextIndexBlockedPositionsCodec::BLOCK_SIZE),
+        out_with_positions.str().size());
 
     /// Without positions the codec byte is omitted, so the header costs only the flag. This keeps a
     /// non-positional part the same size as before positions existed.
@@ -3780,6 +3783,8 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
 
     EXPECT_EQ(with_positions_data.version, MergeTreeTextIndexSerializationVersion::V2_WithPositions);
     EXPECT_TRUE(with_positions_data.has_positions);
+    EXPECT_EQ(static_cast<UInt64>(with_positions_data.position_increment_gap), 63u);
+    EXPECT_EQ(with_positions_data.positions_block_size, TextIndexBlockedPositionsCodec::BLOCK_SIZE);
 }
 
 // Section: row_offset beyond UInt32::max must throw — doc IDs are 32-bit, and

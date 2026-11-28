@@ -41,15 +41,23 @@ paimonLocal(path_to_table, [,format] [,compression_method])
 
 ## 限制 {#limitations}
 
-尚未实现读取时合并，因此**无法读取主键表**：读取器会直接返回
-快照中所有数据文件的内容，其中仍包含已被后续 upsert 操作覆盖的旧行版本。因此，读取 schema
-中声明了 `primary-key` 的表会引发异常。
+尚未实现读取时合并，因此只有当 Paimon 本身无需合并即可读取主键表时，才能读取该表：仅当某个桶的所有数据文件都位于 level 0 以上、已知不含撤回行且处于同一级别时，才会读取该桶。启用
+`deletion-vectors.enabled` 或设置 `'merge-engine' = 'first-row'` 时，这些文件可以分布在多个级别；此外，除非将
+`batch-scan-mode` 设置为 `none` 以外的模式，否则 level-0 文件在合并整理完成之前不会被读取，这一点与 Paimon 的行为相同。
+读取其他任何桶都会抛出异常；在 Paimon 中执行一次完整合并整理 (`compact_strategy => 'full'`) 即可使其可读。
 
 目前不会应用删除向量，因此**无法读取包含删除向量的快照**：否则查询结果中仍会
 包含已被后续 `DELETE` 和 `UPDATE` 语句删除的行。因此，如果快照的索引清单中列出了
-删除向量，读取该快照会引发异常，即使已关闭 `deletion-vectors.enabled` 也是如此。
+删除向量，读取该快照会抛出异常，即使已关闭 `deletion-vectors.enabled` 也是如此。
 在 Paimon 中执行一次完整合并整理 (`compact_strategy => 'full'`) 会应用这些删除向量，此后创建的快照
 即可重新读取。
+
+每个数据文件都按其写入时的 schema 读取，其顶层列通过
+Paimon 字段 id 与当前 schema 匹配，因此对于已重命名的列，以及删除后又以相同名称重新添加的列，读取结果与 Spark 一致。
+
+`ROW` 列内部的字段按名称 (而非 Paimon 字段 id) 与数据文件匹配，因此**如果数据文件写入时间早于 `ROW` 内某个字段被重命名，或早于该字段被删除后又添加了另一个同名字段 (名称比较不区分大小写) ，则无法读取该数据文件**：否则结果中被重命名的字段将为 `NULL`，而重新添加的字段将包含已删除字段的值。因此，读取此类数据文件会抛出异常。添加和删除字段均受支持。
+在 Paimon 中使用当前 schema 重写该表 (例如执行 `INSERT OVERWRITE <table> SELECT * FROM <table>`) 后，
+此后创建的快照即可读取。
 
 ## 定义命名集合 {#defining-a-named-collection}
 
@@ -98,7 +106,7 @@ DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 | FLOAT                             | Float32                   |
 | DOUBLE                            | Float64                   |
 | STRING,VARCHAR,BYTES,VARBINARY    | String                    |
-| DATE                              | Date                      |
+| DATE                              | Date32                    |
 | TIME(p),TIME                      | Time(&#39;UTC&#39;)       |
 | TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                |
 | TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;) |
@@ -107,6 +115,7 @@ DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 | DECIMAL(P,S)                      | Decimal(P,S)              |
 | ARRAY                             | Array                     |
 | MAP                               | Map                       |
+| ROW                               | Tuple                     |
 
 ## 支持的分区键 {#partition-supported}
 

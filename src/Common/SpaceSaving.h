@@ -2,14 +2,18 @@
 
 #include <IO/VarInt.h>
 #include <base/sort.h>
+#include <base/arithmeticOverflow.h>
+#include <base/sanitizer_defs.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaUtils.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/transformEndianness.h>
 
 #include <Common/FailPoint.h>
 
+#include <cstring>
 #include <vector>
 
 
@@ -133,10 +137,13 @@ public:
             readVarUInt(error, rb);
         }
 
+        /// The weights are modular (see `insert`), so `count` may be less than `error`.
+        [[nodiscard]] UInt64 countMinusError() const { return common::subIgnoreOverflow(count, error); }
+
         // greater() taking error into account
         bool operator> (const Counter & b) const
         {
-            return ((count - error) > (b.count - b.error)) || ((count - error) == (b.count - b.error) && count > b.count);
+            return (countMinusError() > b.countMinusError()) || (countMinusError() == b.countMinusError() && count > b.count);
         }
 
         TKey key{};
@@ -180,6 +187,11 @@ public:
         }
     }
 
+    /// Every sum here is over weights straight from the caller's column, so `topKWeighted(k)(x, -2)`
+    /// contributes 2^64-2 and all of them are modular, as `merge` below already states. The attribute
+    /// is on the function rather than its individual sums because there are three of them - the two
+    /// below and the alpha-map one at the end - and annotating them one at a time kept missing one.
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void insert(const TKey & key, UInt64 increment = 1, UInt64 error = 0)
     {
         // Increase weight of a key that already exists
@@ -208,6 +220,7 @@ public:
      * Parallel Space Saving reduction and combine step from:
      *  https://arxiv.org/pdf/1401.0702.pdf
      */
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void merge(const Self & rhs)
     {
         if (rhs.empty())
@@ -296,8 +309,27 @@ public:
             new_list.push_back(counter);
 
         size_t return_size = std::min(new_list.size(), capacity());
+        /// A total order on the written bytes: the same counters are written as the same bytes on every host, whatever the order of ties.
         ::partial_sort(
-            new_list.begin(), new_list.begin() + return_size, new_list.end(), [](const auto & l, const auto & r) { return l > r; });
+            new_list.begin(), new_list.begin() + return_size, new_list.end(),
+            [](const auto & l, const auto & r)
+            {
+                if (l > r)
+                    return true;
+                if (r > l)
+                    return false;
+                if constexpr (std::is_same_v<TKey, std::string_view>)
+                    return l.key < r.key;
+                else
+                {
+                    TKey l_key = l.key;
+                    TKey r_key = r.key;
+                    transformEndianness<std::endian::little>(l_key);
+                    transformEndianness<std::endian::little>(r_key);
+                    /// NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c)
+                    return memcmp(&l_key, &r_key, sizeof(TKey)) < 0;
+                }
+            });
 
         writeVarUInt(return_size, wb);
         for (size_t i = 0; i < return_size; i++)
@@ -421,7 +453,7 @@ protected:
             for (size_t i = requested_capacity; i < counter_list.size(); ++i)
             {
                 size_t pos = counter_list[i].hash & alpha_mask;
-                alpha_map[pos] = std::min(alpha_map[pos] + counter_list[i].count - counter_list[i].error, MAX_ALPHA_VALUE);
+                alpha_map[pos] = std::min(common::addIgnoreOverflow(alpha_map[pos], counter_list[i].countMinusError()), MAX_ALPHA_VALUE);
                 arena.free(counter_list[i].key);
             }
 

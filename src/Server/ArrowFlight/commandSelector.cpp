@@ -11,147 +11,206 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/transformed.hpp>
 
-#include <arrow/ipc/writer.h>
-#include <arrow/array/builder_binary.h>
-#include <arrow/array/builder_nested.h>
-#include <arrow/array/builder_primitive.h>
-#include <arrow/array/builder_union.h>
-#include <arrow/flight/sql/protocol_internal.h>
+#include <arrow/flight/sql/FlightSql.pb.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace ArrowFlight
 {
 
-CHColumnToArrowColumn::Settings arrowConversionSettings(const ContextPtr & context)
+/// The version of the Arrow format and protocols this implementation follows, which `CommandGetSqlInfo` reports
+/// as `FLIGHT_SQL_SERVER_ARROW_VERSION`: that of `contrib/arrow`, where `Flight.proto` and `FlightSql.proto` come from.
+static constexpr auto ARROW_FORMAT_VERSION = "25.0.0";
+
+FormatSettings flightFormatSettings(const ContextPtr & context)
 {
-    /// Arrow Flight pins the canonical Arrow mapping and follows exactly one output setting: what to do
-    /// with a type that has no canonical mapping. The other `output_format_arrow_*` settings are
-    /// deliberately not read from the context, so a Flight schema does not track `FORMAT Arrow` for the
-    /// same query.
-    ///
-    /// That is a conformance requirement rather than a simplification. This same conversion builds the
-    /// Flight SQL metadata responses, whose schemas the specification fixes - `CommandGetTables` is
-    /// `catalog_name: utf8, db_schema_name: utf8, table_name: utf8 not null, table_type: utf8 not null,
-    /// table_schema: bytes not null` - so honoring `output_format_arrow_string_as_string = 0` would answer
-    /// a driver with `binary` where the specification requires `utf8`, and would change the per-table
-    /// schema ClickHouse advertises inside `table_schema`. `output_format_arrow_date_as_uint16` is a
-    /// ClickHouse backward-compatibility knob in the same way: a client handed `uint16` for a `Date` has no
-    /// way to tell it is a date. The schema also travels separately from the data - `GetFlightInfo`,
-    /// `GetSchema` and `DoGet` are distinct calls, each building its own query context from the session -
-    /// so every setting that can move the schema is another way for the advertised schema and the
-    /// delivered stream to disagree.
-    ///
-    /// `output_format_arrow_unsupported_types` is the exception because `JSON`, `Dynamic`, `QBit` and
-    /// `AggregateFunction` have no canonical Arrow mapping at all. ClickHouse has to invent one, only the
-    /// user can say whether they want text or bytes, and the `clickhouse.opaque` field metadata tells the
-    /// client that the column is an invention rather than a native Arrow type.
-    return {
-        .output_string_as_string = true,
-        .output_unsupported_types = getArrowUnsupportedTypesMode(context->getSettingsRef()),
-        .format_settings = getFormatSettings(context)};
+    /// The canonical mapping: the defaults of the native `Arrow` writer, except that strings are `Utf8`. The only
+    /// setting of the context followed is `output_format_arrow_unsupported_types`, see the declaration.
+    FormatSettings result = getFormatSettings(context);
+    const auto unsupported_types = result.arrow.output_unsupported_types;
+    result.arrow = FormatSettings{}.arrow;
+    result.arrow.output_string_as_string = true;
+    result.arrow.output_unsupported_types = unsupported_types;
+    return result;
 }
 
-static arrow::Result<std::shared_ptr<arrow::Table>> commandGetSqlInfo(const arrow::flight::protocol::sql::CommandGetSqlInfo & command, bool schema_only)
+Result<String> flightSchema(const Block & header, const ContextPtr & context, const SchemaModifier & schema_modifier)
 {
-    arrow::MemoryPool* pool = arrow::default_memory_pool();
+    String schema = ArrowIPC::serializeSchemaMessage(header.getNames(), header.getDataTypes(), flightFormatSettings(context));
+    if (!schema_modifier)
+        return schema;
+    FLIGHT_ASSIGN_OR_RAISE(auto modified, schema_modifier(ArrowIPC::parseSchemaMessage(schema)))
+    return ArrowIPC::serializeSchemaMessage(modified);
+}
 
-    auto string_builder = std::make_shared<arrow::StringBuilder>();
-    auto boolean_builder = std::make_shared<arrow::BooleanBuilder>();
-    auto int64_builder = std::make_shared<arrow::Int64Builder>();
-    auto int32_builder = std::make_shared<arrow::Int32Builder>();
+TablePtr flightTable(const Block & header, const Chunks & chunks, const ContextPtr & context, const String & schema)
+{
+    auto table = std::make_shared<Table>(ArrowIPC::encodeStream(header, chunks, flightFormatSettings(context)));
+    /// The schema may differ from the one the writer derives from the header, after a schema modifier.
+    table->schema = std::move(ArrowIPC::splitStream(schema).front());
+    return table;
+}
 
-    // string_list: list<item: string> not null
-    auto string_list_type = arrow::list(arrow::utf8());
-    auto string_list_builder = std::make_shared<arrow::ListBuilder>(pool, std::make_shared<arrow::StringBuilder>(), string_list_type);
+namespace
+{
 
-    // int32_to_int32_list_map: map<int32, list<item: int32>> not null
-    auto value_type = arrow::list(arrow::int32());
-    auto value_builder = std::make_shared<arrow::ListBuilder>(pool, std::make_shared<arrow::Int32Builder>(), value_type);
-    auto int32_to_int32_list_map_type = arrow::map(arrow::int32(), value_type);
-    auto int32_to_int32_list_map_builder = std::make_shared<arrow::MapBuilder>(pool, std::make_shared<arrow::Int32Builder>(), value_builder, int32_to_int32_list_map_type);
+/// A record batch built buffer by buffer, in the order of the IPC format: the field nodes in pre-order, and the
+/// buffers of each field after its node.
+class RecordBatchBuilder
+{
+public:
+    void node(Int64 length, Int64 null_count = 0) { nodes.emplace_back(length, null_count); }
 
-    // dense_union
-    auto dense_union_type = arrow::dense_union(
-        {
-            std::make_shared<arrow::Field>("string_value", arrow::utf8(), false),
-            std::make_shared<arrow::Field>("bool_value", arrow::boolean(), false),
-            std::make_shared<arrow::Field>("bigint_value", arrow::int64(), false),
-            std::make_shared<arrow::Field>("int32_bitmask", arrow::int32(), false),
-            std::make_shared<arrow::Field>("string_list", string_list_type, false),
-            std::make_shared<arrow::Field>("int32_to_int32_list_map", int32_to_int32_list_map_type, false)
-        });
+    void buffer(const void * data, size_t size)
+    {
+        const size_t offset = body.size();
+        body.append(static_cast<const char *>(data), size);
+        body.append((8 - size % 8) % 8, '\0');
+        buffers.emplace_back(static_cast<Int64>(offset), static_cast<Int64>(size));
+    }
 
-    auto dense_union_builder = std::make_shared<arrow::DenseUnionBuilder>(
-        pool,
-        std::vector<std::shared_ptr<arrow::ArrayBuilder>>{
-            string_builder,
-            boolean_builder,
-            int64_builder,
-            int32_builder,
-            string_list_builder,
-            int32_to_int32_list_map_builder
-        },
-        dense_union_type);
+    template <typename T>
+    void buffer(const VectorWithMemoryTracking<T> & values) { buffer(values.data(), values.size() * sizeof(T)); }
 
+    void emptyBuffer() { buffers.emplace_back(static_cast<Int64>(body.size()), 0); }
+
+    /// The offsets buffer of an empty list or string field.
+    void emptyOffsets()
+    {
+        const Int32 zero = 0;
+        buffer(&zero, sizeof(zero));
+    }
+
+    ArrowIPC::IPCMessage finish(Int64 num_rows)
+    {
+        namespace flatbuf = ArrowIPC::flatbuf;
+        flatbuffers::FlatBufferBuilder builder;
+        auto nodes_offset = builder.CreateVectorOfStructs(nodes.data(), nodes.size());
+        auto buffers_offset = builder.CreateVectorOfStructs(buffers.data(), buffers.size());
+        auto record_batch = flatbuf::CreateRecordBatch(builder, num_rows, nodes_offset, buffers_offset);
+        auto message = flatbuf::CreateMessage(
+            builder, flatbuf::MetadataVersion_V5, flatbuf::MessageHeader_RecordBatch, record_batch.Union(), static_cast<Int64>(body.size()));
+        builder.Finish(message);
+        ArrowIPC::IPCMessage result;
+        result.header.assign(reinterpret_cast<const char *>(builder.GetBufferPointer()), builder.GetSize());
+        result.body = std::move(body);
+        return result;
+    }
+
+private:
+    VectorWithMemoryTracking<ArrowIPC::flatbuf::FieldNode> nodes;
+    VectorWithMemoryTracking<ArrowIPC::flatbuf::Buffer> buffers;
+    String body;
+};
+
+ArrowIPC::ArrowField makeField(String name, ArrowIPC::TypeKind kind, bool nullable, ArrowIPC::ArrowFields children = {})
+{
+    ArrowIPC::ArrowField field;
+    field.name = std::move(name);
+    field.nullable = nullable;
+    field.type.kind = kind;
+    field.type.children = std::move(children);
+    return field;
+}
+
+ArrowIPC::ArrowField makeIntField(String name, int bit_width, bool is_signed, bool nullable)
+{
+    auto field = makeField(std::move(name), ArrowIPC::TypeKind::Int, nullable);
+    field.type.bit_width = bit_width;
+    field.type.is_signed = is_signed;
+    return field;
+}
+
+/// The schema of the result of `CommandGetSqlInfo`, which the Arrow Flight SQL specification fixes:
+/// `info_name: uint32 not null, value: dense_union<string_value: utf8, bool_value: bool, bigint_value: int64,
+/// int32_bitmask: int32, string_list: list<utf8>, int32_to_int32_list_map: map<int32, list<int32>>> not null`.
+/// The nullability is that of the fields the Apache Arrow library built for it.
+ArrowIPC::ArrowSchema sqlInfoSchema()
+{
+    using ArrowIPC::TypeKind;
+    auto int32_list = makeField("int32_to_int32_list_map", TypeKind::Map, false, {
+        makeField("entries", TypeKind::Struct, false, {
+            makeIntField("key", 32, true, false),
+            makeField("value", TypeKind::List, true, {makeIntField("item", 32, true, true)}),
+        }),
+    });
+    auto value = makeField("value", TypeKind::Union, true, {
+        makeField("string_value", TypeKind::Utf8, false),
+        makeField("bool_value", TypeKind::Bool, false),
+        makeIntField("bigint_value", 64, true, false),
+        makeIntField("int32_bitmask", 32, true, false),
+        makeField("string_list", TypeKind::List, false, {makeField("item", TypeKind::Utf8, true)}),
+        std::move(int32_list),
+    });
+    value.type.union_mode = ArrowIPC::flatbuf::UnionMode_Dense;
+    value.type.union_type_ids = {0, 1, 2, 3, 4, 5};
+
+    ArrowIPC::ArrowSchema schema;
+    schema.fields.push_back(makeIntField("info_name", 32, false, true));
+    schema.fields.push_back(std::move(value));
+    return schema;
+}
+
+}
+
+static Result<TablePtr> commandGetSqlInfo(const arrow::flight::protocol::sql::CommandGetSqlInfo & command, bool schema_only)
+{
     using SqlInfo = arrow::flight::protocol::sql::SqlInfo;
 
-    auto info_name_builder = std::make_shared<arrow::UInt32Builder>();
+    /// The values of the union, by alternative.
+    VectorWithMemoryTracking<UInt32> info_names;
+    VectorWithMemoryTracking<Int8> type_ids;
+    VectorWithMemoryTracking<Int32> value_offsets;
+    VectorWithMemoryTracking<Int32> string_offsets{0};
+    String strings;
+    VectorWithMemoryTracking<bool> booleans;
+    VectorWithMemoryTracking<Int32> int32_values;
 
-    static const size_t SQL_INFO_STRING = 0;
-    static const size_t SQL_INFO_BOOLEAN = 1;
-    static const size_t SQL_INFO_INT64 = 2;
-    static const size_t SQL_INFO_INT32 = 3;
+    static constexpr Int8 SQL_INFO_STRING = 0;
+    static constexpr Int8 SQL_INFO_BOOLEAN = 1;
+    static constexpr Int8 SQL_INFO_INT32 = 3;
 
     auto builder_string_append = [&](auto i, const std::string & v)
     {
-        ARROW_RETURN_NOT_OK(info_name_builder->Append(i));
-        ARROW_RETURN_NOT_OK(dense_union_builder->Append(SQL_INFO_STRING));
-        return string_builder->Append(v);
+        info_names.push_back(static_cast<UInt32>(i));
+        type_ids.push_back(SQL_INFO_STRING);
+        value_offsets.push_back(static_cast<Int32>(string_offsets.size() - 1));
+        strings += v;
+        string_offsets.push_back(static_cast<Int32>(strings.size()));
     };
 
     auto builder_boolean_append = [&](auto i, bool v)
     {
-        ARROW_RETURN_NOT_OK(info_name_builder->Append(i));
-        ARROW_RETURN_NOT_OK(dense_union_builder->Append(SQL_INFO_BOOLEAN));
-        return boolean_builder->Append(v);
-    };
-
-    [[maybe_unused]] auto builder_int64_append = [&](auto i, int64_t v)
-    {
-        ARROW_RETURN_NOT_OK(info_name_builder->Append(i));
-        ARROW_RETURN_NOT_OK(dense_union_builder->Append(SQL_INFO_INT64));
-        return int64_builder->Append(v);
+        info_names.push_back(static_cast<UInt32>(i));
+        type_ids.push_back(SQL_INFO_BOOLEAN);
+        value_offsets.push_back(static_cast<Int32>(booleans.size()));
+        booleans.push_back(v);
     };
 
     auto builder_int32_append = [&](auto i, int32_t v)
     {
-        ARROW_RETURN_NOT_OK(info_name_builder->Append(i));
-        ARROW_RETURN_NOT_OK(dense_union_builder->Append(SQL_INFO_INT32));
-        return int32_builder->Append(v);
+        info_names.push_back(static_cast<UInt32>(i));
+        type_ids.push_back(SQL_INFO_INT32);
+        value_offsets.push_back(static_cast<Int32>(int32_values.size()));
+        int32_values.push_back(v);
     };
 
     if (!schema_only)
     {
         #define SQL_INFO_SELECTOR(INFO_NAME, BUILDER, ARG) \
-                { INFO_NAME, [&](){ return BUILDER(INFO_NAME, ARG); } }
+                { INFO_NAME, [&](){ BUILDER(INFO_NAME, ARG); } }
 
-        std::unordered_map<SqlInfo, std::function<arrow::Status()>> selector
+        std::unordered_map<SqlInfo, std::function<void()>> selector
         {
             SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_NAME, builder_string_append, "ClickHouse"),
             SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_VERSION, builder_string_append, VERSION_STRING),
-            SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_ARROW_VERSION, builder_string_append, ARROW_VERSION_STRING),
+            SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_ARROW_VERSION, builder_string_append, ARROW_FORMAT_VERSION),
             SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_READ_ONLY, builder_boolean_append, false),
             SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_SQL, builder_boolean_append, true),
             SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_SUBSTRAIT, builder_boolean_append, false),
@@ -167,34 +226,86 @@ static arrow::Result<std::shared_ptr<arrow::Table>> commandGetSqlInfo(const arro
         if (command.info().empty())
         {
             for (const auto & [_, builder] : selector)
-                ARROW_RETURN_NOT_OK(builder());
+                builder();
         }
         else
         {
             for (const auto & info_name : command.info())
                 if (auto it = selector.find(static_cast<SqlInfo>(info_name)); it != selector.end())
-                    ARROW_RETURN_NOT_OK(it->second());
+                    it->second();
         }
     }
 
-    // Schema for table
-    std::shared_ptr<arrow::Schema> table_schema = arrow::schema({
-        arrow::field("info_name", arrow::uint32()),
-        arrow::field("value", dense_union_type)
-    });
+    const auto num_rows = static_cast<Int64>(info_names.size());
+    const auto num_strings = static_cast<Int64>(string_offsets.size() - 1);
+    const auto num_booleans = static_cast<Int64>(booleans.size());
+    VectorWithMemoryTracking<UInt8> boolean_bits((booleans.size() + 7) / 8, 0);
+    for (size_t i = 0; i < booleans.size(); ++i)
+        if (booleans[i])
+            boolean_bits[i / 8] = static_cast<UInt8>(boolean_bits[i / 8] | (1u << (i % 8)));
 
-    auto info_name = info_name_builder->Finish();
-    ARROW_RETURN_NOT_OK(info_name);
+    RecordBatchBuilder batch;
+    /// info_name
+    batch.node(num_rows);
+    batch.emptyBuffer();
+    batch.buffer(info_names);
+    /// value: a dense union has no validity bitmap, but type ids and offsets.
+    batch.node(num_rows);
+    batch.buffer(type_ids);
+    batch.buffer(value_offsets);
+    /// string_value
+    batch.node(num_strings);
+    batch.emptyBuffer();
+    batch.buffer(string_offsets);
+    batch.buffer(strings.data(), strings.size());
+    /// bool_value
+    batch.node(num_booleans);
+    batch.emptyBuffer();
+    batch.buffer(boolean_bits);
+    /// bigint_value
+    batch.node(0);
+    batch.emptyBuffer();
+    batch.emptyBuffer();
+    /// int32_bitmask
+    batch.node(static_cast<Int64>(int32_values.size()));
+    batch.emptyBuffer();
+    batch.buffer(int32_values);
+    /// string_list and its item
+    batch.node(0);
+    batch.emptyBuffer();
+    batch.emptyOffsets();
+    batch.node(0);
+    batch.emptyBuffer();
+    batch.emptyOffsets();
+    batch.emptyBuffer();
+    /// int32_to_int32_list_map, its entries, the key, the value and its item
+    batch.node(0);
+    batch.emptyBuffer();
+    batch.emptyOffsets();
+    batch.node(0);
+    batch.emptyBuffer();
+    batch.node(0);
+    batch.emptyBuffer();
+    batch.emptyBuffer();
+    batch.node(0);
+    batch.emptyBuffer();
+    batch.emptyOffsets();
+    batch.node(0);
+    batch.emptyBuffer();
+    batch.emptyBuffer();
 
-    auto value = dense_union_builder->Finish();
-    ARROW_RETURN_NOT_OK(value);
-
-    return arrow::Table::Make(table_schema, {info_name.ValueUnsafe(), value.ValueUnsafe()});
+    auto table = std::make_shared<Table>();
+    table->schema = std::move(ArrowIPC::splitStream(ArrowIPC::serializeSchemaMessage(sqlInfoSchema())).front());
+    table->num_rows = static_cast<size_t>(num_rows);
+    auto message = batch.finish(num_rows);
+    table->num_bytes = message.body.size();
+    table->batches.push_back(std::move(message));
+    return TablePtr(std::move(table));
 }
 
 static SQLSet commandGetCatalogs()
 {
-    return {"SELECT '' AS catalog_name FROM numbers(0)", {}, {}};
+    return {"SELECT '' AS catalog_name FROM numbers(0)", {}, {}, /* skip_query_cache = */ true};
 }
 
 static SQLSet commandGetDbSchemas(const arrow::flight::protocol::sql::CommandGetDbSchemas & command)
@@ -203,7 +314,7 @@ static SQLSet commandGetDbSchemas(const arrow::flight::protocol::sql::CommandGet
     if (command.has_db_schema_filter_pattern())
         where_expression = " WHERE database LIKE " + quoteString(command.db_schema_filter_pattern());
 
-    return {"SELECT NULL::Nullable(String) AS catalog_name, name AS db_schema_name FROM system.databases" + where_expression, {}, {}};
+    return {"SELECT NULL::Nullable(String) AS catalog_name, name AS db_schema_name FROM system.databases" + where_expression, {}, {}, /* skip_query_cache = */ true};
 }
 
 /// Splits a formatted expression list (e.g. from `system.tables.primary_key`) into
@@ -331,7 +442,7 @@ static SQLSet commandGetPrimaryKeys(const arrow::flight::protocol::sql::CommandG
         block.setColumns(std::move(new_columns));
     };
 
-    return {sql, {}, block_modifier};
+    return {sql, {}, block_modifier, /* skip_query_cache = */ true};
 }
 
 [[clang::no_destroy]] const static std::vector<std::pair<std::string, std::string>> engine_to_type =
@@ -509,7 +620,8 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
             ")"
             + where_expression,
             {},
-            {}
+            {},
+            /* skip_query_cache = */ true
         };
     }
 
@@ -542,10 +654,14 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
         ")"
         + where_expression;
 
-    auto schema_modifier = [](std::shared_ptr<arrow::Schema> table_schema)
+    auto schema_modifier = [](ArrowIPC::ArrowSchema table_schema) -> Result<ArrowIPC::ArrowSchema>
     {
-        const auto & table_schema_field = table_schema->field(4);
-        return table_schema->SetField(4, std::make_shared<arrow::Field>(table_schema_field->name(), arrow::binary(), table_schema_field->nullable()));
+        /// `table_schema` holds serialized schemas, which are `bytes` in the specification.
+        auto & field = table_schema.fields.at(4);
+        field.type = ArrowIPC::ArrowType{};
+        field.type.kind = ArrowIPC::TypeKind::Binary;
+        field.custom_metadata.clear();
+        return table_schema;
     };
 
     auto block_modifier = [](ContextPtr query_context, Block & block)
@@ -558,26 +674,20 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
         const auto & tuple_col = typeid_cast<const ColumnTuple &>(arr.getData());
         const auto & name_col = typeid_cast<const ColumnString &>(tuple_col.getColumn(0));
         const auto & type_col = typeid_cast<const ColumnString &>(tuple_col.getColumn(1));
-        const auto conversion_settings = arrowConversionSettings(query_context);
+        const auto format_settings = flightFormatSettings(query_context);
         for (size_t i = 0; i < col->size(); ++i)
         {
-            ColumnsWithTypeAndName table_columns;
-            auto start = i ? arr.getOffsets()[i - 1] : 0;
+            Names names;
+            DataTypes types;
+            auto start = i ? arr.getOffsets()[static_cast<ssize_t>(i) - 1] : 0;
             auto end = arr.getOffsets()[i];
             for (size_t j = 0; j < end - start; ++j)
             {
-                const auto name = name_col.getDataAt(start + j);
-                const auto type = type_col.getDataAt(start + j);
-
-                auto data_type = DataTypeFactory::instance().get(String(type));
-                table_columns.emplace_back(nullptr, data_type, String(name));
+                names.emplace_back(name_col.getDataAt(start + j));
+                types.push_back(DataTypeFactory::instance().get(String(type_col.getDataAt(start + j))));
             }
-            auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(table_columns, "Arrow", nullptr, conversion_settings);
-            auto serialized_res = arrow::ipc::SerializeSchema(*table_schema, arrow::default_memory_pool());
-            if (!serialized_res.ok())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to serialize Arrow schema: {}", serialized_res.status().ToString());
-            const auto & serialized_buffer = serialized_res.ValueUnsafe();
-            new_column->insertData(reinterpret_cast<const char *>(serialized_buffer->data()), serialized_buffer->size());
+            const auto serialized = ArrowIPC::serializeSchemaMessage(names, types, format_settings);
+            new_column->insertData(serialized.data(), serialized.size());
         }
 
         block.getByPosition(table_schema_pos) = ColumnWithTypeAndName(
@@ -586,29 +696,29 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
             table_schema_column.name);
     };
 
-    return {sql, schema_modifier, block_modifier};
+    return {sql, schema_modifier, block_modifier, /* skip_query_cache = */ true};
 }
 
 static SQLSet commandGetTableTypes()
 {
-    return {"SELECT DISTINCT transform(name, " + getTableTypeMap() + ", 'UNKNOWN TABLE TYPE') AS table_type FROM system.table_engines", {}, {}};
+    return {"SELECT DISTINCT transform(name, " + getTableTypeMap() + ", 'UNKNOWN TABLE TYPE') AS table_type FROM system.table_engines", {}, {}, /* skip_query_cache = */ true};
 }
 
 static CommandSelectorResult commandStatementQuery(const arrow::flight::protocol::sql::CommandStatementQuery & command)
 {
     if (command.has_transaction_id())
-        return arrow::Status::NotImplemented("CommandStatementQuery: transaction_id is not supported");
+        return Status::NotImplemented("CommandStatementQuery: transaction_id is not supported");
     if (command.query().empty())
-        return arrow::Status::Invalid("CommandStatementQuery: query must not be empty");
+        return Status::Invalid("CommandStatementQuery: query must not be empty");
     return SQLSet{command.query(), {}, {}};
 }
 
 static CommandSelectorResult commandStatementUpdate(const arrow::flight::protocol::sql::CommandStatementUpdate & command)
 {
     if (command.has_transaction_id())
-        return arrow::Status::NotImplemented("CommandStatementUpdate: transaction_id is not supported");
+        return Status::NotImplemented("CommandStatementUpdate: transaction_id is not supported");
     if (command.query().empty())
-        return arrow::Status::Invalid("CommandStatementUpdate: query must not be empty");
+        return Status::Invalid("CommandStatementUpdate: query must not be empty");
     return SQLSet{command.query(), {}, {}};
 }
 
@@ -622,29 +732,29 @@ static CommandSelectorResult commandStatementIngest(const arrow::flight::protoco
         if (options.if_not_exist() != CommandStatementIngest::TableDefinitionOptions::TABLE_NOT_EXIST_OPTION_FAIL ||
             options.if_exists() != CommandStatementIngest::TableDefinitionOptions::TABLE_EXISTS_OPTION_APPEND)
         {
-            return arrow::Status::NotImplemented("Only appending to existing tables is supported (TABLE_NOT_EXIST_OPTION_FAIL + TABLE_EXISTS_OPTION_APPEND)");
+            return Status::NotImplemented("Only appending to existing tables is supported (TABLE_NOT_EXIST_OPTION_FAIL + TABLE_EXISTS_OPTION_APPEND)");
         }
     }
 
     if (command.has_catalog())
-        return arrow::Status::NotImplemented("Catalogs are not supported.");
+        return Status::NotImplemented("Catalogs are not supported.");
 
     if (command.temporary())
-        return arrow::Status::NotImplemented("Implicit temporary tables are not supported.");
+        return Status::NotImplemented("Implicit temporary tables are not supported.");
 
     if (command.has_transaction_id())
-        return arrow::Status::NotImplemented("CommandStatementIngest: transaction_id is not supported");
+        return Status::NotImplemented("CommandStatementIngest: transaction_id is not supported");
 
     std::string schema_string;
     if (command.has_schema())
     {
         if (!isValidIdentifier(command.schema()))
-            return arrow::Status::Invalid("Invalid schema name: ", command.schema());
+            return Status::Invalid("Invalid schema name: ", command.schema());
         schema_string = backQuoteIfNeed(command.schema()) + ".";
     }
 
     if (!isValidIdentifier(command.table()))
-        return arrow::Status::Invalid("Invalid table name: ", command.table());
+        return Status::Invalid("Invalid table name: ", command.table());
 
     return SQLSet{"INSERT INTO " + schema_string + backQuoteIfNeed(command.table()) + " FORMAT Arrow", {}, {}};
 }
@@ -655,12 +765,12 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
     {
         arrow::flight::protocol::sql::CommandGetSqlInfo command;
         if (!any_msg.UnpackTo(&command))
-            return arrow::Status::SerializationError("Deserialization of sql::CommandGetSqlInfo failed.");
+            return Status::SerializationError("Deserialization of sql::CommandGetSqlInfo failed.");
         return commandGetSqlInfo(command, schema_only);
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCrossReference>())
     {
-        return arrow::Status::NotImplemented("sql::CommandGetCrossReference is not supported");
+        return Status::NotImplemented("sql::CommandGetCrossReference is not supported");
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCatalogs>())
     {
@@ -670,29 +780,29 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
     {
         arrow::flight::protocol::sql::CommandGetDbSchemas command;
         if (!any_msg.UnpackTo(&command))
-            return arrow::Status::SerializationError("Deserialization of sql::CommandGetDbSchemas failed.");
+            return Status::SerializationError("Deserialization of sql::CommandGetDbSchemas failed.");
         return commandGetDbSchemas(command);
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetExportedKeys>())
     {
-        return arrow::Status::NotImplemented("sql::CommandGetExportedKeys is not supported");
+        return Status::NotImplemented("sql::CommandGetExportedKeys is not supported");
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetImportedKeys>())
     {
-        return arrow::Status::NotImplemented("sql::CommandGetImportedKeys is not supported");
+        return Status::NotImplemented("sql::CommandGetImportedKeys is not supported");
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetPrimaryKeys>())
     {
         arrow::flight::protocol::sql::CommandGetPrimaryKeys command;
         if (!any_msg.UnpackTo(&command))
-            return arrow::Status::SerializationError("Deserialization of sql::CommandGetPrimaryKeys failed.");
+            return Status::SerializationError("Deserialization of sql::CommandGetPrimaryKeys failed.");
         return commandGetPrimaryKeys(command);
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetTables>())
     {
         arrow::flight::protocol::sql::CommandGetTables command;
         if (!any_msg.UnpackTo(&command))
-            return arrow::Status::SerializationError("Deserialization of sql::CommandGetTables failed.");
+            return Status::SerializationError("Deserialization of sql::CommandGetTables failed.");
         return commandGetTables(command);
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetTableTypes>())
@@ -703,14 +813,14 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
     {
         arrow::flight::protocol::sql::CommandStatementQuery command;
         if (!any_msg.UnpackTo(&command))
-            return arrow::Status::SerializationError("Deserialization of sql::CommandStatementQuery failed.");
+            return Status::SerializationError("Deserialization of sql::CommandStatementQuery failed.");
         return commandStatementQuery(command);
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandStatementUpdate>())
     {
         arrow::flight::protocol::sql::CommandStatementUpdate command;
         if (!any_msg.UnpackTo(&command))
-            return arrow::Status::SerializationError("Deserialization of sql::CommandStatementUpdate failed.");
+            return Status::SerializationError("Deserialization of sql::CommandStatementUpdate failed.");
         return commandStatementUpdate(command);
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandStatementIngest>())
@@ -718,31 +828,31 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
         using CommandStatementIngest = arrow::flight::protocol::sql::CommandStatementIngest;
         CommandStatementIngest command;
         if (!any_msg.UnpackTo(&command))
-            return arrow::Status::SerializationError("Deserialization of sql::CommandStatementIngest failed.");
+            return Status::SerializationError("Deserialization of sql::CommandStatementIngest failed.");
         return commandStatementIngest(command);
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandPreparedStatementQuery>())
     {
         arrow::flight::protocol::sql::CommandPreparedStatementQuery command;
         if (!any_msg.UnpackTo(&command))
-            return arrow::Status::SerializationError("Deserialization of sql::CommandPreparedStatementQuery failed.");
+            return Status::SerializationError("Deserialization of sql::CommandPreparedStatementQuery failed.");
         if (command.prepared_statement_handle().empty())
-            return arrow::Status::Invalid("CommandPreparedStatementQuery: prepared_statement_handle must not be empty");
+            return Status::Invalid("CommandPreparedStatementQuery: prepared_statement_handle must not be empty");
         return SQLSet{command.prepared_statement_handle(), {}, {}};
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandPreparedStatementUpdate>())
     {
         arrow::flight::protocol::sql::CommandPreparedStatementUpdate command;
         if (!any_msg.UnpackTo(&command))
-            return arrow::Status::SerializationError("Deserialization of sql::CommandPreparedStatementUpdate failed.");
+            return Status::SerializationError("Deserialization of sql::CommandPreparedStatementUpdate failed.");
         if (command.prepared_statement_handle().empty())
-            return arrow::Status::Invalid("CommandPreparedStatementUpdate: prepared_statement_handle must not be empty");
+            return Status::Invalid("CommandPreparedStatementUpdate: prepared_statement_handle must not be empty");
         return SQLSet{command.prepared_statement_handle(), {}, {}};
     }
     else
     {
         if (isArrowFlightSql(any_msg))
-            return arrow::Status::NotImplemented("Command is not implemented: ", any_msg.ShortDebugString());
+            return Status::NotImplemented("Command is not implemented: ", any_msg.ShortDebugString());
     }
 
     return std::nullopt;
@@ -751,9 +861,9 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
 CommandSelectorResult commandSelector(const std::string & cmd, bool schema_only)
 {
     if (cmd.empty())
-        return arrow::Status::Invalid("Empty command.");
+        return Status::Invalid("Empty command.");
     if (cmd.size() > static_cast<size_t>(std::numeric_limits<int>::max()))
-        return arrow::Status::Invalid("Command payload is too large.");
+        return Status::Invalid("Command payload is too large.");
     if (google::protobuf::Any any_msg; any_msg.ParseFromArray(cmd.data(), static_cast<int>(cmd.size())))
         if (auto result = commandSelectorImpl(any_msg, schema_only))
             return *result;

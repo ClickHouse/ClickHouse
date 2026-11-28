@@ -4,6 +4,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/Exception.h>
@@ -74,7 +75,7 @@ namespace DB
                 String id_name = id->name();
 
                 size_t dot_pos = id_name.find('.');
-                if (id_name.find('.', dot_pos + 1) != String::npos)
+                if (dot_pos != String::npos && id_name.find('.', dot_pos + 1) != String::npos)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "There are more than one dot");
                 if (dot_pos != String::npos)
                 {
@@ -248,7 +249,12 @@ SELECT * FROM loop(numbers(3)) LIMIT 7;
 SELECT * FROM loop(mysql('localhost:3306', 'test', 'test', 'user', 'password'));
 ...
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{.custom = [](FunctionSecretArgumentsFinder & finder)
+        {
+            /// loop(table_function(...)); in `loop(database, table)` the first argument is a database name.
+            if (finder.function->arguments->size() == 1)
+                finder.maskUnknownTableFunction(0);
+        }});
     }
 
 }

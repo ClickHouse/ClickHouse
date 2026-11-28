@@ -2,6 +2,8 @@
 -- so these parts count with their draws as the other parts do, and their exact counts do not bias the estimate
 
 -- part statistics on v would remove the last part from the baseline
+-- Disable force_primary_key_reverse_order: the reference pins the sampled index windows, which depend on the sorting key direction
+SET force_primary_key_reverse_order = 0;
 SET use_statistics_for_part_pruning = 0;
 
 DROP TABLE IF EXISTS t_full_parts;

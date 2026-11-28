@@ -638,7 +638,7 @@ ORDER BY tuple();
 
   선택적 매개변수 `posting_list_block_size` (기본값: 1048576)는 포스팅 리스트 블록의 크기를 행 수 기준으로 지정합니다.
 
-  선택적 매개변수 `posting_list_codec` (기본값: `none`)는 포스팅 리스트에 사용할 코덱을 지정합니다:
+  선택적 매개변수 `posting_list_codec` (기본값: `pfor`)는 포스팅 리스트에 사용할 코덱을 지정합니다:
 
   * `none` - 포스팅 리스트는 추가 압축 없이 저장됩니다.
   * `bitpacking` - [차분(델타) 코딩](https://en.wikipedia.org/wiki/Delta_encoding)을 적용한 다음 [비트 패킹](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70)을 적용합니다(각 고정 크기 블록 내에서 수행). SELECT 쿼리 속도가 느려지므로 현재로서는 권장하지 않습니다.
@@ -914,6 +914,16 @@ SELECT count() FROM table WHERE has(array, 'clickhouse');
 ```sql
 SELECT count() FROM table WHERE hasAny(tags, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
+```
+
+#### `arrayJoin` {#functions-example-arrayjoin}
+
+인덱싱된 배열의 한 원소에 대한 조건은 `has` 및 `hasAny`와 같은 방식으로 인덱스를 사용합니다. `arrayJoin(tags) = 'clickhouse'`는 `has(tags, 'clickhouse')`와 같은 방식으로, `arrayJoin(tags) IN (set)`는 `hasAny(tags, set)`와 같은 방식으로 인덱스를 사용합니다. 이는 `GLOBAL IN`, 집합(set)에 `NULL`이 없는 상태에서 `transform_null_in = 1`로 설정한 `IN`, 그리고 `ARRAY JOIN` 절에도 동일하게 적용됩니다. 인덱스는 그래뉼을 건너뛰는 데에만 사용되며, ClickHouse는 각 원소에 대해 조건을 계속 확인합니다. `LEFT ARRAY JOIN`은 인덱스를 사용하지 않습니다.
+
+예시:
+
+```sql
+SELECT arrayJoin(tags) AS tag FROM table WHERE tag IN ('clickhouse', 'olap');
 ```
 
 #### `mapContains` {#functions-example-mapcontains}
@@ -1630,7 +1640,10 @@ Aggregating
 텍스트 인덱스의 디스크 저장 포맷 버전은 테이블 수준 설정인 [`text_index_serialization_version`](/ko/reference/settings/merge-tree-settings/text-index)(기본값: `v2_with_positions`)으로 제어됩니다.
 이 설정은 엄격한 제약 조건이 아니라 우선순위입니다. 구성된 버전으로 인덱스를 표현할 수 없으면 이를 표현할 수 있는 더 최신 버전이 자동으로 선택되므로, 이 설정으로 인해 텍스트 인덱스 쓰기가 실패하지는 않습니다.
 롤링 업그레이드 중에는 이미 업그레이드된 서버에서 [`compatibility`](/ko/reference/settings/session-settings/compatibility#compatibility) 설정을 사용해 포맷을 고정하십시오. 해당 포맷이 도입된 버전보다 이전 버전으로 설정하면 `text_index_serialization_version`이 자동으로 이전 값으로 되돌아가고, 최신 서버는 이전 서버에서도 계속 읽을 수 있는 포맷으로 기록합니다.
-포스팅 리스트 코덱은 이 버전의 적용을 받지 않습니다. `posting_list_codec = 'pfor'`(또는 `text_index_posting_list_codec` 설정)로 기록된 파트는 해당 코덱이 도입되기 이전 버전의 서버에서는 읽을 수 없으며, `text_index_serialization_version`이나 `compatibility` 중 어느 것도 그 사용을 막지 못합니다. `support_phrase_search`와 마찬가지로, 인덱스에 지정된 코덱이 버전 우선순위보다 우선하기 때문입니다. 해당 테이블을 읽을 가능성이 있는 모든 서버가 업그레이드되기 전까지는 `pfor`를 활성화하지 마십시오.
+
+포스팅 리스트 코덱은 `text_index_serialization_version`으로 제어되지 않습니다. `pfor` 코덱으로 기록된 파트는 26.10보다 이전 버전의 서버에서 읽을 수 없습니다.
+
+26.11부터는 [`text_index_posting_list_codec`](/ko/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec) 설정의 기본값이 `pfor`입니다. 롤링 업그레이드 중에는 업그레이드된 서버에서 [`compatibility`](/ko/reference/settings/session-settings/compatibility#compatibility)를 26.11보다 이전 버전으로 설정하십시오. 그러면 기본값이 `none`으로 되돌아가므로, 해당 서버는 이전 서버에서도 읽을 수 있는 파트를 계속 기록합니다.
 
 ## 텍스트 인덱스와 블룸 필터 기반 인덱스 비교 {#text-index-vs-bloom-filter-indexes}
 

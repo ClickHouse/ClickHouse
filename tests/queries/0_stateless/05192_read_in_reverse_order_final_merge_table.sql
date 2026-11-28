@@ -1,6 +1,8 @@
 -- Reading in reverse order of the sorting key with FINAL through a `Merge` table.
 -- The `Merge` table passes the reverse order request to its children (see `ReadFromMerge::requestReadingInOrder`),
 -- and the request is accepted only when every child can read in reverse order with FINAL.
+-- Disable force_primary_key_reverse_order: the test checks the read type of the children, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
 SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1;
 SET optimize_read_in_reverse_order_final = 1;

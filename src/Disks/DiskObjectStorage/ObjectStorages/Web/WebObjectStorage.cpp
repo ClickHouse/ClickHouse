@@ -11,6 +11,7 @@
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/parseURI.h>
 #include <Poco/Timestamp.h>
 
 #include <deque>
@@ -239,7 +240,10 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
         read_settings,
         use_external_buffer,
         /* read_until_position */ 0,
-        headers);
+        headers,
+        /// Set by a read that has to be pinned to the generation of the object that it has seen (`HEAD`),
+        /// e.g. because the ETag keys the page cache.
+        object.etag);
 }
 
 void WebObjectStorage::throwNotAllowed()
@@ -416,8 +420,18 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
             const auto & header_value = tuple[1].safeGet<String>();
             metadata.attributes.emplace(header_name, header_value);
             if (header_name == "ETag")
+            {
                 metadata.etag = header_value;
+                /// A weak validator (`W/"..."`) allows different bytes of the same representation
+                /// (RFC 9110, section 8.8.1), so it must not identify the content in the caches.
+                metadata.etag_is_strong = !header_value.starts_with("W/");
+            }
         }
+        /// After a redirect, the `ETag` is of the resource that the redirect leads to, and the redirect can change
+        /// to another resource with the same `ETag` while the URL of the object stays the same. So it does not
+        /// identify the content of the object for the caches.
+        if (response_buf->wasRedirected())
+            metadata.etag_is_strong = false;
         return metadata;
     };
 
@@ -426,7 +440,7 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
     auto urls = path.read_source_index ? buildURLs(path.getPath(), *path.read_source_index) : buildURLs(path.getPath());
     for (const auto & url : urls)
     {
-        const Poco::URI uri(url, enable_url_encoding);
+        const auto uri = parseURI(url, enable_url_encoding);
         Poco::Net::HTTPBasicCredentials credentials;
         setCredentialsFromURL(credentials, uri, request_context->getHTTPHeaderFilter());
         try
@@ -530,7 +544,7 @@ std::string WebObjectStorage::buildURL(const URL & url_option, const std::string
     if (!base_path.ends_with('/'))
         base_path += '/';
 
-    Poco::URI path_uri(stripLeadingSlashes(path), false);
+    auto path_uri = parseURI(stripLeadingSlashes(path), false);
     base_uri.setPath(base_path + stripLeadingSlashes(path_uri.getPath()));
 
     Poco::URI source_uri(url_option.base_url + url_option.query_fragment, false);

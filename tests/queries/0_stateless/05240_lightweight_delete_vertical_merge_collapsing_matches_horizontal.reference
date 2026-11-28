@@ -1,0 +1,8 @@
+test1_rows	1575	636
+test1_same_rows	1
+test1_algo	t_ttl_lwd_coll_h	Horizontal
+test1_algo	t_ttl_lwd_coll_v	Vertical
+test2_rows	2280	231
+test2_same_rows	1
+test2_algo	t_ttl_lwd_vcoll_h	Horizontal
+test2_algo	t_ttl_lwd_vcoll_v	Vertical

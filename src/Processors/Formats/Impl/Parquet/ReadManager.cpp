@@ -125,7 +125,7 @@ void ReadManager::init(
             {
                 return row_group.need_to_process
                     && std::none_of(row_group.columns.begin(), row_group.columns.end(),
-                        [](const ColumnChunk & column) { return static_cast<bool>(column.offset_index_prefetch); })
+                        [](const ColumnChunk & column) { return column.offset_index_prefetch || !column.offset_index.page_locations.empty(); })
                     && std::any_of(row_group.columns.begin(), row_group.columns.end(),
                         [](const ColumnChunk & column) { return !column.served_from_cache; });
             });
@@ -517,7 +517,7 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
                 continue;
             if (is_offset_index)
             {
-                if (c.offset_index_prefetch && c.offset_index.page_locations.empty())
+                if ((c.offset_index_prefetch || c.locate_pages_from_headers) && c.offset_index.page_locations.empty())
                 {
                     LOG_TEST(getLog(), "addTasksToReadColumns: added OffsetIndex: i={} step_idx={} row_group_idx={} row_subgroup_idx={}", i, step_idx, row_group_idx, row_subgroup_idx);
 
@@ -843,6 +843,11 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         size_t i = first_incomplete_row_group.load();
         if (row_group_idx != i)
             return false;
+        /// Stages before `ColumnData` handle the whole row group at once. The first incomplete row group
+        /// must be able to pass them even when a later row group holds the stage's memory, otherwise
+        /// it waits for that memory while the later row group waits for it to be delivered.
+        if (stage_idx < ReadStage::ColumnData)
+            return true;
         const RowGroup & row_group = reader.row_groups[row_group_idx];
         /// Must check stage first so that read_ptr is meaningful (we start advancing it in finishRowSubgroupStage).
         /// Using acquire ordering to synchronize with the release (seq_cst) store in `finishRowGroupStage`.
@@ -969,7 +974,9 @@ void ReadManager::readAheadColumnData()
     size_t depth = parser_shared_resources->getIOThreadsPerReader();
     Stage & stage = stages[size_t(ReadStage::ColumnData)];
     auto limits = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, stage.memory_target_fraction);
-    if (depth <= limits.parsing_threads)
+    /// When decoding uses up the share, keep one more row group ahead if its read is small and admission would not merge it with others.
+    bool only_small_reads = depth <= limits.parsing_threads;
+    if (only_small_reads && parser_shared_resources->max_io_threads <= 1)
         return;
 
     size_t budget = limits.memory_high_watermark;
@@ -986,6 +993,8 @@ void ReadManager::readAheadColumnData()
     auto depth_is_full = [&]
     {
         size_t read_ahead_slots = column_data_read_ahead_count.load(std::memory_order_acquire);
+        if (only_small_reads)
+            return read_ahead_slots >= 1;
         return stage.batches_in_progress.load(std::memory_order_relaxed) + read_ahead_slots >= depth;
     };
 
@@ -1007,8 +1016,13 @@ void ReadManager::readAheadColumnData()
         size_t memory_usage = used_memory();
         if (memory_usage >= budget)
             return false;
+        if (only_small_reads && !reader.prefetcher.readsSeparately(run_prefetches))
+            return false;
 
-        auto charged = reader.prefetcher.startPrefetchWithinLimit(run_prefetches, &diff, budget - memory_usage, &created_tasks);
+        size_t limit = budget - memory_usage;
+        if (only_small_reads)
+            limit = std::min(limit, reader.options.min_bytes_for_seek);
+        auto charged = reader.prefetcher.startPrefetchWithinLimit(run_prefetches, &diff, limit, &created_tasks);
         if (!charged)
             return false;
         if (*charged == 0)
@@ -1077,7 +1091,7 @@ void ReadManager::readAheadColumnData()
         }
 
         auto ranges = reader.prefetcher.getAdjacentRanges(prefetches);
-        if (ranges && ranges->end - ranges->begin >= small_row_group_bytes)
+        if (ranges && (only_small_reads || ranges->end - ranges->begin >= small_row_group_bytes))
             ranges.reset();
         if (!run.empty() && !(ranges && run_ranges && reader.prefetcher.extendsAdjacentRanges(*run_ranges, *ranges) && ranges->end - run_begin <= run_limit)
             && !start_run())
@@ -1361,14 +1375,19 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 }
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
-                reader.decodeOffsetIndex(column, row_group);
+                if (column.offset_index_prefetch)
+                    reader.decodeOffsetIndex(column, column_info, row_group);
                 column.offset_index_prefetch.reset(&diff);
                 if (column.use_column_index)
                     reader.applyColumnIndex(column, column_info, row_group);
                 column.column_index_prefetch.reset(&diff);
                 break;
             case ReadStage::OffsetIndex:
-                reader.decodeOffsetIndex(column, row_group);
+                if (column.offset_index_prefetch)
+                    reader.decodeOffsetIndex(column, column_info, row_group);
+                /// Not for a row subgroup whose rows were all filtered out: a later one may need the pages.
+                else if (row_group.subgroups.at(task.row_subgroup_idx).filter.rows_pass > 0)
+                    reader.locatePagesFromHeaders(column, row_group, column_info);
                 column.offset_index_prefetch.reset(&diff);
                 break;
             case ReadStage::ColumnData:
@@ -1461,9 +1480,12 @@ void ReadManager::clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff)
 void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff & diff)
 {
     row_subgroup.filter.clear(&diff);
-    row_subgroup.output.clear();
     for (ColumnSubchunk & col : row_subgroup.columns)
         col.column_and_offsets_memory.reset(&diff);
+    /// The row subgroup stays in `RowGroup::subgroups` until the end of the read: free its storage, `clear` keeps it.
+    row_subgroup.output = decltype(row_subgroup.output)();
+    row_subgroup.columns = decltype(row_subgroup.columns)();
+    row_subgroup.block_missing_values = BlockMissingValues();
 }
 
 std::string ReadManager::collectDeadlockDiagnostics()

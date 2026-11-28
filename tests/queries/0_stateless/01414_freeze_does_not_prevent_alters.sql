@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests ALTER FREEZE, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 -- In previous ClickHouse versions, parts were not 100% immutable and FREEZE may prevent subsequent ALTERs.
 -- It's not longer the case. Let's prove it.
 

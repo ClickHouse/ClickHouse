@@ -327,27 +327,28 @@ SELECT '--- block boundaries above the filter are unchanged ---';
 -- `convertOneBucketToChunk` emits exactly one chunk per bucket however many groups survive, so a
 -- block-observing function above the retained filter sees the same layout either way. `max_block_size`
 -- is pinned small so a boundary would be visible at this group count, and `max_threads` because block
--- assignment across threads is not deterministic by itself.
+-- assignment across threads is not deterministic by itself. The adaptive aggregator also takes one thread
+-- and emits blocks of its own, so these queries turn it off.
 SELECT count(), uniqExact(bn), max(rn), sum(rn) FROM (
     SELECT rowNumberInBlock() AS rn, blockNumber() AS bn FROM (
         SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3
     )
-) SETTINGS query_plan_aggregation_having_prefilter = 0, max_threads = 1, max_block_size = 1000;
+) SETTINGS query_plan_aggregation_having_prefilter = 0, max_threads = 1, max_block_size = 1000, enable_adaptive_aggregator = 0;
 SELECT count(), uniqExact(bn), max(rn), sum(rn) FROM (
     SELECT rowNumberInBlock() AS rn, blockNumber() AS bn FROM (
         SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3
     )
-) SETTINGS query_plan_aggregation_having_prefilter = 1, max_threads = 1, max_block_size = 1000;
+) SETTINGS query_plan_aggregation_having_prefilter = 1, max_threads = 1, max_block_size = 1000, enable_adaptive_aggregator = 0;
 SELECT count(), uniqExact(bn), max(rn), sum(rn) FROM (
     SELECT rowNumberInBlock() AS rn, blockNumber() AS bn FROM (
         SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3
     )
-) SETTINGS query_plan_aggregation_having_prefilter = 0, max_threads = 1, max_block_size = 1000, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0;
+) SETTINGS query_plan_aggregation_having_prefilter = 0, max_threads = 1, max_block_size = 1000, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0, enable_adaptive_aggregator = 0;
 SELECT count(), uniqExact(bn), max(rn), sum(rn) FROM (
     SELECT rowNumberInBlock() AS rn, blockNumber() AS bn FROM (
         SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3
     )
-) SETTINGS query_plan_aggregation_having_prefilter = 1, max_threads = 1, max_block_size = 1000, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0;
+) SETTINGS query_plan_aggregation_having_prefilter = 1, max_threads = 1, max_block_size = 1000, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0, enable_adaptive_aggregator = 0;
 
 SELECT '--- the group-by row limit still counts every group ---';
 

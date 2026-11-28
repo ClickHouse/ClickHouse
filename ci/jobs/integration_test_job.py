@@ -9,6 +9,7 @@ import traceback
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+from ci.jobs.scripts import log_export
 from ci.jobs.scripts.bugfix_validation import (
     bugfix_build_types,
     download_master_builds,
@@ -43,7 +44,7 @@ MAX_FAILS_BEFORE_DROP = 5
 # The merge-queue targeted check stops after this many failed tests (fail fast).
 MERGE_QUEUE_MAX_FAILURES = 3
 # The selection sources that are run whatever the coverage ranking (see `protect_selection`).
-MANDATORY_SELECTION_SOURCES = {"changed", "previously_failed", "merge_queue_drift"}
+MANDATORY_SELECTION_SOURCES = {"changed", "previously_failed"}
 # Flaky-check best-effort scope cap: the maximum number of changed test modules a single
 # flaky-check run will execute. A PR can mechanically touch a large number of integration
 # test modules (e.g. a repo-wide lint/format change), and running every one of them
@@ -1571,6 +1572,45 @@ def is_empty_best_effort_skip(
     return (is_flaky_check or is_targeted_check) and not has_results and timed_out
 
 
+def setup_ci_logs_export_env(check_start_time: float) -> None:
+    """
+    Enable the export of system log tables to the CI Logs cluster for the
+    ClickHouse servers started by the integration tests, see
+    tests/integration/helpers/ci_logs_export.py. The credentials are passed to
+    pytest (and further into the server containers) through the process
+    environment only: they must never be materialized in files, since the
+    instance directories are collected as CI artifacts. Best effort: if the
+    credentials cannot be fetched, the tests run without the export.
+    """
+    try:
+        host, password = log_export.get_credentials()
+    except Exception as e:
+        print(
+            f"WARNING: Failed to fetch the CI Logs cluster credentials, the tests will run without logs export: {e}"
+        )
+        return
+    if not host or not password:
+        print(
+            "WARNING: Empty CI Logs cluster credentials, the tests will run without logs export"
+        )
+        return
+    os.environ["CLICKHOUSE_CI_LOGS_HOST"] = host
+    os.environ["CLICKHOUSE_CI_LOGS_USER"] = log_export.CLICKHOUSE_CI_LOGS_USER
+    os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = password
+    # Values for the extra columns of the destination tables, in two parts: the
+    # test framework fills in `test_name` and `node_name` per server, and the
+    # expression has to follow the EXTRA_COLUMNS order, see
+    # ci/jobs/scripts/log_export.py and
+    # tests/integration/helpers/ci_logs_export.py.
+    os.environ["EXTRA_COLUMNS_EXPRESSION_HEAD"] = (
+        log_export.extra_columns_expression_head(check_start_time)
+    )
+    os.environ["EXTRA_COLUMNS_EXPRESSION_TAIL"] = (
+        log_export.extra_columns_expression_tail()
+    )
+    print("Export of system logs to the CI Logs cluster is enabled")
+
+
 def finalize_llvm_coverage_status(R: Result, has_error: bool) -> bool:
     """Apply the coverage job's status rules to `R` and return the surviving `has_error`.
 
@@ -1932,7 +1972,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         and not is_llvm_coverage
         and not args.test
     ):
-        changed_files = info.get_changed_files()
+        changed_files = info.get_changed_files() or []
         # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
         # when a CI job script changes: `filter_job.py` lets them through for that very reason.
         is_coverage_replacement_with_ci_script_changes = False
@@ -2002,9 +2042,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # The merge-queue targeted check runs under a 30-minute cap that ends the run
         # without failing it, so the order decides what is cut off. Keep the priority
         # order of the selection there (the changed modules, the modules owning changed
-        # files, the modules `master` changed since the PR CI, then the coverage
-        # ranking): sorting by name would let a large coverage selection starve the
-        # mandatory modules and report OK without running them.
+        # files, then the coverage ranking): sorting by name would let a large coverage
+        # selection starve the mandatory modules and report OK without running them.
         if is_merge_queue_targeted_check:
             priority = {}
             for t in targeted_tests:
@@ -2021,6 +2060,16 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
         parallel_test_modules = sorted(parallel_test_modules, key=module_key)
         sequential_test_modules = sorted(sequential_test_modules, key=module_key)
+
+    # The export adds `Distributed` tables and materialized views to every
+    # server. The targeted and flaky checks pack many modules (or many copies of
+    # a module) into one job with higher parallelism, and with the export on, the
+    # `Integration tests (amd_asan_ubsan, db disk, targeted)` job hit its memory
+    # budget for `/docker` once `helpers/cluster.py` made it run about 1000
+    # tests. The regular shards already cover every test, so the logs are not
+    # lost.
+    if not info.is_local_run and not is_targeted_check and not is_flaky_check:
+        setup_ci_logs_export_env(sw.start_time)
 
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
@@ -2117,6 +2166,15 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if is_llvm_coverage:
         session_timeout_parallel = 7200
         session_timeout_sequential = 7200
+
+    # The export of the system logs costs a couple of seconds of setup and a
+    # `SYSTEM FLUSH LOGS` per server, and a shard starts hundreds of them, so a
+    # shard that exports runs about 10% longer (measured on this branch:
+    # 6.9-7.4 ks against a master p50 of 6.2 ks). Give the parallel phase that
+    # back: without it the shards which were already close to the budget are cut
+    # short by the session-timeout instead of finishing their tests.
+    if os.environ.get("CLICKHOUSE_CI_LOGS_HOST"):
+        session_timeout_parallel += 900
 
     if args.session_timeout:
         session_timeout_parallel = args.session_timeout * 2

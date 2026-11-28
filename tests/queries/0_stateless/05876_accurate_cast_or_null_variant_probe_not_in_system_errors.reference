@@ -1,0 +1,8 @@
+variant constant	[]
+variant column	[]
+dynamic column	[]
+dynamic column	42
+dynamic column	\N
+variant column	42
+variant column	\N
+variant constant	1

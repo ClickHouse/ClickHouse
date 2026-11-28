@@ -11,20 +11,14 @@ keywords: ['prewhere', 'クエリ最適化', 'パフォーマンス', 'フィル
 
 このガイドでは、PREWHERE の仕組み、効果の測定方法、そして最適なパフォーマンスを得るための調整方法を説明します。
 
-<div id="query-processing-without-prewhere-optimization">
-  ## PREWHERE 最適化なしのクエリ処理
-</div>
+## PREWHERE 最適化なしのクエリ処理 {#query-processing-without-prewhere-optimization}
 
 まず、PREWHERE を使わない場合に、[uk&#95;price&#95;paid&#95;simple](/ja/concepts/core-concepts/parts) テーブルに対するクエリがどのように処理されるかを見てみましょう。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![PREWHERE 最適化なしのクエリ処理](/images/guides/best-practices/prewhere_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![PREWHERE 最適化なしのクエリ処理](/images/guides/best-practices/prewhere_01.webp)
+  </Frame>
 </div>
 
 <br />
@@ -35,30 +29,24 @@ keywords: ['prewhere', 'クエリ最適化', 'パフォーマンス', 'フィル
 
 ② クエリを高速化するため、ClickHouse はテーブルのプライマリインデックスをメモリに読み込みます。
 
-③ 索引エントリを走査し、`town` カラム内のどのグラニュールに述語に一致する行が含まれている可能性があるかを特定します。
+③ 索引エントリをスキャンし、`town` カラム内のどのグラニュールに述語に一致する行が含まれている可能性があるかを特定します。
 
-④ こうして候補となったグラニュールが、クエリに必要な他のカラムの対応するグラニュールとあわせてメモリに読み込まれます。
+④ こうして候補となったグラニュールが、クエリに必要な他のカラムの位置が揃っているグラニュールとあわせてメモリに読み込まれます。
 
 ⑤ その後、残りのフィルタがクエリの実行時に適用されます。
 
 このように、PREWHERE を使わない場合は、実際に一致する行がわずかであっても、フィルタリングの前に関連する可能性があるすべてのカラムが読み込まれます。
 
-<div id="how-prewhere-improves-query-efficiency">
-  ## PREWHERE がクエリ効率を向上させる仕組み
-</div>
+## PREWHERE がクエリ効率を向上させる仕組み {#how-prewhere-improves-query-efficiency}
 
 次のアニメーションは、上記のクエリが、すべてのクエリ述語に PREWHERE 句を適用した状態でどのように処理されるかを示しています。
 
 最初の 3 つの処理ステップは前と同じです。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![PREWHERE 最適化によるクエリ処理](/images/guides/best-practices/prewhere_02.webp)
-
-</Frame>
-
+  <Frame>
+    ![PREWHERE 最適化によるクエリ処理](/images/guides/best-practices/prewhere_02.webp)
+  </Frame>
 </div>
 
 <br />
@@ -67,9 +55,9 @@ keywords: ['prewhere', 'クエリ最適化', 'パフォーマンス', 'フィル
 
 ① クエリには `town` カラムに対するフィルタが含まれており、これはテーブルの主キーの一部であるため、プライマリインデックスの一部でもあります。
 
-② PREWHERE 句がない場合の実行と同様に、クエリを高速化するため、ClickHouse はプライマリインデックスをメモリに読み込みます。
+②  PREWHERE 句がない場合の実行と同様に、クエリを高速化するため、ClickHouse はプライマリインデックスをメモリに読み込みます。
 
-③ その後、索引エントリを走査して、`town` カラムのどのグラニュールに述語に一致する行が含まれている可能性があるかを特定します。
+③ その後、索引エントリをスキャンして、`town` カラムのどのグラニュールに述語に一致する行が含まれている可能性があるかを特定します。
 
 ここからは、PREWHERE 句のおかげで次のステップが変わります。関連するすべてのカラムを最初にまとめて読み込むのではなく、ClickHouse はカラムごとにデータを絞り込み、本当に必要なものだけを読み込みます。これにより、特に列数の多いテーブルでは、I/O が大幅に削減されます。
 
@@ -78,16 +66,12 @@ keywords: ['prewhere', 'クエリ最適化', 'パフォーマンス', 'フィル
 **ステップ 1: town によるフィルタリング**<br />
 ClickHouse は PREWHERE 処理を開始し、① `town` カラムから選択されたグラニュールを読み取り、実際に `London` に一致する行が含まれているものを確認します。
 
-この例では、選択されたすべてのグラニュールが一致するため、② 次のフィルタカラム `date` について、対応する位置のグラニュールが処理対象として選択されます。
+この例では、選択されたすべてのグラニュールが一致するため、② 次のフィルタカラム `date` について、位置が揃っているグラニュールが処理対象として選択されます。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ステップ 1: town によるフィルタリング](/images/guides/best-practices/prewhere_03.webp)
-
-</Frame>
-
+  <Frame>
+    ![ステップ 1: town によるフィルタリング](/images/guides/best-practices/prewhere_03.webp)
+  </Frame>
 </div>
 
 <br />
@@ -97,16 +81,12 @@ ClickHouse は PREWHERE 処理を開始し、① `town` カラムから選択さ
 **ステップ 2: date によるフィルタリング**<br />
 次に、ClickHouse は ① 選択された `date` カラムのグラニュールを読み取り、フィルタ `date > '2024-12-31'` を評価します。
 
-この場合、3 つのグラニュールのうち 2 つに一致する行が含まれているため、② 次のフィルタカラム `price` については、対応する位置のグラニュールだけが後続処理の対象として選択されます。
+この場合、3 つのグラニュールのうち 2 つに一致する行が含まれているため、② 次のフィルタカラム `price` については、位置が揃っているグラニュールだけが後続処理の対象として選択されます。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ステップ 2: date によるフィルタリング](/images/guides/best-practices/prewhere_04.webp)
-
-</Frame>
-
+  <Frame>
+    ![ステップ 2: date によるフィルタリング](/images/guides/best-practices/prewhere_04.webp)
+  </Frame>
 </div>
 
 <br />
@@ -116,16 +96,12 @@ ClickHouse は PREWHERE 処理を開始し、① `town` カラムから選択さ
 **ステップ 3: price によるフィルタリング**<br />
 最後に、ClickHouse は ① `price` カラムから選択された 2 つのグラニュールを読み取り、最後のフィルタ `price > 10_000` を評価します。
 
-2 つのグラニュールのうち、一致する行を含むのは 1 つだけなので、② `SELECT` カラム `street` については、対応する位置のグラニュールだけを後続処理のために読み込めば十分です。
+2 つのグラニュールのうち、一致する行を含むのは 1 つだけなので、② `SELECT` カラム `street` については、位置が揃っているグラニュールだけを後続処理のために読み込めば十分です。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ステップ 2: price によるフィルタリング](/images/guides/best-practices/prewhere_05.webp)
-
-</Frame>
-
+  <Frame>
+    ![ステップ 2: price によるフィルタリング](/images/guides/best-practices/prewhere_05.webp)
+  </Frame>
 </div>
 
 <br />
@@ -141,7 +117,7 @@ ClickHouse は PREWHERE 処理を開始し、① `town` カラムから選択さ
 </Info>
 
 <div id="prewhere-optimization-is-automatically-applied">
-  ## PREWHERE 最適化は自動的に適用されます
+  ## PREWHERE 最適化は自動的に適用されます {#prewhere-optimization-is-automatically-applied}
 </div>
 
 PREWHERE 句は、上の例のように手動で追加できます。ただし、PREWHERE を手動で記述する必要はありません。設定 [`optimize_move_to_prewhere`](/ja/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) が有効な場合 (デフォルトでは true)、ClickHouse はフィルタ条件を WHERE から PREWHERE に自動的に移動し、その際、読み取り量を最も削減できるものが優先されます。
@@ -153,7 +129,7 @@ ClickHouse は、バージョン [23.2](https://clickhouse.com/blog/clickhouse-r
 バージョン [23.11](https://clickhouse.com/blog/clickhouse-release-23-11#column-statistics-for-prewhere) 以降では、オプションのカラム STATISTICS を使うことで、単にカラムサイズではなく実際のデータの選択性に基づいてフィルタ処理の順序を決定でき、さらに改善できます。
 
 <div id="how-to-measure-prewhere-impact">
-  ## PREWHERE の影響を測定する方法
+  ## PREWHERE の影響を測定する方法 {#how-to-measure-prewhere-impact}
 </div>
 
 PREWHERE がクエリに有効かどうかを確認するには、`optimize_move_to_prewhere setting` を有効にした場合と無効にした場合のクエリのパフォーマンスを比較します。
@@ -260,7 +236,7 @@ SETTINGS send_logs_level = 'test';
 ```
 
 <div id="key-takeaways">
-  ## 要点
+  ## 要点 {#key-takeaways}
 </div>
 
 * PREWHERE は、後で除外されるカラムデータの読み取りを避けることで、I/O とメモリを節約します。

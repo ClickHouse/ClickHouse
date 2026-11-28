@@ -20,7 +20,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
@@ -304,7 +304,7 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     new_set->setHeader(header.getColumnsWithTypeAndName());
     {
         /// Table data belongs to the server, not to the query releasing it.
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        ServerOwnedMemoryScope table_data_not_charged_to_the_query;
         std::lock_guard lock(mutex);
         set = new_set;
     }

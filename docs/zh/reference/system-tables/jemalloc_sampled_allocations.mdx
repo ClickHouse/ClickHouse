@@ -15,7 +15,7 @@ doc_type: 'reference'
 
 ## 列 {#columns}
 
-* `trace` ([Array(UInt64)](/zh/reference/data-types/array)) — 分配调用栈的地址，叶子 (leaf) 栈帧在前 (与 `system.trace_log.trace` 的约定一致) 。如果 jemalloc 无法展开调用栈，则为空。可使用 `addressToSymbol` 和 `demangle` 进行符号化 (需要 `allow_introspection_functions`) 。
+* `trace` ([Array(UInt64)](/zh/reference/data-types/array)) — 分配调用栈的地址，叶子 (leaf) 栈帧在前。位于 ClickHouse 主二进制文件内的地址以相对该文件的偏移量形式存储 (与 `system.trace_log.trace` 的约定一致) ，位于主二进制文件之外的栈帧则存储为 0。如果 jemalloc 无法展开调用栈，则为空。可使用 `addressToSymbol` 和 `demangle` 进行符号化 (需要 `allow_introspection_functions`) 。
 * `age_ns` ([UInt64](/zh/reference/data-types/int-uint)) — 该次分配已存活的时间 (纳秒) ，相对于 profile 被刷写的时刻计算。
 * `size` ([UInt64](/zh/reference/data-types/int-uint)) — 请求的分配大小，单位为字节。
 * `usize` ([UInt64](/zh/reference/data-types/int-uint)) — 可用大小 (字节) ，即该请求被向上取整到的大小类。
