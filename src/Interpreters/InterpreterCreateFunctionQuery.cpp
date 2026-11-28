@@ -28,6 +28,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/ErrnoException.h>
 #include <Common/FilesystemIsolation.h>
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
@@ -36,6 +37,10 @@
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <filesystem>
+
+#if defined(OS_LINUX)
+#include <sys/statvfs.h>
+#endif
 
 
 namespace DB
@@ -49,6 +54,7 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int FUNCTION_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int CANNOT_STATVFS;
 }
 
 namespace ServerSetting
@@ -59,6 +65,20 @@ namespace ServerSetting
 namespace
 {
     namespace DriverUtils = UserDefinedExecutableFunctionDriverUtils;
+
+    /// Whether the programs in the directory `path` cannot be executed, because it is on a `noexec` mount.
+    bool isOnNoexecMount(const String & path)
+    {
+#if defined(OS_LINUX)
+        struct statvfs st{};
+        if (0 != ::statvfs(path.c_str(), &st))
+            throw ErrnoException(ErrorCodes::CANNOT_STATVFS, "Cannot get the mount flags of {}", path);
+        return (st.f_flag & ST_NOEXEC) != 0;
+#else
+        (void)path;
+        return false;
+#endif
+    }
 
     std::vector<std::pair<String, String>> formatEngineArguments(
         const ASTCreateFunctionWithDriverQuery & query,
@@ -260,14 +280,20 @@ namespace
         if (!(query.is_attach && config_exists))
         {
             /// The driver generates the program of the function in its working directory in
-            /// `dynamic_user_defined_executable_functions_path`, which is writable and therefore not executable
-            /// (`noexec`) in the isolated filesystem, so the function could be created but never run. This covers
-            /// `CREATE` and an `ATTACH` without the generated configuration; an `ATTACH` of the existing one is allowed.
-            if (const auto isolation = getFilesystemIsolationStatus(); isolation && isolation->isolated)
+            /// `dynamic_user_defined_executable_functions_path`. In the isolated filesystem, a writable path is not
+            /// executable (`noexec`) unless the configuration declares it in `filesystem_isolation_paths` as
+            /// `read_write_executable`, and otherwise the function could be created but never run. The mount flags
+            /// are checked rather than the configuration, which can differ from the one the isolation was applied
+            /// with. This covers `CREATE` and an `ATTACH` without the generated configuration; an `ATTACH` of the
+            /// existing one is allowed.
+            if (const auto isolation = getFilesystemIsolationStatus(); isolation && isolation->isolated && isOnNoexecMount(dynamic_dir))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Drivers for executable user-defined functions are not supported with the server setting `filesystem_isolation`: "
-                    "the programs they generate in `dynamic_user_defined_executable_functions_path` cannot be executed in the "
-                    "isolated filesystem, where every writable path is mounted `noexec`");
+                    "Drivers for executable user-defined functions are not supported with the server setting `filesystem_isolation` "
+                    "unless `dynamic_user_defined_executable_functions_path` ({}) is executable: the programs they generate there "
+                    "cannot be executed in the isolated filesystem, where a writable path is mounted `noexec`. Declare it in "
+                    "`filesystem_isolation_paths` as `<read_write_executable>`, which lets the server run the files it writes there, "
+                    "and restart the server",
+                    dynamic_dir);
 
             /// The previous working directory is only read so it can be cleaned up after a successful
             /// replace below. Reading it must be best-effort: a missing or invalid (corrupted) `.workdir`

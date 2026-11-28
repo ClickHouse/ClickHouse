@@ -32,7 +32,13 @@ struct FilesystemIsolationPath
         ReadOnly,
         /// Mounted read-write. Nothing in it can be executed (`noexec`).
         ReadWrite,
+        /// Mounted read-write, and programs in it can be executed. Only for the paths that the configuration
+        /// explicitly declares so, such as the directory where drivers of executable user defined functions generate
+        /// their programs: it lets the server run what it writes there.
+        ReadWriteExecutable,
     };
+
+    static bool isWritable(Access access) { return access != Access::ReadOnly; }
 
     /// An absolute path to a directory or a file. Symbolic links in it are recreated inside the isolated
     /// filesystem, and their targets are made visible as well.

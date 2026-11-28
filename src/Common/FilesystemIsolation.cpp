@@ -1186,7 +1186,30 @@ std::optional<std::string> getInterpreter()
 
 std::string describeAccess(FilesystemIsolationPath::Access access)
 {
-    return access == FilesystemIsolationPath::Access::ReadWrite ? "read-write" : "read-only";
+    switch (access)
+    {
+        case FilesystemIsolationPath::Access::ReadOnly:
+            return "read-only";
+        case FilesystemIsolationPath::Access::ReadWrite:
+            return "read-write";
+        case FilesystemIsolationPath::Access::ReadWriteExecutable:
+            return "read-write, executable";
+    }
+}
+
+/// For equal paths, the one that allows more wins: a read-write path is needed for writing, while a read-only one is
+/// only kept executable, and a path declared read-write and executable is both.
+int accessRank(FilesystemIsolationPath::Access access)
+{
+    switch (access)
+    {
+        case FilesystemIsolationPath::Access::ReadOnly:
+            return 0;
+        case FilesystemIsolationPath::Access::ReadWrite:
+            return 1;
+        case FilesystemIsolationPath::Access::ReadWriteExecutable:
+            return 2;
+    }
 }
 
 /// Resolves the paths, drops the missing ones, and the ones that a mount of a containing directory with the same
@@ -1201,7 +1224,7 @@ std::vector<Mount> planMounts(const std::vector<FilesystemIsolationPath> & paths
 
         /// The server would create it anyway, and there is no way to do it from inside. An existing path, which can be
         /// a file, such as a device for a log, is left as it is.
-        if (std::error_code error; path.access == FilesystemIsolationPath::Access::ReadWrite && !fs::exists(path.path, error))
+        if (std::error_code error; FilesystemIsolationPath::isWritable(path.access) && !fs::exists(path.path, error))
         {
             fs::create_directories(path.path, error);
             if (error)
@@ -1236,13 +1259,12 @@ std::vector<Mount> planMounts(const std::vector<FilesystemIsolationPath> & paths
         resolved.push_back({std::move(*real_path), path.access, path.source});
     }
 
-    /// For equal paths, the read-write one goes first and wins: a read-write path is needed for writing, while a
-    /// read-only one is only kept executable.
+    /// For equal paths, the one that allows more goes first and wins (see `accessRank`).
     std::sort(resolved.begin(), resolved.end(), [](const Mount & lhs, const Mount & rhs)
     {
         if (lhs.path != rhs.path)
             return lhs.path < rhs.path;
-        return lhs.access == FilesystemIsolationPath::Access::ReadWrite && rhs.access != FilesystemIsolationPath::Access::ReadWrite;
+        return accessRank(lhs.access) > accessRank(rhs.access);
     });
 
     std::vector<Mount> mounts;
@@ -1411,7 +1433,7 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
     };
     for (const auto & mount : mounts)
     {
-        if (mount.access != FilesystemIsolationPath::Access::ReadWrite)
+        if (!FilesystemIsolationPath::isWritable(mount.access))
             continue;
         if (auto location = getFilesystemLocation(mount.path, mount_info))
             add_writable_location(mount, std::move(*location));
@@ -1428,7 +1450,7 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
         const Mount * writable = nullptr;
         for (const auto & mount : mounts)
         {
-            if (mount.access == FilesystemIsolationPath::Access::ReadWrite && isSameOrInside(entry.string(), mount.path))
+            if (FilesystemIsolationPath::isWritable(mount.access) && isSameOrInside(entry.string(), mount.path))
                 writable = &mount;
         }
         const auto location = writable ? std::nullopt : getFilesystemLocation(entry.string(), mount_info);
@@ -1674,8 +1696,11 @@ FilesystemIsolationStatus isolateFilesystem(
 
     for (const auto & mount : mounts)
     {
-        const bool read_write = mount.access == FilesystemIsolationPath::Access::ReadWrite;
-        unsigned long flags = read_write ? (MS_NOSUID | MS_NOEXEC) : (MS_RDONLY | MS_NOSUID); // NOLINT(google-runtime-int)
+        unsigned long flags = MS_NOSUID; // NOLINT(google-runtime-int)
+        if (mount.access == FilesystemIsolationPath::Access::ReadOnly)
+            flags |= MS_RDONLY;
+        else if (mount.access == FilesystemIsolationPath::Access::ReadWrite)
+            flags |= MS_NOEXEC;
         /// A device stays usable only if it is explicitly listed.
         if (!isSameOrInside(mount.path, "/dev"))
             flags |= MS_NODEV;

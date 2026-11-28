@@ -1,0 +1,3 @@
+started with an isolated filesystem
+the dynamic directory is read-write and executable: yes
+result: 42
