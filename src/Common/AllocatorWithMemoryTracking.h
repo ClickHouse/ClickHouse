@@ -47,8 +47,9 @@ struct AllocatorWithMemoryTracking
 
     AllocatorWithMemoryTracking() = default;
 
+    /// Implicit like std::allocator's: generic code converts rebound allocators.
     template <typename U>
-    constexpr explicit AllocatorWithMemoryTracking(const AllocatorWithMemoryTracking<U> &) noexcept
+    constexpr AllocatorWithMemoryTracking(const AllocatorWithMemoryTracking<U> &) noexcept /// NOLINT(google-explicit-constructor)
     {
     }
 
