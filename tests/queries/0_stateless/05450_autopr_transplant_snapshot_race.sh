@@ -68,10 +68,13 @@ for _ in {1..5}; do
         break
     fi
 done
-# A run that could not place the mutation between the snapshots says nothing about the decision.
-echo "$result" | grep -v '^found='
+# A run that could not place the mutation between the snapshots says nothing about the decision, so fail rather than
+# pass without having exercised it.
 if [[ "$result" != *"found=1" ]]; then
-    echo -e "applied\t0"
+    echo "The mutation could not be placed between the snapshots of the two plans in any attempt"
+    $CLICKHOUSE_CLIENT --query "DROP TABLE t_autopr_race"
+    exit 1
 fi
+echo "$result" | grep -v '^found='
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_autopr_race"
