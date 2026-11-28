@@ -49,6 +49,9 @@ bool isNameOfLocalInFunction(const std::string & function_name);
 /// Returns true if function name is name of global IN function or its variations, false otherwise
 bool isNameOfGlobalInFunction(const std::string & function_name);
 
+/// Returns true if the function returns only 0, 1 or NULL; `with_index_functions` adds the index predicates (`has`, `startsWith`, ...)
+bool isBooleanFunction(const std::string & function_name, bool with_index_functions = false);
+
 /// Returns global IN function name for local IN function name
 std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & function_name);
 
