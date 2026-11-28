@@ -3729,6 +3729,52 @@ def test_user_managed_slot_with_unique_consumer_identifier_rejected(started_clus
     ).strip()
 
 
+def test_table_engine_unsupported_structure_error(started_cluster):
+    # The initial load used to swallow the error from fetching the remote table structure and throw
+    # LOGICAL_ERROR `No table attributes` instead. CREATE must fail with the actual reason.
+    pg_manager.execute("DROP TABLE IF EXISTS mpg_like_source")
+    pg_manager.execute(
+        "CREATE TABLE mpg_like_source (key integer PRIMARY KEY, a integer[])"
+    )
+    cases = {
+        "mpg_unsupported_dims": (
+            f"(key integer PRIMARY KEY, a integer{'[]' * 101})",
+            "PostgreSQL array has unsupported number of dimensions: 101",
+        ),
+        "mpg_unsupported_numeric": (
+            "(key integer PRIMARY KEY, a numeric(100, 2))",
+            "Precision 100 and scale 2 are too big and not supported",
+        ),
+        "mpg_empty_like_array": (
+            "(LIKE mpg_like_source INCLUDING ALL)",
+            "PostgreSQL relation containing arrays cannot be empty",
+        ),
+    }
+    for table, (definition, message) in cases.items():
+        pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
+        pg_manager.execute(f"CREATE TABLE {table} {definition}")
+
+        instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        error = instance.query_and_get_error(
+            f"""
+            SET enable_materialized_postgresql_table=1;
+            CREATE TABLE {table} (key Int32)
+            ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
+            """
+        )
+        assert "LOGICAL_ERROR" not in error, error
+        assert message in error, error
+
+        pg_manager.execute(
+            f"SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = 'postgres_database_{table}_ch_replication_slot'"
+        )
+        pg_manager.execute(
+            f"DROP PUBLICATION IF EXISTS postgres_database_{table}_ch_publication"
+        )
+        pg_manager.execute(f"DROP TABLE {table}")
+    pg_manager.execute("DROP TABLE mpg_like_source")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
