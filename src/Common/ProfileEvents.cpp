@@ -141,6 +141,9 @@
     M(ParquetMetadataCacheOffsetIndexHits, "Number of Parquet column chunks whose offset index was taken from the parquet metadata cache instead of being read from the file.", ValueType::Number) \
     M(ParquetMetadataCacheColumnIndexHits, "Number of Parquet column chunks whose column index was taken from the parquet metadata cache instead of being read from the file.", ValueType::Number) \
     M(ParquetMetadataCacheWeightLost, "Approximate number of bytes evicted from the parquet metadata cache.", ValueType::Number) \
+    M(ORCMetadataCacheHits, "Number of times ORC metadata has been found in the cache.", ValueType::Number) \
+    M(ORCMetadataCacheMisses, "Number of times ORC metadata has not been found in the cache and had to be read from disk.", ValueType::Number) \
+    M(ORCMetadataCacheWeightLost, "Approximate number of bytes evicted from the ORC metadata cache.", ValueType::Number) \
     M(IcebergIteratorInitializationMicroseconds, "Total time spent on synchronous initialization of iceberg data iterators.", ValueType::Microseconds) \
     M(IcebergMetadataUpdateMicroseconds, "Total time spent updating iceberg storage metadata from state (buildStorageMetadataFromState).", ValueType::Microseconds) \
     M(IcebergMetadataReturnedObjectInfos, "Total number of returned object infos from iceberg iterator.", ValueType::Number) \

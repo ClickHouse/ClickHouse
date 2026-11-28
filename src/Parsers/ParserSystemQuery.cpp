@@ -318,6 +318,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP ICEBERG METADATA CACHE", Type::CLEAR_ICEBERG_METADATA_CACHE},
             {"DROP PAIMON METADATA CACHE", Type::CLEAR_PAIMON_METADATA_CACHE},
             {"DROP PARQUET METADATA CACHE", Type::CLEAR_PARQUET_METADATA_CACHE},
+            {"DROP ORC METADATA CACHE", Type::CLEAR_ORC_METADATA_CACHE},
             {"DROP POINT IN POLYGON CACHE", Type::CLEAR_POINT_IN_POLYGON_CACHE},
             {"DROP FILESYSTEM CACHE", Type::CLEAR_FILESYSTEM_CACHE},
             {"DROP DISTRIBUTED CACHE", Type::CLEAR_DISTRIBUTED_CACHE},
@@ -1363,6 +1364,18 @@ Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` 
 ## SYSTEM DROP PARQUET METADATA CACHE {#drop-parquet-metadata-cache}
 
 Clears the parquet metadata cache.
+
+## SYSTEM DROP ORC METADATA CACHE {#drop-orc-metadata-cache}
+
+Clears the in-memory cache of serialized ORC file tails, which contain the footer, metadata, and postscript.
+
+```sql
+SYSTEM DROP ORC METADATA CACHE [ON CLUSTER cluster_name]
+```
+
+Requires the `SYSTEM DROP ORC METADATA CACHE` privilege.
+
+This clears existing entries but leaves the cache enabled, so subsequent reads can populate it again. To disable the cache instead, set the server-level `orc_metadata_cache_size` setting to `0`. To bypass it for a query, set `use_orc_metadata_cache` to `0`.
 
 ## SYSTEM CLEAR|DROP PAIMON METADATA CACHE {#drop-paimon-metadata-cache}
 

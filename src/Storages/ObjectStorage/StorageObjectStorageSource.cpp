@@ -455,6 +455,7 @@ namespace Setting
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool use_columns_cache;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool use_orc_metadata_cache;
     extern const SettingsBool azure_validate_etag_on_read;
 }
 
@@ -2094,7 +2095,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     else
     {
         const auto format_name = object_info->getFileFormat().value_or(configuration->format);
-        const bool input_format_does_not_read_file = Poco::toLower(format_name) == "one";
+        const String format_name_lower = Poco::toLower(format_name);
+        const bool input_format_does_not_read_file = format_name_lower == "one";
 
         row_lineage_columns = getMaterializedRowLineageColumns(*object_info, read_from_format_info, format_name);
 
@@ -2122,7 +2124,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name, context_, format_settings);
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata, object_storage, context_, log,
-                read_settings, !headers_requested);
+                read_settings, !headers_requested,
+                /*prepare_orc_metadata_cache=*/ format_name_lower == "orc"
+                    && context_->getSettingsRef()[Setting::use_orc_metadata_cache] && !headers_requested);
         }
 
         Block initial_header = read_from_format_info.format_header;
@@ -2484,6 +2488,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         logIcebergFileStats(object_info, log);
 
+        const bool use_orc_metadata_cache = format_name_lower == "orc"
+            && context_->getSettingsRef()[Setting::use_orc_metadata_cache]
+            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey();
+        const bool use_parquet_content_cache = format_name_lower == "parquet"
+            && (context_->getSettingsRef()[Setting::use_parquet_metadata_cache] || context_->getSettingsRef()[Setting::use_columns_cache])
+            && object_info->getObjectMetadata()->getContentCacheToken().has_value();
+
         std::optional<FormatSettings> ordered_format_settings;
 #if USE_AVRO
         if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get());
@@ -2496,20 +2507,19 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         const auto & object_format_settings = ordered_format_settings ? ordered_format_settings : format_settings;
 
         InputFormatPtr input_format;
-        /// The metadata of the object identifies its version for the Parquet metadata cache and
-        /// for the columns cache.
-        if ((context_->getSettingsRef()[Setting::use_parquet_metadata_cache] || context_->getSettingsRef()[Setting::use_columns_cache])
-            && (Poco::toLower(format_name) == "parquet")
-            && object_info->getObjectMetadata()->getContentCacheToken().has_value())
+        /// The metadata of the object identifies its version for the `ORC` and `Parquet` metadata caches
+        /// and for the columns cache.
+        /// A footer read supplies the data `GET` response for `_headers`, including for count-only queries.
+        if (!headers_requested && (use_orc_metadata_cache || use_parquet_content_cache))
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
                 object_with_metadata->relative_path = getArchiveEntryKey(object_info->getPath(), object_info->archive_entry_index);
             /// The relative path alone does not identify the object: another bucket, container or
             /// endpoint can have an object with the same key and version token.
+            object_with_metadata->path_for_content_cache = getUniqueStoragePathIdentifier(*configuration, *object_info);
             if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage_id))
             {
-                object_with_metadata->path_for_content_cache = getUniqueStoragePathIdentifier(*configuration, *object_info);
                 object_with_metadata->storage_type_for_content_cache = configuration->getType();
                 object_with_metadata->table_uuid_for_content_cache = *table_uuid;
             }
@@ -2844,7 +2854,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const ContextPtr & context_,
     const LoggerPtr & log,
     const std::optional<ReadSettings> & read_settings,
-    bool allow_page_cache)
+    bool allow_page_cache,
+    bool prepare_orc_metadata_cache)
 {
     const auto & settings = context_->getSettingsRef();
     const auto & effective_read_settings = read_settings.has_value() ? read_settings.value() : context_->getReadSettings();
@@ -2941,7 +2952,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// where it is known. Otherwise, the read is authorized by a `HEAD` request with its own credentials, because the
     /// metadata from a listing proves only the permission to list the objects, not to read them.
     String page_cache_credentials_identity;
-    if (use_page_cache && object_storage->getType() != ObjectStorageType::Web)
+    if ((use_page_cache || prepare_orc_metadata_cache) && object_storage->getType() != ObjectStorageType::Web)
     {
         if (auto credentials_identity = getCredentialsIdentityForPageCache(*object_storage))
         {
@@ -2961,6 +2972,23 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     {
         LOG_WARNING(log, "Cannot use page cache, etag is missing or not a strong content identifier");
         use_page_cache = false;
+    }
+
+    if (prepare_orc_metadata_cache && !reads_explicit_object_version)
+    {
+        if (object_storage->getType() == ObjectStorageType::Web
+            && (webObjectHasSeveralURLs(object_info, assert_cast<const WebObjectStorage &>(*object_storage))
+                || !object_info.metadata->isEtagUsableAsCacheKey()))
+        {
+            prepare_orc_metadata_cache = false;
+        }
+        else if (object_info.metadata->isEtagUsableAsCacheKey() || !object_info.metadata->immutable_content_id.empty())
+        {
+            /// Pin only an eligible ETag-keyed read. Redirected Web responses and failover origins
+            /// do not have such an identity; their normal reads must remain usable without the cache.
+            object_info.path_for_format_metadata_cache
+                = getPageCachePathForObjectStorage(object_info, object_storage, page_cache_credentials_identity);
+        }
     }
 
     /// The page cache keeps the bytes under the ETag seen by this read, so the bytes must be checked to be of that
@@ -3060,7 +3088,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
     /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ or
     /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
-    if ((validate_etag_on_read || pin_read_to_etag_for_page_cache) && object_info.metadata.has_value())
+    if ((validate_etag_on_read || pin_read_to_etag_for_page_cache
+        || (prepare_orc_metadata_cache && object_info.path_for_format_metadata_cache)) && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
     /// The distributed cache keys on the content cache token whether or not this read validates the etag. The cache
     /// server also checks the etag of its own `GET` against the token if it is an etag, so it needs to know the kind.
@@ -3151,6 +3180,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         pipeline.needLongConnectionLimit(context_->getLongConnectionLimit());
 
     auto impl = pipeline.build();
+
+    if (prepare_orc_metadata_cache && object_storage->getType() == ObjectStorageType::Web)
+    {
+        StoredObject authorization_object = stored_object;
+        authorization_object.bytes_size = StoredObject::UnknownSize;
+        auto authorization_read = object_storage->readObject(authorization_object, modified_read_settings);
+        authorization_read->setReadUntilPosition(1);
+        char authorization_byte = 0;
+        std::ignore = authorization_read->read(authorization_byte);
+    }
 
     /// For small objects prefetch the file ahead of consumption: when reading lots of tiny files
     /// this almost doubles throughput; bigger objects use parallel reading instead (`use_prefetch`

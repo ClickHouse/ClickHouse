@@ -2867,6 +2867,18 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
+            /// Schema inference may hand us an already opened local file, so the usual
+            /// version initialization in the `!read_buf` branch has not happened yet.
+            if (!storage->use_table_fd && !storage->archive_info && !current_path.empty() && !current_file_cache_version)
+            {
+                const auto file_stat = getFileStat(current_path, false, -1, storage->getName());
+                current_file_size = file_stat.st_size;
+                current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+                current_file_cache_version = computeFileCacheVersionToken(file_stat);
+                current_file_version_settled = isFileCacheVersionTokenSettled(file_stat)
+                    && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version);
+            }
+
             /// For real local files, build a synthetic RelativePathWithMetadata so the
             /// format-level metadata cache (e.g. Parquet footer cache) is reachable. The
             /// "etag" is just any version identifier the cache compares for equality — for
@@ -2884,11 +2896,15 @@ Chunk StorageFileSource::generate()
                 md.size_bytes = *current_file_size;
                 md.last_modified = *current_file_last_modified;
                 md.etag = *current_file_cache_version;
-                /// The token identifies the content only once it has settled. The format metadata
-                /// cache uses it regardless (see above), but the content caches, such as the columns
-                /// cache, check `isEtagUsableAsCacheKey`.
+                /// The token identifies the content only once it has settled. The content caches,
+                /// such as the columns cache, check `isEtagUsableAsCacheKey`.
                 md.etag_is_strong = current_file_version_settled;
                 object_with_metadata.emplace(current_path, std::move(md));
+                /// The version is not an identity for the ORC tail cache before it has settled:
+                /// a rewrite within the same filesystem timestamp tick could keep the same token.
+                /// It also fails close after a replacement was detected between `stat` and `open`.
+                if (current_file_version_settled)
+                    object_with_metadata->path_for_format_metadata_cache = current_path;
                 /// The path of a local file is absolute, so it identifies the file on the server.
                 if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage->getStorageID()))
                 {

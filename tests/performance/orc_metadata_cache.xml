@@ -1,0 +1,54 @@
+<!--
+    Repeated reads of the same ORC file through the file table function.
+    The cache stores the serialized file tail to avoid repeated footer I/O;
+    footer parsing still happens for every reader. A wide schema and many
+    stripes make the footer substantial enough to measure the I/O saving.
+-->
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <use_query_cache>0</use_query_cache>
+        <use_cache_for_count_from_files>0</use_cache_for_count_from_files>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>use_orc_metadata_cache</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_orc_metadata_cache.orc', ORC)
+        SELECT
+            number AS id,
+            toString(number % 1000) AS s0,
+            toString(number % 1001) AS s1,
+            toString(number % 1002) AS s2,
+            toString(number % 1003) AS s3,
+            toString(number % 1004) AS s4,
+            toString(number % 1005) AS s5,
+            toString(number % 1006) AS s6,
+            toString(number % 1007) AS s7,
+            toString(number % 1008) AS s8,
+            toString(number % 1009) AS s9
+        FROM numbers(5000000)
+        SETTINGS engine_file_truncate_on_insert = 1, output_format_orc_row_index_stride = 1000
+    ]]></fill_query>
+
+    <query><![CDATA[
+        SELECT sum(id), sum(length(s0))
+        FROM file('test_orc_metadata_cache.orc', ORC)
+        FORMAT Null
+        SETTINGS use_orc_metadata_cache = {use_orc_metadata_cache}
+    ]]></query>
+
+    <drop_query><![CDATA[
+        INSERT INTO FUNCTION file('test_orc_metadata_cache.orc', ORC)
+        SELECT * FROM numbers(0)
+        SETTINGS engine_file_truncate_on_insert = 1
+    ]]></drop_query>
+</test>
