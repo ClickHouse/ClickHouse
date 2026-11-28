@@ -3,9 +3,13 @@
 -- reader `JSONObjectReader::readFieldFromObject` (src/Parsers/ASTJSONReadHelpers.cpp) handles
 -- the JSON-native field types itself (Null, UInt64, Int64, Float64, Bool, String, Array,
 -- Tuple, Map) and routes every other `field_type` through `Field::restoreFromDump`, so the
--- restored value becomes the re-formatted query text. After the restore the reader compares
--- `Field::getTypeName()` with the declared `field_type`, which is why an `Array_`/`Tuple_`/
--- `Map_` payload is fully parsed and only then rejected with BAD_ARGUMENTS.
+-- restored value becomes the re-formatted query text. Before the restore the reader requires
+-- the dump to start with `<field_type>_`, and after the restore it compares
+-- `Field::getTypeName()` with the declared `field_type`. A declared `field_type` of `Array`/
+-- `Tuple`/`Map` is read structurally and never reaches the dump parser, so the `Array_`/
+-- `Tuple_`/`Map_` cases below declare a `field_type` that is a longer prefix of the dump
+-- (e.g. `Array_[Int64` for `Array_[Int64_1, ...`): it passes the prefix check, the payload is
+-- fully parsed, and only then it is rejected with BAD_ARGUMENTS by the type comparison.
 -- Expected behaviour source: the `formatQueryFromJSON` FunctionDocumentation block in
 -- src/Functions/formatQueryFromJSON.cpp ("Takes a JSON representation of a SQL AST ... and
 -- formats it back into a SQL query string").
@@ -32,19 +36,18 @@ SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{
 SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"Number","value":"Number_1e5"}}]}$$);
 
 -- 6. Well-formed Array_/Tuple_/Map_ dumps: the elements are parsed recursively and the
---    resulting Array/Tuple/Map is then rejected by the reader's type-mismatch guard, because
---    a declared `field_type` of `Array`/`Tuple`/`Map` never reaches the dump parser at all.
-SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Array_[Int64_1, Int64_2]"}}]}$$); -- { serverError BAD_ARGUMENTS }
-SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Tuple_(Int64_1, UInt64_2)"}}]}$$); -- { serverError BAD_ARGUMENTS }
-SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Map_('k', Int64_2)"}}]}$$); -- { serverError BAD_ARGUMENTS }
+--    resulting Array/Tuple/Map is then rejected by the reader's type-mismatch guard.
+SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"Array_[Int64","value":"Array_[Int64_1, Int64_2]"}}]}$$); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"Tuple_(Int64","value":"Tuple_(Int64_1, UInt64_2)"}}]}$$); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"Map_('k', Int64","value":"Map_('k', Int64_2)"}}]}$$); -- { serverError BAD_ARGUMENTS }
 
 -- 7. Unterminated Array_/Tuple_/Map_ dumps: no closing bracket, so the element scan runs out
 --    of input.
-SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Array_[Int64_1"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
-SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Tuple_(Int64_1"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
-SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Map_('k', Int64_2"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
+SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"Array_[Int64","value":"Array_[Int64_1"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
+SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"Tuple_(Int64","value":"Tuple_(Int64_1"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
+SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"Map_('k', Int64","value":"Map_('k', Int64_2"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
 
 -- 8. Trailing garbage after the closing bracket must not be silently ignored.
-SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Array_[Int64_1] x"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
-SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Tuple_(Int64_1) x"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
-SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Map_('k', Int64_2) x"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
+SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"Array_[Int64","value":"Array_[Int64_1] x"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
+SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"Tuple_(Int64","value":"Tuple_(Int64_1) x"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
+SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"Map_('k', Int64","value":"Map_('k', Int64_2) x"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
