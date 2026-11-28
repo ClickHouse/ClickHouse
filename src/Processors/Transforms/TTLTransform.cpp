@@ -142,6 +142,7 @@ TTLTransform::TTLTransform(
             if (!expired_columns_map.contains(name))
             {
                 auto [default_expression, default_column_name] = build_default_expr(name);
+                auto physical_column = storage_columns.tryGetPhysical(name);
                 algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
                     getExpressions(description, subqueries_for_sets, context),
                     description,
@@ -152,7 +153,7 @@ TTLTransform::TTLTransform(
                     default_expression,
                     default_column_name,
                     isCompactPart(data_part),
-                    shares_nested_offsets(storage_columns.getPhysical(name))));
+                    physical_column && shares_nested_offsets(*physical_column)));
             }
         }
     }
