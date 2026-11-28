@@ -41,6 +41,7 @@ public:
     const BlockMissingValues * getMissingValues() const override { return underlying->getMissingValues(); }
     void setRowsReadBefore(size_t rows) override { underlying->setRowsReadBefore(rows); }
     void setSerializationHints(const SerializationInfoByName & hints) override { underlying->setSerializationHints(hints); }
+    void setSkippedUnknownFieldCallback(SkippedUnknownFieldCallback callback) override { underlying->setSkippedUnknownFieldCallback(std::move(callback)); }
     void setMapColumnsReadByOneSide(const NameSet & by_keys, const NameSet & by_values) override
     {
         underlying->setMapColumnsReadByOneSide(by_keys, by_values);

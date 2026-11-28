@@ -15,12 +15,18 @@
 #include <IO/CompressionMethod.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
+
+#include <mutex>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool input_format_defaults_for_omitted_fields;
+    extern const SettingsBool input_format_warn_on_skipped_unknown_fields;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
@@ -35,6 +41,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int UNKNOWN_TYPE_OF_QUERY;
+}
+
+String getInputFormatNameFromASTInsertQuery(const ASTPtr & ast, const ContextPtr & context)
+{
+    const auto * ast_insert_query = ast->as<ASTInsertQuery>();
+    if (!ast_insert_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query requires data to insert, but it is not INSERT query");
+
+    const Settings & settings = context->getSettingsRef();
+    if (!settings[Setting::input_format].value.empty())
+        return settings[Setting::input_format].value;
+    if (!settings[Setting::format].value.empty())
+        return settings[Setting::format].value;
+    return ast_insert_query->format;
 }
 
 InputFormatPtr getInputFormatFromASTInsertQuery(
@@ -54,13 +74,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
 
     const Settings & settings = context->getSettingsRef();
-
-    /// Allow `format` / `input_format` settings to override the FORMAT specified in the INSERT query.
-    String resolved_format = ast_insert_query->format;
-    if (!settings[Setting::input_format].value.empty())
-        resolved_format = settings[Setting::input_format].value;
-    else if (!settings[Setting::format].value.empty())
-        resolved_format = settings[Setting::format].value;
+    const String resolved_format = getInputFormatNameFromASTInsertQuery(ast, context);
 
     if (resolved_format.empty())
     {
@@ -79,8 +93,56 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
                                           settings[Setting::max_insert_block_size_bytes],
                                           settings[Setting::min_insert_block_size_rows],
                                           settings[Setting::min_insert_block_size_bytes]);
+    warnAboutSkippedUnknownFields(*format, context, resolved_format, context->getCurrentQueryId());
     format->addBuffer(std::move(input_buffer));
     return format;
+}
+
+std::function<void(std::string_view)> makeSkippedUnknownFieldWarningCallback(const ContextPtr & context, const String & format_name, const String & query_id)
+{
+    if (!context->getSettingsRef()[Setting::input_format_warn_on_skipped_unknown_fields])
+        return {};
+
+    struct State
+    {
+        std::mutex mutex;
+        UnorderedSetWithMemoryTracking<String> reported;
+        bool reported_more = false;
+    };
+    auto state = std::make_shared<State>();
+
+    return [state, format_name, query_id](std::string_view field_name)
+    {
+        bool report_field = false;
+        bool report_more = false;
+        {
+            std::lock_guard lock(state->mutex);
+            if (state->reported.contains(String(field_name)))
+                return;
+            if (state->reported.size() < IInputFormat::max_reported_skipped_unknown_fields)
+                report_field = state->reported.emplace(field_name).second;
+            else
+                report_more = !std::exchange(state->reported_more, true);
+        }
+
+        if (report_field)
+            LOG_WARNING(getLogger("InputFormat"),
+                "Field {} of the input data of query {} in format {} has no matching column and is skipped, so its data is not "
+                "inserted (`input_format_skip_unknown_fields` is enabled). Set `input_format_skip_unknown_fields` to 0 to get an "
+                "exception instead, or `input_format_warn_on_skipped_unknown_fields` to 0 to skip such fields without this warning",
+                backQuote(field_name), query_id, format_name);
+        else if (report_more)
+            LOG_WARNING(getLogger("InputFormat"),
+                "The input data of query {} in format {} has more than {} fields with no matching column, the others are skipped "
+                "without a warning",
+                query_id, format_name, IInputFormat::max_reported_skipped_unknown_fields);
+    };
+}
+
+void warnAboutSkippedUnknownFields(IInputFormat & format, const ContextPtr & context, const String & format_name, const String & query_id)
+{
+    if (auto callback = makeSkippedUnknownFieldWarningCallback(context, format_name, query_id))
+        format.setSkippedUnknownFieldCallback(std::move(callback));
 }
 
 Pipe getSourceFromInputFormat(

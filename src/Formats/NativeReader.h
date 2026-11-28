@@ -7,9 +7,11 @@
 #include <Core/BlockMissingValues.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <string_view>
 
 namespace DB
 {
@@ -70,6 +72,9 @@ public:
 
     void resetParser();
 
+    /// Called for each column of the data that is skipped because the header has no column with its name.
+    void setSkippedUnknownColumnCallback(std::function<void(std::string_view)> callback);
+
     Block read();
 
     static void readData(
@@ -93,6 +98,7 @@ private:
     NativeReaderTypeCache * type_cache = nullptr;
     ISerialization::KindSet allowed_kinds = default_allowed_kinds;
     bool allow_rows_without_columns = false;
+    std::function<void(std::string_view)> skipped_unknown_column_callback;
 
     bool use_index = false;
     IndexForNativeFormat::Blocks::const_iterator index_block_it;

@@ -26,6 +26,8 @@ public:
     /// Fetches the position of the given column_name
     /// Returns NOT_FOUND in case the column_name is not in the map
     [[nodiscard]] size_t get(std::string_view column_name) const;
+    /// Whether `column_name` matches some key; unlike `get`, does not throw for an ambiguous one
+    [[nodiscard]] bool contains(std::string_view column_name) const;
 
     [[nodiscard]] size_t size() const;
 

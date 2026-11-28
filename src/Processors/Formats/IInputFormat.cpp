@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <optional>
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/ReadBuffer.h>
@@ -77,6 +78,23 @@ void IInputFormat::onFinish()
 
 void IInputFormat::setBucketsToRead(const FileBucketInfoPtr & /*buckets_to_read*/)
 {
+}
+
+void IInputFormat::reportSkippedUnknownField(std::string_view field_name)
+{
+    if (!skipped_unknown_field_callback || reported_skipped_unknown_fields.size() > max_reported_skipped_unknown_fields
+        || std::ranges::find(reported_skipped_unknown_fields, field_name) != reported_skipped_unknown_fields.end())
+        return;
+    reported_skipped_unknown_fields.emplace_back(field_name);
+    skipped_unknown_field_callback(field_name);
+}
+
+void IInputFormat::reportSkippedUnknownFieldsOfColumnMapping()
+{
+    const auto & indexes = column_mapping->column_indexes_for_input_fields;
+    for (size_t i = 0; i < indexes.size(); ++i)
+        if (!indexes[i])
+            reportSkippedUnknownField(column_mapping->names_of_columns[i]);
 }
 
 }
