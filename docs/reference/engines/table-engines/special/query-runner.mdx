@@ -57,6 +57,10 @@ and the results of SELECT queries are discarded (the only way to keep results is
 The success of each query can be checked in the `system.query_log` table, where queries initiated by
 this engine are marked with `is_internal = 1` on the initiating server.
 
+The queries do not inherit the settings of the `INSERT` query or of its session: they run with the
+settings of the user they run as and the `settings` column. With `SQL SECURITY INVOKER`, if DDL queries are
+prohibited for the `INSERT` (`allow_ddl = 0`), they are prohibited for the queries too.
+
 The queued queries are kept in memory and do not survive a server restart. On server shutdown
 (or `DROP`/`DETACH` of the table), the queries that have not started yet are discarded. Of the
 queries already being executed, those dispatched to a cluster are cancelled, while those running
