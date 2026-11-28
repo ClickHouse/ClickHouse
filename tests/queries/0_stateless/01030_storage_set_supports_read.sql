@@ -1,6 +1,3 @@
--- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
-SET force_primary_key_reverse_order = 0;
-
 DROP TABLE IF EXISTS userid_test;
 
 SET use_index_for_in_with_subqueries = 1;

@@ -1,5 +1,3 @@
--- Disable force_primary_key_reverse_order: reversed key changes ReplacingMergeTree deduplication order
-SET force_primary_key_reverse_order = 0;
 SET optimize_on_insert = 0;
 
 DROP TABLE IF EXISTS tags;

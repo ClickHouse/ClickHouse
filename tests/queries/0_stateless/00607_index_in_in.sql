@@ -1,6 +1,3 @@
--- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
-SET force_primary_key_reverse_order = 0;
-
 DROP TABLE IF EXISTS merge_tree;
 CREATE TABLE merge_tree (x UInt32) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1;
 INSERT INTO merge_tree VALUES (0), (1);

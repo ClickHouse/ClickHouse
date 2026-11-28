@@ -1,5 +1,3 @@
--- Aggregate states stored in Variant column depend on merge order affected by reverse key
-SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS source;
 CREATE TABLE source 

@@ -1,5 +1,3 @@
--- Disable force_primary_key_reverse_order: reversed key changes AggregatingMergeTree merge order affecting any/anyLast aggregate results
-SET force_primary_key_reverse_order = 0;
 DROP TABLE IF EXISTS simple_agf_any_aggregating_mt;
 
 CREATE TABLE simple_agf_any_aggregating_mt

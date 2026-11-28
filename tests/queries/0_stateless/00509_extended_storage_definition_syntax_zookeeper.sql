@@ -1,7 +1,4 @@
 -- Tags: zookeeper, no-shared-merge-tree
--- Disable force_primary_key_reverse_order: Tests FINAL with *MergeTree engine sensitive to sort order
-SET force_primary_key_reverse_order = 0;
-
 -- no-shared-merge-tree: boring test, nothing new
 
 SET optimize_on_insert = 0;

@@ -1,5 +1,3 @@
--- Disable force_primary_key_reverse_order: reversed key changes physical row order affecting interpolation results
-SET force_primary_key_reverse_order = 0;
 CREATE TABLE foo (
      open_time Int64,
      open_price Int8,

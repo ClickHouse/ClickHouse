@@ -1,5 +1,3 @@
--- Disable force_primary_key_reverse_order: creates MergeTree with ORDER BY, tests materialized view behavior
-SET force_primary_key_reverse_order = 0;
 SET log_queries=1;
 SET log_profile_events=true;
 

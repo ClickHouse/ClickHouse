@@ -9,8 +9,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 # shellcheck source=./transactions.lib
 . "$CURDIR"/transactions.lib
-# Stress test with concurrent partition operations; reverse key ordering causes transactional isolation assertion failures
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
 
 set -eu
 
