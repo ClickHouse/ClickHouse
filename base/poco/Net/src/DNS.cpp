@@ -672,7 +672,8 @@ HostEntry DNS::hostByName(const std::string& hostname, unsigned hintFlags)
 
 	/// The sources are queried one by one rather than by one c-ares lookup, because the answer of the hosts file
 	/// has to be corrected (see `lookupHostsFile`), and only it: a name can have other addresses in DNS.
-	/// As in c-ares, the next source is tried when a name is not found, and other errors are thrown.
+	/// As in c-ares, the next source is tried when a name is not found, or when DNS answers `SERVFAIL` or `REFUSED`
+	/// about a name of a single label, and other errors are thrown.
 	const bool localhost = isLocalhostName(hostname);
 	int status = ARES_ENOTFOUND;
 	for (const char source : lookupOrder())
@@ -731,6 +732,17 @@ HostEntry DNS::hostByName(const std::string& hostname, unsigned hintFlags)
 			status = ARES_ENODATA;
 		if (status == ARES_ENOTFOUND || status == ARES_ENODATA)
 			continue;
+
+		/// `systemd-resolved` and other servers answer `SERVFAIL` or `REFUSED` to a query of a name of a single label.
+		/// c-ares proceeds to the next source in this case (see `host_callback` in `ares_getaddrinfo.c`), but a channel
+		/// with DNS as its only source has no next source and reports the status. It is not thrown here, so that such
+		/// a name is still found in the hosts file when it is after DNS in the order of the sources. If the remaining
+		/// sources do not have the name either, the status is kept and thrown after the loop.
+		const bool singleLabelFailure = (status == ARES_ESERVFAIL || status == ARES_EREFUSED)
+			&& hostname.find('.') == std::string::npos;
+		if (singleLabelFailure)
+			continue;
+
 		if (status != ARES_SUCCESS)
 			throwAresError(status, hostname);
 
