@@ -1763,7 +1763,7 @@ ALWAYS_INLINE UInt64 runEndsInGroup(const Key * keys)
         memcpy(&current, keys + i, sizeof(current));
         memcpy(&next, keys + i + 1, sizeof(next));
         const Lanes differs = __builtin_convertvector(current ^ next, Lanes);
-        UInt8 bits;
+        UInt8 bits = 0;
         memcpy(&bits, &differs, sizeof(bits));
         run_ends |= static_cast<UInt64>(bits & ((1U << lanes) - 1)) << i;
     }
