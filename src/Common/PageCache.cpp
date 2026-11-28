@@ -5,6 +5,7 @@
 #include <Common/JemallocCacheAllocator.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -260,7 +261,7 @@ size_t PageCache::maxSizeInBytes() const
 PageCacheCell::PageCacheCell(PageCacheFile file_, PageCacheByteRange range_, bool temporary) : file(std::move(file_)), range(range_), m_size(range.size), m_temporary(temporary)
 {
     /// Don't attribute page cache memory to the query that happened to allocate it.
-    std::optional<MemoryTrackerBlockerInThread> blocker;
+    std::optional<ServerOwnedMemoryScope> blocker;
     if (!m_temporary)
         blocker.emplace();
 
@@ -270,7 +271,7 @@ PageCacheCell::PageCacheCell(PageCacheFile file_, PageCacheByteRange range_, boo
 
 PageCacheCell::~PageCacheCell()
 {
-    std::optional<MemoryTrackerBlockerInThread> blocker;
+    std::optional<ServerOwnedMemoryScope> blocker;
     if (!m_temporary)
         blocker.emplace();
     JemallocCacheAllocator().free(m_data, m_size, DEFAULT_AIO_FILE_BLOCK_SIZE);

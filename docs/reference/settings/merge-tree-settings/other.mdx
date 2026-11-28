@@ -233,8 +233,10 @@ Possible values:
 ## finished_mutations_to_keep {#finished_mutations_to_keep}
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
-How many records about mutations that are done to keep. If zero, then keep
-all of them.
+How many records about mutations that are done to keep. If zero, then no
+finished mutation entries are kept: the entry of a mutation is removed by the
+background cleanup once the mutation is finished. To keep all the entries, set
+a large value instead (in previous versions, zero meant keeping all of them).
 
 ## force_read_through_cache_for_merges {#force_read_through_cache_for_merges}
 

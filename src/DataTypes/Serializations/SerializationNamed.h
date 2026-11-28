@@ -69,7 +69,7 @@ private:
         }
 
         [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev, const DataTypePtr &) const override { return prev; }
         [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override
         {
             return SerializationNamed::create(prev, name, substream_type);

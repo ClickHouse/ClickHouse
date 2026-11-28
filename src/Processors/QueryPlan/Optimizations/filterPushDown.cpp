@@ -132,7 +132,8 @@ bool isFilterColumnConst(const FilterStep & filter)
 
 void materializeFilterColumnIfNeededAfterPushDown(FilterStep & filter, const bool was_filter_const_before, const bool is_filter_const_after)
 {
-    if (was_filter_const_before || !is_filter_const_after)
+    /// A removed filter column leaves only result columns of that name, which keep their own expression.
+    if (was_filter_const_before || !is_filter_const_after || filter.removesFilterColumn())
         return;
 
     auto & expression = filter.getExpression();
@@ -1240,10 +1241,13 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 static bool mayFixColumn(const ActionsDAG::Node * conjunct)
 {
     VectorWithMemoryTracking<const ActionsDAG::Node *> stack{conjunct};
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     while (!stack.empty())
     {
         const auto * node = stack.back();
         stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
         if (node->type == ActionsDAG::ActionType::INPUT)
             return true;
         if (node->type == ActionsDAG::ActionType::ALIAS

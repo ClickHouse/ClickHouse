@@ -1,0 +1,48 @@
+<test>
+    <!-- 65536 leaf centroids around 256 centers, under 256 coarse centroids. -->
+    <create_query>CREATE TABLE ac_leaves (cid UInt64, vec Array(Float32)) ENGINE = MergeTree ORDER BY cid</create_query>
+    <create_query>CREATE TABLE ac_coarse (cid UInt64, vec Array(Float32)) ENGINE = MergeTree ORDER BY cid</create_query>
+    <create_query>CREATE TABLE ac_hier (cid UInt64, vec Array(Float32), level UInt8, parent UInt64) ENGINE = MergeTree ORDER BY cid</create_query>
+    <create_query>CREATE TABLE ac_probes (id UInt64, v Array(Float32)) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>
+        CREATE DICTIONARY ac_flat_dict (cid UInt64, vec Array(Float32))
+        PRIMARY KEY cid SOURCE(CLICKHOUSE(DB 'default' TABLE 'ac_leaves')) LAYOUT(HASHED()) LIFETIME(0)
+    </create_query>
+    <create_query>
+        CREATE DICTIONARY ac_hier_dict (cid UInt64, vec Array(Float32), level UInt8, parent UInt64)
+        PRIMARY KEY cid SOURCE(CLICKHOUSE(DB 'default' TABLE 'ac_hier')) LAYOUT(HASHED()) LIFETIME(0)
+    </create_query>
+
+    <fill_query>
+        INSERT INTO ac_leaves
+        SELECT number, arrayMap(i -> toFloat32((sipHash64(number % 256, i) % 10000) / 10000. + ((sipHash64(number, i, 7) % 10001) / 10000. - 0.5) * 0.1), range(64))
+        FROM numbers(65536)
+    </fill_query>
+    <fill_query>
+        INSERT INTO ac_coarse
+        SELECT 1000000 + idx - 1, c FROM (SELECT hierarchicalKMeans(256)(vec) AS cs FROM ac_leaves) ARRAY JOIN cs AS c, arrayEnumerate(cs) AS idx
+    </fill_query>
+    <fill_query>INSERT INTO ac_hier SELECT cid, vec, 1, 0 FROM ac_coarse</fill_query>
+    <fill_query>
+        INSERT INTO ac_hier
+        SELECT cid, vec, 0, 1000000 + assignCentroid(vec, (SELECT groupArray(vec) FROM (SELECT vec FROM ac_coarse ORDER BY cid)))
+        FROM ac_leaves
+    </fill_query>
+    <fill_query>
+        INSERT INTO ac_probes
+        SELECT n.number, arrayMap((x, i) -> toFloat32(x + ((sipHash64(n.number, i, 9) % 10001) / 10000. - 0.5) * 0.04), l.vec, range(64))
+        FROM numbers(4096) AS n INNER JOIN ac_leaves AS l ON l.cid = sipHash64(n.number) % 65536
+    </fill_query>
+    <fill_query>SYSTEM RELOAD DICTIONARY ac_flat_dict</fill_query>
+    <fill_query>SYSTEM RELOAD DICTIONARY ac_hier_dict</fill_query>
+
+    <query>SELECT sum(assignCentroid(v, 'ac_hier_dict')) FROM ac_probes</query>
+    <query>SELECT sum(assignCentroid(v, 'ac_flat_dict')) FROM ac_probes</query>
+
+    <drop_query>DROP DICTIONARY IF EXISTS ac_hier_dict</drop_query>
+    <drop_query>DROP DICTIONARY IF EXISTS ac_flat_dict</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ac_probes</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ac_hier</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ac_coarse</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ac_leaves</drop_query>
+</test>

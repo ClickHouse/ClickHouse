@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Core/Joins.h>
 #include <Common/Logger.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -34,6 +35,9 @@ class AggregatingStep;
 class SortingStep;
 class LimitStep;
 class DistinctStep;
+class RollupStep;
+class CubeStep;
+class UnionStep;
 
 /// Derives statistics for groups in the Cascades optimizer.
 /// Statistics are logical properties that describe the data (row counts, NDVs)
@@ -59,12 +63,11 @@ private:
     ExpressionStatistics deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveLimitStatistics(const LimitStep & limit_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveDistinctStatistics(const DistinctStep & distinct_step, const ExpressionStatistics & input_statistics);
+    ExpressionStatistics deriveRollupStatistics(const RollupStep & rollup_step, const ExpressionStatistics & input_statistics);
+    ExpressionStatistics deriveCubeStatistics(const CubeStep & cube_step, const ExpressionStatistics & input_statistics);
+    ExpressionStatistics deriveUnionStatistics(const UnionStep & union_step, const VectorWithMemoryTracking<const ExpressionStatistics *> & inputs_statistics);
     /// A final `DISTINCT` directly over a preliminary one on the same columns.
     static bool isOverPreliminaryDistinct(const DistinctStep & distinct_step, const Group & input_group);
-
-    /// Estimate bytes per row of a read: table-level hint if present, otherwise the sum of the
-    /// per-column widths already filled into `statistics`.
-    Float64 estimateReadBytesPerRow(const ReadFromMergeTree & read_step, const ExpressionStatistics & statistics);
 
     /// Fill per-column average value sizes of the read (storage-derived, hint overrides).
     void fillReadColumnWidths(ExpressionStatistics & statistics, const ReadFromMergeTree & read_step, const String & table_name);
