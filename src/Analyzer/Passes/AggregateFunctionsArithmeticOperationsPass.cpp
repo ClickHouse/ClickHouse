@@ -26,15 +26,10 @@ namespace Setting
 }
 
 
-namespace ErrorCodes
-{
-    extern const int BAD_TYPE_OF_FIELD;
-}
-
 namespace
 {
 
-Field zeroField(const Field & value)
+std::optional<Field> zeroField(const Field & value)
 {
     switch (value.getType())
     {
@@ -50,10 +45,8 @@ Field zeroField(const Field & value)
         case Field::Types::Decimal128: return static_cast<Decimal128>(0);
         case Field::Types::Decimal256: return static_cast<Decimal256>(0);
         default:
-            break;
+            return {};
     }
-
-    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unexpected literal type in function");
 }
 
 /// `x * value` and `x / value` keep the order of `x` and distribute over `sum` only for a finite non-zero `value`.
@@ -63,7 +56,8 @@ bool isFiniteNonZero(const Field & value)
         return false;
     if (value.getType() == Field::Types::Float64)
         return isFinite(value.safeGet<Float64>()) && value.safeGet<Float64>() != 0;
-    return value != zeroField(value);
+    const auto zero = zeroField(value);
+    return zero && value != *zero;
 }
 
 /** Rewrites:   sum([multiply|divide]) -> [multiply|divide](sum)
@@ -190,8 +184,14 @@ public:
             /// Rewrite `aggregate_function(inner_function(constant, argument))` into `inner_function(constant, aggregate_function(argument))`
             const auto & left_argument_constant_value_literal = left_argument_constant_node->getValue();
 
-            bool need_reverse = (arithmetic_function_name == "multiply" && left_argument_constant_value_literal < zeroField(left_argument_constant_value_literal))
-                || (arithmetic_function_name == "minus");
+            bool need_reverse = arithmetic_function_name == "minus";
+            if (arithmetic_function_name == "multiply")
+            {
+                const auto zero = zeroField(left_argument_constant_value_literal);
+                if (!zero)
+                    return;
+                need_reverse = left_argument_constant_value_literal < *zero;
+            }
 
             if (need_reverse)
                 lower_aggregate_function_name = get_reverse_aggregate_function_name(lower_aggregate_function_name);
@@ -203,8 +203,14 @@ public:
             /// Rewrite `aggregate_function(inner_function(argument, constant))` into `inner_function(aggregate_function(argument), constant)`
             const auto & right_argument_constant_value_literal = right_argument_constant_node->getValue();
 
-            bool need_reverse = (arithmetic_function_name == "multiply" || arithmetic_function_name == "divide" || arithmetic_function_name == "divideExact")
-                && right_argument_constant_value_literal < zeroField(right_argument_constant_value_literal);
+            bool need_reverse = false;
+            if (arithmetic_function_name == "multiply" || arithmetic_function_name == "divide" || arithmetic_function_name == "divideExact")
+            {
+                const auto zero = zeroField(right_argument_constant_value_literal);
+                if (!zero)
+                    return;
+                need_reverse = right_argument_constant_value_literal < *zero;
+            }
 
             if (need_reverse)
                 lower_aggregate_function_name = get_reverse_aggregate_function_name(lower_aggregate_function_name);
