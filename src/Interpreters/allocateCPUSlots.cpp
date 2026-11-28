@@ -19,7 +19,7 @@ namespace Setting
     extern const SettingsString workload;
 }
 
-SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool lazy_allocation, bool always_lease, CPUSlotPreemptionCallbacks callbacks)
+SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool lazy_allocation, bool blocking, CPUSlotPreemptionCallbacks callbacks)
 {
     // The first thread is called master thread.
     // It is NOT the thread that handles async tasks (unless query has max_threads=1).
@@ -81,7 +81,8 @@ SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool lazy_allocation, boo
         return std::make_shared<GrantedAllocation>(num_threads);
 
     /// Allocate CPU slots through resource scheduler
-    if (!always_lease && !query_context->getCPUSlotPreemption())
+    /// `CPUSlotsAllocation::acquire` waits for the slot of the master thread, a CPU lease provides it at once.
+    if (blocking && !query_context->getCPUSlotPreemption())
         return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, master_thread_link, worker_thread_link);
 
     const auto & settings = query_context->getSettingsRef();
@@ -91,7 +92,7 @@ SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool lazy_allocation, boo
         {
             .quantum_ns = static_cast<ResourceCost>(quantum_ns),
             .report_ns = static_cast<ResourceCost>(quantum_ns / 10),
-            .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
+            .preemption_timeout = std::chrono::milliseconds(blocking ? query_context->getCPUSlotPreemptionTimeout() : 0),
             .on_preempt = std::move(callbacks.on_preempt),
             .on_resume = std::move(callbacks.on_resume),
             .workload = settings[Setting::workload],

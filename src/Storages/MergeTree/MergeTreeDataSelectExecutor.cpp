@@ -170,8 +170,9 @@ namespace ErrorCodes
 namespace
 {
 
-/// Holds a CPU slot for the current thread: a CPU lease is charged with the CPU time of the thread that releases it.
-/// The lease is published for `CPULeaseParkGuard`, which gives the slot away while the thread waits for a read (e.g. from object storage).
+/// The CPU slot that the current thread runs on. It is created and destroyed on that thread:
+/// a CPU lease charges the workload with the CPU time that the thread has spent in between.
+/// While the thread waits for a read (e.g. from object storage), `CPULeaseParkGuard` gives the slot to other threads.
 struct CPUSlotHolder : boost::noncopyable
 {
     CPUSlotHolder(AcquiredSlotPtr slot_, bool preemptible)
@@ -190,14 +191,14 @@ struct CPUSlotHolder : boost::noncopyable
 
     ~CPUSlotHolder() { setCurrentCPULease(previous_lease); }
 
-    /// Reports the CPU time of the thread to the workload, and waits if the thread is preempted.
-    /// Returns false if the slot is taken away: the thread has to stop.
+    /// Reports the CPU time spent to the workload scheduler, which can preempt the thread in return.
+    /// Returns false if it did: the slot is lost, and the thread has to stop.
     bool renew()
     {
         if (!renewable_lease)
             return true;
 
-        /// Not too often, like the pipeline executor.
+        /// Once a millisecond at most, like `PipelineExecutor`: `ISlotLease::renew` makes a system call.
         const UInt64 now_ns = clock_gettime_ns();
         if (now_ns - last_renew_ns < 1'000'000)
             return true;
@@ -211,11 +212,14 @@ struct CPUSlotHolder : boost::noncopyable
     UInt64 last_renew_ns = 0;
 };
 
-/// Calls `process_part(part_index)` for parts [0, num_parts), in order, on the calling thread and on one more thread
-/// per granted CPU slot (see `allocateCPUSlots`), up to `num_threads` in total. Stops once `process_part` returns false or throws.
-/// The calling thread never waits for a slot: it may hold the only one of its workload (`mergeTreeAnalyzeIndexes`),
-/// and such a wait cannot be cancelled. So it does not renew its lease: it is not preempted, and its CPU time is not charged.
-/// The other threads renew their leases: a preempted one stops after a timeout.
+/// Calls `process_part(part_index)` for the parts [0, num_parts), until one of the calls returns false or throws.
+/// The parts are taken in order by the calling thread and by up to `num_threads - 1` threads of a pool.
+///
+/// With `use_concurrency_control` every thread runs on a CPU slot (see `allocateCPUSlots`), but none waits for one:
+/// - The calling thread always runs: it gets a slot at once and never renews it. Otherwise it could wait forever for
+///   the slot that it holds itself as a thread of `PipelineExecutor` (`mergeTreeAnalyzeIndexes`), and `KILL QUERY`
+///   does not interrupt such a wait. In return, the workload is not charged with its CPU time.
+/// - A pool thread is started for each slot granted along the way, and stops once it is preempted.
 template <typename ProcessPart>
 void processPartsInParallel(size_t num_parts, size_t num_threads, bool use_concurrency_control, const ProcessPart & process_part)
 {
@@ -230,17 +234,17 @@ void processPartsInParallel(size_t num_parts, size_t num_threads, bool use_concu
     }
 
     SlotAllocationPtr cpu_slots = use_concurrency_control
-        ? allocateCPUSlots(num_threads, /*lazy_allocation=*/ false, /*always_lease=*/ true)
+        ? allocateCPUSlots(num_threads, /*lazy_allocation=*/ false, /*blocking=*/ false)
         : std::make_shared<GrantedAllocation>(num_threads);
 
-    /// With `cpu_slot_preemption` disabled no thread is preempted.
+    /// With `cpu_slot_preemption` disabled the slots only limit the number of threads, so no thread renews its slot.
     auto query_context = CurrentThread::tryGetQueryContext();
     const bool preemption = query_context && query_context->getCPUSlotPreemption();
 
     std::atomic<size_t> next_part_index = 0;
     std::atomic<bool> stopped = false;
 
-    /// Returns false if there is nothing more to process.
+    /// Returns false if no part is left or the processing is stopped.
     auto process_next_part = [&]
     {
         if (stopped.load(std::memory_order_relaxed))
@@ -270,13 +274,11 @@ void processPartsInParallel(size_t num_parts, size_t num_threads, bool use_concu
         CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
         num_threads - 1);
 
-    /// If the calling thread throws, the jobs do not take more parts, and the preempted ones are woken up.
-    SCOPE_EXIT_SAFE({
-        stopped.store(true, std::memory_order_relaxed);
-        cpu_slots->free();
-    });
+    /// If the calling thread throws, stop the jobs before the pool joins them.
+    SCOPE_EXIT({ stopped.store(true, std::memory_order_relaxed); });
 
-    /// A released slot can be granted again, so a thread is started only while there are parts for it.
+    /// Starts a thread for each granted slot, but only while parts are left: a thread that finds no part
+    /// releases its slot, which is granted here again, and so on without an end.
     auto start_threads = [&]
     {
         while (next_part_index.load(std::memory_order_relaxed) < num_parts && !stopped.load(std::memory_order_relaxed))
@@ -302,15 +304,13 @@ void processPartsInParallel(size_t num_parts, size_t num_threads, bool use_concu
     {
         /// Main thread cannot be preemptible, since we need at least one thread which will do the job and check for cancellation
         CPUSlotHolder slot_holder(cpu_slots->acquire(), /*preemptible=*/ false);
-        /// The workload scheduler grants slots asynchronously, so the threads are started for the slots granted meanwhile.
+        /// Slots are granted at any time, also after a pool thread has been preempted, so check for them before every part.
         do
         {
             start_threads();
         } while (process_next_part());
     }
 
-    /// The slot is released before: the wait does not use CPU. A preempted thread has no parts to wait for a slot for.
-    cpu_slots->free();
     pool.wait();
 }
 
