@@ -653,6 +653,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         params.aggregation_in_order = true;
     }
 
+    /// `group_by_each_block_no_merge` creates a new hash table for every block. A size hint recorded by an ordinary
+    /// run of the same query is the size of the whole result, so every block would preallocate the whole result's
+    /// table, and the sizes of the per-block tables would replace that hint for the ordinary runs.
+    if (params.group_by_each_block_no_merge)
+        params.stats_collecting_params.disable();
+
     if (!allow_to_use_two_level_group_by)
     {
         params.group_by_two_level_threshold = 0;
