@@ -16,6 +16,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
 #include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserBackupQuery.h>
 #include <Parsers/ParserCheckQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/ParserCreateHandlerQuery.h>
@@ -63,6 +64,7 @@ void registerParsers()
 
     registry.registerParser<ParserAlterNamedCollectionQuery>();
     registry.registerParser<ParserAlterQuery>();
+    registry.registerParser<ParserBackupQuery>();
     registry.registerParser<ParserCheckGrantQuery>();
     registry.registerParser<ParserCheckQuery>();
     registry.registerParser<ParserColumnsTransformers>();
