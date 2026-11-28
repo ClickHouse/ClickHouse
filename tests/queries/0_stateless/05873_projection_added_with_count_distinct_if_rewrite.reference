@@ -1,0 +1,4 @@
+c
+uniqExactIf(a, greater(a, 1))
+x	1
+y	1

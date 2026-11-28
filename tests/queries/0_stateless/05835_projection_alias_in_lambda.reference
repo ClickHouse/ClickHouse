@@ -1,0 +1,8 @@
+table	[-9]	1
+table	[1]	1
+p_alias_column	[-9]	1
+p_alias_column	[1]	1
+p_alias	10	[1]	1
+p_alias	20	[-9]	1
+table	10
+p_normal	10

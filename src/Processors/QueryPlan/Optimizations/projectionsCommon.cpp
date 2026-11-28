@@ -356,6 +356,11 @@ static bool projectionPartHasRequiredColumns(
 {
     const auto & parent_table_columns = parent_metadata->getColumns();
 
+    /// A read that needs no column still reads one column of the part, so the projection must have that column now.
+    if (required_column_names.empty())
+        return std::ranges::all_of(
+            projection_part.getColumns(), [&](const auto & column) { return projection.metadata->getColumns().has(column.name); });
+
     for (const auto & name : required_column_names)
     {
         /// (1) Stored by the projection part.

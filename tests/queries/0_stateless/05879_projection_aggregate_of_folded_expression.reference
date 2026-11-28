@@ -1,0 +1,10 @@
+p_count	count(isNotNull(b))
+p_if	if(isNotNull(b), a, 0)
+p_if	count()
+p_sum	a
+p_sum	sum(isNotNull(b))
+p_sum	count(toTypeName(b))
+p_sum	count(plus(1, 1))
+4
+1	2
+2	1

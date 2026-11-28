@@ -496,9 +496,9 @@ String buildProjectionPart(
         if (batch.empty())
             return;
         const auto rows = concatenateBlocks(batch);
-        auto projected = projection.calculate(rows, out.read_rows - batch_rows, projection_context);
+        auto projected = projection.calculate(rows, out.read_rows - batch_rows, *read_step->getStorageMetadata(), projection_context);
         if (mutation_context)
-            mutation_projected = projection.calculate(rows, out.read_rows - batch_rows, mutation_context);
+            mutation_projected = projection.calculate(rows, out.read_rows - batch_rows, *read_step->getStorageMetadata(), mutation_context);
         batch.clear();
         batch_rows = 0;
         if (per_granule)

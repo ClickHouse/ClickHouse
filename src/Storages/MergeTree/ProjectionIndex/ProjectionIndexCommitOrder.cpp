@@ -45,10 +45,11 @@ Block ProjectionIndexCommitOrder::calculate(
     const ProjectionDescription & projection_desc,
     const Block & block,
     UInt64 starting_offset,
+    const StorageInMemoryMetadata & table_metadata,
     ContextPtr context,
     const IColumnPermutation * perm_ptr) const
 {
-    return projection_desc.calculateByQuery(block, starting_offset, context, perm_ptr);
+    return projection_desc.calculateByQuery(block, starting_offset, table_metadata, context, perm_ptr);
 }
 
 }

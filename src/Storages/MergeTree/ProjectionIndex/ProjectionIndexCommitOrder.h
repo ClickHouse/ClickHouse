@@ -40,6 +40,7 @@ public:
         const ProjectionDescription & projection_desc,
         const Block & block,
         UInt64 starting_offset,
+        const StorageInMemoryMetadata & table_metadata,
         ContextPtr context,
         const IColumnPermutation * perm_ptr) const override;
 };

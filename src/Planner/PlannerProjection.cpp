@@ -5,9 +5,6 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/QueryTreePassManager.h>
-#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Core/Settings.h>
@@ -20,7 +17,9 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <Planner/PlannerProjectionAnalysis.h>
 #include <Planner/TableExpressionData.h>
+#include <Planner/Utils.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -29,8 +28,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <QueryPipeline/Pipe.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/StorageDummy.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -72,22 +70,15 @@ private:
     Chunk chunk;
 };
 
-/// the name that a projection part stores the expression under: the name of the expression as the query writes it
-String getStoredName(const QueryTreeNodePtr & node)
+/// collects the columns of the table that the expression reads
+void collectSourceColumnNodes(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_node, QueryTreeNodes & result)
 {
-    /// a constant folded from an expression takes the name of that expression
-    const auto * constant_node = node->as<ConstantNode>();
-    const auto & written_node = constant_node && constant_node->hasSourceExpression() ? constant_node->getSourceExpression() : node;
+    if (const auto * column_node = node->as<ColumnNode>(); column_node && column_node->getColumnSourceOrNull() == table_node)
+        result.push_back(node);
 
-    /// the analysis makes a new node for a column; a function and a literal keep the expression that the query writes
-    if (const auto * column_node = written_node->as<ColumnNode>())
-        return column_node->getColumnName();
-
-    if (!written_node->hasOriginalAST())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Expression {} of a projection has no original AST", written_node->formatASTForErrorMessage());
-
-    return written_node->getOriginalAST()->getColumnName();
+    for (const auto & child : node->getChildren())
+        if (child && !isQueryOrUnionNode(child))
+            collectSourceColumnNodes(child, table_node, result);
 }
 
 
@@ -114,55 +105,24 @@ bool collectExpressionsBeforeWindow(const QueryTreeNodePtr & node, QueryTreeNode
     return has_window_function;
 }
 
-}
-
-QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
+/// the columns that the actions return; a step would execute the functions to get them
+Block getHeaderWithoutExecution(const ActionsDAG & actions_dag)
 {
-    auto query_tree = buildQueryTree(query_ast, context);
-    auto & query_node = query_tree->as<QueryNode &>();
-
-    /// A projection query is stored without a `FROM` clause, so its join tree is a reference to
-    /// `system.one` which has to be replaced with the table expression providing the input columns.
-    query_node.getJoinTreeNode() = std::make_shared<TableNode>(source, context);
-
-    /** The Analyzer unwraps a `tuple` at the top level of `GROUP BY` into separate keys, while a
-      * projection stores such a key as a single column named after the whole tuple. Wrap the key into
-      * one more `tuple` so that unwrapping gives back the key the projection stores.
-      */
-    if (query_node.hasGroupBy() && !query_node.isGroupByWithGroupingSets())
+    Block header;
+    for (auto & column : actions_dag.getResultColumns())
     {
-        for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
-        {
-            const auto * function_node = group_by_key_node->as<FunctionNode>();
-            if (!function_node || function_node->getFunctionName() != "tuple")
-                continue;
-
-            auto wrapped_key_node = std::make_shared<FunctionNode>("tuple");
-            wrapped_key_node->getArguments().getNodes().push_back(group_by_key_node);
-            group_by_key_node = std::move(wrapped_key_node);
-        }
+        if (!column.column)
+            column.column = column.type->createColumn();
+        header.insert(std::move(column));
     }
-
-    QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);
-    /// Optimization passes are not applied because some of them are invalid for projections.
-    /// Example: 'SELECT min(c0), max(c0), count() GROUP BY -c0' for minmax_count projection can be rewritten to
-    /// 'SELECT min(c0), max(c0), count() GROUP BY c0' which is incorrect cause we store a column '-c0' in projection.
-    query_tree_pass_manager.runOnlyResolve(query_tree);
-
-    return query_tree;
+    return header;
 }
 
-ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDescription & source_columns, const ContextPtr & context)
-{
-    auto query_context = Context::createCopy(context);
-    /// the stored query is final, so the settings of the session must not rewrite it again
-    query_context->setSetting("enable_positional_arguments", false);
-    query_context->setSetting("rewrite_in_to_join", false);
-    query_context->setSetting("rewrite_count_distinct_if_with_count_distinct_implementation", false);
+}
 
-    auto source = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, source_columns);
-    query_tree = buildProjectionQueryTree(query_ast, source, query_context);
+ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
+{
+    query_tree = buildProjectionQueryTree(query_ast, source, context);
     auto & query_node = query_tree->as<QueryNode &>();
 
     /// the analysis resolved the tree with the context of the query node
@@ -176,7 +136,7 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
     NameSet unique_aggregation_keys;
     for (const auto & key_node : query_node.getGroupBy().getNodes())
     {
-        auto key_name = getStoredName(key_node);
+        auto key_name = getStoredName(key_node, query_node.getContext());
         if (!unique_aggregation_keys.emplace(key_name).second)
             continue;
 
@@ -188,10 +148,15 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
     for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_tree))
     {
         auto aggregate = extractAggregateDescriptions({aggregate_function_node}, *planner_context).front();
-        aggregate.column_name = getStoredName(aggregate_function_node);
+        aggregate.column_name = getStoredName(aggregate_function_node, query_node.getContext());
         if (unique_aggregate_names.emplace(aggregate.column_name).second)
             aggregates.push_back(std::move(aggregate));
     }
+}
+
+NamesAndTypes ProjectionPlanner::getSourceColumns() const
+{
+    return planner_context->getTableExpressionDataOrThrow(query_tree->as<QueryNode &>().getJoinTreeNode()).getColumns();
 }
 
 ActionsDAG ProjectionPlanner::buildActions(const QueryTreeNodes & expressions)
@@ -282,24 +247,42 @@ QueryPlan ProjectionPlanner::buildPlanForSource(Block source)
     return plan;
 }
 
-QueryPlan ProjectionPlanner::buildPlanForNormalProjection(Block source)
+ActionsDAG ProjectionPlanner::buildStoredExpressionsActions()
 {
-    auto plan = buildPlanForSource(std::move(source));
-
+    const auto & query_node = query_tree->as<QueryNode &>();
     QueryTreeNodes stored_expressions;
-    collectExpressionsBeforeWindow(query_tree->as<QueryNode &>().getProjectionNode(), stored_expressions);
+    collectExpressionsBeforeWindow(query_node.getProjectionNode(), stored_expressions);
+    /// the part is sorted by ORDER BY, so it stores the columns that ORDER BY reads
+    if (query_node.hasOrderBy())
+        collectSourceColumnNodes(query_node.getOrderByNode(), query_node.getJoinTreeNode(), stored_expressions);
     auto projection_dag = buildActions(stored_expressions);
 
     /// the outputs are the expressions under the names that the part stores
     NamesWithAliases stored_columns;
     NameSet stored_names;
+    NameSet constant_names;
     for (const auto & expression : stored_expressions)
     {
-        auto stored_name = getStoredName(expression);
+        auto stored_name = getStoredName(expression, planner_context->getQueryContext());
+        if (expression->as<ConstantNode>())
+            constant_names.insert(stored_name);
         if (stored_names.emplace(stored_name).second)
             stored_columns.emplace_back(calculateActionNodeName(expression, *planner_context), std::move(stored_name));
     }
     projection_dag.project(stored_columns);
+    /// `a + NULL` gives a constant column, but the part needs a full one
+    for (auto & output : projection_dag.getOutputs())
+        if (!constant_names.contains(output->result_name))
+            output = &projection_dag.materializeNode(*output);
+
+    return projection_dag;
+}
+
+QueryPlan ProjectionPlanner::buildPlanForNormalProjection(Block source)
+{
+    auto plan = buildPlanForSource(std::move(source));
+
+    auto projection_dag = buildStoredExpressionsActions();
     /// the projection stores only the columns of its SELECT
     projection_dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
     plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(projection_dag)));
@@ -308,19 +291,18 @@ QueryPlan ProjectionPlanner::buildPlanForNormalProjection(Block source)
     return plan;
 }
 
+Block ProjectionPlanner::getHeaderOfNormalProjection()
+{
+    return getHeaderWithoutExecution(buildStoredExpressionsActions());
+}
+
 QueryPlan ProjectionPlanner::buildPlanForAggregateProjection(Block source)
 {
     auto plan = buildPlanForSource(std::move(source));
 
     plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), buildKeysAndArgumentsActions()));
 
-    /// two keys of the projection can be one expression for the planner
-    Names keys;
-    NameSet unique_keys;
-    for (const auto & key : planner_key_names)
-        if (unique_keys.emplace(key).second)
-            keys.push_back(key);
-
+    auto keys = getUniquePlannerKeyNames();
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
     auto max_threads = getEffectiveMaxThreads(*query_context);
@@ -341,6 +323,32 @@ QueryPlan ProjectionPlanner::buildPlanForAggregateProjection(Block source)
         /*memory_bound_merging_of_aggregation_results_enabled_=*/false,
         /*explicit_sorting_required_for_aggregation_in_order_=*/false));
 
+    plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), buildStoredNamesActions(*plan.getCurrentHeader())));
+
+    addSubquerySetsStep(plan);
+    return plan;
+}
+
+Block ProjectionPlanner::getHeaderOfAggregateProjection()
+{
+    auto aggregated_header = getAggregatorParams(planner_context->getQueryContext(), getUniquePlannerKeyNames(), aggregates)
+        .getHeader(getHeaderWithoutExecution(buildKeysAndArgumentsActions()), /*final=*/false);
+    return getHeaderWithoutExecution(buildStoredNamesActions(aggregated_header));
+}
+
+Names ProjectionPlanner::getUniquePlannerKeyNames() const
+{
+    /// two keys of the projection can be one expression for the planner
+    Names keys;
+    NameSet unique_keys;
+    for (const auto & key : planner_key_names)
+        if (unique_keys.emplace(key).second)
+            keys.push_back(key);
+    return keys;
+}
+
+ActionsDAG ProjectionPlanner::buildStoredNamesActions(const Block & aggregated_header) const
+{
     /// the keys get the names that the part stores only after the aggregation, where no other column has a name of the planner
     NamesWithAliases stored_columns;
     for (size_t i = 0; i < aggregation_keys.size(); ++i)
@@ -348,12 +356,9 @@ QueryPlan ProjectionPlanner::buildPlanForAggregateProjection(Block source)
     for (const auto & aggregate : aggregates)
         stored_columns.emplace_back(aggregate.column_name, String{});
 
-    ActionsDAG rename_dag(plan.getCurrentHeader()->getColumnsWithTypeAndName());
+    ActionsDAG rename_dag(aggregated_header.getColumnsWithTypeAndName());
     rename_dag.project(stored_columns);
-    plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(rename_dag)));
-
-    addSubquerySetsStep(plan);
-    return plan;
+    return rename_dag;
 }
 
 void ProjectionPlanner::addSubquerySetsStep(QueryPlan & plan)

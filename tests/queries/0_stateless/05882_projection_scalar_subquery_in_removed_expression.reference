@@ -1,0 +1,4 @@
+p_count	count(_CAST(10, \'Nullable(UInt64)\'))
+p_key	a
+p_key	count()
+2

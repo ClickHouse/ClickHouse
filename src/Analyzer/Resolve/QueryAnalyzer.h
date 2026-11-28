@@ -132,6 +132,14 @@ public:
 
     void resolveConstantExpression(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
 
+    /// the aggregate function name the analyzer uses for a written name
+    static std::string rewriteAggregateFunctionNameIfNeeded(
+        const std::string & aggregate_function_name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        const ContextPtr & context);
+
 private:
     /// Utility functions
 
@@ -180,13 +188,6 @@ private:
     void expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings);
 
     static void expandLimitByAll(QueryNode & query_tree_node_typed);
-
-    static std::string rewriteAggregateFunctionNameIfNeeded(
-        const std::string & aggregate_function_name,
-        NullsAction action,
-        const DataTypes & argument_types,
-        const Array & parameters,
-        const ContextPtr & context);
 
     static std::optional<JoinTableSide> getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node);
 
