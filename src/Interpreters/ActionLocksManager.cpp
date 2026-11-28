@@ -82,6 +82,34 @@ void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType
         it->second.erase(action_type);
 }
 
+bool ActionLocksManager::hasAny(const StoragePtr & table) const
+{
+    const auto * key = lockKey(table);
+    std::lock_guard lock(mutex);
+
+    auto it = storage_locks.find(key);
+    if (it == storage_locks.end())
+        return false;
+
+    for (const auto & [_, action_lock] : it->second)
+        if (!action_lock.expired())
+            return true;
+
+    return false;
+}
+
+bool ActionLocksManager::hasAny() const
+{
+    std::lock_guard lock(mutex);
+
+    for (const auto & [_, locks] : storage_locks)
+        for (const auto & type_and_lock : locks)
+            if (!type_and_lock.second.expired())
+                return true;
+
+    return false;
+}
+
 void ActionLocksManager::cleanExpired()
 {
     std::lock_guard lock(mutex);
