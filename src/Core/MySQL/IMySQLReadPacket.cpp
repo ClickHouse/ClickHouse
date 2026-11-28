@@ -18,6 +18,11 @@ namespace MySQLProtocol
 void IMySQLReadPacket::readPayload(ReadBuffer & in, uint8_t & sequence_id)
 {
     MySQLPacketPayloadReadBuffer payload(in, sequence_id);
+    readPayloadFrom(payload);
+}
+
+void IMySQLReadPacket::readPayloadFrom(ReadBuffer & payload)
+{
     payload.next();
     readPayloadImpl(payload);
     if (!payload.eof())
@@ -35,8 +40,10 @@ void IMySQLReadPacket::readPayloadWithUnpacked(ReadBuffer & in)
 
 void LimitedReadPacket::readPayload(ReadBuffer &in, uint8_t &sequence_id)
 {
-    LimitReadBuffer limited(in, {.read_no_more = 10000, .expect_eof = true, .excetion_hint = "too long MySQL packet."});
-    IMySQLReadPacket::readPayload(limited, sequence_id);
+    /// On the payload, not on `in`: `in` is the connection, which continues with the next packet.
+    MySQLPacketPayloadReadBuffer payload(in, sequence_id);
+    LimitReadBuffer limited(payload, {.read_no_more = 10000, .expect_eof = true, .excetion_hint = "too long MySQL packet."});
+    readPayloadFrom(limited);
 }
 
 void LimitedReadPacket::readPayloadWithUnpacked(ReadBuffer & in)

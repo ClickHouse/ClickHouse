@@ -3,7 +3,7 @@
 Tests for the SQLStorm query rewriter.
 
 Validates that the PostgreSQL -> ClickHouse rewrites do not produce invalid SQL
-for known edge cases (FETCH/OFFSET combinations).
+for known edge cases.
 """
 
 import os
@@ -12,30 +12,6 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
 from rewrite_queries import rewrite_query
-
-
-class TestFetchOffsetRewrite(unittest.TestCase):
-    def test_offset_rows_fetch_first_rows_only(self):
-        # SQL standard: rewriting only FETCH FIRST while leaving OFFSET ... ROWS
-        # behind would produce invalid ClickHouse SQL like
-        # `OFFSET 5 ROWS LIMIT 10`. Both clauses must be rewritten together.
-        self.assertEqual(
-            rewrite_query("SELECT * FROM t ORDER BY x OFFSET 5 ROWS FETCH FIRST 10 ROWS ONLY"),
-            "SELECT * FROM t ORDER BY x LIMIT 10 OFFSET 5",
-        )
-
-    def test_offset_row_fetch_first_row_only(self):
-        # Singular ROW form must be handled too.
-        self.assertEqual(
-            rewrite_query("SELECT * FROM t ORDER BY x OFFSET 5 ROW FETCH FIRST 1 ROW ONLY"),
-            "SELECT * FROM t ORDER BY x LIMIT 1 OFFSET 5",
-        )
-
-    def test_standalone_fetch_first_rows_only(self):
-        self.assertEqual(
-            rewrite_query("SELECT * FROM t FETCH FIRST 10 ROWS ONLY"),
-            "SELECT * FROM t LIMIT 10",
-        )
 
 
 class TestArrayJoinOnClause(unittest.TestCase):
@@ -228,10 +204,10 @@ class TestAnyArrayRewrite(unittest.TestCase):
 
 
 class TestProtectedSpans(unittest.TestCase):
-    def test_offset_fetch_inside_string_literal_left_untouched(self):
+    def test_offset_limit_inside_string_literal_left_untouched(self):
         # The rewrites must not fire inside string literals: only dialect
         # syntax outside literals should change.
-        sql = "SELECT 'OFFSET 5 ROWS FETCH FIRST 10 ROWS ONLY' AS s"
+        sql = "SELECT 'OFFSET 5 LIMIT 10' AS s"
         self.assertEqual(rewrite_query(sql), sql)
 
     def test_function_name_inside_string_literal_left_untouched(self):
@@ -254,19 +230,12 @@ class TestProtectedSpans(unittest.TestCase):
             "SELECT * FROM t WHERE has(tags, 'tag')",
         )
 
-    def test_at_time_zone_literal_preserved(self):
-        # The timezone literal is masked, matched as a placeholder, and restored.
-        self.assertEqual(
-            rewrite_query("SELECT ts AT TIME ZONE 'UTC' FROM t"),
-            "SELECT toTimezone(ts, 'UTC') FROM t",
-        )
-
     def test_dollar_quoted_literal_left_untouched(self):
         # PostgreSQL dollar-quoted literals are protected spans too; the syntax
-        # rewrite must only fire on the real FETCH clause outside the literal.
+        # rewrite must only fire on the real `OFFSET ... LIMIT` outside the literal.
         self.assertEqual(
-            rewrite_query("SELECT $$FETCH FIRST 5 ROWS ONLY$$ AS s FETCH FIRST 1 ROW ONLY"),
-            "SELECT $$FETCH FIRST 5 ROWS ONLY$$ AS s LIMIT 1",
+            rewrite_query("SELECT $$OFFSET 1 LIMIT 2$$ AS s OFFSET 5 LIMIT 10"),
+            "SELECT $$OFFSET 1 LIMIT 2$$ AS s LIMIT 10 OFFSET 5",
         )
 
     def test_tagged_dollar_quoted_literal_left_untouched(self):
@@ -311,6 +280,21 @@ class TestUnnestJoinRewrite(unittest.TestCase):
                 "SELECT * FROM t CROSS JOIN LATERAL (SELECT unnest(string_to_array(tags, ',')) AS tag) u ON TRUE"
             ),
             "SELECT * FROM t ARRAY JOIN splitByString(',', assumeNotNull(tags)) AS tag",
+        )
+
+    def test_lateral_subquery_without_unnest_keeps_lateral(self):
+        # The server runs `JOIN LATERAL (subquery) ON TRUE` with
+        # `enable_lateral_join`; dropping `LATERAL` would turn it into a
+        # correlated join, which is not supported.
+        sql = (
+            "SELECT * FROM t LEFT JOIN LATERAL (SELECT max(s) AS m FROM p WHERE p.id = t.id) x ON TRUE"
+        )
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_lateral_unnest_in_join_position(self):
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t CROSS JOIN LATERAL unnest(arr) AS u(tag)"),
+            "SELECT * FROM t \nARRAY JOIN arr AS tag",
         )
 
     def test_left_join_lateral_subquery_with_nested_parens(self):

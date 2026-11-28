@@ -1,0 +1,23 @@
+ground truth
+1
+group by
+1
+1
+limit by
+1
+1
+valid data still round-trips
+1
+order by truncation
+2
+2
+independent aggregation per partition
+1
+1
+distributed sharding key
+1
+1
+1
+1
+1
+1

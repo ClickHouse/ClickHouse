@@ -1,6 +1,9 @@
 #include <Common/CalendarTimeInterval.h>
 
 #include <Common/Exception.h>
+#include <base/extended_types.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -14,7 +17,7 @@ CalendarTimeInterval::CalendarTimeInterval(const CalendarTimeInterval::Intervals
 {
     for (auto [kind, val] : intervals)
     {
-        switch (kind.kind)
+        switch (kind.getKind())
         {
             case IntervalKind::Kind::Nanosecond:
             case IntervalKind::Kind::Microsecond:
@@ -105,16 +108,25 @@ static std::chrono::sys_seconds startOfAbsoluteMonth(Int64 absolute_month)
     return std::chrono::sys_days(ymd);
 }
 
+/// An interval can be as long as `UInt64` allows, e.g. `REFRESH EVERY 10000000000000000000 SECOND`. `advance` saturates at
+/// the last month that `std::chrono::year` can represent instead of overflowing, so such an interval never elapses.
+static constexpr Int64 max_absolute_month = (32767 - 1970) * 12 - 1;
+
 std::chrono::sys_seconds CalendarTimeInterval::advance(std::chrono::system_clock::time_point tp) const
 {
+    static const Int64 max_seconds = startOfAbsoluteMonth(max_absolute_month).time_since_epoch().count();
+
     auto t = std::chrono::sys_seconds(std::chrono::floor<std::chrono::seconds>(tp));
     if (months)
     {
         auto m = toAbsoluteMonth(t);
         auto s = t - startOfAbsoluteMonth(m);
+        if (Int128(m) + months > max_absolute_month)
+            return std::chrono::sys_seconds(std::chrono::seconds(max_seconds));
         t = startOfAbsoluteMonth(m + Int64(months)) + s;
     }
-    return t + std::chrono::seconds(Int64(seconds));
+    const Int128 result = Int128(t.time_since_epoch().count()) + seconds;
+    return std::chrono::sys_seconds(std::chrono::seconds(Int64(std::min<Int128>(result, max_seconds))));
 }
 
 std::chrono::sys_seconds CalendarTimeInterval::floor(std::chrono::system_clock::time_point tp) const

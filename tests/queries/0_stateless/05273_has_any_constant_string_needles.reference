@@ -1,0 +1,18 @@
+1 needle	520	0	0	0
+2 needles	901	0	0	0
+3 needles	1241	0	0	0
+4 needles, same length and ends as elements	960	0	0	0
+5 needles	1502	0	0	0
+8 needles with duplicates	1518	0	0	0
+long strings	1513	0	0	0
+33 needles	262	0	0	0
+no needle present	0	0
+empty needle array	0	0
+one row per block	1502	0
+100-row blocks	1502	0
+NULL needle	1245	0
+Nullable elements	1494	0
+needles of up to 256 bytes	815	0
+a needle longer than 256 bytes	990	0
+long elements, short needles	787	0
+a needle longer than 256 bytes, last	1007	0

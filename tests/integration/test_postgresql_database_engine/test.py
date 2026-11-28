@@ -816,6 +816,85 @@ def test_postgresql_ordinary_detach_pruned_after_remote_drop(started_cluster):
     node1.query("DROP DATABASE postgres_prune_test")
 
 
+def test_postgresql_database_engine_schema_sql_injection(started_cluster):
+    # `DatabasePostgreSQL::checkPostgresTable` embeds the configured `schema` into the PostgreSQL
+    # query it uses to check that a table exists. The query runs in a `pqxx::nontransaction`, i.e.
+    # over the libpq simple-query protocol, which executes `;`-separated statements, so a `schema`
+    # that terminates the literal early gets its own SQL executed on the PostgreSQL server as the
+    # role stored in the named collection. `schema` is overridable by default, so a user with only
+    # CREATE DATABASE plus use of the collection reaches this without CREATE TABLE or INSERT.
+    #
+    # The assertion is the absence of the marker table the payload tries to create: with the sink
+    # unescaped PostgreSQL really creates it, so this fails on an unfixed server rather than merely
+    # observing a different error message.
+
+    # `database=False` connects to the default `postgres` database, which is the one the `postgres1`
+    # named collection points ClickHouse at. `pg_tables` lists only the current database's tables,
+    # so the assertion has to run in the database the payload would execute in.
+    conn = get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port)
+    cursor = conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS injected_marker")
+
+    # `''` is a single quote in ClickHouse SQL; PostgreSQL therefore receives `public'; CREATE ...`.
+    payload = "public''; CREATE TABLE injected_marker (x integer); -- "
+
+    node1.query("DROP DATABASE IF EXISTS postgres_injection")
+    # Both statements are allowed to fail: once the schema is escaped, the name simply does not
+    # exist, and what matters is only what did or did not happen on the PostgreSQL side.
+    node1.query_and_get_answer_with_error(
+        f"CREATE DATABASE postgres_injection ENGINE = PostgreSQL(postgres1, schema = '{payload}')"
+    )
+    node1.query_and_get_answer_with_error("EXISTS TABLE postgres_injection.probe")
+
+    cursor.execute("SELECT count(*) FROM pg_tables WHERE tablename = 'injected_marker'")
+    assert cursor.fetchall()[0][0] == 0, (
+        "the schema value was executed as SQL by PostgreSQL: checkPostgresTable built its query "
+        "without escaping the schema"
+    )
+
+    node1.query("DROP DATABASE IF EXISTS postgres_injection")
+    cursor.execute("DROP TABLE IF EXISTS injected_marker")
+
+
+def test_postgresql_database_engine_quoted_remote_table_name(started_cluster):
+    # `DatabasePostgreSQL::checkPostgresTable` casts the formatted table name to `regclass` to
+    # decide whether the remote relation exists, and every table access of this database engine
+    # goes through it. A `"` is the only character that ends a PostgreSQL quoted identifier and is
+    # escaped by doubling it, so emitting it as `\"` closes the name early: PostgreSQL then answers
+    # SQLSTATE 42602 (invalid name syntax), which is not the 42P01 that this function translates
+    # into a clean "table does not exist", so the error escapes and the table is unusable.
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    # `""` is how the relation actually named `quoted"table` is spelled in PostgreSQL DDL.
+    cursor.execute('CREATE TABLE "quoted""table" (id integer NOT NULL, value integer)')
+    node1.query("DROP DATABASE IF EXISTS postgres_database")
+    try:
+        node1.query(
+            f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
+        )
+        assert (
+            node1.query('EXISTS TABLE postgres_database.`quoted"table`').rstrip() == "1"
+        )
+        # Reaching the column list proves the relation resolved far enough to be usable, not merely
+        # to be counted: building the storage runs the existence check and then fetches the
+        # structure. Only the names are asserted, to stay independent of null-inference settings.
+        assert (
+            node1.query(
+                "SELECT name FROM system.columns WHERE database = 'postgres_database' "
+                "AND table = 'quoted\"table' ORDER BY name"
+            )
+            == "id\nvalue\n"
+        )
+    finally:
+        # `test_postgresql_fetch_tables` asserts the exact public-schema table list, so this
+        # relation must not outlive the test even if an assertion above fires.
+        node1.query("DROP DATABASE IF EXISTS postgres_database")
+        cursor.execute('DROP TABLE "quoted""table"')
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

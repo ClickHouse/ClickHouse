@@ -1,0 +1,11 @@
+<clickhouse>
+    <!-- helpers/0_common_instance_config.xml removes query_thread_log; put it back, because
+         test_on_cluster reads the per-thread ProfileEvents of each host's backup operation, so
+         that the fsync count it asserts on cannot be inflated by an unrelated fsync in the same
+         process. log_query_threads still defaults to 0, so no other case starts writing rows here. -->
+    <query_thread_log replace="replace">
+        <database>system</database>
+        <table>query_thread_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </query_thread_log>
+</clickhouse>

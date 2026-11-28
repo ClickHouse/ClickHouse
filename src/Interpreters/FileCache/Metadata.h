@@ -21,6 +21,7 @@ namespace DB
 {
 
 class CleanupQueue;
+struct CleanupTask;
 using CleanupQueuePtr = std::shared_ptr<CleanupQueue>;
 class DownloadQueue;
 using DownloadQueuePtr = std::shared_ptr<DownloadQueue>;
@@ -39,17 +40,17 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     explicit FileSegmentMetadata(FileSegmentPtr && file_segment_);
 
-    bool releasable() const { return isSharedPtrUnique(file_segment); }
+    [[nodiscard]] bool releasable() const { return isSharedPtrUnique(file_segment); }
 
-    size_t size() const;
+    [[nodiscard]] size_t size() const;
 
-    bool isEvictingOrRemoved(const LockedKey & lock) const { return isRemoved(lock) || isEvicting(lock); }
+    [[nodiscard]] bool isEvictingOrRemoved(const LockedKey & lock) const { return isRemoved(lock) || isEvicting(lock); }
 
     /// Whether queue entry is removed/evicted.
-    bool isRemoved(const LockedKey &) const { return removed; }
+    [[nodiscard]] bool isRemoved(const LockedKey &) const { return removed; }
 
     /// Whether queue entry is in evicting state.
-    bool isEvicting(const LockedKey &) const
+    [[nodiscard]] bool isEvicting(const LockedKey &) const
     {
         auto iterator = getQueueIterator();
         if (!iterator)
@@ -83,7 +84,7 @@ struct FileSegmentMetadata : private boost::noncopyable
         entry->resetFlag(Priority::Entry::State::Evicting);
     }
 
-    Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
+    [[nodiscard]] Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
 
     FileSegmentPtr file_segment;
 
@@ -117,7 +118,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     enum class KeyState : uint8_t
     {
         ACTIVE,
-        REMOVING,
+        QUEUED_FOR_REMOVAL,
         REMOVED,
     };
 
@@ -128,7 +129,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
 
     LockedKeyPtr lock();
 
-    /// Will only fail if key is not in ACTIVE state, e.g. REMOVING or REMOVED.
+    /// Will only fail if key is not in ACTIVE state, e.g. QUEUED_FOR_REMOVAL or REMOVED.
     LockedKeyPtr tryLock();
 
     [[nodiscard]] std::error_code createBaseDirectory();
@@ -152,6 +153,9 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     template< class... Args >
     auto emplaceUnlocked(Args &&... args) { return emplace(std::forward<Args>(args)...); }
     size_t sizeUnlocked() const { return size(); }
+
+    size_t alignFileSize(size_t file_size) const;
+    bool useRealDiskSize() const;
 
     KeyState getState();
 
@@ -190,7 +194,10 @@ public:
         const std::string & path_,
         size_t background_download_queue_size_limit_,
         size_t background_download_threads_,
-        bool write_cache_per_user_directory_);
+        bool write_cache_per_user_directory_,
+        bool use_real_disk_size_,
+        size_t background_cleanup_threads_,
+        size_t background_cleanup_elements_per_thread_);
 
     virtual ~CacheMetadata();
 
@@ -237,6 +244,11 @@ public:
 
     void removeKey(const Key & key, bool if_exists, const UserID & user_id);
 
+    /// Hands a key directory that the initial load found empty to the cleanup thread.
+    void addEmptyKeyDirectoryFromStartup(const std::string & key_prefix_directory, const Key & key);
+    /// Forgets the directories handed over by an initial load which failed.
+    void dropEmptyKeyDirectoriesFromStartup();
+
     /// Returns true if the client was fully purged; false if any key kept
     /// non-releasable (held) segments and survived — retry on a later sweep.
     /// If `pool` is given, metadata buckets are processed in parallel on it
@@ -252,6 +264,12 @@ public:
 
     bool isBackgroundDownloadEnabled();
 
+    size_t alignFileSize(size_t file_size) const;
+
+    bool useRealDiskSize() const;
+
+    void fillStatVFS();
+
     void setClientAccessCallback(std::function<void(const UserID &)> callback) { on_client_access = std::move(callback); }
 
 private:
@@ -261,6 +279,10 @@ private:
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
     const bool write_cache_per_user_directory;
+    /// Filesystem block size of `path` populated by `fillStatVFS` at startup.
+    /// Used to align file sizes when `use_real_disk_size` is enabled.
+    std::atomic<size_t> fs_block_size{0};
+    const bool use_real_disk_size;
     std::function<void(const UserID &)> on_client_access;
 
     LoggerPtr log;
@@ -299,6 +321,8 @@ private:
 
     std::atomic<size_t> download_threads_num;
     std::vector<std::shared_ptr<DownloadThread>> download_threads;
+    const size_t max_cleanup_threads;
+    const size_t cleanup_elements_per_thread;
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size = std::nullopt);
@@ -311,17 +335,20 @@ private:
         LockedKey &,
         const CacheMetadataGuard::Lock &);
 
+    /// Does nothing when the key exists again: the directory then belongs to that key.
+    void removeEmptyKeyDirectoryFromStartup(const std::string & key_prefix_directory, const Key & key);
+
+    void removeKeyIfStillQueuedForRemoval(const Key & key);
+
     void downloadThreadFunc(const bool & stop_flag);
 
-    /// Firstly, this cleanup does not delete cache files,
-    /// but only empty keys from cache_metadata_map and key (prefix) directories from fs.
-    /// Secondly, it deletes those only if arose as a result of
-    /// (1) eviction in FileCache::tryReserve();
-    /// (2) removal of cancelled non-downloaded file segments after FileSegment::complete().
-    /// which does not include removal of cache files because of FileCache::removeKey/removeAllKeys,
-    /// triggered by removal of source files from objects storage.
-    /// E.g. number of elements submitted to background cleanup should remain low.
+    /// Removes emptied keys from metadata and their directories from disk, with the files which metadata
+    /// does not know, and the empty key directories which the initial load found. `removeKey` and
+    /// `removeAllKeys` remove a key at once unless a file segment is held or is being evicted.
     void cleanupThreadFunc();
+    /// Runs cleanup tasks until none is left; started by `cleanupThreadFunc` when they pile up.
+    void runCleanupUntilEmpty();
+    void runCleanupTask(const CleanupTask & task);
 };
 
 class CacheMetadata::Iterator
@@ -364,28 +391,28 @@ struct LockedKey : private boost::noncopyable
 
     ~LockedKey();
 
-    const Key & getKey() const { return key_metadata->key; }
+    [[nodiscard]] const Key & getKey() const { return key_metadata->key; }
 
-    auto begin() const { return key_metadata->begin(); }
-    auto rbegin() const { return key_metadata->rbegin(); }
+    [[nodiscard]] auto begin() const { return key_metadata->begin(); }
+    [[nodiscard]] auto rbegin() const { return key_metadata->rbegin(); }
 
-    auto end() const { return key_metadata->end(); }
-    auto rend() const { return key_metadata->rend(); }
+    [[nodiscard]] auto end() const { return key_metadata->end(); }
+    [[nodiscard]] auto rend() const { return key_metadata->rend(); }
 
-    bool empty() const { return key_metadata->empty(); }
+    [[nodiscard]] bool empty() const { return key_metadata->empty(); }
     auto lower_bound(size_t size) const { return key_metadata->lower_bound(size); } /// NOLINT
     template< class... Args >
     auto emplace(Args &&... args) { return key_metadata->emplace(std::forward<Args>(args)...); }
 
-    std::shared_ptr<const FileSegmentMetadata> getByOffset(size_t offset) const;
+    [[nodiscard]] std::shared_ptr<const FileSegmentMetadata> getByOffset(size_t offset) const;
     std::shared_ptr<FileSegmentMetadata> getByOffset(size_t offset);
 
-    std::shared_ptr<const FileSegmentMetadata> tryGetByOffset(size_t offset) const;
+    [[nodiscard]] std::shared_ptr<const FileSegmentMetadata> tryGetByOffset(size_t offset) const;
     std::shared_ptr<FileSegmentMetadata> tryGetByOffset(size_t offset);
 
-    KeyMetadata::KeyState getKeyState() const { return key_metadata->key_state; }
+    [[nodiscard]] KeyMetadata::KeyState getKeyState() const { return key_metadata->key_state; }
 
-    std::shared_ptr<const KeyMetadata> getKeyMetadata() const { return key_metadata; }
+    [[nodiscard]] std::shared_ptr<const KeyMetadata> getKeyMetadata() const { return key_metadata; }
     std::shared_ptr<KeyMetadata> getKeyMetadata() { return key_metadata; }
 
     bool removeAllFileSegments();
@@ -408,9 +435,9 @@ struct LockedKey : private boost::noncopyable
 
     bool addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &);
 
-    bool isLastOwnerOfFileSegment(size_t offset) const;
+    [[nodiscard]] bool isLastOwnerOfFileSegment(size_t offset) const;
 
-    std::optional<FileSegment::Range> hasIntersectingRange(const FileSegment::Range & range) const;
+    [[nodiscard]] std::optional<FileSegment::Range> hasIntersectingRange(const FileSegment::Range & range) const;
 
     void removeFromCleanupQueue();
 
@@ -418,7 +445,7 @@ struct LockedKey : private boost::noncopyable
 
     std::vector<FileSegment::Info> sync();
 
-    std::string toString() const;
+    [[nodiscard]] std::string toString() const;
 
 private:
     KeyMetadata::iterator removeFileSegmentImpl(

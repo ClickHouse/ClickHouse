@@ -1,5 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <IO/ReadBufferFromString.h>
@@ -58,7 +59,7 @@ ColumnPtr readArrayColumn(const String & offsets_data, const String & elements_d
         return path.back().type == ISerialization::Substream::ArraySizes ? &offsets_in : &elements_in;
     };
 
-    auto serialization = SerializationArray::create(SerializationNumber<UInt8>::create());
+    auto serialization = SerializationArray::create(SerializationNumber<UInt8>::create(), std::make_shared<DataTypeUInt8>());
     auto column = ColumnArray::create(ColumnUInt8::create());
     ISerialization::DeserializeBinaryBulkStatePtr state;
     serialization->deserializeBinaryBulkWithMultipleStreams(*column, limit, settings, state, nullptr);
@@ -147,15 +148,24 @@ TEST(SerializationArrayOffsets, RejectsEmptyElementsWithNonZeroLastAbsoluteOffse
     }
 }
 
-/// The sizes encoding keeps accepting an empty elements column: that is how a column of a Nested type
-/// that was added by ALTER reads the parts written before that ALTER.
-TEST(SerializationArrayOffsets, SizesEncodingAcceptsEmptyElements)
+/// The sizes encoding declares the same never-read elements, and everything that is not a MergeTree
+/// reader hands the column straight to the query pipeline, where indexing it reads out of bounds.
+TEST(SerializationArrayOffsets, RejectsEmptyElementsWithNonZeroLastOffsetInSizesEncoding)
 {
-    auto column = readArrayColumn(absoluteOffsets({1}), /*elements_data=*/"", 1, /*position_independent_encoding=*/true);
-    const auto & column_array = assert_cast<const ColumnArray &>(*column);
-    ASSERT_EQ(column_array.getOffsets(), (ColumnArray::Offsets{1}));
-    ASSERT_TRUE(column_array.getData().empty());
+    try
+    {
+        readArrayColumn(absoluteOffsets({1}), /*elements_data=*/"", 1, /*position_independent_encoding=*/true);
+        FAIL() << "Expected INCORRECT_DATA for an empty elements stream with a non-zero last offset";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(ErrorCodes::INCORRECT_DATA, e.code());
+    }
 }
+
+/// The case where a reader may still see such a column - a `Nested` column added by `ALTER`, which
+/// `IMergeTreeReader::fillMissingColumns` replaces before anything else can see it - is covered by
+/// `05024_mergetree_array_missing_elements`, because it needs the MergeTree readers.
 
 /// Repeated reads into one accumulating column keep appending, so a column filled over many calls ends
 /// up with every offset that was read and stays accepted throughout.

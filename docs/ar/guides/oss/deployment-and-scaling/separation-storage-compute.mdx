@@ -7,10 +7,8 @@ doc_type: 'guide'
 keywords: ['التخزين', 'الحوسبة', 'معمارية', 'قابلية التوسع', 'السحابة']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="overview">
-  ## نظرة عامة
+  ## نظرة عامة {#overview}
 </div>
 
 يشرح هذا الدليل كيف يمكنك استخدام ClickHouse وS3 لتنفيذ معمارية تفصل بين التخزين والحوسبة.
@@ -29,7 +27,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Steps>
   <Step title="استخدم S3 كقرص لـ ClickHouse" id="1-use-s3-as-a-clickhouse-disk">
-    ### إنشاء قرص
+### إنشاء قرص {#creating-a-disk}
 
     أنشئ ملفًا جديدًا في الدليل `config.d` الخاص بـ ClickHouse لتخزين تهيئة التخزين:
 
@@ -156,7 +154,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     إذا سار كل شيء بنجاح، فأنت تستخدم الآن ClickHouse مع فصل التخزين عن الحوسبة!
 
-    <Image img="/images/guides/s3_bucket_example.webp" size="md" alt="مثال على حاوية S3 باستخدام فصل الحوسبة عن التخزين" border />
+    <div className="ch-image-md">
+      <Frame>
+        ![مثال على حاوية S3 باستخدام فصل الحوسبة عن التخزين](/images/guides/s3_bucket_example.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="إعداد النسخ المتماثل لتحمّل الأعطال (اختياري)" id="3-implementing-replication-for-fault-tolerance-optional">
@@ -173,7 +175,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Steps>
 
 <div id="further-reading">
-  ## للمزيد من القراءة
+  ## للمزيد من القراءة {#further-reading}
 </div>
 
 * [محرك الجداول SharedMergeTree](/ar/products/cloud/features/infrastructure/shared-merge-tree)

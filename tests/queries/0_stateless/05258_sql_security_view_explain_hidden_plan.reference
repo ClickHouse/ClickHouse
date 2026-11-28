@@ -1,0 +1,49 @@
+-- definer_view for the reader: private value, inner steps, hidden marker
+EXPLAIN PLAN actions = 1: 0 0 1
+EXPLAIN PLAN actions = 1, pretty = 0: 0 0 1
+EXPLAIN PLAN header = 1, indexes = 1: 0 0 1
+EXPLAIN PLAN json = 1, actions = 1, header = 1: 0 0 1
+EXPLAIN PIPELINE header = 1: 0 0 0
+EXPLAIN PIPELINE graph = 1, header = 1: 0 0 0
+EXPLAIN PIPELINE graph = 1, compact = 0: 0 0 0
+EXPLAIN ESTIMATE: 0 0 0
+-- definer_view for the reader with the format setting but without the privilege
+0 0 1
+-- definer_view: the reader still queries it
+0
+-- definer_view: the processors of its plan are logged under the sealed step
+1	0
+-- none_view for the reader: private value, inner steps, hidden marker
+EXPLAIN PLAN actions = 1: 0 0 1
+EXPLAIN PLAN actions = 1, pretty = 0: 0 0 1
+EXPLAIN PLAN header = 1, indexes = 1: 0 0 1
+EXPLAIN PLAN json = 1, actions = 1, header = 1: 0 0 1
+EXPLAIN PIPELINE header = 1: 0 0 0
+EXPLAIN PIPELINE graph = 1, header = 1: 0 0 0
+EXPLAIN PIPELINE graph = 1, compact = 0: 0 0 0
+EXPLAIN ESTIMATE: 0 0 0
+-- none_view for the reader with the format setting but without the privilege
+0 0 1
+-- none_view: the reader still queries it
+0
+-- none_view: the processors of its plan are logged under the sealed step
+1	0
+-- the default user holds every privilege, so it sees both plans
+1 1 0
+1 1 0
+-- definer_view for its definer: the plan is shown, with the value folded from the private table
+1 1 0
+0 1 0
+-- none_view for the same user: no definer to match
+0 0 1
+-- a user with SET DEFINER on the definer but without SELECT on the private table does not see the plan
+0 0 1
+0 0 1
+-- nor does a user with ALLOW SQL SECURITY NONE
+0 0 1
+-- with the privileges to read everything, but without CREATE VIEW, the same user still does not see the plans
+0 0 1
+0 0 1
+-- with CREATE VIEW as well, the same user sees both plans
+1 1 0
+1 1 0

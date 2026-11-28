@@ -9,7 +9,7 @@
     </create_query>
 
     <fill_query>
-        INSERT INTO promql_set_operator_presence_mask_ts (metric_name, tags, time_series)
+        INSERT INTO promql_set_operator_presence_mask_ts (metric_name, tags, samples)
         SELECT
             if(number &lt; 4000, 'foo', 'bar'),
             map('instance', toString(number % 4000)),

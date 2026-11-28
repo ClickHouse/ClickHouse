@@ -13,12 +13,10 @@ keywords: ['SQL Console', 'SET ROLE', 'RBAC', 'Управление доступ
 При выполнении `SET ROLE` в SQL Console ClickHouse Cloud может показаться, что роль меняется для одного запроса, а для следующего возвращается к прежней. Если разрешения должны сохраняться между запросами и сеансами, используйте роль SQL Console для пользователя.
 
 <Tip>
-  Для управления доступом к базе данных из консоли предпочтительно использовать [роли базы данных, управляемые Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (бета). Роли `sql-console-role:<email>` несовместимы с [JWT-аутентификацией](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+  Для управления доступом к базе данных из консоли предпочтительно использовать [роли базы данных, управляемые Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles). Роли `sql-console-role:<email>` несовместимы с JWT-сеансами в SQL console.
 </Tip>
 
-<div id="symptoms">
-  ## Симптомы
-</div>
+## Симптомы {#symptoms}
 
 Возможны один или несколько из следующих симптомов:
 
@@ -37,9 +35,7 @@ SELECT
     defaultRoles();
 ```
 
-<div id="why-this-happens">
-  ## Почему это происходит
-</div>
+## Почему это происходит {#why-this-happens}
 
 SQL Console отправляет запросы через HTTP-соединения без сохранения состояния в сервис ClickHouse Cloud с несколькими репликами. Не гарантируется, что последовательные запросы будут использовать одно и то же соединение или реплику.
 
@@ -47,9 +43,7 @@ SQL Console отправляет запросы через HTTP-соединен
 
 Поэтому не используйте `SET ROLE` в качестве постоянного механизма контроля доступа в SQL Console.
 
-<div id="how-sql-console-user-roles-work">
-  ## Как работают роли пользователей в SQL Console
-</div>
+## Как работают роли пользователей в SQL Console {#how-sql-console-user-roles-work}
 
 Когда пользователь открывает SQL Console, ClickHouse Cloud создаёт пользователя базы данных по следующему соглашению об именовании:
 
@@ -71,9 +65,7 @@ sql-console-role:user@example.com
 | `sql_console_admin` and `sql_console_read_only` | Встроенные роли SQL Console                                                     | Да, управляется ClickHouse Cloud       |
 | `sql-console-role:<email>`                      | Настраиваемая роль для отдельного пользователя, созданная администратором       | Да, применяется при входе пользователя |
 
-<div id="configure-persistent-permissions">
-  ## Настройка постоянных разрешений
-</div>
+## Настройка постоянных разрешений {#configure-persistent-permissions}
 
 Выполните следующие команды от имени пользователя с административными привилегиями в сервисе, например пользователя SQL Console с ролью `sql_console_admin` или другого пользователя с привилегией `ACCESS MANAGEMENT`.
 
@@ -135,9 +127,7 @@ sql-console-role:user@example.com
   </Step>
 </Steps>
 
-<div id="avoid-modifying-managed-roles">
-  ## Не изменяйте управляемые роли
-</div>
+## Не изменяйте управляемые роли {#avoid-modifying-managed-roles}
 
 Не изменяйте `sql_console_admin` и `sql_console_read_only`, чтобы назначить настраиваемые разрешения. ClickHouse Cloud управляет этими встроенными ролями. Для назначения разрешений отдельным пользователям используйте `sql-console-role:<email>`.
 

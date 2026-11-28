@@ -1,6 +1,6 @@
 -- { echo }
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SET engine_file_truncate_on_insert = 1;
 -- Nullable struct with non-nullable elements
 DROP TABLE IF EXISTS test_nullable_tuple_basic;
@@ -165,11 +165,12 @@ DROP TABLE IF EXISTS test_nullable_tuple_describe;
 CREATE TABLE test_nullable_tuple_describe (c0 Nullable(Tuple(UInt32, String))) ENGINE = Memory;
 INSERT INTO test_nullable_tuple_describe VALUES ((1, 'a')), (NULL), ((3, 'c'));
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_describe.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_describe;
--- Parquet V3 native reader: inferred type (struct-level NULL not supported, becomes (NULL,NULL))
+-- Parquet V3 native reader: an OPTIONAL group with an all-REQUIRED subtree is inferred as
+-- Nullable(Tuple), so the struct-level NULL survives inference.
 SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04065_describe.parquet', 'Parquet');
-(1,'a')	Tuple(\n    `1` Nullable(UInt32),\n    `2` Nullable(String))
-(NULL,NULL)	Tuple(\n    `1` Nullable(UInt32),\n    `2` Nullable(String))
-(3,'c')	Tuple(\n    `1` Nullable(UInt32),\n    `2` Nullable(String))
+(1,'a')	Nullable(Tuple(`1` Nullable(UInt32), `2` Nullable(String)))
+\N	Nullable(Tuple(`1` Nullable(UInt32), `2` Nullable(String)))
+(3,'c')	Nullable(Tuple(`1` Nullable(UInt32), `2` Nullable(String)))
 DROP TABLE test_nullable_tuple_describe;
 -- Array(Nullable(Tuple)) flattened via import_nested
 DROP TABLE IF EXISTS test_nullable_tuple_import_nested;
@@ -219,14 +220,35 @@ CREATE TABLE test_nullable_tuple_opt_ancestor (c0 Nullable(Tuple(inner Tuple(a U
 INSERT INTO test_nullable_tuple_opt_ancestor VALUES (((1,),)), (NULL), (((3,),));
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_opt_ancestor;
 SELECT `c0.inner` FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', '`c0.inner` Nullable(Tuple(a UInt32))'); -- { serverError TYPE_MISMATCH }
+SELECT c0 FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', 'c0 Nullable(Tuple(inner Tuple(z UInt32)))');
+((0))
+\N
+((0))
+SELECT `c0.inner` FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', '`c0.inner` Tuple(z UInt32)') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT `c0.inner` FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', '`c0.inner` Tuple(a Nullable(UInt32))') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT c0 FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', 'c0 Tuple(inner Tuple(a Nullable(UInt32)))') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 DROP TABLE test_nullable_tuple_opt_ancestor;
--- Physically nullable struct read as Nullable(Tuple) where every requested element is missing and
--- synthesized (input_format_parquet_allow_missing_columns). With no physical leaf, the group null
--- map cannot be reconstructed, so reject rather than fabricate an all-non-null map (would abort /
--- read past the decoded-leaf array otherwise).
+-- Physically nullable struct read as Nullable(Tuple) where every requested element is missing: the group null map is read
+-- from the definition levels of one of its leaves.
 DROP TABLE IF EXISTS test_nullable_tuple_all_missing;
 CREATE TABLE test_nullable_tuple_all_missing (c0 Nullable(Tuple(a UInt32, b UInt64))) ENGINE = Memory;
 INSERT INTO test_nullable_tuple_all_missing VALUES ((1, 10)), (NULL), ((3, 30));
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_all_missing;
-SELECT c0 FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet', 'c0 Nullable(Tuple(z String))') SETTINGS input_format_parquet_allow_missing_columns = 1; -- { serverError TYPE_MISMATCH }
+SELECT c0 FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet', 'c0 Nullable(Tuple(z String))') SETTINGS input_format_parquet_allow_missing_columns = 1;
+('')
+\N
+('')
+SELECT count() FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet', 'c0 Nullable(Tuple(z String))') WHERE c0 IS NULL;
+1
+SELECT c0 FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet', 'c0 Tuple(z String)') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT c0 FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet', 'c0 Tuple(a Nullable(UInt32))') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_no_null.parquet', 'Parquet') SELECT CAST(tuple(toUInt32(1)), 'Nullable(Tuple(a UInt32))') AS c0;
+SELECT c0 FROM file(currentDatabase() || '_04065_no_null.parquet', 'Parquet', 'c0 Tuple(a Nullable(UInt32))') SETTINGS input_format_null_as_default = 0;
+(1)
+SELECT c0 FROM file(currentDatabase() || '_04065_no_null.parquet', 'Parquet', 'c0 Tuple(z UInt32)') SETTINGS input_format_null_as_default = 0;
+(0)
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_all_missing_arr.parquet', 'Parquet') SELECT [CAST((1, 10), 'Nullable(Tuple(a UInt32, b UInt64))'), NULL] AS c0;
+SELECT c0 FROM file(currentDatabase() || '_04065_all_missing_arr.parquet', 'Parquet', 'c0 Array(Nullable(Tuple(z String)))');
+[(''),NULL]
+SELECT c0 FROM file(currentDatabase() || '_04065_all_missing_arr.parquet', 'Parquet', 'c0 Array(Tuple(z String))') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 DROP TABLE test_nullable_tuple_all_missing;

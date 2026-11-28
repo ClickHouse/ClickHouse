@@ -58,7 +58,6 @@ SETTINGS select_sequential_consistency = 0, optimize_trivial_count_query = 0, en
 SELECT 'local_pinned', count() FROM t_pinned_pr_r1
 SETTINGS select_sequential_consistency = 1, optimize_trivial_count_query = 0, enable_parallel_replicas = 0;
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET automatic_parallel_replicas_mode = 0, parallel_replicas_min_number_of_rows_per_replica = 0;

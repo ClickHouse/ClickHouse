@@ -1,0 +1,83 @@
+l.x < r.y
+right routed	1
+right	1
+full routed	1
+full	1
+full is left plus unmatched build	1
+l.x + l.id > r.y
+right routed	1
+right	1
+full routed	1
+full	1
+full is left plus unmatched build	1
+sipHash64(l.x, r.y) % 4 = 0
+right routed	1
+right	1
+full routed	1
+full	1
+full is left plus unmatched build	1
+l.s LIKE r.s
+right routed	1
+right	1
+full routed	1
+full	1
+full is left plus unmatched build	1
+l.x + r.y < -1000000
+right routed	1
+right	1
+full routed	1
+full	1
+full is left plus unmatched build	1
+join_use_nulls = 0
+0	\N		13	\N	%
+0	\N		15	-2	
+1	1	a	11	2	a%
+1	1	a	12	4	b%
+1	1	a	14	8	z%
+2	5	ab	14	8	z%
+5	3	abc	12	4	b%
+5	3	abc	14	8	z%
+6	-2	A	11	2	a%
+6	-2	A	12	4	b%
+6	-2	A	14	8	z%
+-
+0	\N		11	2	a%
+0	\N		12	4	b%
+0	\N		13	\N	%
+0	\N		14	8	z%
+0	\N		15	-2	
+1	1	a	0	\N	
+2	5	ab	0	\N	
+3	\N	b	0	\N	
+4	9		0	\N	
+5	3	abc	0	\N	
+6	-2	A	0	\N	
+--
+join_use_nulls = 1
+1	1	a	11	2	a%
+1	1	a	12	4	b%
+1	1	a	14	8	z%
+2	5	ab	14	8	z%
+5	3	abc	12	4	b%
+5	3	abc	14	8	z%
+6	-2	A	11	2	a%
+6	-2	A	12	4	b%
+6	-2	A	14	8	z%
+\N	\N	\N	13	\N	%
+\N	\N	\N	15	-2	
+-
+1	1	a	\N	\N	\N
+2	5	ab	\N	\N	\N
+3	\N	b	\N	\N	\N
+4	9		\N	\N	\N
+5	3	abc	\N	\N	\N
+6	-2	A	\N	\N	\N
+\N	\N	\N	11	2	a%
+\N	\N	\N	12	4	b%
+\N	\N	\N	13	\N	%
+\N	\N	\N	14	8	z%
+\N	\N	\N	15	-2	
+--
+chunked	1
+chunked count	1497
+right chunked count	1246

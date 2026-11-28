@@ -3,8 +3,6 @@
 -- self-reference node whose analysis data is never initialized, instead of the initialized FROM-clause node.
 -- It must now expand the same columns a qualified column (x.a) or an unqualified matcher (*) would.
 
-SET enable_analyzer = 1;
-
 -- Exact fuzzer shape: x.* is the identity here, so the recursion never terminates and must report a regular
 -- query error (TOO_DEEP_RECURSION), not abort the server. Wrapped in count() so no partial rows stream before
 -- the error fires.

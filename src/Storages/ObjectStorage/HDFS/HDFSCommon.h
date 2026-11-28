@@ -76,7 +76,7 @@ public:
         return *this;
     }
 
-    hdfsBuilder * get() const { return hdfs_builder; }
+    [[nodiscard]] hdfsBuilder * get() const { return hdfs_builder; }
 
     #if USE_KRB5
     void runKinit() const;
@@ -117,16 +117,6 @@ String getNameNodeCluster(const String & hdfs_url);
 /// Check that url satisfy structure 'hdfs://<host_name>:<port>/<path>'
 /// and throw exception if it doesn't;
 void checkHDFSURL(const String & url);
-
-/// Best-effort removal of the emptied parent directories of `path`, walking up to (but not
-/// including) `root_directory`. Unlike blob storages, HDFS has real directories, and the
-/// generated object keys contain a nested directory prefix that is created on write; removing
-/// a blob must clean up the emptied prefix directories, or every removed blob leaks one
-/// directory and the NameNode namespace grows without bound.
-/// A `root_directory` of `/` disables the walk entirely: it means the storage does not own
-/// a dedicated directory (the `HDFS` table engine / `hdfs` table function case), and the
-/// ancestors of `path` are user-managed directories that must not be pruned.
-void removeEmptiedParentDirectories(hdfsFS fs, const String & path, const String & root_directory) noexcept;
 
 }
 #endif

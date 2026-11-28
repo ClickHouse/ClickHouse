@@ -7,13 +7,9 @@ description: 'Implante o ClickHouse na sua própria infraestrutura de nuvem'
 doc_type: 'reference'
 ---
 
-<div id="aws-iam-roles">
-  ## Funções do IAM da AWS
-</div>
+## Funções do IAM da AWS {#aws-iam-roles}
 
-<div id="bootstrap-iam-role">
-  ### Função do IAM Bootstrap
-</div>
+### Função do IAM Bootstrap {#bootstrap-iam-role}
 
 A função do IAM Bootstrap tem as seguintes permissões:
 
@@ -22,9 +18,7 @@ A função do IAM Bootstrap tem as seguintes permissões:
 * **Operações de IAM (por exemplo, `iam:CreatePolicy`)**: Necessárias para que os controladores criem funções adicionais (consulte a próxima seção para mais detalhes).
 * **Operações de EKS**: Limitadas a recursos com nomes que começam com o prefixo `clickhouse-cloud`.
 
-<div id="additional-iam-roles-created-by-the-controller">
-  ### Funções adicionais do IAM criadas pelo controlador
-</div>
+### Funções adicionais do IAM criadas pelo controlador {#additional-iam-roles-created-by-the-controller}
 
 Além da `ClickHouseManagementRole` criada via CloudFormation, o controlador criará várias outras funções.
 
@@ -34,7 +28,7 @@ Essas funções são assumidas por aplicações executadas no cluster EKS do cli
   * Componente do ClickHouse que reporta informações sobre a saúde do serviço ao ClickHouse Cloud.
   * Requer permissão para gravar em uma fila do SQS pertencente ao ClickHouse Cloud.
 * **Controlador de balanceador de carga**
-  * Controlador padrão de load balancer da AWS.
+  * Controlador padrão de balanceador de carga da AWS.
   * Controlador EBS CSI para gerenciar volumes dos serviços do ClickHouse.
 * **External-DNS**
   * Propaga configurações de DNS para o Route 53.
@@ -42,18 +36,17 @@ Essas funções são assumidas por aplicações executadas no cluster EKS do cli
   * Provisiona certificados TLS para domínios de serviço BYOC.
 * **Cluster Autoscaler**
   * Ajusta o tamanho do grupo de nós conforme necessário.
+* **Armazenamento de monitoramento (Thanos)**
+  * Assumida pelas workloads do Prometheus e do Thanos no seu cluster.
+  * Grava e faz leituras da retenção de métricas de longo prazo, restrita ao bucket de monitoramento na sua própria conta.
 
 As funções **K8s-control-plane** e **k8s-worker** destinam-se a ser assumidas por serviços do AWS EKS.
 
 Por fim, **`data-plane-mgmt`** permite que um componente do plano de controle do ClickHouse Cloud faça a reconciliação dos recursos personalizados necessários, como `ClickHouseCluster` e o Istio Virtual Service/Gateway.
 
-<div id="gcp-service-accounts">
-  ## Contas de serviço do GCP
-</div>
+## Contas de serviço do GCP {#gcp-service-accounts}
 
-<div id="bootstrap-service-account">
-  ### Conta de serviço Bootstrap
-</div>
+### Conta de serviço Bootstrap {#bootstrap-service-account}
 
 A conta de serviço Bootstrap recebe funções personalizadas com escopo no projeto com as seguintes permissões:
 
@@ -63,9 +56,7 @@ A conta de serviço Bootstrap recebe funções personalizadas com escopo no proj
 * **Storage**: Usada para gerenciar buckets do Cloud Storage usados para backups do ClickHouse, estado compartilhado e dados de monitoramento.
 * **IAM Role**: Gerencia contas de serviço e funções personalizadas dentro do projeto. Essa função não concede a capacidade de criar chaves de conta de serviço, vincular políticas da organização nem modificar quaisquer recursos em outros projetos.
 
-<div id="additional-service-accounts-created-by-the-controller">
-  ### Contas de serviço adicionais criadas pelo controlador
-</div>
+### Contas de serviço adicionais criadas pelo controlador {#additional-service-accounts-created-by-the-controller}
 
 Além da conta de serviço `clickhouse-management`, criada via Terraform como parte do onboarding, quando você provisiona seu primeiro serviço BYOC, o plano de controle do ClickHouse (autenticando-se como `clickhouse-management`) cria contas de serviço adicionais no seu projeto para cargas de trabalho específicas no cluster. Cada uma delas é criada com um conjunto de permissões restrito e voltado a uma única finalidade.
 
@@ -79,13 +70,11 @@ Além da conta de serviço `clickhouse-management`, criada via Terraform como pa
 * **Identidade de gerenciamento de runtime do ClickHouse**
   * Usada pelo controlador de gerenciamento do plano de dados em runtime do ClickHouse, que lida com operações pós-implantação, como gerenciamento de endpoints do Private Service Connect, ajustes no ciclo de vida de buckets e rotação de contas de serviço.
 
-<div id="azure-roles-and-identities">
-  ## Funções e identidades do Azure
-</div>
+O state exporter, que publica eventos de status de serviço e de backup no ClickHouse Cloud, foi deliberadamente deixado de fora desta lista: no GCP, sua identidade de publicação é uma conta de serviço pertencente ao ClickHouse, em um projeto pertencente ao ClickHouse, e não uma conta criada no seu. O que é criado no seu projeto é um vínculo de Workload Identity que permite que a conta de serviço `state-exporter` no cluster represente essa identidade. Nenhum material de chave está envolvido, e a identidade que publica no Pub/Sub não detém permissões no seu projeto.
 
-<div id="onboarding-service-principal">
-  ### Principal de serviço de onboarding
-</div>
+## Funções e identidades do Azure {#azure-roles-and-identities}
+
+### Principal de serviço de onboarding {#onboarding-service-principal}
 
 O onboarding com o [módulo do Terraform para Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) provisiona um aplicativo multilocatário como um Aplicativo Empresarial (principal de serviço) no seu tenant, seguindo as orientações do Azure para autenticação entre tenants. Ao principal de serviço é atribuída uma função personalizada com privilégios mínimos, limitada à assinatura de destino, com permissões para:
 
@@ -95,9 +84,7 @@ O onboarding com o [módulo do Terraform para Azure](https://github.com/ClickHou
 * **Identidade**: Gerenciar identidades gerenciadas atribuídas pelo usuário e suas credenciais de identidade federada na assinatura.
 * **Autorização**: Gerenciar definições de função personalizadas e atribuições de função. Todas as permissões são limitadas à assinatura de destino — a função não pode acessar recursos em outras assinaturas ou tenants.
 
-<div id="additional-managed-identities-created-by-the-controller">
-  ### Identidades gerenciadas adicionais criadas pelo controlador
-</div>
+### Identidades gerenciadas adicionais criadas pelo controlador {#additional-managed-identities-created-by-the-controller}
 
 Ao provisionar serviços BYOC, o plano de controle do ClickHouse cria identidades gerenciadas atribuídas pelo usuário em sua assinatura. Cada uma é federada a uma conta de serviço específica do Kubernetes (Workload Identity) e tem um conjunto de permissões restrito a uma única finalidade:
 
@@ -105,4 +92,13 @@ Ao provisionar serviços BYOC, o plano de controle do ClickHouse cria identidade
   * Usada por cada serviço do ClickHouse para acessar sua própria conta de armazenamento, que contém dados de tabelas e backups, por meio de uma função personalizada de armazenamento de blobs com escopo nessa conta.
   * Quando um serviço é restaurado de um backup, ele também recebe acesso somente leitura ao contêiner de backup do serviço de origem.
 * **Identidade de infraestrutura compartilhada**
-  * Usada pelo controlador de gerenciamento do plano de dados em runtime do ClickHouse para operações contínuas, como o gerenciamento de serviços Private Link.
+  * Usada pelo controlador de gerenciamento do plano de dados em runtime do ClickHouse para operações pós-implantação, como o gerenciamento de serviços Private Link.
+* **Identidade de monitoramento**
+  * Federada à carga de trabalho do Thanos em seu cluster, por meio de uma função personalizada com escopo no acesso ao armazenamento de monitoramento.
+  * Grava e lê a retenção de métricas de longo prazo em sua própria assinatura.
+
+Assim como no GCP, o state exporter está deliberadamente ausente desta lista: sua identidade de publicação é uma identidade gerenciada atribuída pelo usuário pertencente ao ClickHouse, em uma assinatura pertencente ao ClickHouse. O que é criado do seu lado é uma credencial de identidade federada que permite que a conta de serviço `state-exporter` dentro do cluster obtenha tokens para ela, sem troca de secrets. A identidade que publica no Service Bus não possui nenhuma permissão em sua assinatura.
+
+<Note>
+  Isso difere da AWS, onde a função de publicação é criada em sua própria conta e assume uma função do lado do ClickHouse para alcançar a fila. No GCP e no Azure, a identidade de publicação fica inteiramente do lado do ClickHouse e seu cluster apenas se federa a ela, portanto não há nenhuma permissão adicional na conta para você auditar nesse fluxo. O egress em si está inventariado em [limites de rede](/pt-BR/products/bring-your-own-cloud/reference/network-security#outbound-connections).
+</Note>

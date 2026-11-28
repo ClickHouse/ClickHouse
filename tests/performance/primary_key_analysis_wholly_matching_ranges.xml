@@ -1,0 +1,24 @@
+<test>
+    <!-- Many key ranges that wholly match the filter, in parts that are analysed in parallel. -->
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE pk_wholly_matching_ranges (c1 DateTime, c2 UInt8, c3 LowCardinality(String), c4 UInt32)
+        ENGINE = MergeTree PARTITION BY toDate(c1) PRIMARY KEY (c1, c2, c3) ORDER BY (c1, c2, c3, c4)
+        SETTINGS index_granularity = 1
+    </create_query>
+
+    <fill_query>
+        INSERT INTO pk_wholly_matching_ranges
+        SELECT toDateTime('2026-09-01 00:00:00') + (number % 16) * 86400 + intDiv(number, 64), intDiv(number, 16) % 2,
+               concat('e', toString(number % 5)), number
+        FROM numbers_mt(1200000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE pk_wholly_matching_ranges FINAL</fill_query>
+
+    <query>SELECT * FROM pk_wholly_matching_ranges WHERE c2 LIMIT 1 SETTINGS max_threads = 8 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS pk_wholly_matching_ranges</drop_query>
+</test>

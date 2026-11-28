@@ -81,3 +81,19 @@ SELECT accurateCastOrNull('garbage', 'Time64(3)');
 SELECT accurateCastOrDefault('garbage', 'Time64(3)');
 
 DROP TABLE t64_values;
+
+-- Coverage for SerializationTime.cpp: JSON and CSV text serializer/deserializer paths
+-- (lines 139-143 serializeTextJSON, 146-159 deserializeTextJSON, 195-200 deserializeTextCSV quoted)
+-- not covered by existing Time64 format tests (which only use text/binary formats).
+
+SELECT '--- Time JSON/CSV ---';
+
+-- serializeTextJSON: Time value to JSON string (lines 139-143)
+SELECT CAST('12:34:56' AS Time) AS t FORMAT JSONEachRow;
+
+-- deserializeTextJSON: parse quoted string and bare integer (lines 147-156)
+SELECT t FROM format(JSONEachRow, 't Time', '{"t":"12:34:56"}
+{"t":45056}');
+
+-- deserializeTextCSV quoted branch (lines 195-200)
+SELECT t FROM format(CSV, 't Time', '"12:34:56"');

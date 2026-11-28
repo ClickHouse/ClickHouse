@@ -16,7 +16,7 @@ public:
     BlockIO execute() override;
 
 private:
-    AccessRightsElements getRequiredAccess() const;
+    [[nodiscard]] AccessRightsElements getRequiredAccess() const;
 
     ASTPtr query_ptr;
 };

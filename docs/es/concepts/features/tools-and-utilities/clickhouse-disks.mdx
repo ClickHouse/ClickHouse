@@ -8,26 +8,20 @@ doc_type: 'reference'
 
 Una utilidad que ofrece operaciones similares a las de un sistema de archivos para los discos de ClickHouse. Puede funcionar tanto en modo interactivo como en modo no interactivo.
 
-<div id="program-wide-options">
-  ## Opciones globales del programa
-</div>
+## Opciones globales del programa {#program-wide-options}
 
-* `--config-file, -C` -- ruta del archivo de configuración de ClickHouse; el valor predeterminado es `/etc/clickhouse-server/config.xml`.
+* `--config-file, -C` -- ruta del archivo de configuración de ClickHouse. De forma predeterminada, se utiliza el primero que exista entre `/etc/clickhouse-server/config.xml`, `/etc/clickhouse-server/config.yaml` y `/etc/clickhouse-server/config.yml`.
 * `--save-logs` -- registra el progreso de los comandos invocados en `/var/log/clickhouse-server/clickhouse-disks.log`.
 * `--log-level` -- qué [tipo](/es/reference/settings/server-settings/settings/other#logger) de eventos se registra; el valor predeterminado es `none`.
 * `--disk` -- qué disco usar para los comandos `mkdir, move, read, write, remove`. El valor predeterminado es `default`.
 * `--query, -q` -- consulta única que puede ejecutarse sin iniciar el modo interactivo
 * `--help, -h` -- imprime todas las opciones y comandos con su descripción
 
-<div id="lazy-initialization">
-  ## Inicialización diferida
-</div>
+## Inicialización diferida {#lazy-initialization}
 
 Todos los discos disponibles en la configuración se inicializan de forma diferida. Esto significa que el objeto correspondiente a un disco se inicializa solo cuando dicho disco se utiliza en algún comando. Esto se hace para que la utilidad sea más robusta y para evitar acceder a discos descritos en la configuración pero que el usuario no utiliza y que podrían fallar durante la inicialización. Sin embargo, debe haber un disco que se inicialice al arrancar `clickhouse-disks`. Este disco se especifica con el parámetro `--disk` en la línea de comandos (el valor predeterminado es `default`).
 
-<div id="default-disks">
-  ## Discos predeterminados
-</div>
+## Discos predeterminados {#default-disks}
 
 Tras iniciarse, hay dos discos que no están especificados en la configuración, pero que están disponibles para su inicialización.
 
@@ -35,17 +29,13 @@ Tras iniciarse, hay dos discos que no están especificados en la configuración,
 
 2. **Disco `default`**: Este disco está montado en el sistema de archivos local en el directorio especificado por el parámetro `clickhouse/path` en la configuración (el valor predeterminado es `/var/lib/clickhouse`). Su ruta inicial está establecida en `/`.
 
-<div id="clickhouse-disks-state">
-  ## Estado de clickhouse-disks
-</div>
+## Estado de clickhouse-disks {#clickhouse-disks-state}
 
 Para cada disco que se añade, la utilidad guarda el directorio actual (como en un sistema de archivos habitual). El usuario puede cambiar el directorio actual y pasar de un disco a otro.
 
 El estado se refleja en el indicador &quot;`disk_name`:`path_name`&quot;
 
-<div id="commands">
-  ## Comandos
-</div>
+## Comandos {#commands}
 
 En este archivo de documentación, todos los argumentos posicionales obligatorios se representan como `<parameter>`, y los argumentos con nombre, como `[--parameter value]`. Todos los parámetros posicionales también pueden indicarse como parámetros con nombre con el nombre correspondiente.
 

@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Plan-based parallel replicas ships a serialized plan fragment with query-level constants folded on
 -- the initiator, so every replica uses the same value. This guards against per-replica constant
 -- divergence (e.g. randConstant(), now64()), which the old ReadFromParallelRemoteReplicasStep path had
@@ -8,7 +9,6 @@ DROP TABLE IF EXISTS t_pr_const;
 CREATE TABLE t_pr_const (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_pr_const SELECT number FROM numbers(100000);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

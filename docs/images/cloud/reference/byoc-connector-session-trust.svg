@@ -53,20 +53,24 @@
   <text x="1140" y="330" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Connector API endpoint</text>
   <text x="1140" y="353" text-anchor="middle" font-size="11" fill="#7d7d7d">receives outbound connections only</text>
 
-  <!-- ===== Outbound WebSocket with session gate ===== -->
-  <line x1="760" y1="340" x2="886" y2="340" stroke="#3b82f6" stroke-width="1.75"/>
-  <circle cx="890" cy="340" r="3.5" fill="#3b82f6"/>
-  <line x1="890" y1="340" x2="930" y2="314" stroke="#3b82f6" stroke-width="2"/>
-  <circle cx="936" cy="340" r="3.5" fill="#3b82f6"/>
-  <line x1="940" y1="340" x2="1024" y2="340" stroke="#3b82f6" stroke-width="1.75" marker-end="url(#ah-a)"/>
-  <text x="858" y="280" text-anchor="middle" font-size="12" font-weight="600" fill="#3b82f6">outbound WebSocket</text>
-  <text x="858" y="298" text-anchor="middle" font-size="11" fill="#3b82f6">mTLS + request signing</text>
-  <text x="890" y="372" text-anchor="middle" font-size="11.5" font-weight="600" fill="#3b82f6">closed by default</text>
-  <text x="890" y="390" text-anchor="middle" font-size="11" fill="#3b82f6">opens only during an active session</text>
+  <!-- ===== Outbound WebSocket, always connected ===== -->
+  <line x1="760" y1="340" x2="1024" y2="340" stroke="#3b82f6" stroke-width="1.75" marker-end="url(#ah-a)"/>
+  <text x="865" y="280" text-anchor="middle" font-size="12" font-weight="600" fill="#3b82f6">outbound WebSocket</text>
+  <text x="865" y="298" text-anchor="middle" font-size="11" fill="#3b82f6">mTLS + request signing</text>
+
+  <!-- Command gate on the open channel -->
+  <rect x="910" y="310" width="82" height="52" rx="6" fill="#8a8a8a" fill-opacity="0.16" stroke="#7d7d7d" stroke-width="1.25"/>
+  <circle cx="928" cy="340" r="3.5" fill="#7d7d7d"/>
+  <line x1="928" y1="340" x2="964" y2="316" stroke="#7d7d7d" stroke-width="2"/>
+  <circle cx="974" cy="340" r="3.5" fill="#7d7d7d"/>
+  <text x="951" y="380" text-anchor="middle" font-size="11.5" font-weight="600" fill="#7d7d7d">command gate</text>
+  <text x="872" y="402" text-anchor="middle" font-size="11.5" font-weight="600" fill="#3b82f6">always connected</text>
+  <text x="872" y="420" text-anchor="middle" font-size="11" fill="#3b82f6">carries commands only</text>
+  <text x="872" y="436" text-anchor="middle" font-size="11" fill="#3b82f6">during an active session</text>
 
   <!-- Session state controls the gate -->
-  <path d="M735 240 L940 240 L940 306" fill="none" stroke="#7d7d7d" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#ah-n)"/>
-  <text x="845" y="228" text-anchor="middle" font-size="11" fill="#7d7d7d">session state</text>
+  <path d="M735 240 L951 240 L951 304" fill="none" stroke="#7d7d7d" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#ah-n)"/>
+  <text x="843" y="228" text-anchor="middle" font-size="11" fill="#7d7d7d">session state</text>
 
   <!-- ===== Never inbound ===== -->
   <line x1="1000" y1="490" x2="786" y2="490" stroke="#e05252" stroke-width="1.75" stroke-dasharray="6 5" marker-end="url(#ah-r)"/>

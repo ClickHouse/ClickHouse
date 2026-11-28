@@ -2,6 +2,7 @@
 
 #include <Common/BitHelpers.h>
 #include <Common/Exception.h>
+#include <Common/ServerOwnedMemory.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB
@@ -191,8 +192,8 @@ std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::Builder::finish()
         memcpy(exact_packed.data(), packed.data(), required_length * sizeof(UInt64));
     packed = std::move(exact_packed);
 
-    return std::shared_ptr<MarksInCompressedFile>(
-        new MarksInCompressedFile(total_marks, std::move(blocks), std::move(packed)));
+    /// Marks are kept in the mark cache, so they are the server's, also when a query drops the last reference.
+    return makeServerOwned<MarksInCompressedFile>(total_marks, std::move(blocks), std::move(packed));
 }
 
 }

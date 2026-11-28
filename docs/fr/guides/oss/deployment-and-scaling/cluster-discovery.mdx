@@ -6,32 +6,19 @@ title: 'Découverte des clusters'
 doc_type: 'guide'
 ---
 
-<div id="overview">
-  ## Vue d’ensemble
-</div>
+## Vue d’ensemble {#overview}
 
 La fonctionnalité découverte des clusters de ClickHouse simplifie la configuration du cluster en permettant aux nœuds de se découvrir et de s’enregistrer automatiquement, sans nécessiter de définition explicite dans les fichiers de configuration. Cela est particulièrement utile lorsque la définition manuelle de chaque nœud devient fastidieuse.
 
 <Note>
-  découverte des clusters est une fonctionnalité expérimentale qui peut être modifiée ou supprimée dans de futures versions.
-  Pour l’activer, incluez le paramètre `allow_experimental_cluster_discovery` dans votre fichier de configuration :
-
-  ```xml
-  <clickhouse>
-      <!-- ... -->
-      <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
-      <!-- ... -->
-  </clickhouse>
-  ```
+  La découverte des clusters nécessite que [ClickHouse Keeper](/fr/guides/sre/keeper/clickhouse-keeper) ou ZooKeeper soit configuré.
+  Dans les versions antérieures, il s’agissait d’une fonctionnalité expérimentale qu’il fallait activer via le paramètre `allow_experimental_cluster_discovery` dans le fichier de configuration.
+  Ce paramètre est désormais obsolète et n’a plus aucun effet.
 </Note>
 
-<div id="remote-servers-configuration">
-  ## Configuration des serveurs distants
-</div>
+## Configuration des serveurs distants {#remote-servers-configuration}
 
-<div id="traditional-manual-configuration">
-  ### Configuration manuelle traditionnelle
-</div>
+### Configuration manuelle traditionnelle {#traditional-manual-configuration}
 
 Traditionnellement, dans ClickHouse, chaque shard et chaque réplique du cluster devaient être spécifiés manuellement dans la configuration :
 
@@ -63,9 +50,7 @@ Traditionnellement, dans ClickHouse, chaque shard et chaque réplique du cluster
 
 ```
 
-<div id="using-cluster-discovery">
-  ### Utiliser découverte des clusters
-</div>
+### Utiliser découverte des clusters {#using-cluster-discovery}
 
 Avec découverte des clusters, au lieu de définir explicitement chaque nœud, vous indiquez simplement un chemin dans ZooKeeper. Tous les nœuds qui s’enregistrent sous ce chemin dans ZooKeeper seront automatiquement détectés et ajoutés au cluster.
 
@@ -113,9 +98,7 @@ pour `node3` et `node4` :
 </discovery>
 ```
 
-<div id="observer-mode">
-  ### Mode observateur
-</div>
+### Mode observateur {#observer-mode}
 
 Les nœuds configurés en mode observateur ne s’enregistreront pas en tant que répliques.
 Ils se contenteront d’observer et de détecter les autres répliques actives du cluster, sans y participer activement.
@@ -128,9 +111,7 @@ Pour activer le mode observateur, incluez la balise `<observer/>` dans la sectio
 </discovery>
 ```
 
-<div id="discovery-of-clusters">
-  ### Découverte des clusters
-</div>
+### Découverte des clusters {#discovery-of-clusters}
 
 Il peut parfois être nécessaire d’ajouter et de supprimer non seulement des hôtes au sein des clusters, mais aussi les clusters eux-mêmes. Vous pouvez utiliser le nœud `<multicluster_root_path>` comme chemin racine pour plusieurs clusters :
 
@@ -171,9 +152,7 @@ Limites :
 * `<multicluster_root_path>` ne peut être utilisé qu’avec `<observer/>`.
 * Le dernier segment du chemin dans Keeper est utilisé comme nom du cluster, tandis que lors de l’enregistrement, le nom est tiré de la balise XML.
 
-<div id="use-cases-and-limitations">
-  ## Cas d’utilisation et limites
-</div>
+## Cas d’utilisation et limites {#use-cases-and-limitations}
 
 À mesure que des nœuds sont ajoutés au chemin ZooKeeper spécifié ou en sont supprimés, ils sont automatiquement découverts ou retirés du cluster, sans qu’il soit nécessaire de modifier la configuration ni de redémarrer le serveur.
 

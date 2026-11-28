@@ -1,0 +1,36 @@
+-- the inner join is rejected, the right side of the outer join is read lazily
+996	l996	r498
+990	l990	r495
+984	l984	r492
+978	l978	r489
+972	l972	r486
+996	l996	r498
+990	l990	r495
+984	l984	r492
+978	l978	r489
+972	l972	r486
+1
+-- the rejected join is on the right side
+996	l996	m332
+990	l990	m330
+984	l984	m328
+978	l978	m326
+972	l972	m324
+996	l996	m332
+990	l990	m330
+984	l984	m328
+978	l978	m326
+972	l972	m324
+1
+-- both joins are rejected, nothing is read lazily
+996	l996	r498
+990	l990	r495
+984	l984	r492
+978	l978	r489
+972	l972	r486
+996	l996	r498
+990	l990	r495
+984	l984	r492
+978	l978	r489
+972	l972	r486
+0

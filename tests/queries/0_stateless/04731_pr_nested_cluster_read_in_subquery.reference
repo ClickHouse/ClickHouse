@@ -1,0 +1,17 @@
+-- cluster() in an IN subquery, local_plan = 0
+100
+server alive
+-- cluster() in an IN subquery, local_plan = 1
+100
+server alive
+-- clusterAllReplicas() in an IN subquery
+100
+server alive
+-- three replicas
+100
+server alive
+-- plan-based parallel replicas
+100
+server alive
+-- a local IN subquery is still read with parallel replicas
+1

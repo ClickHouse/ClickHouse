@@ -73,10 +73,10 @@ public:
     }
 
     void next() override { it->next(); }
-    bool isValid() const override { return it->isValid(); }
-    bool isFile() const override { return isValid() && disk->existsFile(it->path()); }
-    std::string name() const override { return it->name(); }
-    std::string path() const override { return it->path(); }
+    [[nodiscard]] bool isValid() const override { return it->isValid(); }
+    [[nodiscard]] bool isFile() const override { return isValid() && disk->existsFile(it->path()); }
+    [[nodiscard]] std::string name() const override { return it->name(); }
+    [[nodiscard]] std::string path() const override { return it->path(); }
 
 private:
     DiskPtr disk;
@@ -255,6 +255,18 @@ void DataPartStorageOnDiskFull::commitTransaction()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot commit shared transaction");
 
     transaction->commit();
+    transaction.reset();
+}
+
+void DataPartStorageOnDiskFull::undoTransaction()
+{
+    if (!transaction)
+        return;
+
+    if (has_shared_transaction)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot undo shared transaction");
+
+    transaction->undo();
     transaction.reset();
 }
 

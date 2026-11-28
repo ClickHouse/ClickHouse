@@ -8,7 +8,7 @@ keywords: ['ClickStack', 'Demo days']
 ---
 
 <div id="alert-detail-page-with-evaluation-history">
-  ## Page de détail des alertes avec historique des évaluations
+  ## Page de détail des alertes avec historique des évaluations {#alert-detail-page-with-evaluation-history}
 </div>
 
 *Démo par [@wrn14897](https://github.com/wrn14897)*
@@ -30,7 +30,7 @@ Les compartiments ignorés rendent visible le retard accumulé. Une valeur de se
 **PR associés :** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) modèle de lecture des évaluations d’alertes et GET /alerts/:id/evaluations, [#2834](https://github.com/hyperdxio/hyperdx/pull/2834) persistance des erreurs d’évaluation d’alertes et des données d’analytics dans AlertHistory, [#2835](https://github.com/hyperdxio/hyperdx/pull/2835) page de détail des alertes avec historique des évaluations
 
 <div id="measuring-metric-tool-adoption-in-the-mcp-with-evals">
-  ## Mesurer l’adoption des outils de métriques dans le MCP avec des évaluations
+  ## Mesurer l’adoption des outils de métriques dans le MCP avec des évaluations {#measuring-metric-tool-adoption-in-the-mcp-with-evals}
 </div>
 
 *Démo par [@karl-power](https://github.com/karl-power)*
@@ -58,14 +58,14 @@ La suite consiste à effectuer suffisamment d’exécutions pour comprendre le r
 **PR associés :** [#2730](https://github.com/hyperdxio/hyperdx/pull/2730) ajout du scénario deploy-regression (mesure de l’adoption spontanée des outils de métriques), [#2717](https://github.com/hyperdxio/hyperdx/pull/2717) renforcement du scénario metric-saturation, [#2694](https://github.com/hyperdxio/hyperdx/pull/2694) évaluation et signalement de l’adoption des outils de métriques, [#2855](https://github.com/hyperdxio/hyperdx/pull/2855) exposition des métriques récapitulatives via le MCP
 
 <div id="distributed-tables-histograms-and-faster-trace-lookups">
-  ## Tables distribuées, histogrammes et recherches de traces plus rapides
+  ## Tables distribuées, histogrammes et recherches de traces plus rapides {#distributed-tables-histograms-and-faster-trace-lookups}
 </div>
 
-*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
 
 <iframe width="768" height="432" src="https://www.youtube.com/embed/VQKNOb45pcs" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
-Cette fois-ci, il s’agit d’un ensemble de correctifs mineurs, dont plusieurs ont été apportés à la suite des retours de l’équipe ClickHouse. Le plus simple concernait l’absence d’un bouton d’effacement dans une section de filtres, alors que toutes les autres en disposaient déjà. Un bouton global « Tout effacer » reste toutefois sur la liste des souhaits.
+Cette fois-ci, il s’agit d’un ensemble de correctifs mineurs, dont plusieurs ont été apportés à la suite des retours de l’équipe ClickHouse. Le plus simple concernait l’absence d’un bouton d’effacement dans une section de filtres, alors que toutes les autres en disposaient déjà. Un bouton global « Tout effacer » reste toutefois sur la liste des souhaits.
 
 Le cas des tables distribuées était plus complexe. Certaines tables cibles sous-jacentes ne déclarent pas toutes les colonnes exposées par la table distribuée. ClickStack exécute un `SELECT *` lors du chargement des détails complets d’une ligne, ce qui échoue avec cette configuration. Le panneau latéral de la ligne affichait déjà une erreur, mais pas la ligne développée, et aucun des deux n’expliquait pourquoi ClickStack exécutait un `SELECT *` au départ. Les deux vues affichent désormais l’erreur avec suffisamment de contexte pour que les indications soient utiles.
 
@@ -79,14 +79,14 @@ Le correctif de limite de séries est plus subtil. Lorsqu’un `GROUP BY` produi
 
 La sélection de source par défaut sur la page de recherche a également changé. Auparavant, elle sélectionnait la première source configurée, même si celle-ci contenait des métriques ou des sessions. Les utilisateurs pouvaient ainsi tomber sur une erreur de source incompatible pour un choix qu’ils n’avaient pas fait. La recherche utilise désormais par défaut la première source activée qu’elle peut réellement utiliser.
 
-La sélection d’une trace depuis un panneau latéral de journal masquait également une recherche coûteuse. HyperDX effectuait une recherche uniquement par span et ID de trace, en ignorant la partition d’horodatage et les clés primaires. Cela devient lent dans les déploiements à fort volume. La recherche est désormais limitée à une plage de dates déduite de la source, avec un repli délibéré vers une requête non limitée lorsque la fenêtre ne renvoie aucun résultat. Un journal lié à un span ayant commencé plusieurs heures plus tôt est un exemple où ce repli est important.
+La sélection d’une trace depuis un panneau latéral de journal masquait également une recherche coûteuse. L’UI de ClickStack effectuait une recherche uniquement par span et ID de trace, en ignorant la partition d’horodatage et les clés primaires. Cela devient lent dans les déploiements à fort volume. La recherche est désormais limitée à une plage de dates déduite de la source, avec un repli délibéré vers une requête non limitée lorsque la fenêtre ne renvoie aucun résultat. Un journal lié à un span ayant commencé plusieurs heures plus tôt est un exemple où ce repli est important.
 
-Les liens profonds par nom de source ont été ajoutés la semaine précédente, suivis de la question tout à fait légitime de savoir comment les utilisateurs étaient censés les découvrir. Les paramètres d’URL acceptés par chaque page étaient déjà considérés comme un contrat ; ils sont donc désormais documentés en tant que tel. Les filtres de source constituent la seule omission, car ils restent pour l’instant réservés à ClickHouse. Une passe de documentation distincte a ajouté des champs de configuration de source tels que les liens de spans, couvrant à la fois les ajouts récents et quelques éléments qui avaient simplement été oubliés.
+Les liens profonds par nom de source ont été ajoutés la semaine précédente, suivis de la question tout à fait légitime de savoir comment les utilisateurs étaient censés les découvrir. Les paramètres d’URL acceptés par chaque page étaient déjà considérés comme un contrat ; ils sont donc désormais documentés en tant que tel. Les filtres de source constituent la seule omission, car ils restent pour l’instant réservés à ClickHouse. Une passe de documentation distincte a ajouté des champs de configuration de source tels que les liens de spans, couvrant à la fois les ajouts récents et quelques éléments qui avaient simplement été oubliés.
 
 **PR associées :** [#2771](https://github.com/hyperdxio/hyperdx/pull/2771) améliore la gestion des erreurs de SELECT * sur les tables distribuées et l’étend aux lignes développées, [#2817](https://github.com/hyperdxio/hyperdx/pull/2817) détecte automatiquement les tables de métriques uniquement lorsque la sélection de la base de données change, [#2794](https://github.com/hyperdxio/hyperdx/pull/2794) n’infère pas les tables de métriques pour les sources qui possèdent déjà des tables (ouverte), [#2793](https://github.com/hyperdxio/hyperdx/pull/2793) masque les fonctions d’agrégation non prises en charge pour les métriques d’histogramme, [#2796](https://github.com/hyperdxio/hyperdx/pull/2796) rejette dans query&#95;tile les tuiles d’histogramme persistantes avec des aggFns non prises en charge (ouverte), [#2759](https://github.com/hyperdxio/hyperdx/pull/2759) utilise la valeur du ratio pour le classement des séries limitées en mode ratio, [#2769](https://github.com/hyperdxio/hyperdx/pull/2769) empêche la page Search de sélectionner par défaut un type de source incompatible, [#2816](https://github.com/hyperdxio/hyperdx/pull/2816) limite à une fenêtre temporelle la recherche d’une ligne dans le panneau latéral après View Trace, [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) ajoute la configuration de variables de filtre
 
 <div id="heatmap-percentiles-and-lucene-search-from-contributors">
-  ## Percentiles de la carte de chaleur et améliorations de la recherche Lucene apportées par des contributeurs
+  ## Percentiles de la carte de chaleur et améliorations de la recherche Lucene apportées par des contributeurs {#heatmap-percentiles-and-lucene-search-from-contributors}
 </div>
 
 *Démo par [@pulpdrew](https://github.com/pulpdrew)*
@@ -110,7 +110,7 @@ Les exemples intégrés à l&#39;application, accessibles via le sélecteur de l
 **PR associées :** [#2789](https://github.com/hyperdxio/hyperdx/pull/2789) afficher le contexte de percentile dans l&#39;infobulle de survol de la carte de chaleur, [#2779](https://github.com/hyperdxio/hyperdx/pull/2779) prendre en charge les bornes de plage ouvertes, exclusives et non numériques, [#2774](https://github.com/hyperdxio/hyperdx/pull/2774) échapper les métacaractères LIKE dans les termes de recherche, [#2841](https://github.com/hyperdxio/hyperdx/pull/2841) échapper une seule fois les indices de Map dans les recherches numériques et Bool, [#2837](https://github.com/hyperdxio/hyperdx/pull/2837) ajouter des exemples pour la nouvelle syntaxe Lucene
 
 <div id="red-metrics-on-trace-search">
-  ## Métriques RED dans la recherche de traces
+  ## Métriques RED dans la recherche de traces {#red-metrics-on-trace-search}
 </div>
 
 *Démo par [@alex-fedotyev](https://github.com/alex-fedotyev)*
@@ -132,7 +132,7 @@ Nous serions ravis de recueillir vos retours sur ce comportement.
 **PR associés :** [#2826](https://github.com/hyperdxio/hyperdx/pull/2826) affiche les métriques RED dans la vue des résultats de recherche de traces (ouvert, exploratoire)
 
 <div id="custom-log-columns-in-the-clickhouse-grafana-plugin">
-  ## Colonnes de logs personnalisées dans le plugin Grafana ClickHouse
+  ## Colonnes de logs personnalisées dans le plugin Grafana ClickHouse {#custom-log-columns-in-the-clickhouse-grafana-plugin}
 </div>
 
 *Démonstration par [@alex-fedotyev](https://github.com/alex-fedotyev)*
@@ -154,7 +154,7 @@ La modification était encore en cours de révision lors de cette démonstration
 **PR associées :** [grafana/clickhouse-datasource#2108](https://github.com/grafana/clickhouse-datasource/pull/2108) parcourir et filtrer selon n’importe quelle colonne d’une table de logs (ouverte au moment de la démonstration)
 
 <div id="capping-high-cardinality-series-at-the-source">
-  ## Limitation des séries à forte cardinalité à la source
+  ## Limitation des séries à forte cardinalité à la source {#capping-high-cardinality-series-at-the-source}
 </div>
 
 *Démonstration par [@brandon-pereira](https://github.com/brandon-pereira)*
@@ -174,7 +174,7 @@ La bonne solution pour un graphique qui atteint régulièrement l’un ou l’au
 **PR associées :** [#2802](https://github.com/hyperdxio/hyperdx/pull/2802) limite les séries à forte cardinalité des graphiques temporels avec des options pour tout charger, [#2856](https://github.com/hyperdxio/hyperdx/pull/2856) limite à la source le coût des tuiles SQL brutes avec une limite de lignes/cardinalité côté serveur (ouverte)
 
 <div id="exemplars-from-a-metric-chart-to-the-trace">
-  ## Exemplaires : d’un graphique de métriques à la trace
+  ## Exemplaires : d’un graphique de métriques à la trace {#exemplars-from-a-metric-chart-to-the-trace}
 </div>
 
 *Démo par [@jordan-simonovski](https://github.com/jordan-simonovski)*
@@ -198,7 +198,7 @@ Les tests ont révélé quelques petits bugs, dont certains avaient déjà été
 **PR associés :** [#2805](https://github.com/hyperdxio/hyperdx/pull/2805) dériver des métriques de requête avec des exemplaires de trace à partir de spans (ouvert), [#2806](https://github.com/hyperdxio/hyperdx/pull/2806) ajouter /v1/prometheus/query&#95;exemplars et renforcer le proxy, [#2807](https://github.com/hyperdxio/hyperdx/pull/2807) répartir les deux plus grands fichiers de graphiques dans des répertoires, [#2808](https://github.com/hyperdxio/hyperdx/pull/2808) surcouche d’exemplaires pour les graphiques temporels de métriques et PromQL (ouvert), [#2809](https://github.com/hyperdxio/hyperdx/pull/2809) accepter les paramètres d’exemplaires sur les tuiles créées par l’API et l’agent (ouvert)
 
 <div id="terraform-import-helpers-and-batch-export">
-  ## Assistants d’importation Terraform et exportation par lot
+  ## Assistants d’importation Terraform et exportation par lot {#terraform-import-helpers-and-batch-export}
 </div>
 
 *Démo par [@jordan-simonovski](https://github.com/jordan-simonovski)*
@@ -218,12 +218,12 @@ Les secrets sont délibérément exclus de l’API V2. Une requête `GET` ne ren
 **PR associés :** [#2741](https://github.com/hyperdxio/hyperdx/pull/2741) ajoute des assistants d’importation Terraform pour les ressources ClickStack
 
 <div id="shared-chart-components-visual-polish-and-a-drafts-proposal">
-  ## Composants de graphiques partagés, peaufinage visuel et proposition de brouillons
+  ## Composants de graphiques partagés, peaufinage visuel et proposition de brouillons {#shared-chart-components-visual-polish-and-a-drafts-proposal}
 </div>
 
 *Démo par [@elizabetdev](https://github.com/elizabetdev)*
 
-<iframe width="768" height="432" src="https://www.youtube.com/embed/GsKnLckFfBE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+<iframe width="768" height="432" src="https://www.youtube.com/embed/GsKnLckFfBE" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
 Les cartes des tableaux de bord personnalisés et celles des préréglages avaient fini par diverger visuellement, ce qui soulevait une question évidente : pourquoi n&#39;utilisaient-elles pas le même composant dès le départ ? C&#39;est désormais le cas. Un ChartCard partagé encapsule les graphiques autonomes dans les mêmes primitives que les tuiles de tableau de bord, afin de conserver la cohérence des bordures, de l&#39;espacement interne et du séparateur d&#39;en-tête pleine largeur sans avoir à les ajuster manuellement. Faire passer les deux chemins par un seul composant s&#39;est avéré plus complexe que prévu, mais ils produisent désormais le même rendu en interne. Il reste quelques ajustements à effectuer pour les cartes sans contrôles à droite, qui doivent conserver une hauteur cohérente.
 

@@ -26,6 +26,9 @@ public:
         kErrorHandling,
     };
 
+    /// The backup and restore coordination calls `finish` and `cleanup` with `throw_if_error = false` only while handling an error.
+    static Kind kindForThrowIfError(bool throw_if_error) { return throw_if_error ? kNormal : kErrorHandling; }
+
     /// For simplicity a separate ZooKeeperRetriesInfo and a faulty [Zoo]Keeper client
     /// are stored in one place.
     /// This helps to avoid writing too much boilerplate each time we need to

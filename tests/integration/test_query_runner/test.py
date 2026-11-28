@@ -123,7 +123,7 @@ def test_cluster_query_log():
         node_query_runner,
         "SELECT is_initial_query, user, initial_user, authenticated_user FROM system.query_log "
         "WHERE log_comment = 'qr_cluster_log' AND is_internal AND type = 'QueryFinish' LIMIT 1",
-        "1\t\t\tdefault",
+        "1\t\tdefault\tdefault",
     )
     node_cluster.query("SYSTEM FLUSH LOGS query_log")
     assert_eq_with_retry(
@@ -131,6 +131,22 @@ def test_cluster_query_log():
         "SELECT is_initial_query, user, initial_user, authenticated_user, client_name FROM system.query_log "
         "WHERE log_comment = 'qr_cluster_log' AND NOT is_internal AND type = 'QueryFinish' LIMIT 1",
         "1\tcluster_user\tcluster_user\tcluster_user\tClickHouse QueryRunner",
+    )
+
+
+def test_cluster_query_log_hides_secrets():
+    node_query_runner.query(runner_ddl("query String, settings Map(String, String)", "synchronous", "cluster"))
+    node_query_runner.query(
+        "INSERT INTO runner VALUES ("
+        "'SELECT * FROM url(''http://cluster_user:cluster_secret@node_cluster:8123/?query=SELECT+1'', ''LineAsString'', ''s String'')', "
+        "{'log_comment': 'qr_cluster_log_secret'})"
+    )
+    node_query_runner.query("SYSTEM FLUSH LOGS query_log")
+    assert_eq_with_retry(
+        node_query_runner,
+        "SELECT type, query LIKE '%[HIDDEN]%', query LIKE '%cluster_secret%' FROM system.query_log "
+        "WHERE log_comment = 'qr_cluster_log_secret' AND is_internal ORDER BY type",
+        "QueryStart\t1\t0\nQueryFinish\t1\t0",
     )
 
 

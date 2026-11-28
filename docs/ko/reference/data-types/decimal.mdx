@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 덧셈, 뺄셈, 곱셈 연산에서 정밀도를 유지하는 부호 있는 고정소수점 수입니다. 나눗셈에서는 최하위 자릿수를 버리며(반올림하지 않음).
 
-<div id="parameters">
-  ## 매개변수
-</div>
+## 매개변수 {#parameters}
 
 * P - 정밀도. 유효 범위: [ 1 : 76 ]. 숫자가 가질 수 있는 전체 10진수 자릿수(소수 부분 포함)를 결정합니다. 기본 정밀도은 10입니다.
 * S - scale. 유효 범위: [ 0 : P ]. 소수 부분이 가질 수 있는 10진수 자릿수를 결정합니다.
@@ -27,9 +25,7 @@ P 매개변수 값에 따라 Decimal(P, S)는 다음과 같은 별칭입니다:
 * P가 [ 19 : 38 ] 범위이면 - Decimal128(S)
 * P가 [ 39 : 76 ] 범위이면 - Decimal256(S)
 
-<div id="decimal-value-ranges">
-  ## Decimal 값 범위
-</div>
+## Decimal 값 범위 {#decimal-value-ranges}
 
 * Decimal(P, S) - (-1 * 10^(P - S), 1 * 10^(P - S))
 * Decimal32(S) - (-1 * 10^(9 - S), 1 * 10^(9 - S))
@@ -39,17 +35,13 @@ P 매개변수 값에 따라 Decimal(P, S)는 다음과 같은 별칭입니다:
 
 예를 들어, Decimal32(4)는 -99999.9999부터 99999.9999까지의 숫자를 0.0001 간격으로 표현할 수 있습니다.
 
-<div id="internal-representation">
-  ## 내부 표현
-</div>
+## 내부 표현 {#internal-representation}
 
 내부적으로 데이터는 각 비트 폭에 해당하는 일반적인 부호 있는 정수로 표현됩니다. 메모리에 저장할 수 있는 실제 값의 범위는 위에서 지정한 범위보다 약간 더 크며, 이 범위는 문자열에서 변환할 때만 검사됩니다.
 
 현대 CPU는 128비트 및 256비트 정수를 네이티브로 지원하지 않으므로 Decimal128 및 Decimal256 연산은 에뮬레이션됩니다. 따라서 Decimal128 및 Decimal256은 Decimal32/Decimal64보다 훨씬 느리게 동작합니다.
 
-<div id="operations-and-result-type">
-  ## 연산 및 결과 유형
-</div>
+## 연산 및 결과 유형 {#operations-and-result-type}
 
 Decimal에 대한 이항 연산의 결과는 인수 순서와 관계없이 더 넓은 결과 유형이 됩니다.
 
@@ -70,9 +62,7 @@ Decimal과 Float32/Float64 사이의 연산은 정의되어 있지 않습니다.
 
 Decimal에 대한 일부 함수는 결과를 Float64로 반환합니다(예: var 또는 stddev). 중간 계산은 여전히 Decimal에서 수행될 수 있으므로, 값이 같더라도 Float64 입력과 Decimal 입력의 결과가 달라질 수 있습니다.
 
-<div id="overflow-checks">
-  ## 오버플로우 검사
-</div>
+## 오버플로우 검사 {#overflow-checks}
 
 Decimal 계산 중에는 정수 오버플로우가 발생할 수 있습니다. 소수부의 자릿수가 너무 많으면 버려지며(반올림되지 않음), 정수부의 자릿수가 너무 많으면 예외가 발생합니다.
 
@@ -119,14 +109,14 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 └────────────┴──────────────────────────────────┘
 ```
 
-오버플로우 검사는 산술 연산뿐만 아니라 값 비교에서도 수행됩니다:
+`decimal_check_overflow`가 활성화된 상태(기본값)에서는 소수 자릿수(scale)가 서로 다른 값을 정확하게 비교합니다. 공통 소수 자릿수(scale)로 맞췄을 때 값이 해당 타입의 범위를 벗어나더라도 마찬가지입니다:
 
 ```sql
 SELECT toDecimal32(1, 8) < 100
 ```
 
 ```text
-DB::Exception: Can't compare.
+1
 ```
 
 **관련 항목**

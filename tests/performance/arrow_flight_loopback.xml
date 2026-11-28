@@ -1,0 +1,67 @@
+<!--
+    Arrow Flight client and server of the same binary over loopback. `DoGet` (`arrowFlight` table function): a wide and a
+    narrow table, and a view with the rows of the wide table in ~6500-row blocks (the per-block cost of the server side; such a
+    view is about 5x slower to send than a table). `DoPut` (`INSERT INTO FUNCTION arrowFlight`): the two tables into `Null`,
+    so the server decodes the record batches and keeps nothing.
+    The nightly harness starts each server with its own `arrowflight_port`; the address comes from `getServerPort`, so the text
+    is the same on both servers. No TLS; the two-argument form sends no credentials and the server authenticates the call as
+    `default_session_user` (`default`, no password). The server runs the whole query in `GetFlightInfo` and keeps the result
+    until `DoGet`, so the sources are bounded: a `DoGet` of all of `hits_10m_single` needs more than 30 GB on the server.
+    Layout: a Flight path names a table of `default`; `flight_wide` is a tenth of `hits_10m_single` (1 M rows, 105 columns,
+    sparse columns kept: the Flight server converts them, #125553), `flight_narrow` all 10 M rows of 5 columns, one part each.
+    The setup checks that each `DoGet` returns its source and each timed `DoPut` input arrives complete in a `Memory` copy
+    (count and fingerprint of every column).
+    Per server and invocation: about 1 GB written to disk (parts of 0.2 and 0.31 GB, inserted and rewritten once by
+    `OPTIMIZE FINAL`), 0.5 GB stays; no S3.
+-->
+<test run_all_queries="1" max_query_seconds="60">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+</settings>
+
+<substitutions>
+    <substitution>
+        <name>flight</name>
+        <values><value>concat('127.0.0.1:', toString(getServerPort('arrowflight_port')))</value></values>
+    </substitution>
+</substitutions>
+
+<create_query>CREATE TABLE flight_wide ENGINE = MergeTree ORDER BY tuple() EMPTY AS SELECT * FROM hits_10m_single</create_query>
+<create_query>CREATE TABLE flight_narrow ENGINE = MergeTree ORDER BY tuple() EMPTY AS SELECT CounterID, EventDate, UserID, URL, SearchPhrase FROM hits_10m_single</create_query>
+<create_query>CREATE VIEW flight_filtered AS SELECT * FROM hits_10m_single WHERE WatchID % 10 = 0</create_query>
+<create_query>CREATE TABLE flight_sink_wide ENGINE = Null AS flight_wide</create_query>
+<create_query>CREATE TABLE flight_sink_narrow ENGINE = Null AS flight_narrow</create_query>
+<create_query>CREATE TABLE flight_check ENGINE = Memory AS flight_wide</create_query>
+<create_query>CREATE TABLE flight_check_narrow ENGINE = Memory AS flight_narrow</create_query>
+
+<fill_query>INSERT INTO flight_wide SELECT * FROM hits_10m_single WHERE WatchID % 10 = 0</fill_query>
+<fill_query>INSERT INTO flight_narrow SELECT CounterID, EventDate, UserID, URL, SearchPhrase FROM hits_10m_single</fill_query>
+<fill_query>OPTIMIZE TABLE flight_wide FINAL</fill_query>
+<fill_query>OPTIMIZE TABLE flight_narrow FINAL</fill_query>
+<fill_query>SELECT throwIf(count() = 0) FROM system.parts_columns WHERE database = 'default' AND table = 'flight_wide' AND active AND serialization_kind = 'Sparse'</fill_query>
+<fill_query>SELECT throwIf((SELECT (count(), sum(cityHash64(*))) FROM arrowFlight({flight}, 'flight_wide')) != (SELECT (count(), sum(cityHash64(*))) FROM flight_wide))</fill_query>
+<fill_query>SELECT throwIf((SELECT (count(), sum(cityHash64(*))) FROM arrowFlight({flight}, 'flight_narrow')) != (10000000, (SELECT sum(cityHash64(*)) FROM flight_narrow)))</fill_query>
+<fill_query>SELECT throwIf((SELECT (count(), sum(cityHash64(*))) FROM arrowFlight({flight}, 'flight_filtered')) != (SELECT (count(), sum(cityHash64(*))) FROM hits_10m_single WHERE WatchID % 10 = 0))</fill_query>
+<fill_query>INSERT INTO FUNCTION arrowFlight({flight}, 'flight_check') SELECT * FROM flight_wide</fill_query>
+<fill_query>SELECT throwIf((SELECT (count(), sum(cityHash64(*))) FROM flight_check) != (SELECT (count(), sum(cityHash64(*))) FROM flight_wide))</fill_query>
+<fill_query>TRUNCATE TABLE flight_check</fill_query>
+<fill_query>INSERT INTO FUNCTION arrowFlight({flight}, 'flight_check_narrow') SELECT * FROM flight_narrow</fill_query>
+<fill_query>SELECT throwIf((SELECT (count(), sum(cityHash64(*))) FROM flight_check_narrow) != (SELECT (count(), sum(cityHash64(*))) FROM flight_narrow))</fill_query>
+<fill_query>TRUNCATE TABLE flight_check_narrow</fill_query>
+
+<query>SELECT * FROM arrowFlight({flight}, 'flight_wide') FORMAT Null</query>
+<query>SELECT * FROM arrowFlight({flight}, 'flight_narrow') FORMAT Null</query>
+<query type="shell"><![CDATA[
+    ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION arrowFlight(concat('127.0.0.1:', toString(getServerPort('arrowflight_port'))), 'flight_sink_wide') SELECT * FROM flight_wide"
+]]></query>
+<query type="shell"><![CDATA[
+    ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION arrowFlight(concat('127.0.0.1:', toString(getServerPort('arrowflight_port'))), 'flight_sink_narrow') SELECT * FROM flight_narrow"
+]]></query>
+<query>SELECT * FROM arrowFlight({flight}, 'flight_filtered') FORMAT Null</query>
+
+<drop_query>DROP TABLE IF EXISTS flight_wide, flight_narrow, flight_filtered, flight_sink_wide, flight_sink_narrow, flight_check, flight_check_narrow SYNC</drop_query>
+
+</test>

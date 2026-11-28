@@ -1,9 +1,14 @@
 #pragma once
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <base/defines.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+
+#include <mutex>
 
 
 namespace DB
@@ -14,6 +19,45 @@ using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
 
 class UncompressedCache;
 class CachedCompressedReadBuffer;
+
+struct RuntimeDataflowStatisticsBlock;
+
+/// The ranges of the files the readers of a read load, counted into its statistics, each range once however many readers
+/// load it.
+class ReadRangesRegistry
+{
+public:
+    /// `duplicated` is that of the `RuntimeDataflowStatisticsCacheUpdater` of the read.
+    ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_);
+
+    /// The counted ranges of a file. The readers of several threads count the same file.
+    class ReadRanges
+    {
+    public:
+        /// The bytes of the ranges not counted yet, which become counted. Clears the ranges.
+        size_t add(CompressedBlockRanges & ranges);
+
+    private:
+        std::mutex mutex;
+        /// Merged, by their begin.
+        MapWithMemoryTracking<size_t, size_t> united_ranges TSA_GUARDED_BY(mutex);
+    };
+
+    /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.
+    ReadRanges & getReadRanges(const String & path);
+
+    /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet. Clears `ranges`.
+    void registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges);
+
+private:
+    const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
+    const bool duplicated;
+
+    std::mutex mutex;
+    UnorderedMapWithMemoryTracking<String, ReadRanges> read_ranges_by_path TSA_GUARDED_BY(mutex);
+};
+
+using ReadRangesRegistryPtr = std::shared_ptr<ReadRangesRegistry>;
 
 /// Basic and the most low-level class
 /// for reading single columns or indexes.
@@ -61,9 +105,20 @@ public:
 
     size_t getFileSize() const { return file_size; }
 
+    /// See `CompressedReadBufferBase::setRangesReadSink`. Must not be called for a stream of uncompressed data.
+    void setRangesReadSink(CompressedBlockRanges * ranges_read_);
+
+    /// Announces the new map if the buffer exists.
+    void updateReadRequestMap(MarkRangesPtr request_map_);
+
 private:
     /// Returns offset in file up to which it's needed to read file to read all rows up to @right_mark mark.
     virtual size_t getRightOffset(size_t right_mark) = 0;
+
+    /// Offset of the first byte of @mark, or `nullopt` when marks do not delimit what the stream reads.
+    virtual std::optional<size_t> getLeftOffset(size_t /* mark */) { return std::nullopt; }
+
+    void announceReadRequestMap();
 
     /// Returns estimated max amount of bytes to read among mark ranges (which is used as size for read buffer)
     /// and total amount of bytes to read in all mark ranges.
@@ -81,6 +136,7 @@ private:
     ReadBuffer * data_buffer = nullptr;
     ReadBufferFromFileBase * plain_file_buffer = nullptr;
     CompressedReadBufferBase * compressed_data_buffer = nullptr;
+    CompressedBlockRanges * ranges_read = nullptr;
     std::unique_ptr<ReadBuffer> read_buffer_holder;
 
     bool initialized = false;
@@ -96,6 +152,9 @@ protected:
 
     const MergeTreeMarksLoaderPtr marks_loader;
     MergeTreeMarksGetterPtr marks_getter;
+
+private:
+    MarkRangesPtr request_map;
 };
 
 /// Class for reading a single column (or index) from file
@@ -110,6 +169,7 @@ public:
     }
 
     size_t getRightOffset(size_t right_mark_non_included) override;
+    std::optional<size_t> getLeftOffset(size_t mark) override;
     std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, 0); }
 };
@@ -142,6 +202,7 @@ public:
 
 protected:
     size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);
+    std::optional<size_t> getLeftOffsetOneColumn(size_t mark, size_t column_position);
     std::pair<size_t, size_t> estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position);
     MarkInCompressedFile getStartOfNextStripeMark(size_t row_index, size_t column_position);
 };
@@ -159,6 +220,7 @@ public:
     }
 
     size_t getRightOffset(size_t right_mark_non_included) override;
+    std::optional<size_t> getLeftOffset(size_t mark) override { return getLeftOffsetOneColumn(mark, column_position); }
     std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, column_position); }
 
@@ -178,6 +240,8 @@ public:
     }
 
     size_t getRightOffset(size_t right_mark_non_included) override;
+    /// The first column comes first in a granule.
+    std::optional<size_t> getLeftOffset(size_t mark) override { return getLeftOffsetOneColumn(mark, 0); }
     std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, 0); }
 };
