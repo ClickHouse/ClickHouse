@@ -109,7 +109,7 @@ Chunk TTLCalcTransform::generate()
 
 void TTLCalcTransform::finalize()
 {
-    data_part->ttl_infos = {};
+    data_part->ttl_infos.resetBounds();
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
 }

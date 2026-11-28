@@ -54,12 +54,19 @@ struct MergeTreeDataPartTTLInfos
 
     TTLInfoMap group_by_ttl;
 
+    /// `time_of_merge` of the latest TTL merge in the history of the part (with `persist_ttl_merge_times`), zero if none.
+    time_t last_delete_ttl_merge_time = 0;
+    time_t last_recompression_ttl_merge_time = 0;
+
     /// Return the smallest max recompression TTL value
     [[nodiscard]] time_t getMinimalMaxRecompressionTTL() const;
 
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
     void update(const MergeTreeDataPartTTLInfos & other_infos);
+
+    /// Drop all TTL bounds before they are calculated again, but keep the times of the past TTL merges.
+    void resetBounds();
 
     /// Has any TTLs which are not calculated on completely expired parts.
     [[nodiscard]] bool hasAnyNonFinishedTTLs() const;
