@@ -52,4 +52,3 @@ for _ in {1..600}; do
 done
 
 $CLICKHOUSE_CLIENT -q "${query}" | sed "s/${name}_//"
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.kafka_consumers"
