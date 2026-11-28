@@ -6,6 +6,9 @@
 #include <Columns/ColumnConst.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
+#include <Common/likePatternToRegexp.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -215,8 +218,17 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                 /// times the same factor; and an element with no ranges at all - an unknown atom, say -
                 /// has nothing to flip, so the switch below would leave it unchanged and it would go on
                 /// to report the selectivity of the un-negated predicate. Finalize both first, so the
-                /// negation applies to a plain selectivity.
-                if (!last_element->finalized && (last_element->hasAbsorbed() || last_element->isConstantFactor()))
+                /// negation applies to a plain selectivity. Column factors count as an absorbed factor, but
+                /// one column's factor alone flips to `1 - f`: it applies to the non-NULL rows, where `NOT`
+                /// only swaps TRUE and FALSE.
+                if (last_element->isSingleColumnFactor())
+                {
+                    Float64 & factor = last_element->column_factors.begin()->second;
+                    factor = 1.0 - factor;
+                    break;
+                }
+                if (!last_element->finalized
+                    && (last_element->hasAbsorbed() || !last_element->column_factors.empty() || last_element->isConstantFactor()))
                     last_element->finalize(column_estimators, metadata);
                 if (last_element->finalized)
                     last_element->selectivity = last_element->selectivity.applyNot();
@@ -319,6 +331,88 @@ bool isAlwaysTrueEquality(const ActionsDAG::Node & node)
         || which.isStringOrFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6();
 }
 
+namespace
+{
+
+/// `LIKE` and the `startsWith`/`endsWith` family, which `LIKE 'p%'`/`'%s'` are rewritten to.
+struct StringPatternFunction
+{
+    bool negated = false;
+    bool case_insensitive = false;
+    bool affix = false;
+};
+
+const std::unordered_map<std::string_view, StringPatternFunction> string_pattern_functions{
+    {"like", {}},
+    {"notLike", {.negated = true}},
+    {"ilike", {.case_insensitive = true}},
+    {"notILike", {.negated = true, .case_insensitive = true}},
+    {"startsWith", {.affix = true}},
+    {"startsWithUTF8", {.affix = true}},
+    {"startsWithCaseInsensitive", {.affix = true}},
+    {"startsWithCaseInsensitiveUTF8", {.affix = true}},
+    {"endsWith", {.affix = true}},
+    {"endsWithUTF8", {.affix = true}},
+    {"endsWithCaseInsensitive", {.affix = true}},
+    {"endsWithCaseInsensitiveUTF8", {.affix = true}},
+};
+
+/// The constant pattern or needle, with the `ESCAPE` character of `LIKE` folded in as `KeyCondition` does.
+std::optional<String> tryGetStringPattern(const RPNBuilderFunctionTreeNode & func, const StringPatternFunction & fn)
+{
+    const size_t num_args = func.getArgumentsSize();
+    const bool has_escape = !fn.affix && num_args == 3;
+    Field pattern;
+    DataTypePtr pattern_type;
+    if ((num_args != 2 && !has_escape) || !func.getArgumentAt(1).tryGetConstant(pattern, pattern_type) || !isString(pattern_type))
+        return {};
+    if (!has_escape)
+        return pattern.safeGet<String>();
+
+    Field escape;
+    DataTypePtr escape_type;
+    if (!func.getArgumentAt(2).tryGetConstant(escape, escape_type) || !isString(escape_type))
+        return {};
+    const String & escape_str = escape.safeGet<String>();
+    if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
+        return {};
+    return likePatternWithCustomEscapeToLikePattern(pattern.safeGet<String>(), escape_str[0]);
+}
+
+/// The values the pattern matches, when they form a range: `s LIKE 'abc'` is `s = 'abc'`, and `s LIKE '%'` or
+/// `startsWith(s, '')` holds for every non-NULL `s`.
+std::optional<Range> getStringPatternRange(const StringPatternFunction & fn, const String & pattern, const DataTypePtr & haystack_type)
+{
+    if (!isStringOrFixedString(haystack_type) && !isEnum(haystack_type))
+        return {};
+    if (fn.affix)
+        return pattern.empty() ? std::optional<Range>(Range::createWholeUniverseWithoutNull()) : std::nullopt;
+
+    const auto fixed_prefix = extractFixedPrefixFromLikePattern(pattern, /*requires_perfect_prefix*/ true);
+    const bool matches_every_string = fixed_prefix.is_perfect && fixed_prefix.prefix.empty();
+    if (matches_every_string)
+        return Range::createWholeUniverseWithoutNull();
+
+    /// `ILIKE` is `=` only for ''. `=` pads a `FixedString` and `LIKE` does not, so they agree only at its full length.
+    if (!fixed_prefix.is_exact || (fn.case_insensitive && !fixed_prefix.prefix.empty()))
+        return {};
+    if (isString(haystack_type)
+        || (isFixedString(haystack_type) && fixed_prefix.prefix.size() == assert_cast<const DataTypeFixedString &>(*haystack_type).getN()))
+        return Range(fixed_prefix.prefix);
+    return {};
+}
+
+/// `LIKE` compares every byte of a `FixedString(N)`, padding included, so an exact pattern of another length matches none.
+bool matchesNoFixedString(const StringPatternFunction & fn, const String & pattern, const DataTypePtr & haystack_type)
+{
+    if (fn.affix || fn.case_insensitive || !isFixedString(haystack_type))
+        return false;
+    const auto fixed_prefix = extractFixedPrefixFromLikePattern(pattern, /*requires_perfect_prefix*/ true);
+    return fixed_prefix.is_exact && fixed_prefix.prefix.size() != assert_cast<const DataTypeFixedString &>(*haystack_type).getN();
+}
+
+}
+
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
@@ -370,13 +464,39 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         auto atom_it = atom_map.find(func_name);
         if (atom_it == atom_map.end())
         {
-            /// LIKE/ILIKE cannot be represented as a range. Pre-set selectivity
-            /// so the estimator uses a tighter default than `default_unknown_cond_factor`.
-            if (func_name == "like" || func_name == "ilike")
-                out.selectivity.true_sel = default_like_factor;
-            else if (func_name == "notLike" || func_name == "notILike")
-                out.selectivity.true_sel = 1.0 - default_like_factor;
-            else if (func_name == "__applyFilter")
+            if (const auto pattern_fn = string_pattern_functions.find(func_name); pattern_fn != string_pattern_functions.end())
+            {
+                const StringPatternFunction & fn = pattern_fn->second;
+                const auto haystack = func.getArgumentAt(0);
+                const DataTypePtr haystack_type = removeLowCardinalityAndNullable(haystack.getDAGNode()->result_type);
+                /// `startsWith` and `endsWith` have an overload for arrays.
+                if (fn.affix && !isStringOrFixedString(haystack_type))
+                    return false;
+
+                column_name = haystack.getColumnName();
+                Float64 factor = default_like_factor;
+                if (const auto pattern = tryGetStringPattern(func, fn))
+                {
+                    if (!metadata || metadata->getColumns().tryGet(column_name))
+                    {
+                        if (auto range = getStringPatternRange(fn, *pattern, haystack_type))
+                        {
+                            out.function = RPNElement::FUNCTION_IN_RANGE;
+                            (fn.negated ? out.column_not_ranges : out.column_ranges).emplace(column_name, *range);
+                            return true;
+                        }
+                    }
+                    if (matchesNoFixedString(fn, *pattern, haystack_type))
+                        factor = 0;
+                }
+
+                /// Other patterns keep `default_like_factor` of the column's non-NULL rows.
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.column_factors.emplace(column_name, fn.negated ? 1.0 - factor : factor);
+                return true;
+            }
+
+            if (func_name == "__applyFilter")
             {
                 /// Runtime join filter. Selectivity 1.0 keeps it last in prewhere ordering
                 /// (after cheaper column predicates) and neutral for join reorder estimates.
@@ -950,16 +1070,16 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
         /// An operand carrying no ranges contributes a bare factor that a merge cannot represent as a
         /// range. Under `AND` it is still absorbable: its selectivity is kept aside in
         /// `absorbed_and_selectivity` and applied by `finalize`, which lets the ranges around it keep
-        /// merging with each other. This covers an unknown atom, a negated one that `FUNCTION_NOT`
-        /// already finalized, and atoms estimated by a default such as `LIKE`. Under `OR` there is no
-        /// such factorisation, so it stays unmergeable and is finalized as its own operand.
+        /// merging with each other. This covers an unknown atom and a negated one that `FUNCTION_NOT`
+        /// already finalized. Under `OR` there is no such factorisation, so it stays unmergeable and is
+        /// finalized as its own operand.
         if (e.isConstantFactor())
             return function_to_merge == FUNCTION_AND;
 
-        /// A clause that already absorbed an unknown atom is a conjunction times a constant factor.
-        /// That composes with another conjunction, but not with a disjunction: `P((a AND u) OR b)` is
-        /// not the selectivity of the united ranges times the factor.
-        if (e.hasAbsorbed() && function_to_merge != FUNCTION_AND)
+        /// A clause that already absorbed an unknown atom, or holds column factors, is a conjunction
+        /// times a factor. That composes with another conjunction, but not with a disjunction:
+        /// `P((a AND u) OR b)` is not the selectivity of the united ranges times the factor.
+        if ((e.hasAbsorbed() || !e.column_factors.empty()) && function_to_merge != FUNCTION_AND)
             return false;
 
         return (e.function == FUNCTION_IN_RANGE
@@ -1007,6 +1127,13 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
             if (side->hasAbsorbed())
                 absorbed_and_selectivity = absorbed_and_selectivity.applyAnd(side->absorbed_and_selectivity);
 
+            for (const auto & [column_name, factor] : side->column_factors)
+            {
+                auto [it, inserted] = column_factors.emplace(column_name, factor);
+                if (!inserted)
+                    it->second *= factor;
+            }
+
             if (!side->isConstantFactor())
                 continue;
 
@@ -1042,6 +1169,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
     const Selectivity absorbed = absorbed_and_selectivity;
     const bool had_absorbed = hasAbsorbed();
     absorbed_and_selectivity = Selectivity{1.0, 0.0};
+    const auto factors = std::exchange(column_factors, {});
 
     if (function == FUNCTION_UNKNOWN)
     {
@@ -1120,6 +1248,20 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         {
             it->second = it->second.applyOr(not_ranges_selectivity);
         }
+    }
+
+    /// A factor scales the TRUE share of its column: with no other condition on the column, all of its non-NULL rows.
+    for (const auto & [column_name, factor] : factors)
+    {
+        auto it = estimate_results.find(column_name);
+        if (it == estimate_results.end())
+        {
+            Selectivity non_null{1.0, 0.0};
+            if (const auto * est = get_estimator(column_name))
+                non_null = est->estimateRanges(PlainRanges(Range::createWholeUniverseWithoutNull()));
+            it = estimate_results.emplace(column_name, non_null).first;
+        }
+        it->second.true_sel *= factor;
     }
 
     if (function == FUNCTION_AND)
