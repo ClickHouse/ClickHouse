@@ -150,6 +150,7 @@ private:
         RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenizerPtr tokenizer);
 
     Names index_columns;
+    size_t max_lookup_name_size;
     /// Argument types of the JSON index functions of this index, by position in `index_columns`.
     JSONIndexArgumentTypes json_argument_types;
     DataTypes index_data_types;

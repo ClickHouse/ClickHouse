@@ -300,6 +300,11 @@ private:
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
     [[nodiscard]] bool hasIndexForColumn(const String & column_name) const { return header.has(column_name) || column_name == normalized_index_column_name; }
+    [[nodiscard]] bool hasIndexForColumn(const RPNBuilderTreeNode & node) const
+    {
+        auto column_name = node.tryGetColumnName(max_lookup_name_size);
+        return column_name && hasIndexForColumn(*column_name);
+    }
 
     /// The argument of `arrayJoin` that has the index. LEFT ARRAY JOIN is `arrayJoin(emptyArrayToSingle(arr))`:
     /// `padded` is set when the index is on `arr`, which does not have the element added for an empty array.
@@ -316,6 +321,7 @@ private:
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
+    size_t max_lookup_name_size;
     IsShadowingColumn is_column_shadowing_map_subcolumn;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.

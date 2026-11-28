@@ -456,7 +456,8 @@ private:
 std::optional<size_t> findIndexPosition(
     const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, const RPNBuilderTreeNode & node)
 {
-    auto position = header.findPositionByName(node.getColumnName());
+    auto name = node.tryGetColumnName(maxIndexLookupNameSize(header.getNames()));
+    auto position = name ? header.findPositionByName(*name) : std::nullopt;
     if (position && ExpressionMatcher::isSame(node.getDAGNode(), index_nodes[*position]))
         return position;
     return std::nullopt;
@@ -612,6 +613,7 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
     const ActionsDAG::NodeRawConstPtrs & index_nodes,
     const IsShadowingColumn & is_shadowing_column)
 {
+    const size_t max_name_size = maxIndexLookupNameSize(header.getNames());
     if (key_node.isFunction())
     {
         auto key_node_function = key_node.toFunctionNode();
@@ -632,12 +634,20 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
                 if (const auto * map_type = typeid_cast<const DataTypeMap *>(removeNullable(dag_node->result_type).get()))
                     map_key_type = map_type->getKeyType();
 
+            auto map_column_name = first_argument.tryGetColumnName(max_name_size);
+            if (!map_column_name)
+                return std::nullopt;
+
             return tryResolveMapIndexInfo(
-                first_argument.getColumnName(), constant_value, map_key_type, header, index_nodes, first_argument.getDAGNode());
+                *map_column_name, constant_value, map_key_type, header, index_nodes, first_argument.getDAGNode());
         }
     }
 
-    return tryParseMapSubcolumn(key_node.getColumnName(), header, index_nodes, is_shadowing_column);
+    auto column_name = key_node.tryGetColumnName(max_name_size);
+    if (!column_name)
+        return std::nullopt;
+
+    return tryParseMapSubcolumn(*column_name, header, index_nodes, is_shadowing_column);
 }
 
 }
@@ -1448,7 +1458,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     const RPNBuilderTreeNode * parent)
 {
     const auto key_node = unwrapLosslessConversion(wrapped_key_node);
-    auto key_column_name = key_node.getColumnName();
 
     /// `arrayJoin(col) = const` needs an element equal to the constant, same as `has(col, const)`.
     /// `notEquals` is not derivable: a granule holding the constant still yields differing rows.
@@ -1611,8 +1620,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
     if (function_name == "mapContainsValue" || function_name == "mapContainsKey" || function_name == "mapContains" || function_name == "has")
     {
+        auto key_column_name = key_node.tryGetColumnName(maxIndexLookupNameSize(header.getNames()));
+        if (!key_column_name)
+            return false;
+
         auto map_index_position = findMapIndexPosition(
-            header, index_nodes, function_name == "mapContainsValue" ? "mapValues" : "mapKeys", key_column_name, key_node.getDAGNode());
+            header, index_nodes, function_name == "mapContainsValue" ? "mapValues" : "mapKeys", *key_column_name, key_node.getDAGNode());
         if (!map_index_position)
             return false;
 

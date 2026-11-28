@@ -57,13 +57,14 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     {
         return estimateRelationProfile(metadata, filter);
     }
+    const size_t max_name_size = getMaxNameSizeToLookUp(metadata);
     std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(filter, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
-        return extractAtomFromTree(metadata, node_, out);
+        return extractAtomFromTree(metadata, max_name_size, node_, out);
     }).extractRPN();
     std::vector<RPNElement> prewhere_rpn = RPNBuilder<RPNElement>(prewhere, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
-        return extractAtomFromTree(metadata, node_, out);
+        return extractAtomFromTree(metadata, max_name_size, node_, out);
     }).extractRPN();
     rpn.insert(rpn.end(), prewhere_rpn.begin(), prewhere_rpn.end());
     RPNElement last_rpn;
@@ -74,9 +75,10 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const
 {
+    const size_t max_name_size = getMaxNameSizeToLookUp(metadata);
     std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(node, [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
-        return extractAtomFromTree(metadata, node_, out);
+        return extractAtomFromTree(metadata, max_name_size, node_, out);
     }).extractRPN();
     return estimateRelationProfileImpl(rpn, metadata);
 }
@@ -94,12 +96,13 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
     ///   1 node  → rpn_0
     ///   2 nodes → rpn_0 | rpn_1 | AND
     ///   3 nodes → rpn_0 | rpn_1 | AND | rpn_2 | AND  = (r0 ∧ r1) ∧ r2
+    const size_t max_name_size = getMaxNameSizeToLookUp(metadata);
     std::vector<RPNElement> combined_rpn;
     for (size_t i = 0; i < nodes.size(); ++i)
     {
         auto rpn = RPNBuilder<RPNElement>(nodes[i], [&](const RPNBuilderTreeNode & node_, RPNElement & out)
         {
-            return extractAtomFromTree(metadata, node_, out);
+            return extractAtomFromTree(metadata, max_name_size, node_, out);
         }).extractRPN();
         combined_rpn.insert(combined_rpn.end(), rpn.begin(), rpn.end());
         if (i > 0)
@@ -319,7 +322,18 @@ bool isAlwaysTrueEquality(const ActionsDAG::Node & node)
         || which.isStringOrFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6();
 }
 
-bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
+size_t ConditionSelectivityEstimator::getMaxNameSizeToLookUp(const StorageMetadataPtr & metadata)
+{
+    size_t max_size = 0;
+    if (metadata)
+        for (const auto & column : metadata->getColumns())
+            max_size = std::max(max_size, column.name.size());
+    /// The `.null` suffix that `tryGetNullMapParentColumn` strips.
+    return max_size + 5;
+}
+
+bool ConditionSelectivityEstimator::extractAtomFromTree(
+    const StorageMetadataPtr & metadata, size_t max_name_size, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
     if (node_dag && node_dag->result_type->equals(DataTypeNullable(std::make_shared<DataTypeNothing>())))
@@ -338,6 +352,12 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     /// atom we then discard is exactly the work this reuse is meant to avoid.
     SetPtr set_for_ranges;
     DataTypePtr column_type;
+
+    /// With `metadata` a name is only looked up among its columns, so a longer one is replaced by "", which no column has.
+    auto get_column_name = [&](const RPNBuilderTreeNode & argument)
+    {
+        return metadata ? argument.tryGetColumnName(max_name_size).value_or("") : argument.getColumnName();
+    };
 
     /// A constant conjunct, e.g. `x IS NOT NULL` folded to `1` for a non-`Nullable` column, passes every row or none.
     /// Left as an unknown condition, it would scale the estimate by `default_unknown_cond_factor`. NULL stays undecided,
@@ -399,7 +419,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         if (num_args == 1)
         {
             /// `isNull(col)` / `isNotNull(col)` — populate the corresponding null-check set.
-            column_name = func.getArgumentAt(0).getColumnName();
+            column_name = get_column_name(func.getArgumentAt(0));
             if (metadata && !metadata->getColumns().tryGet(column_name))
                 return false;
             atom_it->second(out, column_name, Field{});
@@ -456,7 +476,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 {
                     chassert(is_in_operator);
                     const bool negative = func_name != "in";
-                    const auto lhs_name = func.getArgumentAt(0).getColumnName();
+                    const auto lhs_name = get_column_name(func.getArgumentAt(0));
                     const DataTypePtr & set_type = prepared_set->getElementsTypes().front();
 
                     /// An expression rather than a column (`lower(col) IN (...)`) has no statistics to
@@ -480,7 +500,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 /// only to turn it back into ranges below: for a large set that dominates planning,
                 /// and each consumer of the same set derives an identical result.
                 set_for_ranges = prepared_set;
-                column_name = func.getArgumentAt(0).getColumnName();
+                column_name = get_column_name(func.getArgumentAt(0));
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
             {
@@ -489,7 +509,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     out.function = RPNElement::ALWAYS_FALSE;
                     return true;
                 }
-                column_name = func.getArgumentAt(0).getColumnName();
+                column_name = get_column_name(func.getArgumentAt(0));
             }
             else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
             {
@@ -499,7 +519,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     return true;
                 }
 
-                column_name = func.getArgumentAt(1).getColumnName();
+                column_name = get_column_name(func.getArgumentAt(1));
                 if (func_name == "less")
                     func_name = "greater";
                 else if (func_name == "greater")

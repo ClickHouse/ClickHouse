@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Interpreters/SetVariants.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
@@ -116,24 +117,34 @@ public:
     ~MergeTreeIndexConditionSet() override = default;
 
 private:
+    /// `atoms` holds the results of `atomFromDAG` by node.
     const ActionsDAG::Node & traverseDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
-        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
+        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs,
+        UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> & atoms) const;
 
     const ActionsDAG::Node * atomFromDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
         const ContextPtr & context,
-        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
+        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs,
+        UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> & atoms) const;
 
     const ActionsDAG::Node * operatorFromDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
-        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
+        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs,
+        UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> & atoms) const;
 
-    bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic = false) const;
+    /// `useless` holds the results by node, for `atomic` false and true.
+    bool checkDAGUseless(
+        const ActionsDAG::Node & node,
+        const ContextPtr & context,
+        std::vector<FutureSetPtr> & sets_to_prepare,
+        std::array<UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool>, 2> & useless,
+        bool atomic = false) const;
 
     String index_name;
     size_t max_rows;
@@ -148,6 +159,7 @@ private:
     /// `ExpressionActions::execute` later binds the granule column by name too. A name that
     /// matches under a different type would silently substitute a differently-typed column.
     std::unordered_map<String, DataTypePtr> key_columns;
+    size_t max_key_name_size = 0;
     ExpressionActionsPtr actions;
     String actions_output_column_name;
 

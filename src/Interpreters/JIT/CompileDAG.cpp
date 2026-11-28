@@ -6,6 +6,7 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
 
+#include <Common/Hex.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Columns/ColumnConst.h>
@@ -75,6 +76,7 @@ std::string CompileDAG::dump() const
 {
     std::vector<std::string> dumped_values;
     dumped_values.resize(nodes.size());
+    bool truncated = false;
 
     size_t dag_size = nodes.size();
     for (size_t i = 0; i < dag_size; ++i)
@@ -109,6 +111,12 @@ std::string CompileDAG::dump() const
 
                 function_dump += ')';
 
+                if (function_dump.size() > ActionsDAG::MAX_GENERATED_NAME_SIZE)
+                {
+                    function_dump.resize(ActionsDAG::MAX_GENERATED_NAME_SIZE);
+                    truncated = true;
+                }
+
                 dumped_values[i] = std::move(function_dump);
                 break;
             }
@@ -119,6 +127,10 @@ std::string CompileDAG::dump() const
             }
         }
     }
+
+    /// A truncated name stays unique per compiled DAG.
+    if (truncated)
+        return dumped_values.back() + "..." + getHexUIntLowercase(hash());
 
     return dumped_values.back();
 }

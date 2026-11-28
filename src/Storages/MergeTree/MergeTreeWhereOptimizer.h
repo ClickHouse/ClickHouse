@@ -123,7 +123,7 @@ private:
             {
                 if (!names.empty())
                     names += " AND ";
-                names += n.getColumnName();
+                names += n.tryGetColumnName(ActionsDAG::MAX_GENERATED_NAME_SIZE).value_or(n.getDAGNode()->result_name);
             }
             return fmt::format(
                 "Condition(exp:{} viable: {}, expensive: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
@@ -192,7 +192,11 @@ private:
 
     [[nodiscard]] bool columnsSupportPrewhere(const NameSet & columns) const;
 
+    /// The result of a walk below for each DAG node it has visited.
+    using NodeResultCache = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool>;
+
     [[nodiscard]] bool isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const;
+    [[nodiscard]] bool isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context, NodeResultCache & cache) const;
 
     /// Whether the condition is a substring search on a String column that can be used as
     /// a string value filter during the scan when `apply_string_filters_during_scan` is enabled
@@ -211,9 +215,11 @@ private:
       * Also, disallow moving expressions with GLOBAL [NOT] IN.
       */
     [[nodiscard]] bool cannotBeMoved(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
+    [[nodiscard]] bool cannotBeMoved(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context, NodeResultCache & cache) const;
 
     /// Whether the expression contains a function that reports `isExpensive`.
     static bool isExpensiveExpression(const RPNBuilderTreeNode & node);
+    static bool isExpensiveExpression(const RPNBuilderTreeNode & node, NodeResultCache & cache);
 
     ConditionSelectivityEstimatorPtr estimator;
 
@@ -222,6 +228,9 @@ private:
     const std::optional<NameSet> supported_columns;
     const bool supported_columns_include_subcolumns;
     const NameSet sorting_key_names;
+    /// The longest name of `table_columns` and of `sorting_key_names`: a longer name is in neither.
+    const size_t max_table_column_name_size;
+    const size_t max_sorting_key_name_size;
     const NameToIndexMap primary_key_names_positions;
     StorageMetadataPtr storage_metadata;
     LoggerPtr log;

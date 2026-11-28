@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <array>
 #include <unordered_set>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -880,10 +881,22 @@ static bool isTrivialCast(const ActionsDAG::Node & node, bool value_is_truth_tes
     return false;
 }
 
+namespace
+{
+
+/// What `cloneDAGWithInversionPushDown` has cloned, so a node shared by several parents is cloned once per pair of flags.
+struct InversionCloneCache
+{
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> inputs;
+    std::array<UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *>, 4> clones;
+};
+
+}
+
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node & node,
     ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    InversionCloneCache & cache,
     const ContextPtr & context,
     bool need_inversion,
     bool boolean_context);
@@ -892,7 +905,7 @@ static const ActionsDAG::Node * tryRewriteBooleanCondition(
     const ActionsDAG::Node & condition,
     const String & condition_name,
     ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    InversionCloneCache & cache,
     const ContextPtr & context);
 
 /// Rewrite `<op>(coalesce(a_1, ..., a_N), const)` (or with `ifNull`, or with the constant on the
@@ -923,7 +936,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     const ActionsDAG::Node & node,
     const String & op_name,
     ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    InversionCloneCache & cache,
     const ContextPtr & context)
 {
     if (node.children.size() != 2)
@@ -1007,10 +1020,10 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     std::vector<const ActionsDAG::Node *> cloned_args;
     cloned_args.reserve(m + (has_trailing_const ? 1 : 0));
     for (const auto * y : normalized_args)
-        cloned_args.push_back(&cloneDAGWithInversionPushDown(*y, inverted_dag, inputs_mapping, context, false, /* boolean_context */ false));
+        cloned_args.push_back(&cloneDAGWithInversionPushDown(*y, inverted_dag, cache, context, false, /* boolean_context */ false));
     if (has_trailing_const)
-        cloned_args.push_back(&cloneDAGWithInversionPushDown(*trailing_const, inverted_dag, inputs_mapping, context, false, /* boolean_context */ false));
-    const auto & const_cloned = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false, /* boolean_context */ false);
+        cloned_args.push_back(&cloneDAGWithInversionPushDown(*trailing_const, inverted_dag, cache, context, false, /* boolean_context */ false));
+    const auto & const_cloned = cloneDAGWithInversionPushDown(*const_node, inverted_dag, cache, context, false, /* boolean_context */ false);
 
     const String canonical_op_str{canonical_op};
     auto op_func = FunctionFactory::instance().get(canonical_op_str, context);
@@ -1018,7 +1031,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     {
         const auto & cmp_node = inverted_dag.addFunction(op_func, {lhs, &const_cloned}, "");
         /// The built comparison goes through the whole rewrite chain too, so a later pass keeps the template's RPN layout.
-        if (const auto * rewritten = tryRewriteBooleanCondition(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
+        if (const auto * rewritten = tryRewriteBooleanCondition(cmp_node, canonical_op_str, inverted_dag, cache, context))
             return *rewritten;
         return cmp_node;
     };
@@ -1096,7 +1109,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceCondition(
     const ActionsDAG::Node & node,
     const String & name,
     ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    InversionCloneCache & cache,
     const ContextPtr & context)
 {
     if (name != "coalesce" && name != "ifNull")
@@ -1106,7 +1119,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceCondition(
         return nullptr;
 
     /// The unwrapped predicate replaces the boolean wrapper, so it stays in boolean context.
-    return &cloneDAGWithInversionPushDown(*node.children[0], inverted_dag, inputs_mapping, context, false, /* boolean_context */ true);
+    return &cloneDAGWithInversionPushDown(*node.children[0], inverted_dag, cache, context, false, /* boolean_context */ true);
 }
 
 /// Boolean-valued functions (result in {0, 1, NULL}) that are NOT `atom_map` atoms: the logical
@@ -1186,7 +1199,7 @@ static const ActionsDAG::Node * tryRewriteIsTrueCondition(
     const ActionsDAG::Node & node,
     const String & name,
     ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    InversionCloneCache & cache,
     const ContextPtr & context)
 {
     /// `X IS TRUE` -> `X <=> true` (const 1); `X != false` -> `X != 0` (const 0).
@@ -1227,7 +1240,7 @@ static const ActionsDAG::Node * tryRewriteIsTrueCondition(
         return nullptr;
 
     /// The unwrapped predicate replaces the boolean wrapper, so it stays in boolean context.
-    return &cloneDAGWithInversionPushDown(*predicate, inverted_dag, inputs_mapping, context, false, /* boolean_context */ true);
+    return &cloneDAGWithInversionPushDown(*predicate, inverted_dag, cache, context, false, /* boolean_context */ true);
 }
 
 /// Rewrite `X IN (<all-true const set>)`, e.g. `(k = 42) IN (true)`, to bare `X` for key analysis,
@@ -1244,7 +1257,7 @@ static const ActionsDAG::Node * tryRewriteInTruthyCondition(
     const ActionsDAG::Node & node,
     const String & name,
     ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    InversionCloneCache & cache,
     const ContextPtr & context)
 {
     /// Only the plain `in`; `notIn` is negation and `globalIn`/`nullIn` have different NULL semantics.
@@ -1310,14 +1323,14 @@ static const ActionsDAG::Node * tryRewriteInTruthyCondition(
     }
 
     /// The unwrapped predicate replaces the `IN` wrapper, so it stays in boolean context.
-    return &cloneDAGWithInversionPushDown(*predicate, inverted_dag, inputs_mapping, context, false, /* boolean_context */ true);
+    return &cloneDAGWithInversionPushDown(*predicate, inverted_dag, cache, context, false, /* boolean_context */ true);
 }
 
 static const ActionsDAG::Node * tryRewriteNullIfComparison(
     const ActionsDAG::Node & node,
     const String & op_name,
     ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    InversionCloneCache & cache,
     const ContextPtr & context)
 {
     if (node.children.size() != 2)
@@ -1383,8 +1396,8 @@ static const ActionsDAG::Node * tryRewriteNullIfComparison(
     if (!function_builder)
         return nullptr;
 
-    const auto & cloned_col = cloneDAGWithInversionPushDown(*col_node, inverted_dag, inputs_mapping, context, false, false);
-    const auto & cloned_const = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false, false);
+    const auto & cloned_col = cloneDAGWithInversionPushDown(*col_node, inverted_dag, cache, context, false, false);
+    const auto & cloned_const = cloneDAGWithInversionPushDown(*const_node, inverted_dag, cache, context, false, false);
 
     ActionsDAG::NodeRawConstPtrs args = {&cloned_col, &cloned_const};
     const auto & cmp_node = inverted_dag.addFunction(function_builder, args, "");
@@ -1393,7 +1406,7 @@ static const ActionsDAG::Node * tryRewriteNullIfComparison(
     /// Without this, nullIf(coalesce(a, b), sentinel) = const can expand coalesce differently
     /// across passes, causing filterMarksUsingIndex to misalign atom positions and drop granules.
     const String cmp_name(canonical_op);
-    if (const auto * rewritten = tryRewriteBooleanCondition(cmp_node, cmp_name, inverted_dag, inputs_mapping, context))
+    if (const auto * rewritten = tryRewriteBooleanCondition(cmp_node, cmp_name, inverted_dag, cache, context))
         return rewritten;
     return &cmp_node;
 }
@@ -1404,22 +1417,22 @@ static const ActionsDAG::Node * tryRewriteBooleanCondition(
     const ActionsDAG::Node & condition,
     const String & condition_name,
     ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    InversionCloneCache & cache,
     const ContextPtr & context)
 {
-    if (const auto * rewritten = tryRewriteIsTrueCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
+    if (const auto * rewritten = tryRewriteIsTrueCondition(condition, condition_name, inverted_dag, cache, context))
         return rewritten;
-    if (const auto * rewritten = tryRewriteInTruthyCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
+    if (const auto * rewritten = tryRewriteInTruthyCondition(condition, condition_name, inverted_dag, cache, context))
         return rewritten;
 
     if (!context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite])
         return nullptr;
 
-    if (const auto * rewritten = tryRewriteCoalesceComparison(condition, condition_name, inverted_dag, inputs_mapping, context))
+    if (const auto * rewritten = tryRewriteCoalesceComparison(condition, condition_name, inverted_dag, cache, context))
         return rewritten;
-    if (const auto * rewritten = tryRewriteCoalesceCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
+    if (const auto * rewritten = tryRewriteCoalesceCondition(condition, condition_name, inverted_dag, cache, context))
         return rewritten;
-    if (const auto * rewritten = tryRewriteNullIfComparison(condition, condition_name, inverted_dag, inputs_mapping, context))
+    if (const auto * rewritten = tryRewriteNullIfComparison(condition, condition_name, inverted_dag, cache, context))
         return rewritten;
 
     return nullptr;
@@ -1428,11 +1441,15 @@ static const ActionsDAG::Node * tryRewriteBooleanCondition(
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node & node,
     ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    InversionCloneCache & cache,
     const ContextPtr & context,
     const bool need_inversion,
     const bool boolean_context)
 {
+    auto & clones = cache.clones[(need_inversion ? 2 : 0) + (boolean_context ? 1 : 0)];
+    if (auto it = clones.find(&node); it != clones.end())
+        return *it->second;
+
     const ActionsDAG::Node * res = nullptr;
     bool handled_inversion = false;
 
@@ -1441,13 +1458,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     /// operand's type for the `not()` result type, so it is only valid where the value is discarded.
     if (need_inversion && boolean_context
         && ((node.column && node.column->onlyNull()) || node.result_type->onlyNull()))
-        return cloneDAGWithInversionPushDown(node, inverted_dag, inputs_mapping, context, false, boolean_context);
+        return cloneDAGWithInversionPushDown(node, inverted_dag, cache, context, false, boolean_context);
 
     switch (node.type)
     {
         case ActionsDAG::ActionType::INPUT:
         {
-            auto & input = inputs_mapping[&node];
+            auto & input = cache.inputs[&node];
             if (input == nullptr)
                 /// Note: inputs order is not important here. Will match columns by names.
                 input = &inverted_dag.addInput({node.column, node.result_type, node.result_name});
@@ -1475,13 +1492,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case ActionsDAG::ActionType::ALIAS:
         {
             /// Ignore aliases
-            res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
+            res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, cache, context, need_inversion, boolean_context);
             handled_inversion = true;
             break;
         }
         case ActionsDAG::ActionType::ARRAY_JOIN:
         {
-            const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false, /* boolean_context */ false);
+            const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, cache, context, false, /* boolean_context */ false);
             res = &inverted_dag.addArrayJoin(arg, {});
             break;
         }
@@ -1502,7 +1519,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             /// explicit `not()` wrapper, so the result is the same `UInt8` the original `not` produced.
             if (name == "not" && (boolean_context || !need_inversion))
             {
-                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion, boolean_context);
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, cache, context, !need_inversion, boolean_context);
                 handled_inversion = true;
             }
             else if (name == "indexHint" && need_inversion)
@@ -1527,7 +1544,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
 
                         for (auto & arg : children)
                             arg = &cloneDAGWithInversionPushDown(
-                                *arg, inverted_dag, inputs_mapping, context, /* need_inversion */ false, boolean_context);
+                                *arg, inverted_dag, cache, context, /* need_inversion */ false, boolean_context);
 
                         /// `node.function_base` is built for no arguments; the copy gets the hint's arguments as children.
                         index_hint_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(adaptor->getFunction());
@@ -1548,7 +1565,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 /// constant one and a function above it - `assumeNotNull(materialize(NULL))` - then
                 /// folds and throws while trying to build a non-empty `Nothing` column. Index analysis
                 /// learns nothing from such an argument anyway.
-                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, cache, context, need_inversion, boolean_context);
 
                 /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper
                 /// Without this, we could add an extra `not()` here (double inversion), e.g. `NOT materialize(x = 0)` -> `not(notEquals(x, 0))`.
@@ -1557,7 +1574,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             else if (isTrivialCast(node, /* value_is_truth_tested */ boolean_context))
             {
                 /// Remove trivial cast and keep its first argument.
-                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, cache, context, need_inversion, boolean_context);
 
                 /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper
                 /// Without this, we could add an extra `not()` here (double inversion), e.g. `NOT CAST(x = 0, 'UInt8')` -> `not(notEquals(x, 0))`.
@@ -1568,7 +1585,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
                 for (auto & arg : children)
-                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
+                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, cache, context, need_inversion, boolean_context);
 
                 FunctionOverloadResolverPtr function_builder;
 
@@ -1585,7 +1602,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 handled_inversion = true;
             }
             else if (const auto * rewritten = !need_inversion && boolean_context
-                         ? tryRewriteBooleanCondition(node, name, inverted_dag, inputs_mapping, context)
+                         ? tryRewriteBooleanCondition(node, name, inverted_dag, cache, context)
                          : nullptr)
             {
                 res = rewritten;
@@ -1600,7 +1617,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 /// and must be left alone.
                 const bool child_boolean_context = boolean_context && (name == "and" || name == "or");
                 for (auto & arg : children)
-                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false, child_boolean_context);
+                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, cache, context, false, child_boolean_context);
 
                 auto it = inverse_relations.find(name);
                 if (it != inverse_relations.end()
@@ -1609,11 +1626,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 {
                     const auto & func_name = need_inversion ? it->second : it->first;
                     auto function_builder = FunctionFactory::instance().get(func_name, context);
-                    res = &inverted_dag.addFunction(function_builder, children, "");
+                    auto result_name = ActionsDAG::nameForRebuiltFunction(
+                        func_name, children, need_inversion ? "not(" + node.result_name + ")" : node.result_name);
+                    res = &inverted_dag.addFunction(function_builder, children, std::move(result_name));
                     /// `res` is a non-inverted condition over wrapper-free arguments; rewrite it so a later pass keeps the same RPN layout.
                     if (boolean_context)
                         if (const auto * rewritten_inverse
-                            = tryRewriteBooleanCondition(*res, func_name, inverted_dag, inputs_mapping, context))
+                            = tryRewriteBooleanCondition(*res, func_name, inverted_dag, cache, context))
                             res = rewritten_inverse;
                     handled_inversion = true;
                 }
@@ -1634,18 +1653,19 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                         }
                     }
 
+                    auto result_name = ActionsDAG::nameForRebuiltFunction(name, children, node.result_name);
                     if (types_changed)
                     {
                         auto function_builder = FunctionFactory::instance().get(name, context);
-                        res = &inverted_dag.addFunction(function_builder, children, "");
+                        res = &inverted_dag.addFunction(function_builder, children, std::move(result_name));
                     }
                     else
                     {
-                        res = &inverted_dag.addFunction(node.function_base, children, "");
+                        res = &inverted_dag.addFunction(node.function_base, children, std::move(result_name));
                     }
 
                     if (!need_inversion && boolean_context)
-                        if (const auto * rewritten_clone = tryRewriteBooleanCondition(*res, name, inverted_dag, inputs_mapping, context))
+                        if (const auto * rewritten_clone = tryRewriteBooleanCondition(*res, name, inverted_dag, cache, context))
                             res = rewritten_clone;
                 }
             }
@@ -1662,6 +1682,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     if (!handled_inversion && need_inversion)
         res = &inverted_dag.addFunction(FunctionFactory::instance().get("not", context), {res}, "");
 
+    clones.emplace(&node, res);
     return *res;
 }
 
@@ -1669,9 +1690,9 @@ static ActionsDAG cloneDAGWithInversionPushDown(const ActionsDAG::Node * predica
 {
     ActionsDAG res;
 
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> inputs_mapping;
+    InversionCloneCache cache;
 
-    predicate = &DB::cloneDAGWithInversionPushDown(*predicate, res, inputs_mapping, context, false, boolean_context);
+    predicate = &DB::cloneDAGWithInversionPushDown(*predicate, res, cache, context, false, boolean_context);
 
     res.getOutputs() = {predicate};
 
@@ -1883,9 +1904,17 @@ KeyCondition::KeyCondition(
         return;
     }
 
+    auto key_subexpr_names = getAllSubexpressionNames(*key_expr_);
+    size_t max_key_name_size = 0;
+    for (const auto & name : key_subexpr_names)
+        max_key_name_size = std::max(max_key_name_size, name.size());
+    for (const auto & name : key_column_names_)
+        max_key_name_size = std::max(max_key_name_size, name.size());
+
     auto info = BuildInfo {
         .key_expr = key_expr_,
-        .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
+        .key_subexpr_names = std::move(key_subexpr_names),
+        .max_key_name_size = max_key_name_size,
         .columns_named_like_key_expressions = getColumnsNamedLikeKeyExpressions(filter_dag, *key_expr_),
         .require_ready_sets = require_ready_sets_};
 
@@ -2712,12 +2741,12 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     const ColumnWithTypeAndName & constant,
     std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const
 {
-    String expr_name = node.getColumnName();
+    auto expr_name = node.tryGetColumnName(info.max_key_name_size);
 
     /// Unlike the deterministic transforms, this does not try the `moduloLegacy`
     /// replacement: the case `f(modulo(...))` for totally monotonic `f` is considered
     /// to be rare.
-    if (!info.key_subexpr_names.contains(expr_name))
+    if (!expr_name || !info.key_subexpr_names.contains(*expr_name))
         return {};
 
     /// With the multiple-key-columns analysis disabled, only the first key-wrapping chain is even
@@ -2725,7 +2754,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     const bool first_match_only = !multiple_key_columns_per_condition;
 
     auto chains = collectKeyWrappingChains(
-        node.getContext(), expr_name, info, first_match_only, std::move(allow_key_function));
+        node.getContext(), *expr_name, info, first_match_only, std::move(allow_key_function));
 
     if (chains.empty())
         return {};
@@ -3401,19 +3430,19 @@ namespace
 
 /// Returns the name under which `node` appears among the key subexpressions (its own name, or
 /// its `moduloLegacy` spelling), or an empty string when it does not appear at all.
-String findKeySubexpressionName(const RPNBuilderTreeNode & node, const NameSet & key_subexpr_names)
+String findKeySubexpressionName(const RPNBuilderTreeNode & node, const NameSet & key_subexpr_names, size_t max_key_name_size)
 {
-    String expr_name = node.getColumnName();
-    if (key_subexpr_names.contains(expr_name))
-        return expr_name;
+    auto expr_name = node.tryGetColumnName(max_key_name_size);
+    if (expr_name && key_subexpr_names.contains(*expr_name))
+        return *expr_name;
 
     /// A partition key stored with `moduloLegacy` can match a predicate written with `modulo`.
     /// Look up that spelling as well for deterministic transforms. Monotonic constant transforms
     /// do not use this substitution; a surrounding monotonic function of `modulo` is rarely useful
     /// for such a match. For negative values, the substitution can filter more partitions than needed.
-    expr_name = node.getColumnNameWithModuloLegacy();
-    if (key_subexpr_names.contains(expr_name))
-        return expr_name;
+    expr_name = node.tryGetColumnNameWithModuloLegacy(max_key_name_size);
+    if (expr_name && key_subexpr_names.contains(*expr_name))
+        return *expr_name;
 
     return {};
 }
@@ -3494,7 +3523,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     const ColumnWithTypeAndName & constant,
     bool nested_null_is_ordinary_value) const
 {
-    const String expr_name = findKeySubexpressionName(node, info.key_subexpr_names);
+    const String expr_name = findKeySubexpressionName(node, info.key_subexpr_names, info.max_key_name_size);
     if (expr_name.empty())
         return {};
 
@@ -3603,7 +3632,7 @@ std::vector<KeyCondition::SetTransformSource> KeyCondition::collectSetTransformS
     /// it alone: with `ORDER BY tuple(x, y)`, `x` is a subexpression, but the key column also reads `y`.
     auto add_source = [&](const RPNBuilderTreeNode & node, size_t component, bool is_whole_tuple)
     {
-        const String expr_name = findKeySubexpressionName(node, info.key_subexpr_names);
+        const String expr_name = findKeySubexpressionName(node, info.key_subexpr_names, info.max_key_name_size);
         if (expr_name.empty())
             return;
 
@@ -4765,13 +4794,13 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChainImpl(
     const auto & sample_block = info.key_expr->getSampleBlock();
 
     /// Key columns should use canonical names for the index analysis.
-    String name = node.getColumnName();
+    auto name = node.tryGetColumnName(info.max_key_name_size);
 
-    auto it = key_columns.find(name);
+    auto it = name ? key_columns.find(*name) : key_columns.end();
     if (key_columns.end() != it)
     {
         out_key_column_num = it->second;
-        out_key_column_type = sample_block.getByName(name).type;
+        out_key_column_type = sample_block.getByName(*name).type;
         return true;
     }
 
@@ -4785,13 +4814,13 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChainImpl(
       * We currently don't support such columns being wrapped in monotonic function chain,
       * e.g. WHERE x+1 = 101.
       */
-    if (out_functions_chain.empty())
+    if (out_functions_chain.empty() && name)
     {
         for (const auto & curve : key_space_filling_curves)
         {
             for (size_t i = 0, size = curve.arguments.size(); i < size; ++i)
             {
-                if (curve.arguments[i].name == name)
+                if (curve.arguments[i].name == *name)
                 {
                     out_key_column_num = curve.key_column_pos;
                     out_argument_num_of_space_filling_curve = i;
@@ -5066,7 +5095,7 @@ std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChai
 std::optional<KeyCondition::DeterministicKeyDag> KeyCondition::tryGetDeterministicKeyTransform(
     const RPNBuilderTreeNode & node, const BuildInfo & info) const
 {
-    const String expr_name = findKeySubexpressionName(node, info.key_subexpr_names);
+    const String expr_name = findKeySubexpressionName(node, info.key_subexpr_names, info.max_key_name_size);
     if (expr_name.empty())
         return std::nullopt;
 
@@ -5737,8 +5766,8 @@ void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
         auto first_argument = point_argument.toFunctionNode();
         for (size_t i = 0; i < 2; ++i)
         {
-            auto name = first_argument.getArgumentAt(i).getColumnName();
-            auto it = key_columns.find(name);
+            auto name = first_argument.getArgumentAt(i).tryGetColumnName(info.max_key_name_size);
+            auto it = name ? key_columns.find(*name) : key_columns.end();
             if (it == key_columns.end())
             {
                 element.key_columns.clear();
@@ -5754,13 +5783,13 @@ void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
         /// e.g. a `Point` column. Tuple values are ordered lexicographically, so the range
         /// of such key column constrains the coordinates of the point - see the evaluation
         /// in `checkInHyperrectangle`.
-        auto name = point_argument.getColumnName();
-        auto it = key_columns.find(name);
+        auto name = point_argument.tryGetColumnName(info.max_key_name_size);
+        auto it = name ? key_columns.find(*name) : key_columns.end();
         if (it == key_columns.end())
             return;
 
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(
-            info.key_expr->getSampleBlock().getByName(name).type.get());
+            info.key_expr->getSampleBlock().getByName(*name).type.get());
         if (!tuple_type || tuple_type->getElements().size() != 2
             || !isNativeNumber(tuple_type->getElements()[0])
             || !isNativeNumber(tuple_type->getElements()[1]))

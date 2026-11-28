@@ -232,6 +232,12 @@ public:
         const FunctionBasePtr & function_base,
         NodeRawConstPtrs children,
         std::string result_name);
+
+    /// The longest name `nameForRebuiltFunction` lets `addFunction` generate from the children.
+    static constexpr size_t MAX_GENERATED_NAME_SIZE = 65536;
+    /// Empty, so `addFunction` generates `function_name(children)`, unless that exceeds MAX_GENERATED_NAME_SIZE: then `source_name`.
+    static std::string nameForRebuiltFunction(std::string_view function_name, const NodeRawConstPtrs & children, const std::string & source_name);
+
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
     /// Convert a node used as a condition to `result_type` keeping its truth value, e.g. 256 and 0.5
     /// stay true where a bare cast to `UInt8` would make them false. `context` is only needed to turn

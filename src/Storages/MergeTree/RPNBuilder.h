@@ -34,6 +34,10 @@ public:
       */
     [[nodiscard]] std::string getColumnNameWithModuloLegacy() const;
 
+    /// The same names, or nullopt as soon as the name is longer than `max_size`: it then equals no name of that size.
+    [[nodiscard]] std::optional<std::string> tryGetColumnName(size_t max_size) const;
+    [[nodiscard]] std::optional<std::string> tryGetColumnNameWithModuloLegacy(size_t max_size) const;
+
     /// Is node function
     [[nodiscard]] bool isFunction() const;
 
@@ -105,6 +109,10 @@ bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop
 /// a top-level `String` or `FixedString`, which `Dynamic` may parse into another type.
 RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, bool allow_drop_nullable = true);
 const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node, bool allow_drop_nullable = true);
+
+/// The `max_size` of `tryGetColumnName` for a skip index with columns `names`: a map key or a JSON path of a subcolumn
+/// is matched up to ActionsDAG::MAX_GENERATED_NAME_SIZE.
+size_t maxIndexLookupNameSize(const Names & names);
 
 /** RPN Builder build stack of reverse polish notation elements (RPNElements) required for index analysis.
   *
