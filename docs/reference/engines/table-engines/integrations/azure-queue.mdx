@@ -42,7 +42,7 @@ SETTINGS mode = 'unordered'
 
 ## Settings {#settings}
 
-The set of supported settings is mostly the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings settings](/reference/engines/table-engines/integrations/s3queue#settings).
+The set of supported settings is mostly the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings](/reference/engines/table-engines/integrations/s3queue#settings).
 To get a list of settings, configured for the table, use `system.azure_queue_settings` table. Available from `24.10`.
 
 Below are the settings only compatible with AzureQueue and not applicable for S3Queue.
@@ -50,6 +50,8 @@ Below are the settings only compatible with AzureQueue and not applicable for S3
 ### `after_processing_move_connection_string` {#after_processing_move_connection_string}
 
 Connection string for Azure Blob Storage to move successfully processed files to, if the destination is another Azure container.
+
+Setting it requires the `WRITE` grant on the `AZURE` source. A grant limited by a URL filter is not enough, because a move has no single blob path and writes keys that are built from `after_processing_move_prefix` and the source keys. `ALTER TABLE ... MODIFY SETTING` also requires `SELECT` on the table. The destination must be allowed by `remote_url_allow_hosts`.
 
 Possible values:
 
@@ -60,6 +62,8 @@ Default value: empty string.
 ### `after_processing_move_container` {#after_processing_move_container}
 
 Container name to move successfully processed files to, if the destination is another Azure container.
+
+Changing it redirects the move to another container of the same account, so it needs the same grants as `after_processing_move_connection_string`: the `WRITE` grant on the `AZURE` source without a URL filter, and `SELECT` on the table for `ALTER TABLE ... MODIFY SETTING`.
 
 Possible values:
 
@@ -87,7 +91,7 @@ SETTINGS
 
 SELECT queries are forbidden by default on AzureQueue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
 However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
-The AzureQueue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it.
+The AzureQueue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it. (Note: this setting doesn't make sense in `exclusive` mode and is ignored; `exclusive` mode always acts as if `commit_on_select` is `True`.)
 
 ## Description {#description}
 

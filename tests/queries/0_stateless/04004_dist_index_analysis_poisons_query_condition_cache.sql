@@ -12,7 +12,6 @@
 -- mismatched and incorrectly treated as "erased entirely", writing all their marks as
 -- non-matching into the condition cache. Subsequent queries then skip those parts.
 
-SET allow_experimental_analyzer = 1;
 -- Disable statistics-based part pruning so that randomized auto_statistics_types
 -- (which may include 'minmax') does not interfere with the query condition cache
 -- population that this test relies on.

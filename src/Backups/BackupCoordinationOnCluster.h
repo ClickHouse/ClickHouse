@@ -4,7 +4,7 @@
 #include <Backups/BackupCoordinationCleaner.h>
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
-#include <Backups/BackupCoordinationReplicatedSQLObjects.h>
+#include <Backups/BackupCoordinationReplicatedDirectories.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationKeeperMapTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
@@ -74,8 +74,20 @@ public:
     void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) override;
     Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const override;
 
+    void addReplicatedWorkloadEntitiesDir(const String & loader_zk_path, WorkloadEntityType entity_type, const String & dir_path) override;
+    Strings getReplicatedWorkloadEntitiesDirs(const String & loader_zk_path, WorkloadEntityType entity_type) const override;
+
+    void addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path) override;
+    Strings getReplicatedNamedCollectionsDirs(const String & replication_id) const override;
+
+    bool doesInitiatorTakeNamedCollectionsExportDecision() const override;
+
     void addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup) override;
     String getKeeperMapDataPath(const String & table_zookeeper_root_path) const override;
+
+    void addRocksDBTable(const String & rocksdb_dir, const String & election_id, const String & data_path_in_backup) override;
+    String getRocksDBDataPath(const String & rocksdb_dir) const override;
+    String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const override;
 
     void addFileInfos(BackupFileInfos && file_infos) override;
     const BackupFileInfos & getFileInfos() const override;
@@ -93,13 +105,21 @@ private:
     void serializeToMultipleZooKeeperNodes(const String & path, const String & value, const String & logging_name);
     String deserializeFromMultipleZooKeeperNodes(const String & path, const String & logging_name) const;
 
+    /// Creates the node `<parent_path>/<key_segments...>/<current_host>` keeping `value` and the nodes for the key segments,
+    /// each of them if it doesn't exist.
+    void createNodeOfCurrentHost(
+        const String & parent_path, std::initializer_list<String> key_segments, const String & value, const String & logging_name);
+
     /// Reads data of all objects from ZooKeeper that replicas have added to backup and add it to the corresponding
     /// BackupCoordinationReplicated* objects.
     /// After that, calling addReplicated* functions is not allowed and throws an exception.
     void prepareReplicatedTables() const TSA_REQUIRES(replicated_tables_mutex);
     void prepareReplicatedAccess() const TSA_REQUIRES(replicated_access_mutex);
     void prepareReplicatedSQLObjects() const TSA_REQUIRES(replicated_sql_objects_mutex);
+    void prepareReplicatedWorkloadEntities() const TSA_REQUIRES(replicated_workload_entities_mutex);
+    void prepareReplicatedNamedCollections() const TSA_REQUIRES(replicated_named_collections_mutex);
     void prepareKeeperMapTables() const TSA_REQUIRES(keeper_map_tables_mutex);
+    void prepareRocksDBTables() const TSA_REQUIRES(rocksdb_tables_mutex);
     void prepareFileInfos() const TSA_REQUIRES(file_infos_mutex);
 
     const UUID backup_uuid;
@@ -123,17 +143,23 @@ private:
 
     mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables TSA_GUARDED_BY(replicated_tables_mutex);
     mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access TSA_GUARDED_BY(replicated_access_mutex);
-    mutable std::optional<BackupCoordinationReplicatedSQLObjects> replicated_sql_objects TSA_GUARDED_BY(replicated_sql_objects_mutex);
+    mutable std::optional<BackupCoordinationReplicatedDirectories<std::pair<String, UserDefinedSQLObjectType>>> replicated_sql_objects TSA_GUARDED_BY(replicated_sql_objects_mutex);
+    mutable std::optional<BackupCoordinationReplicatedDirectories<std::pair<String, WorkloadEntityType>>> replicated_workload_entities TSA_GUARDED_BY(replicated_workload_entities_mutex);
+    mutable std::optional<BackupCoordinationReplicatedDirectories<String>> replicated_named_collections TSA_GUARDED_BY(replicated_named_collections_mutex);
     mutable std::optional<BackupCoordinationFileInfos> file_infos TSA_GUARDED_BY(file_infos_mutex);
     mutable std::optional<BackupCoordinationKeeperMapTables> keeper_map_tables TSA_GUARDED_BY(keeper_map_tables_mutex);
+    mutable std::optional<BackupCoordinationKeeperMapTables> rocksdb_tables TSA_GUARDED_BY(rocksdb_tables_mutex);
     std::unordered_set<size_t> writing_files TSA_GUARDED_BY(writing_files_mutex);
 
     mutable std::mutex replicated_tables_mutex;
     mutable std::mutex replicated_access_mutex;
     mutable std::mutex replicated_sql_objects_mutex;
+    mutable std::mutex replicated_workload_entities_mutex;
+    mutable std::mutex replicated_named_collections_mutex;
     mutable std::mutex file_infos_mutex;
     mutable std::mutex writing_files_mutex;
     mutable std::mutex keeper_map_tables_mutex;
+    mutable std::mutex rocksdb_tables_mutex;
 };
 
 }

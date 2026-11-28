@@ -44,7 +44,7 @@ public:
     bool operator>(const Self & rhs) const { return t > rhs.t; }
 
     T & toUnderType() { return t; }
-    const T & toUnderType() const { return t; }
+    [[nodiscard]] const T & toUnderType() const { return t; }
 };
 
 

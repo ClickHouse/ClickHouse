@@ -6,8 +6,6 @@ description: 'ClickStack による JVM の監視'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -17,16 +15,14 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-jvm">
-  ## 既存のJVMアプリケーションとのインテグレーション
+  ## 既存のJVMアプリケーションとのインテグレーション {#existing-jvm}
 </div>
 
 このセクションでは、OpenTelemetry Java agent を使用して既存のJVMアプリケーションから ClickStack にメトリクスを送信するための設定方法を説明します。
 
 本番環境のセットアップを行う前にインテグレーションを試したい場合は、[デモデータセットのセクション](#demo-dataset)にあるデモデータセットを使用してテストできます。
 
-<div id="prerequisites">
-  ##### 前提条件
-</div>
+##### 前提条件 {#prerequisites}
 
 * 稼働中の ClickStack インスタンス
 * 既存の Java アプリケーション (Java 8 以降)
@@ -36,12 +32,16 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
   <Step title="ClickStack の API key を取得する" id="get-api-key">
     OpenTelemetry Java agent はデータを ClickStack の OTLP エンドポイントに送信しますが、その際に認証が必要です。
 
-    1. ClickStack の URL (例: http://localhost:8080) で HyperDX を開きます
+    1. ClickStack の URL (例: http://localhost:8080) で ClickStack UI を開きます
     2. 必要に応じてアカウントを作成するか、ログインします
     3. **Team Settings → API Keys** に移動します
     4. **インジェスト API key** をコピーします
 
-    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickStack API キー](/images/clickstack/api-key.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="OpenTelemetry Java agent をダウンロードする" id="download-agent">
@@ -57,7 +57,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
   <Step title="JVM の起動引数を設定する" id="configure-jvm">
     Java agent を JVM の起動コマンドに追加します。agent は JVM メトリクスを自動的に収集し、ClickStack に送信します。
 
-    ##### オプション 1: コマンドラインフラグ
+##### オプション 1: コマンドラインフラグ {#command-line-flags}
 
     ```bash
     java -javaagent:opentelemetry-javaagent.jar \
@@ -75,11 +75,11 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 
     * `opentelemetry-javaagent.jar` → agent JAR のフルパス (例: `/opt/opentelemetry/opentelemetry-javaagent.jar`)
     * `my-java-app` → サービスが識別しやすい名前 (例: `payment-service`, `user-api`)
-    * `YOUR_API_KEY` → 上記の手順で取得した ClickStack の API key
+    * `YOUR_API_KEY` → 上記の手順で取得した ClickStack API キー
     * `my-application.jar` → アプリケーションの JAR ファイル名
     * `http://localhost:4318` → ClickStack のエンドポイント (ClickStack が同じマシンで動作している場合は `localhost:4318`、それ以外の場合は `http://your-clickstack-host:4318` を使用します)
 
-    ##### オプション 2: 環境変数
+##### オプション 2: 環境変数 {#env-vars}
 
     または、環境変数を使用します。
 
@@ -100,7 +100,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 
     * `opentelemetry-javaagent.jar` → agent JAR のフルパス
     * `my-java-app` → サービス名
-    * `YOUR_API_KEY` → ClickStack の API key
+    * `YOUR_API_KEY` → ClickStack API キー
     * `http://localhost:4318` → ClickStack のエンドポイント
     * `my-application.jar` → アプリケーションの JAR ファイル名
 
@@ -115,17 +115,17 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Tip>
   </Step>
 
-  <Step title="HyperDX でメトリクスを確認する" id="verifying-metrics">
+  <Step title="ClickStack UI でメトリクスを確認する" id="verifying-metrics">
     アプリケーションを agent 付きで起動したら、メトリクスが ClickStack に送られていることを確認します。
 
-    1. http://localhost:8080 (または ClickStack の URL) で HyperDX を開きます
+    1. http://localhost:8080 (または ClickStack の URL) で ClickStack UI を開きます
     2. **Chart Explorer** に移動します
     3. `jvm.` で始まるメトリクスを検索します (例: `jvm.memory.used`, `jvm.gc.duration`, `jvm.thread.count`)
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## デモデータセット
+  ## デモデータセット {#demo-dataset}
 </div>
 
 アプリケーションをインストルメントする前に JVM メトリクスのインテグレーションを試したいユーザー向けに、安定して中程度のトラフィックがある中規模マイクロサービスにおける、現実的な JVM の挙動を示す事前生成済みメトリクスを含むサンプルデータセットを提供しています。
@@ -180,7 +180,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
   <Step title="デモデータを確認する" id="verify-demo-metrics">
     インポート後は、次の手順で確認します。
 
-    1. http://localhost:8080 で HyperDX を開き、ログインします (必要に応じてアカウントを作成してください)
+    1. http://localhost:8080 で ClickStack UI を開き、ログインします (必要に応じてアカウントを作成してください)
     2. Search ビューに移動し、ログソースを **Metrics** に設定します
     3. 時間範囲を **2025-12-06 14:00:00 - 2025-12-09 14:00:00** に設定します
     4. `jvm.memory.used` または `jvm.gc.duration` を検索します
@@ -190,14 +190,12 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     <Info>
       **タイムゾーン表示**
 
-      HyperDX はタイムスタンプをブラウザーのローカルタイムゾーンで表示します。デモデータの対象期間は **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)** です。場所に関係なくデモメトリクスを確実に表示するには、時間範囲を **2025-12-06 14:00:00 - 2025-12-09 14:00:00** に設定してください。メトリクスが表示されたら、より見やすく可視化するために範囲を 24 時間に絞れます。
+      ClickStack UI はタイムスタンプをブラウザーのローカルタイムゾーンで表示します。デモデータの対象期間は **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)** です。場所に関係なくデモメトリクスを確実に表示するには、時間範囲を **2025-12-06 14:00:00 - 2025-12-09 14:00:00** に設定してください。メトリクスが表示されたら、より見やすく可視化するために範囲を 24 時間に絞れます。
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## ダッシュボードと可視化
-</div>
+## ダッシュボードと可視化 {#dashboards}
 
 ClickStack で JVM アプリケーションを監視できるように、JVM メトリクスの主要な可視化を含む、あらかじめ用意されたダッシュボードを提供しています。
 
@@ -207,20 +205,32 @@ ClickStack で JVM アプリケーションを監視できるように、JVM メ
   </Step>
 
   <Step title="あらかじめ用意されたダッシュボードをインポートする" id="import-dashboard">
-    1. HyperDX を開き、Dashboards セクションに移動します
-    2. 右上の三点メニューから **Import Dashboard** をクリックします
+    1. ClickStack UI を開き、ダッシュボード セクションに移動します
+    2. 右上の三点メニューから **ダッシュボードをインポート** をクリックします
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードのインポートボタン" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ダッシュボードのインポートボタン](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
-    3. `jvm-metrics-dashboard.json` ファイルをアップロードし、**Finish Import** をクリックします
+    3. `jvm-metrics-dashboard.json` ファイルをアップロードし、**インポートを完了** をクリックします
 
-    <Image img="/images/clickstack/jvm/jvm-metrics-import.webp" alt="インポートを完了" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![インポートを完了](/images/clickstack/jvm/jvm-metrics-import.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="ダッシュボードを表示する" id="created-dashboard">
     ダッシュボードは、すべての可視化が事前に設定された状態で作成されます。
 
-    <Image img="/images/clickstack/jvm/jvm-metrics-dashboard.webp" alt="Kafka メトリクス ダッシュボード" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Kafka メトリクス ダッシュボード](/images/clickstack/jvm/jvm-metrics-dashboard.webp)
+      </Frame>
+    </div>
 
     <Note>
       デモデータセットでは、時間範囲を **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)** に設定してください。ローカルのタイムゾーンに応じて調整してください。
@@ -229,11 +239,11 @@ ClickStack で JVM アプリケーションを監視できるように、JVM メ
 </Steps>
 
 <div id="troubleshooting">
-  ## トラブルシューティング
+  ## トラブルシューティング {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### Agent が起動しない
+  ### Agent が起動しない {#troubleshooting-not-loading}
 </div>
 
 **agent JAR が存在することを確認してください:**
@@ -255,9 +265,7 @@ java -version
 [otel.javaagent] OpenTelemetry Javaagent v2.22.0 started
 ```
 
-<div id="no-metrics">
-  ### HyperDX にメトリクスが表示されない
-</div>
+### ClickStack UI にメトリクスが表示されない {#no-metrics}
 
 **ClickStack が稼働中で、アクセス可能であることを確認します。**
 
@@ -269,9 +277,9 @@ curl -v http://localhost:4318/v1/metrics
 **メトリクスエクスポーターが設定されていることを確認してください:**
 
 ```bash
-# 環境変数を使用している場合は、次のコマンドで確認してください:
+# If using environment variables, verify:
 echo $OTEL_METRICS_EXPORTER
-# 期待される出力: otlp
+# Should output: otlp
 ```
 
 **アプリケーションログでOpenTelemetryのエラーを確認する:**
@@ -284,15 +292,13 @@ ClickStack がリモートホスト上にある場合は、アプリケーショ
 最新の安定版agentバージョン (現在は 2.22.0) を使用していることを確認してください。新しいバージョンにはパフォーマンス改善が含まれていることがよくあります。
 
 <div id="next-steps">
-  ## 次のステップ
+  ## 次のステップ {#next-steps}
 </div>
 
 * ヒープ使用量の増加、GC の停止の頻発、スレッド枯渇など、重要なメトリクスに対する[アラート](/ja/clickstack/features/alerts)を設定します
 * [他の ClickStack インテグレーション](/ja/clickstack/integration-examples/index)を確認して、オブザーバビリティデータを一元化します
 
-<div id="going-to-production">
-  ## 本番環境への移行
-</div>
+## 本番環境への移行 {#going-to-production}
 
 このガイドでは、ローカルテスト向けに OpenTelemetry Java agent を設定する方法を説明します。本番環境にデプロイする場合は、管理しやすいように agent JAR をコンテナーイメージに含め、環境変数で設定してください。JVM インスタンスが多数ある大規模環境では、ClickStack に直接送信する代わりに、一元化された OpenTelemetry Collector をデプロイし、複数のアプリケーションからのメトリクスをバッチ処理して転送してください。
 

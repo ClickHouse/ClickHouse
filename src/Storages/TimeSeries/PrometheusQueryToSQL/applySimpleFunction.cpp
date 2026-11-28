@@ -60,7 +60,7 @@ SQLQueryPiece applySimpleFunction(
 
             case StoreMethod::CONST_SCALAR:
             {
-                function_args.push_back(timeSeriesScalarToAST(argument.scalar_value, context.scalar_data_type));
+                function_args.push_back(timeSeriesScalarToAST(argument.scalar_value));
 
                 if (res.store_method != StoreMethod::SCALAR_GRID && res.store_method != StoreMethod::VECTOR_GRID)
                     res.store_method = StoreMethod::SINGLE_SCALAR;
@@ -129,7 +129,8 @@ SQLQueryPiece applySimpleFunction(
             }
 
             case StoreMethod::CONST_STRING:
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "applySimpleFunction: Can't handle argument {} because of its store method {}",

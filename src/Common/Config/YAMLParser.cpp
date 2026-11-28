@@ -47,7 +47,7 @@ namespace
             case YAML::NodeType::Scalar:
             {
                 std::string value = node.as<std::string>();
-                Poco::AutoPtr<Poco::XML::Text> xml_value = xml_document->createTextNode(value);
+                Poco::AutoPtr<Poco::XML::Text> xml_value = xml_document->createTextNode(toXMLString(value));
                 parent_xml_node.appendChild(xml_value);
                 break;
             }
@@ -104,7 +104,7 @@ namespace
                         /// we use substr(1) here to remove YAML_ATTRIBUTE_PREFIX from key
                         auto attribute_name = key.substr(1);
                         std::string value = value_node.as<std::string>();
-                        parent_xml_node.setAttribute(attribute_name, value);
+                        parent_xml_node.setAttribute(toXMLString(attribute_name), toXMLString(value));
                     }
                     else
                     {
@@ -116,12 +116,12 @@ namespace
                                                     "YAMLParser has encountered node with several text nodes "
                                                     "and cannot continue parsing of the file");
                             std::string value = value_node.as<std::string>();
-                            Poco::AutoPtr<Poco::XML::Text> xml_value = xml_document->createTextNode(value);
+                            Poco::AutoPtr<Poco::XML::Text> xml_value = xml_document->createTextNode(toXMLString(value));
                             parent_xml_node.appendChild(xml_value);
                         }
                         else
                         {
-                            Poco::AutoPtr<Poco::XML::Element> xml_key = xml_document->createElement(key);
+                            Poco::AutoPtr<Poco::XML::Element> xml_key = xml_document->createElement(toXMLString(key));
                             parent_xml_node.appendChild(xml_key);
                             processNode(value_node, *xml_key);
                         }
@@ -142,6 +142,44 @@ namespace
 }
 
 
+namespace
+{
+    Poco::AutoPtr<Poco::XML::Document> buildXMLFromYAMLNode(const YAML::Node & node_yml)
+    {
+        Poco::AutoPtr<Poco::XML::Document> xml = new Document;
+        Poco::AutoPtr<Poco::XML::Element> root_node = xml->createElement("clickhouse");
+        xml->appendChild(root_node);
+        try
+        {
+            if (node_yml.IsSequence())
+            {
+                /// A YAML document whose root is a sequence is a special case. `processNode` represents a
+                /// sequence by repeating the *parent* element for every item after the first (see the
+                /// `Sequence` case), so here it would clone the synthetic `clickhouse` root and append
+                /// several root elements to the document. `XMLUtils::getRootNode` then returns only the
+                /// first of them, silently dropping every item but the first. Splice each item directly
+                /// under the single synthetic root instead.
+                for (auto it = node_yml.begin(); it != node_yml.end(); ++it)
+                {
+                    const auto & item = *it;
+                    processNode(item, *root_node);
+                }
+            }
+            else
+            {
+                processNode(node_yml, *root_node);
+            }
+        }
+        catch (const YAML::TypedBadConversion<std::string>&)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_YAML,
+                            "YAMLParser has encountered node with key "
+                            "or value which cannot be represented as string and cannot continue parsing");
+        }
+        return xml;
+    }
+}
+
 Poco::AutoPtr<Poco::XML::Document> YAMLParser::parse(const String& path)
 {
     YAML::Node node_yml;
@@ -159,20 +197,22 @@ Poco::AutoPtr<Poco::XML::Document> YAMLParser::parse(const String& path)
         /// yaml-cpp cannot open the file even though it exists
         throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Unable to open YAML configuration file {}", path);
     }
-    Poco::AutoPtr<Poco::XML::Document> xml = new Document;
-    Poco::AutoPtr<Poco::XML::Element> root_node = xml->createElement("clickhouse");
-    xml->appendChild(root_node);
+    return buildXMLFromYAMLNode(node_yml);
+}
+
+Poco::AutoPtr<Poco::XML::Document> YAMLParser::parseString(const String & yaml)
+{
+    YAML::Node node_yml;
     try
     {
-        processNode(node_yml, *root_node);
+        node_yml = YAML::Load(yaml);
     }
-    catch (const YAML::TypedBadConversion<std::string>&)
+    catch (const YAML::ParserException & e)
     {
-        throw Exception(ErrorCodes::CANNOT_PARSE_YAML,
-                        "YAMLParser has encountered node with key "
-                        "or value which cannot be represented as string and cannot continue parsing of the file");
+        /// yaml-cpp cannot parse the string because its contents are incorrect
+        throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "Unable to parse YAML configuration from a string, {}", e.what());
     }
-    return xml;
+    return buildXMLFromYAMLNode(node_yml);
 }
 
 }
@@ -184,6 +224,11 @@ namespace DB
 Poco::AutoPtr<Poco::XML::Document> DummyYAMLParser::parse(const String & path)
 {
     throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "Unable to parse YAML configuration file {} without usage of yaml-cpp library", path);
+}
+
+Poco::AutoPtr<Poco::XML::Document> DummyYAMLParser::parseString(const String & /*yaml*/)
+{
+    throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "Unable to parse YAML configuration without usage of yaml-cpp library");
 }
 
 }

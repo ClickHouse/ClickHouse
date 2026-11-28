@@ -1,0 +1,234 @@
+---
+slug: /clickstack/observability/integration-examples/temporal
+title: 'ClickHouse オブザーバビリティによる Temporal Cloud メトリクスの監視'
+sidebarTitle: 'Temporal Cloud メトリクス'
+description: 'ClickHouse オブザーバビリティで Temporal Cloud メトリクスを監視するためのセットアップと設定（ClickHouse オブザーバビリティおよびセルフマネージドデプロイメント向け）。'
+doc_type: 'guide'
+keywords: ['Temporal', 'メトリクス', 'OTEL', 'ClickHouse オブザーバビリティ']
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Temporal は、シンプルかつ高度で、耐障害性に優れたアプリケーションを構築するための抽象化レイヤーを提供します。
+
+<Info>
+  **TL;DR**
+
+  OTel の Prometheus レシーバーを使用して、Temporal Cloud のメトリクスを ClickHouse オブザーバビリティで監視します。あらかじめ用意されたダッシュボードも付属しています。
+</Info>
+
+## 前提条件 {#prerequisites}
+
+* ClickHouse オブザーバビリティのサービス
+* 既存の Temporal Cloud アカウント
+* Temporal Cloud および OTLP エンドポイントに HTTPS でアクセスできるホスト上で動作する Docker
+
+### 接続情報 {#connection-details}
+
+<Tabs>
+  <Tab title="完全マネージド型">
+    <BetaBadge label="ベータ版サービス" />
+
+    ClickHouse オブザーバビリティを開き、**チーム設定 → Data → マネージドテレメトリー** に移動します。OTLP HTTPエンドポイントとAPIキーをコピーしてください。**Copy connection details** で設定をまとめてコピーすることも、**Reveal key** でマスクされたキーを表示することもできます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![マネージドテレメトリーの接続情報](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    以下の OTLP エクスポーターの例を使用するには、collector を実行する端末で次の変数を設定します。
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    プレースホルダーは、ご利用のサービスのエンドポイント(ポートを含む)とAPIキーに正確に置き換えてください。エンドポイントには `/v1/metrics` 接尾辞を付けず、ベースの HTTP エンドポイントを指定します。シグナルパスはエクスポーターが自動的に追記します。
+  </Tab>
+
+  <Tab title="セルフマネージド">
+    collector の接続可能な OTLP HTTPエンドポイント(例: `http://YOUR_COLLECTOR_HOST:4318`)と認証設定を使用します。collector で認証が不要な場合は、以下の構成からエクスポーターの `headers` ブロックを省略してください。セットアップ手順については、[セルフマネージド版の入門ガイド](/ja/clickstack/self-configured/getting-started/managed)を参照してください。
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+エンドポイントは collector コンテナから接続可能である必要があります。宛先の collector をこのコンピューター上で実行している場合は、`http://host.docker.internal:4318` を使用してください。以下の Docker コマンドには、このホストのマッピングが含まれています。
+
+## 既存の Temporal Cloud との統合 {#existing-temporal}
+
+<Steps>
+  <Step title="Temporal Cloud のキーを作成する" id="create-temporal-cloud-key">
+    [認証ガイド](https://docs.temporal.io/cloud/metrics/openmetrics/api-reference#authentication)に従って、**Metrics Read-Only** ロールを持つ Temporal Cloud の service account を作成し、APIキーを生成します。service account とキーの作成には、Account Owner または Global Admin の権限が必要です。
+
+    <Warning>
+      **キーファイル**
+
+      Temporal のAPIキーは、後の手順で作成する設定ファイルと同じディレクトリに `temporal.key` というファイル名で保存してください。`Bearer` プレフィックスや前後の空白は含めず、キーのみを保存します。このキーは ClickHouse オブザーバビリティのAPIキーとは別のものです。マウントしたファイルを collector が読み取れることを確認してください。
+    </Warning>
+  </Step>
+
+  <Step title="OTel collector を設定する" id="custom-otel">
+    Prometheus レシーバーを備えたスタンドアロンの OpenTelemetry Collector を実行し、Temporal Cloud をスクレイプしてメトリクスをサービスに転送します。
+
+    次の設定で `temporal-metrics.yaml` という名前のファイルを作成します:
+
+    ```yaml title="temporal-metrics.yaml"
+    receivers:
+      prometheus/temporal:
+        config:
+          scrape_configs:
+          - job_name: 'temporal-cloud'
+            scrape_interval: 60s
+            scrape_timeout: 30s
+            honor_timestamps: true
+            scheme: https
+            authorization:
+              type: Bearer
+              credentials_file: /etc/otelcol-contrib/temporal.key
+            static_configs:
+              - targets: ['metrics.temporal.io']
+            metrics_path: '/v1/metrics'
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+      resource:
+        attributes:
+          - key: service.name
+            value: "temporal"
+            action: upsert
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+    service:
+      pipelines:
+        metrics/temporal:
+          receivers: [prometheus/temporal]
+          processors:
+            - memory_limiter
+            - resource
+            - batch
+          exporters:
+            - otlp_http/observability
+    ```
+
+    この設定の内容は次のとおりです:
+
+    * `metrics.temporal.io` の Temporal Cloud に接続する
+    * 60 秒ごとにメトリクスを収集する
+    * [主要なパフォーマンスメトリクス](https://docs.temporal.io/cloud/metrics/openmetrics/metrics-reference)を収集する
+    * [OpenTelemetry セマンティック規約](https://opentelemetry.io/docs/specs/semconv/resource/#service)に従い、**必須の `service.name` リソース属性を設定する**
+    * 専用のパイプラインを通じて OTLP エンドポイントにメトリクスを送信する
+
+    複数の Temporal Cloud アカウントを使用する場合は、`service.name` をカスタマイズして区別してください (例: `temporal-prod` と `temporal-dev`)。
+  </Step>
+
+  <Step title="collector を実行する" id="run-collector">
+    `temporal-metrics.yaml` と `temporal.key` があるディレクトリで[接続変数](#connection-details)を設定し、次のコマンドを実行します:
+
+    ```bash
+    docker run --rm --name temporal-metrics-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/temporal-metrics.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/temporal.key:/etc/otelcol-contrib/temporal.key:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    端末は開いたままにして、スクレイプやエクスポートのエラーが出ていないか確認してください。Temporal Cloud のメトリクスが表示されるまでには数分かかります。テストが終わったら、**Ctrl+C** で collector を停止します。
+  </Step>
+
+  <Step title="ClickHouse オブザーバビリティでメトリクスを確認する" id="verifying-metrics">
+    設定が完了したら、ClickHouse オブザーバビリティにログインし、メトリクスが取り込まれていることを確認します:
+
+    1. **Chart Explorer** を開き、**Metrics** ログソースを選択します
+    2. `ServiceName:temporal` でフィルタリングし、**Last 15 minutes** を選択して、`temporal` で始まるメトリクスを検索します (例: `temporal_cloud_v1_workflow_success_count`、`temporal_cloud_v1_poll_timeout_count`)
+    3. 設定した収集間隔でメトリクスのデータポイントが表示されることを確認します
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Temporal メトリクス](/images/clickstack/temporal/temporal-metrics.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## ダッシュボードと可視化 {#dashboards}
+
+ClickHouse オブザーバビリティで Temporal Cloud の監視をすぐに始められるよう、Temporal メトリクス 向けの可視化のサンプルをいくつか用意しています。
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json" download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">ダッシュボード設定をダウンロードする</TrackedLink>} id="download" />
+
+  <Step title="あらかじめ用意されたダッシュボードをインポートする" id="import-dashboard">
+    1. **ダッシュボード** を開き、右上の **Import** をクリックします。
+    2. `temporal-metrics-dashboard.json` をアップロードします。
+    3. 各チャートを **Metrics** ログソースにマッピングし、**Finish Import** をクリックします。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ダッシュボードのインポートボタン](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="ダッシュボードを表示する" id="created-dashboard">
+    すべての可視化が設定済みの状態でダッシュボードが作成されます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Temporal メトリクス ダッシュボード](/images/clickstack/temporal/temporal-metrics-dashboard.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## トラブルシューティング {#troubleshooting}
+
+### collector が起動しない {#collector-fails-to-start}
+
+端末の出力に設定エラーが出ていないか確認してください。マウント済みの 2 つのファイルがどちらも存在し、collector が `temporal.key` を読み取れることを確認してください。また、Docker を実行している端末で OTLP の接続変数が設定されていることを確認してください。
+
+### メトリクスが表示されない場合 {#no-metrics}
+
+collector のログを確認してください:
+
+```bash
+docker logs temporal-metrics-collector
+```
+
+スクレイプ、認証、エクスポートのエラーが発生していないか確認してください。ホストから `https://metrics.temporal.io/v1/metrics` と OTLP エンドポイントに到達できることを確認します。**Chart Explorer** で、**Metrics** ログソース、`ServiceName:temporal` フィルタ、および時間範囲を確認してください。Temporal のメトリクスは利用可能になるまで数分かかる場合があり、アカウント内のアクティビティ状況によっても左右されます。
+
+### 認証エラー {#auth-errors}
+
+Temporal のスクレイプエラーが発生する場合は、`temporal.key` に **Metrics Read-Only** ロールを持つ service account の有効な APIキーが設定されていることを確認してください。OTLP のエクスポートエラーが発生する場合は、ClickHouse オブザーバビリティのエンドポイントと authorization の値を確認してください。これらはそれぞれ別の認証情報です。
+
+## 次のステップ {#next-steps}
+
+* 重要なメトリクス (ワークフローの失敗率、タスクバックログの増加、schedule-to-start レイテンシ) に対して[アラート](/ja/clickstack/observability/features/alerts)を設定する
+* 特定のユースケース (ネームスペース単位の監視、ワークフロータイプ別のパフォーマンス) 向けにダッシュボードを追加作成する
+* エンドポイントとサービス名を変えて receiver の設定を複製し、複数の Temporal Cloud アカウントを監視する
+
+## 本番環境への移行 {#going-to-production}
+
+このガイドでは、独立した OpenTelemetry Collector を実行し、メトリクスをサービスの OTLP エンドポイントに転送します。デプロイ方法については、[OpenTelemetry データの送信](/ja/clickstack/observability/ingesting-data/opentelemetry)を参照してください。

@@ -1,24 +1,22 @@
 ---
 title: 'Interroger la base de données système de ClickHouse'
 slug: /cloud/monitoring/system-tables
-description: 'Surveillez ClickHouse Cloud en interrogeant directement les tables système'
-keywords: ['cloud', 'monitoring', 'tables système', 'query_log', 'clusterAllReplicas', 'tableau de bord d’observabilité']
+description: 'Supervisez ClickHouse Cloud en interrogeant directement les tables système'
+keywords: ['cloud', 'supervision', 'tables système', 'query_log', 'clusterAllReplicas', 'tableau de bord d’observabilité']
 sidebarTitle: 'Tables système'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
-Toutes les instances ClickHouse incluent un ensemble de [tables système](/fr/reference/system-tables/overview) dans la base de données `system`, qui contiennent des informations sur :
+Toutes les instances ClickHouse incluent un ensemble de [tables système](/fr/reference/system-tables/overview) dans la base de données `system`, qui contiennent des informations sur :
 
 * L&#39;état du serveur, les processus et l&#39;environnement.
 * Les processus internes du serveur.
 * Les options utilisées lors de la compilation du binaire ClickHouse.
 
-L&#39;interrogation directe de ces tables est utile pour la surveillance des déploiements ClickHouse, en particulier pour l&#39;introspection approfondie et le débogage.
+L&#39;interrogation directe de ces tables est utile pour la supervision des déploiements ClickHouse, en particulier pour l&#39;introspection approfondie et le débogage.
 
 <div id="using-cloud-console">
-  ## Utilisation de la ClickHouse Cloud Console
+  ## Utilisation de la ClickHouse Cloud Console {#using-cloud-console}
 </div>
 
 La ClickHouse Cloud console inclut une [console SQL](/fr/products/cloud/features/sql-console-features/sql-console) et des [outils de création de tableaux de bord](/fr/products/cloud/features/sql-console-features/dashboards) qui peuvent être utilisés pour interroger les tables système. Par exemple, la requête ci-dessous permet d&#39;examiner combien de nouvelles parts sont créées au cours des deux dernières heures (et à quelle fréquence) :
@@ -52,22 +50,24 @@ ORDER BY
   Vous pouvez également utiliser ces requêtes pour [créer un tableau de bord personnalisé](https://clickhouse.com/blog/essential-monitoring-queries-creating-a-dashboard-in-clickHouse-cloud) dans la Cloud Console.
 </Tip>
 
-<div id="built-in-advanced-observability-dashboard">
-  ## Tableau de bord avancé d’observabilité intégré
-</div>
+## Tableau de bord avancé d’observabilité intégré {#built-in-advanced-observability-dashboard}
 
 ClickHouse inclut un tableau de bord avancé d’observabilité intégré, accessible à l’adresse `$HOST:$PORT/dashboard` (nécessite un nom d’utilisateur et un mot de passe), qui affiche les métriques Cloud Overview contenues dans `system.dashboards`.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Tableau de bord avancé natif d’observabilité" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Tableau de bord avancé natif d’observabilité](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+  </Frame>
+</div>
 
 <Note>
-  Ce tableau de bord nécessite une authentification directe auprès de l’instance ClickHouse et est distinct du [tableau de bord avancé de la Cloud Console](/fr/products/cloud/features/monitoring/cloud-console#advanced-dashboard), accessible depuis l’UI de la Cloud Console sans authentification supplémentaire.
+  Ce tableau de bord nécessite une authentification directe auprès de l’instance ClickHouse et est distinct du [tableau de bord avancé de la Console Cloud](/fr/products/cloud/features/monitoring/cloud-console#advanced-dashboard), accessible depuis l’UI de la Console Cloud sans authentification supplémentaire.
 </Note>
 
 Pour en savoir plus sur les visualisations disponibles et sur leur utilisation pour le dépannage, consultez la [documentation du tableau de bord avancé](/fr/products/cloud/features/monitoring/advanced-dashboard).
 
 <div id="querying-across-nodes">
-  ## Interroger l’ensemble des nœuds et des versions
+  ## Interroger l’ensemble des nœuds et des versions {#querying-across-nodes}
 </div>
 
 Pour obtenir une vue complète du cluster, les utilisateurs peuvent exploiter la fonction `clusterAllReplicas` en combinaison avec la fonction `merge`. La fonction `clusterAllReplicas` permet d’interroger les tables système sur l’ensemble des réplicas du cluster &quot;default&quot;, en regroupant les données propres à chaque nœud dans un résultat unifié. Combinée à la fonction `merge`, elle permet de cibler toutes les données système d’une table donnée dans un cluster.
@@ -94,7 +94,7 @@ Cette approche est particulièrement utile pour la surveillance et le débogage 
 Pour plus de détails, consultez [l’interrogation sur plusieurs nœuds](/fr/reference/system-tables/overview#querying-across-nodes).
 
 <div id="system-considerations">
-  ## Considérations relatives au système
+  ## Considérations relatives au système {#system-considerations}
 </div>
 
 <Warning>
@@ -103,11 +103,9 @@ Pour plus de détails, consultez [l’interrogation sur plusieurs nœuds](/fr/re
 
 Pour le monitoring de production en temps réel avec une séparation opérationnelle, envisagez d’utiliser l’[endpoint de métriques compatible Prometheus](/fr/products/cloud/features/monitoring/prometheus) ou les [Cloud Console dashboards](/fr/products/cloud/features/monitoring/cloud-console), qui s’appuient tous deux sur des métriques pré-collectées et n’émettent pas de requêtes vers le service sous-jacent.
 
-<div id="related">
-  ## Pages connexes
-</div>
+## Pages associées {#related}
 
 * [Référence des tables système](/fr/reference/system-tables/overview) — Référence complète de toutes les tables système disponibles
-* [Monitoring de Cloud Console](/fr/products/cloud/features/monitoring/cloud-console) — Des tableaux de bord prêts à l&#39;emploi, sans impact sur les performances du service
-* [Endpoint Prometheus](/fr/products/cloud/features/monitoring/prometheus) — Exportez les métriques vers des outils de monitoring externes
-* [tableau de bord avancé](/fr/products/cloud/features/monitoring/advanced-dashboard) — Référence détaillée des visualisations du tableau de bord
+* [Supervision dans la Console Cloud](/fr/products/cloud/features/monitoring/cloud-console) — Tableaux de bord prêts à l&#39;emploi, sans impact sur les performances du service
+* [Point de terminaison Prometheus](/fr/products/cloud/features/monitoring/prometheus) — Exportez les métriques vers des outils de supervision externes
+* [Tableau de bord avancé](/fr/products/cloud/features/monitoring/advanced-dashboard) — Référence détaillée des visualisations du tableau de bord

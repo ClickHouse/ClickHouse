@@ -5,6 +5,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -23,8 +24,50 @@ ASTPtr ASTShowTablesQuery::clone() const
     if (from)
         res->set(res->from, from->clone());
 
+    /// `where_expression` and `limit_length` are not children: the parser puts them into the
+    /// members only. Do not leave them shared with the source.
+    if (where_expression)
+        res->where_expression = where_expression->clone();
+    if (limit_length)
+        res->limit_length = limit_length->clone();
+
     cloneOutputOptions(*res);
     return res;
+}
+
+void ASTShowTablesQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    hash_state.update(databases);
+    hash_state.update(clusters);
+    hash_state.update(cluster);
+    hash_state.update(dictionaries);
+    hash_state.update(m_settings);
+    hash_state.update(merges);
+    hash_state.update(changed);
+    hash_state.update(temporary);
+    hash_state.update(caches);
+    hash_state.update(full);
+    hash_state.update(has_like);
+    hash_state.update(not_like);
+    hash_state.update(case_insensitive_like);
+
+    const auto update_string = [&hash_state](const String & value)
+    {
+        hash_state.update(value.size());
+        hash_state.update(value);
+    };
+
+    update_string(cluster_str);
+    update_string(like);
+
+    hash_state.update(where_expression != nullptr);
+    if (where_expression)
+        where_expression->updateTreeHash(hash_state, ignore_aliases);
+    hash_state.update(limit_length != nullptr);
+    if (limit_length)
+        limit_length->updateTreeHash(hash_state, ignore_aliases);
+
+    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 String ASTShowTablesQuery::getFrom() const
@@ -36,7 +79,7 @@ String ASTShowTablesQuery::getFrom() const
 
 void ASTShowTablesQuery::formatLike(WriteBuffer & ostr, const FormatSettings &) const
 {
-    if (!like.empty())
+    if (has_like)
     {
         ostr << (not_like ? " NOT" : "")
             << (case_insensitive_like ? " ILIKE " : " LIKE ")
@@ -55,49 +98,46 @@ void ASTShowTablesQuery::formatLimit(WriteBuffer & ostr, const FormatSettings & 
 
 void ASTShowTablesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    /// `ParserShowTablesQuery` accepts `FULL` before every form.
+    ostr << "SHOW " << (full ? "FULL " : "");
+
     if (databases)
     {
-        ostr << "SHOW DATABASES";
+        ostr << "DATABASES";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
-
     }
     else if (clusters)
     {
-        ostr << "SHOW CLUSTERS";
+        ostr << "CLUSTERS";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
-
     }
     else if (cluster)
     {
-        ostr << "SHOW CLUSTER";
+        ostr << "CLUSTER";
         ostr << " " << backQuoteIfNeed(cluster_str);
     }
     else if (caches)
     {
-        ostr << "SHOW FILESYSTEM CACHES";
+        ostr << "FILESYSTEM CACHES";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
     }
     else if (m_settings)
     {
-        ostr << "SHOW " << (changed ? "CHANGED " : "") << "SETTINGS";
+        ostr << (changed ? "CHANGED " : "") << "SETTINGS";
         formatLike(ostr, settings);
     }
     else if (merges)
     {
-        ostr << "SHOW MERGES";
+        ostr << "MERGES";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
     }
     else
     {
-        /// `full` changes the result schema of the table/dictionary form (`InterpreterShowTablesQuery`
-        /// selects `name, engine` instead of `name`), so dropping it here would make the formatted
-        /// query execute differently from the original.
-        ostr << "SHOW " << (full ? "FULL " : "") << (temporary ? "TEMPORARY " : "") <<
-             (dictionaries ? "DICTIONARIES" : "TABLES");
+        ostr << (temporary ? "TEMPORARY " : "") << (dictionaries ? "DICTIONARIES" : "TABLES");
 
         if (from)
         {
@@ -142,7 +182,7 @@ void ASTShowTablesQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("full", true);
     if (!cluster_str.empty())
         w.writeString("cluster_str", cluster_str);
-    if (!like.empty())
+    if (has_like)
         w.writeString("like", like);
     if (not_like)
         w.writeBool("not_like", true);
@@ -185,6 +225,7 @@ void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
     full = r.getBool("full");
     cluster_str = r.getString("cluster_str");
     like = r.getString("like");
+    has_like = r.has("like");
     not_like = r.getBool("not_like");
     case_insensitive_like = r.getBool("case_insensitive_like");
     /// `from` is parser-produced as an `ASTIdentifier` (`ParserShowTablesQuery` uses
@@ -194,12 +235,9 @@ void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
     auto from_child = r.readChildOfType<ASTIdentifier>("from");
     if (from_child)
         set(from, from_child);
+    /// These are member-only in parser-produced ASTs and are hashed explicitly in updateTreeHashImpl.
     where_expression = r.readChild("where_expression");
-    if (where_expression)
-        children.push_back(where_expression);
     limit_length = r.readChild("limit_length");
-    if (limit_length)
-        children.push_back(limit_length);
 
     /// Restore output options inherited from `ASTQueryWithOutput` through the shared helper so
     /// the validation of their interdependencies stays in one place instead of diverging from
@@ -250,21 +288,29 @@ void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
             "during AST JSON deserialization");
 
     /// In every form, the parser consumes `NOT` and `ILIKE` only as part of a LIKE clause, so these
-    /// flags cannot exist without a pattern; `formatQueryImpl` silently drops them when 'like' is empty.
-    if (like.empty() && (not_like || case_insensitive_like))
+    /// flags cannot exist without a LIKE clause.
+    if (!has_like && (not_like || case_insensitive_like))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "'not_like' and 'case_insensitive_like' require a non-empty 'like' during AST JSON deserialization");
+            "'not_like' and 'case_insensitive_like' require a 'like' pattern during AST JSON deserialization");
+
+    /// The SQL grammar requires SHOW [CHANGED] SETTINGS to have LIKE/ILIKE and does not accept NOT LIKE.
+    if (m_settings && !has_like)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SHOW SETTINGS` requires a 'like' pattern during AST JSON deserialization");
+    if (m_settings && not_like)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'not_like' is not valid for `SHOW SETTINGS` during AST JSON deserialization");
 
     /// In the table/dictionary form, the parser accepts either a LIKE clause or a WHERE clause,
     /// never both, and `InterpreterShowTablesQuery` ignores 'where_expression' whenever 'like' is
     /// set, so the formatted SQL and the executed query would diverge.
-    if (where_expression && !like.empty())
+    if (where_expression && has_like)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'like' and 'where_expression' are mutually exclusive in `ShowTablesQuery` "
             "during AST JSON deserialization");
 
     /// `SHOW CLUSTER` and `SHOW FILESYSTEM CACHES` accept neither a LIKE pattern nor a LIMIT.
-    if ((cluster || caches) && (!like.empty() || not_like || case_insensitive_like))
+    if ((cluster || caches) && (has_like || not_like || case_insensitive_like))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "LIKE is not valid for `SHOW CLUSTER`/`SHOW FILESYSTEM CACHES` during AST JSON deserialization");
 

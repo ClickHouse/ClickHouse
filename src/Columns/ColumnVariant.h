@@ -182,6 +182,7 @@ public:
     bool isNullAt(size_t n) const override;
     bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t n) const override;
+    bool supportsGetDataAt() const override { return false; }
 
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
@@ -262,6 +263,7 @@ public:
     void rollback(const ColumnCheckpoint & checkpoint) override;
     void forEachMutableSubcolumn(MutableColumnCallback callback) override;
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    ColumnPlanes getPlanes() const override;
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
 

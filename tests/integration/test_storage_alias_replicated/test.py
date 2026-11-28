@@ -6,7 +6,6 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/remote_servers.xml"],
-    user_configs=["configs/config_alias.xml"],
     with_zookeeper=True,
     macros={"shard": "shard1", "replica": "node1"},
 )
@@ -14,7 +13,6 @@ node1 = cluster.add_instance(
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/remote_servers.xml"],
-    user_configs=["configs/config_alias.xml"],
     with_zookeeper=True,
     macros={"shard": "shard1", "replica": "node2"},
 )
@@ -101,6 +99,7 @@ def test_alias_with_parallel_replicas(started_cluster):
             "max_parallel_replicas": 2,
             "cluster_for_parallel_replicas": "test_cluster",
             "log_comment": "test_alias_parallel_replicas",
+            "use_statistics_for_sum_avg_aggregation": 0,
         },
     )
 

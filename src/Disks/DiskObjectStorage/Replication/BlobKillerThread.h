@@ -8,6 +8,10 @@
 
 #include <Common/threadPoolCallbackRunner.h>
 
+#include <base/defines.h>
+
+#include <mutex>
+
 namespace DB
 {
 
@@ -17,6 +21,8 @@ class BlobKillerThread
 
     int64_t trigger();
     void waitRound(int64_t expected_round);
+    void activateTask();
+    void wakeUpIfPollingStopped();
 
 public:
     BlobKillerThread(
@@ -43,6 +49,11 @@ private:
     const LoggerPtr log;
 
     BackgroundSchedulePoolTaskHolder task;
+
+    /// Whether the task stopped rescheduling itself because the metadata storage could not queue dead blobs.
+    /// Only then the metadata storage wakes it up when it queues blobs, see `wakeUpIfPollingStopped`.
+    std::mutex polling_mutex;
+    bool polling_stopped TSA_GUARDED_BY(polling_mutex) = false;
 
     /// Runtime statistics
     std::atomic<bool> started{false};

@@ -1,0 +1,10 @@
+PromQL instant selector: the series is present with NaN
+1	1
+1	1
+PromQL instant selector: +0 is kept over -0
+inf
+inf
+Float32 NaNs: the stored bits do not depend on the order
+7FC00001
+7FC00001
+7FC00001

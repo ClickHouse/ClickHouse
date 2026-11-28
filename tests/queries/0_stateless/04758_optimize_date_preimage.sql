@@ -1,8 +1,6 @@
 -- Scope: positive preimage coverage is limited to one-argument functions on `Date` columns.
 -- `Date32` sources require result-type-aware bounds and are outside this iteration.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_optimize_date_preimage;
 CREATE TABLE t_optimize_date_preimage (d Date) ENGINE = Memory;
 

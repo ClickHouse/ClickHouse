@@ -48,9 +48,22 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 
+    /// Unknown for a prepared pipe: its rows are not materialized until it is read.
+    std::optional<UInt64> totalRows(ContextPtr) const override;
+
+    /// Returns the prepared pipe if it was not read.
+    std::optional<Pipe> extractPreparedPipe();
+
+    /// While it is not allowed, reading the prepared pipe throws.
+    void setPreparedPipeReadAllowed(bool value) { prepared_pipe_read_allowed = value; }
+
 private:
     Block res_block;
     Pipe prepared_pipe;
+    /// The prepared pipe can be read only once.
+    bool has_prepared_pipe = false;
+    bool prepared_pipe_was_read = false;
+    bool prepared_pipe_read_allowed = true;
 };
 
 }

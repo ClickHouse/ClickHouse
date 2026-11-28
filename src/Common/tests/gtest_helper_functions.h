@@ -78,8 +78,10 @@ inline std::string xmlNodeAsString(Poco::XML::Node *pNode)
 struct EnvironmentProxySetter
 {
     static constexpr auto * NO_PROXY = "*";
-    static constexpr auto * HTTP_PROXY = "http://proxy_server:3128";
-    static constexpr auto * HTTPS_PROXY = "https://proxy_server:3128";
+    static constexpr auto * HTTP_PROXY = "http://user:p%40ss%3Aword%26x@proxy_server:3128";
+    static constexpr auto * HTTP_PROXY_USERNAME = "user";
+    static constexpr auto * HTTP_PROXY_PASSWORD = "p@ss:word&x";
+    static constexpr auto * HTTPS_PROXY = "https://user:p%40ss%3Aword%26x@proxy_server:3128";
 
     EnvironmentProxySetter()
     {

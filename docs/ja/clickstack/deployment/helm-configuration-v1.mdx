@@ -14,19 +14,15 @@ keywords: ['ClickStack 設定', 'Helm シークレット', 'API キーの設定'
 
 このガイドでは、ClickStack の Helm デプロイメントで使用できる設定オプションを説明します。基本的なインストールについては、[メインの Helm デプロイメントガイド](/ja/clickstack/deployment/helm-v1) を参照してください。
 
-<div id="api-key-setup">
-  ## API キーの設定
-</div>
+## API キーの設定 {#api-key-setup}
 
 ClickStack のデプロイが完了したら、テレメトリーデータの収集を有効にするため、API キーを設定します。
 
-1. **設定済みのイングレスまたはサービスのエンドポイント** から **HyperDX インスタンスにアクセス** します
-2. **HyperDX ダッシュボードにログイン** し、**Team Settings** に移動して API キーを生成または取得します
+1. **設定済みのイングレスまたはサービスのエンドポイント** から **ClickStack UI インスタンスにアクセス** します
+2. **ClickStack UI ダッシュボードにログイン** し、**Team Settings** に移動して API キーを生成または取得します
 3. **以下のいずれかの方法で、API キーを使用してデプロイメントを更新** します:
 
-<div id="api-key-values-file">
-  ### 方法1: valuesファイルを使って Helm upgrade で更新
-</div>
+### 方法1: valuesファイルを使って Helm upgrade で更新 {#api-key-values-file}
 
 `values.yaml` に API キー を追加します:
 
@@ -41,17 +37,13 @@ hyperdx:
 helm upgrade my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-<div id="api-key-set-flag">
-  ### 方法 2: --set フラグを指定して Helm upgrade で更新
-</div>
+### 方法 2: `--set` フラグを指定して Helm upgrade で更新 {#api-key-set-flag}
 
 ```shell
 helm upgrade my-clickstack clickstack/clickstack --set hyperdx.apiKey="your-api-key-here"
 ```
 
-<div id="restart-pods">
-  ### 変更を反映するためにポッドを再起動する
-</div>
+### 変更を反映するためにポッドを再起動する {#restart-pods}
 
 APIキーを更新したら、新しい設定を反映させるためにポッドを再起動します：
 
@@ -63,15 +55,11 @@ kubectl rollout restart deployment my-clickstack-clickstack-app my-clickstack-cl
   この チャート は、API キー を含む Kubernetes Secret (`<release-name>-app-secrets`) を自動的に作成します。外部 Secret を使用する場合を除き、追加の Secret 設定は不要です。
 </Note>
 
-<div id="secret-management">
-  ## シークレット管理
-</div>
+## シークレット管理 {#secret-management}
 
 APIキーやデータベース認証情報などの機密データを扱うには、Kubernetes Secret を使用します。
 
-<div id="using-pre-configured-secrets">
-  ### 事前設定済みのシークレットを使用する
-</div>
+### 事前設定済みのシークレットを使用する {#using-pre-configured-secrets}
 
 Helm チャートには、[`charts/clickstack/templates/secrets.yaml`](https://github.com/hyperdxio/helm-charts/blob/main/charts/clickstack/templates/secrets.yaml) にあるデフォルトのシークレットテンプレートが含まれています。このファイルは、シークレットを管理するための基本的な構成を提供します。
 
@@ -95,9 +83,7 @@ data:
 kubectl apply -f secrets.yaml
 ```
 
-<div id="creating-a-custom-secret">
-  ### カスタム Kubernetes Secret の作成
-</div>
+### カスタム Kubernetes Secret の作成 {#creating-a-custom-secret}
 
 カスタム Kubernetes Secret を手動で作成します。
 
@@ -106,9 +92,7 @@ kubectl create secret generic hyperdx-secret \
   --from-literal=API_KEY=my-secret-api-key
 ```
 
-<div id="referencing-a-secret">
-  ### values.yaml で Secret を参照する
-</div>
+### values.yaml で Secret を参照する {#referencing-a-secret}
 
 ```yaml
 hyperdx:
@@ -119,15 +103,11 @@ hyperdx:
         key: API_KEY
 ```
 
-<div id="ingress-setup">
-  ## イングレスの設定
-</div>
+## イングレスの設定 {#ingress-setup}
 
-HyperDX UI と API をドメイン名経由で公開するには、`values.yaml` でイングレスを有効にします。
+ClickStack UI と API をドメイン名経由で公開するには、`values.yaml` でイングレスを有効にします。
 
-<div id="general-ingress-configuration">
-  ### 一般的なイングレスの設定
-</div>
+### 一般的なイングレスの設定 {#general-ingress-configuration}
 
 ```yaml
 hyperdx:
@@ -143,9 +123,7 @@ hyperdx:
   `hyperdx.frontendUrl` はイングレスのホスト名と一致させ、プロトコル (例: `https://hyperdx.yourdomain.com`) を含める必要があります。これにより、生成されるすべてのリンク、Cookie、リダイレクトが正しく機能します。
 </Info>
 
-<div id="enabling-tls">
-  ### TLS (HTTPS) の有効化
-</div>
+### TLS (HTTPS) の有効化 {#enabling-tls}
 
 デプロイメントをHTTPSで保護するには：
 
@@ -169,9 +147,7 @@ hyperdx:
       tlsSecretName: "hyperdx-tls"
 ```
 
-<div id="example-ingress-configuration">
-  ### イングレス設定例
-</div>
+### イングレス設定例 {#example-ingress-configuration}
 
 参考までに、生成されるイングレスリソースは次のようになります。
 
@@ -202,9 +178,7 @@ spec:
       secretName: hyperdx-tls
 ```
 
-<div id="common-ingress-pitfalls">
-  ### よくあるイングレスの落とし穴
-</div>
+### よくあるイングレスの落とし穴 {#common-ingress-pitfalls}
 
 **パスと rewrite の設定:**
 
@@ -229,9 +203,7 @@ spec:
 kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
 ```
 
-<div id="otel-collector-ingress">
-  ## OTel collector イングレス
-</div>
+## OTel collector イングレス {#otel-collector-ingress}
 
 イングレス経由で OTel collector のエンドポイント (トレース、メトリクス、ログ) を公開する必要がある場合は、`additionalIngresses` 設定を使用します。これは、クラスター外からテレメトリーデータを送信する場合や、collector にカスタムドメインを使用する場合に便利です。
 
@@ -267,9 +239,7 @@ hyperdx:
   OTEL collector を外部に公開する必要がない場合は、この設定を省略できます。ほとんどのユーザーには、通常のイングレス設定で十分です。
 </Note>
 
-<div id="troubleshooting-ingress">
-  ## イングレスのトラブルシューティング
-</div>
+## イングレスのトラブルシューティング {#troubleshooting-ingress}
 
 **イングレスリソースを確認します:**
 
@@ -306,9 +276,7 @@ curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
 
 * 変更後は、古いアセットが残らないように、ブラウザの cache と CDN/プロキシ cache をクリアします
 
-<div id="customizing-values">
-  ## values のカスタマイズ
-</div>
+## values のカスタマイズ {#customizing-values}
 
 `--set` フラグを使って設定をカスタマイズできます。
 
@@ -347,9 +315,7 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-<div id="next-steps">
-  ## 次のステップ
-</div>
+## 次のステップ {#next-steps}
 
 * [デプロイ オプション (v1.x)](/ja/clickstack/deployment/helm-deployment-options-v1) - 外部システムと最小構成のデプロイメント
 * [Cloud デプロイメント (v1.x)](/ja/clickstack/deployment/helm-cloud-v1) - GKE、EKS、AKS 向けの構成

@@ -5,11 +5,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <parquet/metadata.h>
-
-namespace parquet::arrow { class FileReader; }
-
-namespace arrow { class Buffer; class RecordBatchReader;}
+#include <Processors/Formats/Impl/Parquet/FooterMetadata.h>
 
 namespace DB
 {
@@ -51,6 +47,15 @@ namespace DB
  *             distinct_count - the number pf distinct values in the column chunk
  *             min - the minimum value of the column chunk
  *             max - the maximum column of the column chunk
+ *         have_size_statistics - bool flag that indicates if column chunk metadata contains size statistics
+ *         size_statistics - column chunk size statistics with the next structure:
+ *             unencoded_byte_array_data_bytes - the total size of the unencoded byte array values as recorded in the footer, NULL when absent
+ *             repetition_level_histogram - the number of values at each repetition level as recorded in the footer, empty when absent
+ *             definition_level_histogram - the number of values at each definition level as recorded in the footer, empty when absent
+ *         have_geospatial_statistics - bool flag that indicates if column chunk metadata contains geospatial statistics (only for the GEOMETRY and GEOGRAPHY logical types)
+ *         geospatial_statistics - column chunk geospatial statistics with the next structure:
+ *             xmin, xmax, ymin, ymax, zmin, zmax, mmin, mmax - the bounding box, NULL for the dimensions that are absent
+ *             geospatial_types - the WKB (ISO) codes of geometry types in the column chunk, empty when unknown
  * */
 
 class ParquetMetadataInputFormat final : public IInputFormat
@@ -70,13 +75,17 @@ private:
         is_stopped = 1;
     }
 
-    void fillColumnsMetadata(const std::shared_ptr<parquet::FileMetaData> & metadata, MutableColumnPtr & column);
-    void fillRowGroupsMetadata(const std::shared_ptr<parquet::FileMetaData> & metadata, MutableColumnPtr & column);
-    void fillColumnChunksMetadata(const std::unique_ptr<parquet::RowGroupMetaData> & row_group_metadata, IColumn & column);
-    void fillColumnStatistics(const std::shared_ptr<parquet::Statistics> & statistics, IColumn & column, int32_t type_length);
+    static void fillColumnsMetadata(const Parquet::FooterMetadata & metadata, IColumn & column);
+    static void fillRowGroupsMetadata(const Parquet::FooterMetadata & metadata, IColumn & column);
+    static void fillColumnChunksMetadata(const Parquet::FooterMetadata & metadata, size_t row_group, IColumn & column);
+    static void fillColumnStatistics(
+        const Parquet::FooterMetadata & metadata, size_t column_index, const Parquet::FooterMetadata::Statistics & statistics, IColumn & column);
+    static void fillColumnSizeStatistics(const Parquet::FooterMetadata & metadata, size_t row_group, size_t column_index, IColumn & column);
+    static void fillColumnGeospatialStatistics(const Parquet::FooterMetadata & metadata, size_t row_group, size_t column_index, IColumn & column);
 
     const FormatSettings format_settings;
     bool done = false;
+    /// Stops reading a non-seekable input into memory when the query is cancelled.
     std::atomic<int> is_stopped{0};
 };
 

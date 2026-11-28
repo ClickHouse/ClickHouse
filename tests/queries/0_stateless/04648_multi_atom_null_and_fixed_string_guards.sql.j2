@@ -1,0 +1,53 @@
+-- Multi-atom key-condition extraction must keep the soundness guards that the single-atom
+-- extraction had: the `isNull` atom is reused only for a bare key, and a `FixedString` constant
+-- that compares zero-padded against a `String` (or narrower `FixedString`) key must not become a
+-- point range. Both guards are checked on keys with several applicable key expressions, so every
+-- candidate atom of one predicate leaf goes through them.
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
+    selected by index analysis. -#}
+{% macro check(table, predicate) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }}))
+FORMAT TSVRaw;
+{%- endmacro %}
+
+-- `d` is reachable bare and through `toYYYYMM` in the key, so one predicate leaf on `d` can emit
+-- atoms for both key columns.
+CREATE TABLE t_multi_atom_null (d Nullable(DateTime)) ENGINE = MergeTree ORDER BY (d, toYYYYMM(d)) SETTINGS index_granularity = 1, allow_nullable_key = 1;
+INSERT INTO t_multi_atom_null VALUES ('2026-07-01 00:00:00'), ('2026-07-02 00:00:00'), (NULL), ('2026-07-03 00:00:00');
+-- The key column itself is compared, so the `isNull` atom applies and prunes to the NULL granule.
+{{ check('t_multi_atom_null', "d IS NOT DISTINCT FROM NULL") }}
+-- Here the key is wrapped in a monotonic function that is not a key expression, so the `isNull`
+-- atom (which ignores the chain) is not reused and the whole part is read.
+{{ check('t_multi_atom_null', "toDate(d) IS NOT DISTINCT FROM NULL") }}
+{{ check('t_multi_atom_null', "toDate(d) IS NULL") }}
+
+-- `s` is reachable both bare and through `lower` in the key. The `FixedString(8)` constant is the 8 bytes
+-- `abc\0\0\0\0\0` and compares zero-padded, so it matches `abc`; a point range on the padded value would
+-- prune the matching granule.
+CREATE TABLE t_multi_atom_fixed_string (s String) ENGINE = MergeTree ORDER BY (lower(s), s) SETTINGS index_granularity = 1;
+INSERT INTO t_multi_atom_fixed_string VALUES ('abc'), ('abd'), ('xyz');
+{{ check('t_multi_atom_fixed_string', "s = toFixedString('abc', 8)") }}
+{{ check('t_multi_atom_fixed_string', "toFixedString('abc', 8) = s") }}
+{{ check('t_multi_atom_fixed_string', "s IS NOT DISTINCT FROM toFixedString('abc', 8)") }}
+{{ check('t_multi_atom_fixed_string', "s != toFixedString('abc', 8)") }}
+
+-- A `FixedString` key at least as wide as the constant still pads it into exactly one key value,
+-- so pruning stays exact there.
+CREATE TABLE t_multi_atom_wide_fixed_string (s FixedString(8)) ENGINE = MergeTree ORDER BY (lower(s), s) SETTINGS index_granularity = 1;
+INSERT INTO t_multi_atom_wide_fixed_string VALUES ('abc'), ('abd'), ('xyz');
+{{ check('t_multi_atom_wide_fixed_string', "s = toFixedString('abc', 8)") }}
+
+-- The rows here differ only in the trailing '\0' bytes that the constant is padded with, so every
+-- one of them matches `toFixedString('abc', 8)` and none may be pruned. The key reaches `s` both
+-- bare and through `lower`, and pushing the constant through a key expression converts it into the
+-- expression input type, which drops the padding for a `String` input: the resulting atom would
+-- stand for `'abc'` alone and prune the other two rows.
+CREATE TABLE t_multi_atom_padded_family (s String) ENGINE = MergeTree ORDER BY (lower(s), s) SETTINGS index_granularity = 1;
+INSERT INTO t_multi_atom_padded_family VALUES ('abc'), ('abc\0'), ('abc\0\0'), ('abd'), ('abc\0x');
+{{ check('t_multi_atom_padded_family', "s = toFixedString('abc', 8)") }}
+{{ check('t_multi_atom_padded_family', "toFixedString('abc', 8) = s") }}
+{{ check('t_multi_atom_padded_family', "s IS NOT DISTINCT FROM toFixedString('abc', 8)") }}
+{{ check('t_multi_atom_padded_family', "s != toFixedString('abc', 8)") }}

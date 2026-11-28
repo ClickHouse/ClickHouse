@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-old-analyzer
+-- Tags: zookeeper
 -- Mutation predicates that only the query-tree analyzer can resolve (e.g. qualified column
 -- names) must be accepted by the partition pruning analysis too, since the analysis runs
 -- before the mutation and follows the same analyzer selection as the mutation execution.

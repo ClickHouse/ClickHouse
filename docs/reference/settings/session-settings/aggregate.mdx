@@ -19,13 +19,15 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"}]}]}/>
 
-Format for AggregateFunction input during INSERT operations.
+How the input formats read columns of the `AggregateFunction` type.
 
 Possible values:
 
-- `state` — Binary string with the serialized state (the default). This is the default behavior where AggregateFunction values are expected as binary data.
-- `value` — The format expects a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them. They will be deserialized using the corresponding IDataType or DataTypeTuple and then aggregated to form the state.
-- `array` — The format expects an Array of values, as described in the `value` option above. All elements of the array will be aggregated to form the state.
+- `state` — the serialized state of the aggregate function, as the output formats write it (the default).
+- `value` — a value of the argument of the aggregate function, or a tuple of the arguments if there are several of them. The value is aggregated to form the state.
+- `array` — an array of values, as described in the `value` option above. All elements of the array are aggregated to form the state.
+
+In the `value` and `array` modes the format reads the column as if it had the type of the values: `T` for `AggregateFunction(f, T)`, `Tuple(T1, T2)` for `AggregateFunction(f, T1, T2)`, or `Array` of it in the `array` mode. The values are written in the representation the format uses for that type: a number or a string in a text format, a JSON array in the JSON formats, the binary encoding of the type in `RowBinary` or `Native`, a column of that type in `Parquet`, and so on. This applies to every input format, and also to `AggregateFunction` nested in `Array`, `Tuple` or `Map`.
 
 **Examples**
 
@@ -43,10 +45,20 @@ INSERT INTO example FORMAT CSV
 123,456
 ```
 
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": 456}
+```
+
 With `aggregate_function_input_format = 'array'`:
 ```sql
 INSERT INTO example FORMAT CSV
 123,"[456,789,101]"
+```
+
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": [456, 789, 101]}
 ```
 
 Note: The `value` and `array` formats are slower than the default `state` format as they require creating and aggregating values during insertion.

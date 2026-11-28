@@ -32,32 +32,45 @@ void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const ISeria
 }
 
 
+/// The delimiters are written with one `write` each: then the slow path of the buffer is a tail call, and the
+/// function needs no stack frame (with pointer authentication, no signed return address for every row).
+
 void JSONEachRowRowOutputFormat::writeFieldDelimiter()
 {
-    writeChar(',', *ostr);
     if (pretty_json)
-        writeChar('\n', *ostr);
+        writeCString(",\n", *ostr);
+    else
+        writeChar(',', *ostr);
 }
 
 
 void JSONEachRowRowOutputFormat::writeRowStartDelimiter()
 {
-    writeChar('{', *ostr);
     if (pretty_json)
-        writeChar('\n', *ostr);
+        writeCString("{\n", *ostr);
+    else
+        writeChar('{', *ostr);
 }
 
 
 void JSONEachRowRowOutputFormat::writeRowEndDelimiter()
 {
-    if (pretty_json)
-        writeChar('\n', *ostr);
-
-    if (settings.json.array_of_rows)
-        writeChar('}', *ostr);
-    else
-        writeCString("}\n", *ostr);
     field_number = 0;
+
+    if (pretty_json)
+    {
+        if (settings.json.array_of_rows)
+            writeCString("\n}", *ostr);
+        else
+            writeCString("\n}\n", *ostr);
+    }
+    else
+    {
+        if (settings.json.array_of_rows)
+            writeChar('}', *ostr);
+        else
+            writeCString("}\n", *ostr);
+    }
 }
 
 
@@ -114,6 +127,8 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
             return std::make_shared<JSONEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings, pretty_json);
         });
         factory.markOutputFormatSupportsParallelFormatting(format);
+        /// With output_format_json_array_of_rows all rows form one JSON array.
+        factory.registerAppendSupportChecker(format, [](const FormatSettings & settings) { return !settings.json.array_of_rows; });
         factory.setContentType(format, [](const std::optional<FormatSettings> & settings)
         {
             return settings && settings->json.array_of_rows ? "application/json; charset=UTF-8" : "application/x-ndjson; charset=UTF-8";

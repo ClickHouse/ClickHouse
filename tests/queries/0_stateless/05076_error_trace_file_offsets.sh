@@ -4,11 +4,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# One mutable row per error code serves the whole server and this code is thrown all over the suite, so
-# the read below is constrained to a row refreshed after this point: an older event must not answer it.
-start_time=$($CLICKHOUSE_CLIENT -q "SELECT now()")
-
-$CLICKHOUSE_CLIENT -m -q "SELECT throwIf(true, 'file offsets'); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }"
+# One mutable row per error code serves the whole server, so a code thrown by a test running in parallel
+# answers the read below with its own trace. No query reaches the single `CANNOT_DLSYM` throw site in the
+# server, which leaves this test as the only writer of that row.
+$CLICKHOUSE_CLIENT -m -q "SELECT throwIf(true, 'file offsets', toInt16(300)) SETTINGS allow_custom_error_code_in_throwif = 1; -- { serverError CANNOT_DLSYM }"
 
 # The trace columns of the system tables store frames inside the main binary as file offsets: a runtime
 # address is only meaningful inside the process that produced it, and the binary is loaded at a different
@@ -16,16 +15,16 @@ $CLICKHOUSE_CLIENT -m -q "SELECT throwIf(true, 'file offsets'); -- { serverError
 # `system.symbols` reports offsets into the binary, so its largest one bounds every frame the symbol table
 # can resolve. A locally thrown exception captures deep ClickHouse frames, so requiring more than ten of
 # them keeps a short, empty or missing trace from passing.
-# Frames outside the main executable have to stay runtime addresses, which the second column asserts: an
-# offset into a library is indistinguishable from a main executable offset once stored as a bare number,
-# and the stack of a thrown exception ends in the C library.
+# Frames outside the main executable are stored as 0: an offset into a library is indistinguishable from
+# a main executable offset once stored as a bare number, and a runtime address must not be published,
+# which the last column asserts. Whether the C library frames are 0 depends on how it is linked.
 $CLICKHOUSE_CLIENT -m -q "
 SELECT
     countIf(x BETWEEN 1 AND (SELECT max(address_end) FROM system.symbols)) > 10,
-    countIf(x > (SELECT max(address_end) FROM system.symbols)) > 0
+    countIf(x > (SELECT max(address_end) FROM system.symbols)) = 0
 FROM (
     SELECT arrayJoin(last_error_trace) AS x
     FROM system.errors
-    WHERE code = 395 AND NOT remote AND last_error_time >= '$start_time')
+    WHERE code = 300 AND NOT remote)
 SETTINGS allow_introspection_functions = 1;
 "

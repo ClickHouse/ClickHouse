@@ -50,7 +50,7 @@ void registerAggregateFunctionsQuantileTiming(AggregateFunctionFactory & factory
 void registerAggregateFunctionsQuantileTiming(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     FunctionDocumentation::Description description = R"(
 With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
@@ -70,13 +70,13 @@ The calculation is accurate if:
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-:::note
+<Note>
 For calculating page loading time quantiles, this function is more effective and accurate than [`quantile`](/reference/functions/aggregate-functions/quantile).
-:::
+</Note>
 
-:::note
+<Note>
 If no values are passed to the function (when using `quantileTimingIf`), [NaN](/reference/data-types/float#nan-and-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](/reference/statements/select/order-by) for notes on sorting `NaN` values.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileTiming(level)(expr)
@@ -108,7 +108,7 @@ SELECT quantileTiming(response_time) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileTiming::name, {createAggregateFunctionQuantile<FuncQuantileTiming>, documentation});
+    factory.registerFunction(NameQuantileTiming::name, {createAggregateFunctionQuantile<FuncQuantileTiming>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously with determined precision.
@@ -126,9 +126,9 @@ The calculation is accurate if:
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-:::note
+<Note>
 For calculating page loading time quantiles, this function is more effective and accurate than [`quantiles`](/reference/functions/aggregate-functions/quantiles).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesTiming(level1, level2, ...)(expr)

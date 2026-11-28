@@ -57,12 +57,14 @@ do
 done
 
 # Genuine states still survive a roundtrip through `String` and finalize to the same results.
+# The results are sums over the hash tables, and a state read from `String` can keep its cells
+# in another order, so the last digits can differ.
 $CLICKHOUSE_LOCAL --query "
     SELECT
-        finalizeAggregation(st_c) = finalizeAggregation(CAST(CAST(st_c, 'String'), 'AggregateFunction(contingency, UInt16, UInt16)')),
-        finalizeAggregation(st_v) = finalizeAggregation(CAST(CAST(st_v, 'String'), 'AggregateFunction(cramersV, UInt16, UInt16)')),
-        finalizeAggregation(st_b) = finalizeAggregation(CAST(CAST(st_b, 'String'), 'AggregateFunction(cramersVBiasCorrected, UInt16, UInt16)')),
-        finalizeAggregation(st_u) = finalizeAggregation(CAST(CAST(st_u, 'String'), 'AggregateFunction(theilsU, UInt16, UInt16)'))
+        abs(finalizeAggregation(st_c) - finalizeAggregation(CAST(CAST(st_c, 'String'), 'AggregateFunction(contingency, UInt16, UInt16)'))) < 1e-12,
+        abs(finalizeAggregation(st_v) - finalizeAggregation(CAST(CAST(st_v, 'String'), 'AggregateFunction(cramersV, UInt16, UInt16)'))) < 1e-12,
+        abs(finalizeAggregation(st_b) - finalizeAggregation(CAST(CAST(st_b, 'String'), 'AggregateFunction(cramersVBiasCorrected, UInt16, UInt16)'))) < 1e-12,
+        abs(finalizeAggregation(st_u) - finalizeAggregation(CAST(CAST(st_u, 'String'), 'AggregateFunction(theilsU, UInt16, UInt16)'))) < 1e-12
     FROM
     (
         SELECT

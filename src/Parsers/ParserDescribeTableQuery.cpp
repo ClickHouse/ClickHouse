@@ -8,8 +8,6 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <Common/typeid_cast.h>
 
@@ -165,14 +163,11 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserDescribeTableQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementDescribeTable(StatementFactory & factory)
-{
-    factory.registerStatement("DESCRIBE TABLE",
+    documentation["DESCRIBE TABLE"] =
     {
         .description = R"DOCS_MD(
 Returns information about table columns.
@@ -256,7 +251,9 @@ This usage returns metadata about the result columns of the specified query or s
 DESC|DESCRIBE [TABLE] [db.]table | (subquery) | table_function [INTO OUTFILE filename] [FORMAT format]
 )",
         .related = {"SHOW", "EXISTS", "CREATE TABLE"},
-    });
+    };
+
+    return documentation;
 }
 
 }

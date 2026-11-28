@@ -1,0 +1,1 @@
+../integration/test_storage_nats/nats_certs.sh

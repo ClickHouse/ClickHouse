@@ -1,0 +1,23 @@
+-- WRITE ON FILE
+-- local
+ACCESS_DENIED
+-- on cluster
+ACCESS_DENIED
+-- copy
+ACCESS_DENIED
+-- file
+ACCESS_DENIED TABLE ENGINE ON File
+-- READ ON FILE
+-- local
+ACCESS_DENIED
+-- on cluster
+ACCESS_DENIED
+-- READ, WRITE ON FILE
+-- on cluster
+OK
+-- copy
+OK
+-- content
+canary
+-- tables created
+2

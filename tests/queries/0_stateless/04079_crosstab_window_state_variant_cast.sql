@@ -1,7 +1,5 @@
 -- { echo }
 
-SET enable_analyzer = 1;
-
 -- cramersV
 DROP TABLE IF EXISTS test_cramers_v;
 CREATE TABLE test_cramers_v (s AggregateFunction(cramersV, UInt8, UInt8)) ENGINE = MergeTree ORDER BY tuple();

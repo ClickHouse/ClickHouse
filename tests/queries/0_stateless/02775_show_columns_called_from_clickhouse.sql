@@ -11,7 +11,6 @@
 DROP TABLE IF EXISTS tab;
 
 SET allow_suspicious_low_cardinality_types=1;
-SET enable_json_type=1;
 
 CREATE TABLE tab
 (
@@ -68,6 +67,8 @@ CREATE TABLE tab
     ip6           IPv6,
     ns            Nullable(String),
     nfs           Nullable(FixedString(3)),
+    ndec32        Nullable(Decimal32(2)),
+    ndec256_text  Nullable(Decimal(66, 2)),
     ndt64         Nullable(DateTime64(3)),
     ndt64_tz      Nullable(DateTime64(3, 'Asia/Shanghai')),
     ls            LowCardinality(String),

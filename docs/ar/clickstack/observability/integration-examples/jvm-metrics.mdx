@@ -1,0 +1,233 @@
+---
+slug: /clickstack/observability/integration-examples/jvm-metrics
+title: 'مراقبة مقاييس JVM باستخدام ClickHouse Observability'
+sidebarTitle: 'مقاييس JVM'
+description: 'اجمع مقاييس JVM باستخدام وكيل OpenTelemetry لتطبيقات Java، واعرضها في مخططات مرئية ضمن ClickHouse Observability.'
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+اجمع مقاييس JVM باستخدام وكيل OpenTelemetry لتطبيقات Java وأرسلها إلى ClickHouse Observability. ويمكنك استخدام [مجموعة البيانات التجريبية](#demo-dataset) لتجربة التكامل دون الحاجة إلى تزويد أي تطبيق بأدوات جمع بيانات الرصد.
+
+## المتطلبات المسبقة {#prerequisites}
+
+* خدمة ClickHouse Observability
+* لجمع مقاييسك الخاصة: تطبيق Java 8+ مع إمكانية الوصول إلى أمر بدء التشغيل الخاص به أو إلى بيئة تشغيله
+* للعرض التوضيحي: Docker و`curl`
+
+### بيانات الاتصال {#connection-details}
+
+<Tabs>
+  <Tab title="مُدار بالكامل">
+    <BetaBadge label="خدمة في المرحلة التجريبية" />
+
+    افتح ClickHouse Observability وانتقل إلى **إعدادات الفريق → البيانات → بيانات القياس عن بُعد المُدارة**. انسخ نقطة نهاية OTLP عبر HTTP ومفتاح API الخاصين بك. يمكنك استخدام **نسخ بيانات الاتصال** لنسخ التهيئة، أو **إظهار المفتاح** لعرض المفتاح المُقنَّع.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![بيانات الاتصال في بيانات القياس عن بُعد المُدارة](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    اضبط هذه المتغيرات في الطرفية التي ستُشغّل منها تطبيقك أو جامع البيانات التوضيحي:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    استبدل العناصر النائبة بنقطة النهاية الفعلية لخدمتك، بما في ذلك المنفذ، وبمفتاح API الخاص بها. استخدم نقطة نهاية HTTP الأساسية دون اللاحقة `/v1/metrics`، إذ يُلحق المُصدِّر مسار الإشارة بنفسه.
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا">
+    استخدم نقطة نهاية OTLP عبر HTTP لجامع البيانات لديك، على أن يكون الوصول إليها ممكنًا (مثل `http://YOUR_COLLECTOR_HOST:4318`)، إلى جانب إعدادات المصادقة. إذا كان جامع البيانات لا يتطلب المصادقة، فاحذف `OTEL_EXPORTER_OTLP_HEADERS` من إعدادات وكيل Java، وكتلة `headers` الخاصة بالمُصدِّر من إعدادات جامع البيانات التوضيحي. راجع [دليل البدء للإصدار المُدار ذاتيًا](/ar/clickstack/self-configured/getting-started/managed) للاطلاع على إرشادات الإعداد.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+يجب أن يكون الوصول إلى نقطة النهاية ممكنًا من تطبيقك، وفي العرض التوضيحي عبر Docker يجب أن يكون ممكنًا أيضًا من حاوية جامع البيانات. وإذا كان جامع البيانات الوجهة يعمل على هذا الحاسوب نفسه، فاستخدم `http://host.docker.internal:4318`. تتضمن أوامر Docker أدناه مطابقة المضيف.
+
+## التكامل مع تطبيق JVM قائم {#existing-jvm}
+
+<Steps>
+  <Step title="تنزيل وكيل Java" id="download-agent">
+    نزّل الإصدار `2.22.0` من وكيل OpenTelemetry لتطبيقات Java:
+
+    ```bash
+    curl -fLO https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.22.0/opentelemetry-javaagent.jar
+    ```
+  </Step>
+
+  <Step title="تهيئة تطبيقك وتشغيله" id="configure-jvm">
+    اضبط [متغيرات الاتصال](#connection-details)، ثم هيّئ الوكيل:
+
+    ```bash
+    export OTEL_SERVICE_NAME='jvm-service'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_EXPORTER_OTLP_HEADERS="authorization=${OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+    export OTEL_METRICS_EXPORTER='otlp'
+    export OTEL_LOGS_EXPORTER='none'
+    export OTEL_TRACES_EXPORTER='none'
+
+    java -javaagent:./opentelemetry-javaagent.jar -jar my-application.jar
+    ```
+
+    استبدل `my-application.jar` بملف JAR الخاص بتطبيقك، وعدّل مسار الوكيل عند الحاجة. اختر اسم خدمة يميّز تطبيقك. تقتصر هذه الإعدادات على جمع المقاييس. وإذا كان تطبيقك يُصدِّر التتبّعات أو السجلات أصلًا، فأبقِ على إعدادات المُصدِّر الحالية الخاصة بتلك الإشارات.
+
+    أما التطبيقات التي تُدار عبر خدمة أو حاوية، فأضف الوكيل إلى وسيطات بدء تشغيل JVM الحالية، ومرّر متغيرات البيئة من خلال تهيئة النشر لديك. راجع [توثيق تهيئة وكيل Java](https://opentelemetry.io/docs/zero-code/java/agent/configuration/).
+  </Step>
+
+  <Step title="التحقق من المقاييس" id="verify-metrics">
+    انتظر دقيقتين على الأقل ريثما يُصدِّر الوكيل المقاييس. افتح **مستكشف المخططات**، واختر مصدر **Metrics** الخاص بك، وابحث عن `jvm.memory.used` أو `jvm.thread.count`. صفِّ النتائج باستخدام `ServiceName:jvm-service` واختر **Last 15 minutes**.
+  </Step>
+</Steps>
+
+## مجموعة بيانات تجريبية {#demo-dataset}
+
+تضم العينة 6,048 نقطة من نوع المقياس (مقياس) مأخوذة كل خمس دقائق، إضافةً إلى جميع أحداث جمع المهملات البالغ عددها 412 من مجموعة البيانات الأصلية. وتغطي نحو 24 ساعة من نشاط الذاكرة وخيوط التنفيذ والأصناف وCPU وجمع المهملات (GC)، دون الحاجة إلى تطبيق Java أو إلى وصول مباشر إلى قاعدة البيانات.
+
+اضبط [متغيرات الاتصال](#connection-details) قبل البدء.
+
+<Steps>
+  <Step title="تنزيل المقاييس النموذجية" id="download-sample">
+    [نزِّل حزمة العرض التوضيحي](/ar/assets/jvm-metrics-demo.zip) واستخرج محتواها في دليل العمل. تحتوي الحزمة على الملفين `jvm-metrics-demo.json` و`jvm-metrics-dashboard.json`.
+  </Step>
+
+  <Step title="تهيئة جامع البيانات التجريبي" id="configure-demo-collector">
+    احفظ ما يلي باسم `jvm-metrics-demo.yaml`:
+
+    ```yaml
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      resource/demo:
+        attributes:
+          - key: service.name
+            value: jvm-demo
+            action: upsert
+      transform/demo_timestamps:
+        error_mode: propagate
+        metric_statements:
+          - context: datapoint
+            statements:
+              - set(cache["interval_ns"], time_unix_nano - start_time_unix_nano)
+              - set(time, Now() - Duration("2m") - (Time("2025-12-08T14:16:00Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+              - set(start_time_unix_nano, time_unix_nano - cache["interval_ns"])
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/managed:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [resource/demo, transform/demo_timestamps, batch]
+          exporters: [otlp_http/managed]
+    ```
+
+    <Note>
+      يُحدِّث هذا التحويل، المخصص للعرض التوضيحي فقط، الطوابعَ الزمنية مع الحفاظ على قيم المقاييس وعلى الفاصل الزمني بين طابعَي البداية والنهاية لكل نقطة. احذفه عند التعامل مع مقاييس JVM حية. أما حد الدفعة فيُبقي حجم عمليات الرفع صغيرًا بما يكفي لجامع البيانات في الوجهة.
+    </Note>
+  </Step>
+
+  <Step title="تشغيل جامع البيانات التجريبي" id="run-demo-collector">
+    من الدليل الذي يحتوي على ملف التهيئة، شغِّل جامع البيانات واترك هذه الطرفية مفتوحة:
+
+    ```bash
+    docker run --rm --name jvm-metrics-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -p 127.0.0.1:14318:4318 \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/jvm-metrics-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+  </Step>
+
+  <Step title="إرسال العينة" id="load-metrics">
+    في طرفية أخرى، شغِّل الأمر التالي من دليل التنزيل:
+
+    ```bash
+    curl --fail-with-body -sS http://localhost:14318/v1/metrics \
+      -H 'Content-Type: application/json' \
+      --data-binary @jvm-metrics-demo.json
+    ```
+
+    تدل استجابة مثل `{}` أو `{"partialSuccess":{}}` على أن جامع البيانات المحلي قَبِل الطلب. راجع طرفية جامع البيانات بحثًا عن أخطاء التصدير، وامنحه بضع ثوانٍ لإتمام إعادة التوجيه. بعد التحقق من البيانات، أوقفه بالضغط على **Ctrl+C**. قد يؤدي إرسال العينة مرة أخرى إلى ظهور نقاط مكررة.
+  </Step>
+
+  <Step title="التحقق من المقاييس" id="verify-demo-metrics">
+    استورد لوحة المعلومات الواردة في [القسم التالي](#dashboards)، ثم صفِّ النتائج باستخدام `ServiceName:jvm-demo`، واختر **آخر يومين**. تتضمن العينة مقاييس من نوعي المقياس والمجموع، ولا حاجة إلى وصول مباشر إلى قاعدة البيانات.
+  </Step>
+</Steps>
+
+## لوحات المعلومات والتصور المرئي {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/jvm-metrics-dashboard.json" download="jvm-metrics-dashboard.json" eventName="docs.jvm_metrics_monitoring.dashboard_download">تنزيل تهيئة لوحة المعلومات</TrackedLink>} id="download-dashboard" />
+
+  <Step title="استيراد لوحة المعلومات" id="import-dashboard">
+    1. افتح **لوحات المعلومات** وانقر على **Import** في الزاوية العلوية اليمنى.
+    2. حمّل الملف `jvm-metrics-dashboard.json`.
+    3. اربط المخططات بمصدر **Metrics** الخاص بك، ثم انقر على **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![زر استيراد لوحة المعلومات](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="عرض لوحة المعلومات" id="view-dashboard">
+    لعرض بيانات العينة، طبّق عامل التصفية `ServiceName:jvm-demo` واختر **آخر يومين**.
+
+    تعرض لوحة المعلومات بيانات العينة الخاصة بذاكرة الكومة، وفترات الإيقاف المؤقت لـ GC، وخيوط التنفيذ، وmetaspace، وCPU، والأصناف المحمّلة.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![لوحة معلومات العرض التوضيحي لمقاييس JVM في ClickHouse Observability تعرض المخططات الستة كلها](/images/clickstack/observability-jvm-metrics-dashboard.png)
+      </Frame>
+    </div>
+
+    <Note>
+      تستخدم العينة مخططًا أقدم لمقاييس JVM. عند استخدام وكيل Java `2.22.0`، اختر نوع المقياس المجموع لمقاييس الذاكرة وخيوط التنفيذ والأصناف ووقت CPU، ونوع histogram لمدة GC. مقاييس الذاكرة والعدّ مجاميع غير رتيبة، لذا استخدم قيمها الحالية بدلًا من المعدّل. حدّث عوامل التصفية والتجميع في المخططات لتستخدم `jvm.memory.type` و`jvm.memory.pool.name` و`jvm.thread.state` و`jvm.gc.name`. للاطلاع على المخطط الحالي، راجع [اصطلاحات مقاييس JVM](https://opentelemetry.io/docs/specs/semconv/runtime/jvm-metrics/).
+    </Note>
+  </Step>
+</Steps>
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+### تعذّر بدء تشغيل الوكيل {#agent-not-starting}
+
+تحقّق من وجود ملف JAR الخاص بالوكيل في المسار المُمرَّر إلى `-javaagent`، ومن أن التطبيق يملك صلاحية قراءته، ومن أن إصدار Java هو 8 أو أحدث. افحص مخرجات بدء تشغيل التطبيق بحثًا عن أخطاء متعلقة بالوكيل.
+
+### عدم ظهور المقاييس {#no-metrics}
+
+* افحص إخراج التطبيق أو جامع البيانات التجريبي بحثًا عن أخطاء المصادقة وأخطاء التصدير.
+* تأكّد من إمكانية الوصول إلى نقطة النهاية من التطبيق أو الحاوية، ومن أن البروتوكول المستخدم هو `http/protobuf`.
+* تحقّق من مصدر **Metrics** وعامل تصفية اسم الخدمة والنطاق الزمني. واستخدم **آخر يومين** مع العرض التوضيحي.
+* إذا كنت تستخدم جامع بيانات قائمًا، فتأكّد من أن مسار المقاييس فيه يتضمن مستقبِل OTLP ومُصدِّرًا للمقاييس.
+* إذا كان جامع البيانات التجريبي يقبل الطلب دون أن تصل أي بيانات، فافحص الطرفية الخاصة به بحثًا عن أخطاء في إعادة التوجيه.
+
+## الخطوات التالية {#next-steps}
+
+* أعدّ [التنبيهات](/ar/clickstack/observability/features/alerts) لرصد استخدام الكومة، أو فترات التوقف الناتجة عن جمع البيانات المهملة (GC)، أو استنفاد خيوط التنفيذ.
+* أنشئ [لوحات معلومات](/ar/clickstack/observability/features/dashboards/overview) إضافية.
+* راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry) للاطلاع على إرشادات نشر جامع البيانات.

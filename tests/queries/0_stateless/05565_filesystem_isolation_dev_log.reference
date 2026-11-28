@@ -1,0 +1,5 @@
+dev: fd full null ptmx pts random stderr stdin stdout urandom zero
+dev/pts: ptmx
+working directory: definitions
+definitions: dictionary.xml
+cache from a named collection: visible

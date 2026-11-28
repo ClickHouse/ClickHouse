@@ -82,6 +82,12 @@ def _resolve_binary(path: str | None) -> Path:
     )
 
 
+def _compliance_record(payload: dict) -> dict:
+    if payload.get("schema_version") == 2:
+        return payload["suites"]["compliance"]
+    return payload
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -170,7 +176,7 @@ def main() -> None:
     if not result_path.is_file():
         sys.exit(f"ERROR: expected result file at {result_path}")
 
-    record = json.loads(result_path.read_text())
+    record = _compliance_record(json.loads(result_path.read_text()))
     for key in ("passed", "failed", "unsupported", "total", "pct"):
         if key not in record:
             sys.exit(f"ERROR: result JSON missing key {key!r}")

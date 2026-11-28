@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings
+# Tags: no-random-merge-tree-settings, no-parallel-replicas
+# Tag no-parallel-replicas: asserts on `read_rows` of the initial query, which with parallel replicas includes the rows read by every replica
 
 # shellcheck disable=SC2154
 

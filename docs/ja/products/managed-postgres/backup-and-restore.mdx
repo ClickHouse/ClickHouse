@@ -7,39 +7,40 @@ keywords: ['バックアップ', '復元', 'ポイントインタイム リカ�
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.backup-and-restore-beta" />
-
 ClickHouse Managed Postgres は、自動バックアップとポイントインタイム リカバリにより、データの安全性と可用性を確保します。インスタンスの **バックアップ** ビューから、バックアップ履歴を確認したり、復元を開始したりできます。
 
-<Image img="/images/managed-postgres/backup-and-restore.webp" alt="バックアップ履歴とポイントインタイム リカバリのオプションが表示されたバックアップ ビュー" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![バックアップ履歴とポイントインタイム リカバリのオプションが表示されたバックアップビュー](/images/managed-postgres/backup-and-restore.webp)
+  </Frame>
+</div>
 
 <div id="backups">
-  ## バックアップ
+  ## バックアップ {#backups}
 </div>
 
 <div id="backup-frequency">
-  ### バックアップ頻度
+  ### バックアップ頻度 {#backup-frequency}
 </div>
 
 ClickHouse Managed Postgres では、データベースのフルバックアップが毎日取得されます。フルバックアップに加えて、Write-Ahead Log (WAL) ファイルは 60 秒ごと、または WAL データが 16 MB 蓄積されるごとのいずれか早いタイミングでアーカイブされます。これにより、フルバックアップと継続的な WAL アーカイブを組み合わせることで、保持期間内の任意の時点にポイントインタイム リカバリを実行できます。
 
 <div id="retention-period">
-  ### 保持期間
+  ### 保持期間 {#retention-period}
 </div>
 
 バックアップは 7 日間保持されるため、データの消失や破損が発生した場合でも、復旧に十分な猶予があります。バックアップ保持期間をさらに長くする必要がある場合は、[support](https://clickhouse.com/support/program) にお問い合わせください。
 
+プロビジョニング済みのディスク容量と同じ量のバックアップストレージが含まれています。それを超えるバックアップストレージは、ご利用のリージョンにおける ClickHouse Cloud のストレージ料金で課金されます (例: AWS `us-east-1` では 1 TB・1 か月あたり $25.30) 。詳しくは [Managed Postgres の料金体系](/ja/products/managed-postgres/pricing) を参照してください。
+
 <div id="storage-and-durability">
-  ### ストレージと耐久性
+  ### ストレージと耐久性 {#storage-and-durability}
 </div>
 
 バックアップはイレイジャーコーディングを用いて複数のサーバーに複製されるため、一部のストレージサーバーが利用できなくなっても引き続きアクセスできます。バックアップストレージはバケット単位で分離されており、各 ClickHouse Managed Postgres インスタンスには専用のストレージバケットが割り当てられ、認証情報のスコープもそのインスタンスのバックアップへのアクセスのみに限定されています。
 
 <div id="point-in-time-recovery">
-  ## ポイントインタイム リカバリ
+  ## ポイントインタイム リカバリ {#point-in-time-recovery}
 </div>
 
 ポイントインタイム リカバリを使用すると、バックアップ保持期間内の任意の時点にデータベースを復元できます。これは、誤って削除したデータの復旧やデータ破損への対処、または既知の正常な状態にロールバックする必要がある場合に役立ちます。

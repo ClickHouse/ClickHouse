@@ -13,9 +13,9 @@
 #include <sstream>
 #include <vector>
 
-#if defined(OS_DARWIN) && defined(__GNUC__)
+#if defined(OS_DARWIN)
 #   include <machine/endian.h>
-#elif defined(OS_FREEBSD) && defined(__GNUC__)
+#elif defined(OS_FREEBSD)
 #   include <machine/endian.h>
 #   include <sys/endian.h>
 #else
@@ -195,8 +195,9 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
         return 1;
     }
 
-    /// Read metadata from end of file
-    MetaData metadata = *reinterpret_cast<MetaData*>(input + info_in.st_size - sizeof(MetaData));
+    /// Read metadata from end of file (memcpy because the data may be unaligned)
+    MetaData metadata;
+    memcpy(&metadata, input + info_in.st_size - sizeof(MetaData), sizeof(MetaData));
 
     /// Prepare to read information about files and decompress them
     off_t files_pointer = le64toh(metadata.start_of_files_data);
@@ -206,7 +207,8 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
     off_t check_pointer = le64toh(metadata.start_of_files_data);
     for (size_t i = 0; i < le64toh(metadata.number_of_files); ++i)
     {
-        FileData data = *reinterpret_cast<FileData*>(input + check_pointer);
+        FileData data;
+        memcpy(&data, input + check_pointer, sizeof(FileData));
         decompressed_full_size += le64toh(data.uncompressed_size);
         check_pointer += sizeof(FileData) + le64toh(data.name_length);
     }
@@ -234,7 +236,7 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
     for (size_t i = 0; i < le64toh(metadata.number_of_files); ++i)
     {
         /// Read information about file
-        file_info = *reinterpret_cast<FileData*>(input + files_pointer);
+        memcpy(&file_info, input + files_pointer, sizeof(FileData));
         files_pointer += sizeof(FileData);
 
         /// for output filename matching compressed allow additional 13 + 7 symbols for ".decompressed.XXXXXX" suffix
@@ -367,6 +369,17 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
         return 0;
     }
 
+#elif defined(OS_SUNOS)
+
+    static int read_exe_path(char *exe, size_t buf_sz)
+    {
+        ssize_t n = readlink("/proc/self/path/a.out", exe, buf_sz - 1);
+        if (n <= 0 || n >= static_cast<ssize_t>(buf_sz - 1))
+            return -1;
+        exe[n] = '\0';
+        return 0;
+    }
+
 #else
 
     static int read_exe_path(char *exe, size_t buf_sz)
@@ -379,7 +392,20 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
 
 #endif
 
-#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+#if defined(OS_SUNOS)
+
+static uint64_t getInode(const char *)
+{
+    struct stat info{};
+    if (stat("/proc/self/object/a.out", &info) != 0)
+    {
+        perror("stat executable");
+        return 0;
+    }
+    return info.st_ino;
+}
+
+#elif !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 
 static uint64_t getInode(const char * self)
 {

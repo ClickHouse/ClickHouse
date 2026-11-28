@@ -1,0 +1,42 @@
+databricks122/identity_columns
+a	Nullable(Int32)
+b	Nullable(Int64)
+0
+databricks133/identity_columns_table_feature
+a	Nullable(Int32)
+b	Nullable(Int32)
+0
+databricks122/invariants_writer_feature
+col_invariants	Int32
+1
+deltalake/invariants
+1
+deltalake/allow_column_defaults
+1	16
+deltalake/append_only
+1	11
+2	12
+deltalake/liquid_clustering
+test 1	2024	1
+test 2	2024	2
+test 2
+deltalake/liquid_clustering_multi_column
+2021	100	12	row 2021-1	row 2021-9
+2022	100	12	row 2022-1	row 2022-9
+2023	100	12	row 2023-1	row 2023-9
+9
+200	2
+uniform
+1	test data
+1	test data
+123
+deltalake/unsupported_writer_feature
+a	Nullable(Int32)
+b	Int32
+0
+trino/cdc_table
+2	a
+1	a
+1	a	insert	0
+2	a	update_postimage	1
+1	a	update_preimage	1

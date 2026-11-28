@@ -1,4 +1,3 @@
-set enable_analyzer=1;
 
 -- Baseline: for Nullable(String), .null is still the UInt8 null-map.
 SELECT toTypeName(str.null) FROM (SELECT CAST(NULL AS Nullable(String)) AS str);

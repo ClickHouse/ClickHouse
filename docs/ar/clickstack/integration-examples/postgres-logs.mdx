@@ -7,18 +7,16 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'سجلات', 'OTEL', 'ClickStack', 'مراقبة قواعد البيانات']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
   **الخلاصة**
 
-  اجمع سجلات خادم PostgreSQL واعرضها بصريًا في ClickStack باستخدام مستقبِل OTel ‏`filelog`‏ (بتنسيق CSV). يتضمن ذلك مجموعة بيانات تجريبية ولوحة معلومات مُعدّة مسبقًا.
+  اجمع سجلات خادم PostgreSQL واعرضها بصريًا في ClickStack باستخدام مستقبِل OTel ‏`filelog`‏ (بتنسيق CSV). يتضمن ذلك مجموعة بيانات تجريبية ولوحة معلومات جاهزة مسبقًا.
 </Info>
 
 <div id="existing-postgres">
-  ## التكامل مع PostgreSQL الحالي
+  ## التكامل مع PostgreSQL الحالي {#existing-postgres}
 </div>
 
 يتناول هذا القسم كيفية تهيئة تثبيت PostgreSQL الحالي لديك لإرسال السجلات إلى ClickStack من خلال تعديل إعدادات ClickStack OTel collector.
@@ -26,7 +24,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 إذا كنت ترغب في اختبار تكامل سجلات PostgreSQL قبل تهيئة إعدادك الحالي، فيمكنك تجربة الإعداد المُعَدّ مسبقًا وبياناتنا النموذجية في قسم [&quot;مجموعة البيانات التجريبية&quot;](/ar/clickstack/integration-examples/postgres-logs#demo-dataset).
 
 <div id="prerequisites">
-  ##### المتطلبات الأساسية
+  ##### المتطلبات الأساسية {#prerequisites}
 </div>
 
 * مثيل ClickStack قيد التشغيل
@@ -36,7 +34,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
 <Steps>
   <Step title="تهيئة تسجيل PostgreSQL" id="configure-postgres">
-    يدعم PostgreSQL عدة تنسيقات للسجلات. ولإجراء parsing منظَّم باستخدام OpenTelemetry، نوصي باستخدام تنسيق CSV لأنه يوفّر مخرجات متسقة وقابلة للمعالجة.
+    يدعم PostgreSQL عدة تنسيقات للسجلات. ولإجراء parsing منظَّم باستخدام OpenTelemetry، نوصي باستخدام تنسيق CSV لأنه يوفّر مخرجات متسقة وقابلة للمعالجة.
 
     يوجد ملف `postgresql.conf` عادةً في:
 
@@ -63,7 +61,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
 
     <Note>
-      يستخدم هذا الدليل تنسيق `csvlog` في PostgreSQL لإجراء تحليل منظَّم وموثوق. إذا كنت تستخدم التنسيقين `stderr` أو `jsonlog`، فستحتاج إلى تعديل إعدادات OpenTelemetry Collector وفقًا لذلك.
+      يستخدم هذا الدليل تنسيق `csvlog` في PostgreSQL لإجراء تحليل منظَّم وموثوق. إذا كنت تستخدم التنسيقين `stderr` أو `jsonlog`، فستحتاج إلى تعديل إعدادات OpenTelemetry Collector وفقًا لذلك.
     </Note>
 
     بعد إجراء هذه التغييرات، أعد تشغيل PostgreSQL:
@@ -88,7 +86,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="إنشاء تهيئة مخصصة لـ OTel collector" id="custom-otel">
-    يتيح لك ClickStack توسيع التهيئة الأساسية لـ OpenTelemetry Collector من خلال تحميل ملف تهيئة مخصص وتعيين متغير بيئة. وتُدمج التهيئة المخصصة مع التهيئة الأساسية التي يديرها HyperDX عبر OpAMP.
+    يتيح لك ClickStack توسيع التهيئة الأساسية لـ OpenTelemetry Collector من خلال تحميل ملف تهيئة مخصص وتعيين متغير بيئة. وتُدمج التهيئة المخصصة مع التهيئة الأساسية التي تديرها واجهة مستخدم ClickStack عبر OpAMP.
 
     أنشئ ملفًا باسم `postgres-logs-monitoring.yaml` يتضمن التهيئة التالية:
 
@@ -137,13 +135,13 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * يتعامل مع مُدخلات السجل متعددة الأسطر (فغالبًا ما تمتد الأخطاء عبر عدة أسطر)
     * يحلّل تنسيق CSV مع جميع حقول سجل PostgreSQL القياسية
     * يستخرج الطوابع الزمنية للحفاظ على التوقيت الأصلي للسجل
-    * يضيف السمة `source: postgresql` للتصفية في HyperDX
-    * يوجّه السجلات إلى مُصدِّر ClickHouse عبر مسار معالجة مخصّص
+    * يضيف السمة `source: postgresql` للتصفية في واجهة مستخدم ClickStack
+    * يوجّه السجلات إلى مُصدِّر ClickHouse عبر مسار معالجة مخصّص
 
     <Note>
-      - لا تُعرِّف في الإعداد المخصّص سوى `receivers` و`pipelines` الجديدة
+      - لا تُعرِّف في الإعداد المخصّص سوى `receivers` و`pipelines` الجديدة
       - إن `processors` (`memory_limiter`, `transform`, `batch`) و`exporters` (`clickhouse`) معرّفة مسبقًا في إعداد ClickStack الأساسي — ما عليك إلا الإشارة إليها بالاسم
-      - يستخرج العامل `csv_parser` جميع حقول سجل PostgreSQL القياسية بتنسيق CSV إلى سمات منظَّمة
+      - يستخرج العامل `csv_parser` جميع حقول سجل PostgreSQL القياسية بتنسيق CSV إلى سمات منظَّمة
       - يستخدم هذا الإعداد `start_at: end` لتجنّب إدخال السجلات مجددًا عند إعادة تشغيل المجمّع. ولأغراض الاختبار، غيّره إلى `start_at: beginning` لعرض السجلات التاريخية فورًا.
       - عدّل المسار `include` ليتوافق مع موقع دليل سجلات PostgreSQL لديك
     </Note>
@@ -156,7 +154,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     2. تعيين متغير البيئة `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
     3. ربط دليل سجلات PostgreSQL لكي يتمكن المجمّع من قراءتها
 
-    ##### الخيار 1: Docker Compose
+##### الخيار 1: Docker Compose {#docker-compose}
 
     حدّث إعدادات نشر ClickStack:
 
@@ -173,7 +171,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
           # ... other volumes ...
     ```
 
-    ##### الخيار 2: Docker Run (الصورة المتكاملة)
+##### الخيار 2: Docker Run (الصورة المتكاملة) {#all-in-one}
 
     إذا كنت تستخدم الصورة المتكاملة مع docker run:
 
@@ -191,25 +189,31 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="التحقق من السجلات في HyperDX" id="verifying-logs">
-    بعد إتمام الإعداد، سجّل الدخول إلى HyperDX وتأكد من أن السجلات تتدفق:
+  <Step title="التحقق من السجلات في واجهة مستخدم ClickStack" id="verifying-logs">
+    بعد إتمام الإعداد، سجّل الدخول إلى واجهة مستخدم ClickStack وتأكد من أن السجلات تتدفق:
 
     1. انتقل إلى عرض البحث
     2. اضبط المصدر على السجلات
-    3. صفِّ باستخدام `source:postgresql` لعرض السجلات الخاصة بـ PostgreSQL
-    4. ينبغي أن ترى سجلات منظَّمة تتضمن حقولًا مثل `user_name` و`database_name` و`error_severity` و`message` و`query` وغيرها.
+    3. صفِّ باستخدام `source:postgresql` لعرض السجلات الخاصة بـ PostgreSQL
+    4. ينبغي أن ترى سجلات منظَّمة تتضمن حقولًا مثل `user_name` و`database_name` و`error_severity` و`message` و`query` وغيرها.
 
-    <Image img="/images/clickstack/postgres/postgres-logs-search-view.webp" alt="عرض البحث للسجلات" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![عرض البحث للسجلات](/images/clickstack/postgres/postgres-logs-search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/postgres/postgres-log-view.webp" alt="عرض السجل" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![عرض السجل](/images/clickstack/postgres/postgres-log-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## مجموعة البيانات التجريبية
-</div>
+## مجموعة البيانات التجريبية {#demo-dataset}
 
-للمستخدمين الذين يريدون اختبار تكامل سجلات PostgreSQL قبل تهيئة أنظمتهم في بيئة الإنتاج، نوفر مجموعة بيانات نموذجية لسجلات PostgreSQL مُولَّدة مسبقًا بأنماط واقعية.
+للمستخدمين الذين يريدون اختبار تكامل سجلات PostgreSQL قبل تهيئة أنظمتهم في بيئة الإنتاج، نوفر مجموعة بيانات نموذجية لسجلات PostgreSQL مُولَّدة مسبقًا بأنماط واقعية.
 
 <Steps>
   <Step title="تنزيل مجموعة البيانات النموذجية" id="download-sample">
@@ -220,8 +224,8 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="إنشاء إعداد collector للاختبار" id="test-config">
-    أنشئ ملفًا باسم `postgres-logs-demo.yaml` بالإعداد التالي:
+  <Step title="إنشاء إعدادات collector للاختبار" id="test-config">
+    أنشئ ملفًا باسم `postgres-logs-demo.yaml` بالإعدادات التالية:
 
     ```yaml
     cat > postgres-logs-demo.yaml << 'EOF'
@@ -265,8 +269,8 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="تشغيل ClickStack باستخدام الإعداد التجريبي" id="run-demo">
-    شغّل ClickStack باستخدام السجلات والإعداد التجريبيين:
+  <Step title="تشغيل ClickStack باستخدام الإعدادات التجريبية" id="run-demo">
+    شغّل ClickStack باستخدام السجلات والإعدادات التجريبية:
 
     ```bash
     docker run --name clickstack-demo \
@@ -278,51 +282,69 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="التحقق من السجلات في HyperDX" id="verify-demo-logs">
+  <Step title="التحقق من السجلات في واجهة مستخدم ClickStack" id="verify-demo-logs">
     بعد تشغيل ClickStack:
 
-    1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
+    1. افتح [واجهة مستخدم ClickStack](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
     2. انتقل إلى عرض Search واضبط source على `Logs`
     3. اضبط النطاق الزمني على **2025-11-09 00:00:00 - 2025-11-12 00:00:00**
 
     <Info>
       **عرض المنطقة الزمنية**
 
-      يعرض HyperDX الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تغطي البيانات التجريبية الفترة **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. يضمن اتساع النطاق الزمني ظهور السجلات التجريبية لك بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
+      تعرض واجهة مستخدم ClickStack الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تغطي البيانات التجريبية الفترة **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. يضمن اتساع النطاق الزمني ظهور السجلات التجريبية لك بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
     </Info>
 
-    <Image img="/images/clickstack/postgres/postgres-logs-search-view.webp" alt="عرض Search للسجلات" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![عرض Search للسجلات](/images/clickstack/postgres/postgres-logs-search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/postgres/postgres-log-view.webp" alt="عرض السجل" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![عرض السجل](/images/clickstack/postgres/postgres-log-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## لوحات المعلومات والتصورات المرئية
-</div>
+## لوحات المعلومات والتصورات المرئية {#dashboards}
 
 لمساعدتك على بدء مراقبة PostgreSQL باستخدام ClickStack، نوفر تصورات أساسية لسجلات PostgreSQL.
 
 <Steps>
   <Step title="تنزيل إعدادات لوحة المعلومات" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">تنزيل ملف إعدادات لوحة المعلومات</TrackedLink>.
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">تنزيل ملف التهيئة للوحة المعلومات</TrackedLink>.
   </Step>
 
   <Step title="استيراد لوحة المعلومات الجاهزة مسبقًا" id="import-dashboard">
-    1. افتح HyperDX وانتقل إلى قسم Dashboards
-    2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
+    1. افتح واجهة مستخدم ClickStack وانتقل إلى قسم لوحات المعلومات
+    2. انقر على **استيراد لوحة معلومات** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
-    3. ارفع ملف `postgresql-logs-dashboard.json` وانقر على **Finish Import**
+    3. ارفع ملف `postgresql-logs-dashboard.json` وانقر على **إكمال الاستيراد**
 
-    <Image img="/images/clickstack/postgres/import-logs-dashboard.webp" alt="إنهاء الاستيراد" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![إكمال الاستيراد](/images/clickstack/postgres/import-logs-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="عرض لوحة المعلومات" id="created-dashboard">
     سيتم إنشاء لوحة المعلومات مع ضبط جميع التصورات مسبقًا:
 
-    <Image img="/images/clickstack/postgres/postgres-logs-dashboard.webp" alt="لوحة معلومات السجلات" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![لوحة معلومات السجلات](/images/clickstack/postgres/postgres-logs-dashboard.webp)
+      </Frame>
+    </div>
 
     <Note>
       بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (عدّله وفقًا لمنطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا افتراضيًا.
@@ -331,11 +353,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### تعذّر تحميل الإعدادات المخصّصة
+  ### تعذّر تحميل الإعدادات المخصّصة {#troubleshooting-not-loading}
 </div>
 
 تحقّق من ضبط متغير البيئة:
@@ -350,11 +372,9 @@ docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
 ```
 
-<div id="no-logs">
-  ### عدم ظهور سجلات في HyperDX
-</div>
+### عدم ظهور سجلات في واجهة مستخدم ClickStack {#no-logs}
 
-تحقق من أن التهيئة الفعّالة تتضمن مستقبِل filelog الخاص بك:
+تحقق من أن الإعداد الفعّال يتضمن مستقبِل filelog الخاص بك:
 
 ```bash
 docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
@@ -373,7 +393,7 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
 ```
 
 <div id="next-steps">
-  ## الخطوات التالية
+  ## الخطوات التالية {#next-steps}
 </div>
 
 * أعدّ [التنبيهات](/ar/clickstack/features/alerts) للأحداث الحرجة (فشل الاتصال، والاستعلامات البطيئة، والارتفاعات المفاجئة في الأخطاء)
@@ -381,8 +401,6 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
 * أنشئ لوحات معلومات مخصصة لأنماط الاستعلامات الخاصة بتطبيقك
 * اضبط `log_min_duration_statement` لتحديد الاستعلامات البطيئة بما يتوافق مع متطلبات الأداء لديك
 
-<div id="going-to-production">
-  ## الانتقال إلى بيئة الإنتاج
-</div>
+## الانتقال إلى بيئة الإنتاج {#going-to-production}
 
 يستفيد هذا الدليل من OpenTelemetry Collector المضمّن في ClickStack لتسهيل الإعداد السريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

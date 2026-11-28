@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- no-parallel: uses the global ONCE failpoint `prepared_sets_build_ordered_set_inplace_fail`.
 
 -- Regression test for "Not-ready Set is passed as the second argument".
@@ -12,7 +12,9 @@
 -- The fix runs the in-place pipeline against a clone of `source`, leaving the original intact so
 -- `DelayedCreatingSetsStep::makePlansForSets` can still build the set. The failpoint
 -- `prepared_sets_build_ordered_set_inplace_fail` fires once inside `CreatingSetsTransform::generate`
--- and skips `finishInsert`, reproducing the silent in-place failure deterministically.
+-- and skips `finishInsert`, reproducing the silent in-place failure deterministically. It fires only
+-- for an in-place build that runs against a clone of its source, which for the nested query below is
+-- the innermost subquery only (see 05137).
 
 DROP TABLE IF EXISTS t_not_ready_set;
 CREATE TABLE t_not_ready_set (k UInt64) ENGINE = MergeTree ORDER BY k;
@@ -64,6 +66,18 @@ INSERT INTO t_not_ready_set_errors SELECT sum(value) FROM system.errors WHERE na
 SELECT count() FROM t_not_ready_set WHERE k IN (SELECT k FROM t_not_ready_set WHERE k < 250);
 INSERT INTO t_not_ready_set_errors SELECT sum(value) FROM system.errors WHERE name = 'NOT_IMPLEMENTED';
 SELECT max(value) = min(value) FROM t_not_ready_set_errors;
+
+-- The abandoned in-place build may already have spilled its set to disk, which leaves the set with neither keys in
+-- memory nor a finished disk set; the deferred build must still create the set. Both builds spill, so the
+-- counter grows by at least 2.
+TRUNCATE TABLE t_not_ready_set_errors;
+INSERT INTO t_not_ready_set_errors SELECT sum(value) FROM system.events WHERE event = 'SetsSpilledToDisk';
+SYSTEM ENABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
+SELECT count() FROM t_not_ready_set WHERE k IN (SELECT k FROM t_not_ready_set WHERE k < 400)
+SETTINGS max_bytes_before_external_set = 1;
+SYSTEM DISABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
+INSERT INTO t_not_ready_set_errors SELECT sum(value) FROM system.events WHERE event = 'SetsSpilledToDisk';
+SELECT max(value) - min(value) >= 2 FROM t_not_ready_set_errors;
 
 DROP TABLE t_not_ready_set_errors;
 DROP TABLE t_not_ready_set;

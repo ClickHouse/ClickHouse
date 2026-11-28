@@ -29,7 +29,7 @@ class IMergeTreeReadRangesRefiner
 public:
     virtual ~IMergeTreeReadRangesRefiner() = default;
 
-    virtual MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const = 0;
+    [[nodiscard]] virtual MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const = 0;
 };
 
 using MergeTreeReadRangesRefinerPtr = std::shared_ptr<const IMergeTreeReadRangesRefiner>;

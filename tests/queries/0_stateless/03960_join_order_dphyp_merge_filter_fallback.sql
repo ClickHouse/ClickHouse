@@ -2,7 +2,6 @@
 -- query_plan_merge_filter_into_join_condition is unsupported by DPhyp: it returns
 -- nullptr so the next algorithm in the chain handles the query and keeps the predicate.
 
-SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 SET enable_parallel_replicas = 0;
 SET cross_to_inner_join_rewrite = 0;

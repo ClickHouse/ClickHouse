@@ -123,9 +123,9 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 The aggregated table stores only last 2 values for each aligned timestamp. This allows to calculate PromQL-like `irate` and `idelta` by reading much less data then is stored in the raw table.
 
-:::warning
+<Warning>
 This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
-:::
+</Warning>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesLastTwoSamples = R"(
 timeSeriesLastTwoSamples(timestamp, value)

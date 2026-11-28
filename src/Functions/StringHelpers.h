@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Common/memcpySmall.h>
+#include <Common/Exception.h>
 
 
 namespace DB

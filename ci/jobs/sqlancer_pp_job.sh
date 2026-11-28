@@ -18,7 +18,7 @@ set -exu
 
 # Capture the job start timestamp so the result file can report a real
 # `start_time`/`duration`. Praktika's CIDB inserter rejects a `null` `start_time`
-# (it calls `datetime.utcfromtimestamp(start_time)`, which fails on `None`).
+# because `Utils.timestamp_to_str` needs a concrete timestamp value.
 JOB_START_TIME=$(date +%s)
 
 REPO_DIR=$(readlink -f .)

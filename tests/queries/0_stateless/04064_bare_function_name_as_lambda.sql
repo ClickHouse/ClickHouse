@@ -7,7 +7,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/63498
 
 -- The bare-function-to-lambda rewrite is implemented only in the analyzer.
-SET enable_analyzer = 1;
 
 -- Basic: arrayMap with a function name
 SELECT arrayMap(negate, [1, 2, 3]);

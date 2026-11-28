@@ -1,0 +1,155 @@
+---
+title: '안전한 조직 네트워크 연결'
+sidebarTitle: '조직 네트워크 연결'
+hidden: false
+description: 'ClickHouse Cloud 프라이빗 네트워킹을 통해 remoteSecure()를 사용하여 한 ClickHouse Cloud 서비스에서 동일한 조직 및 리전에 있는 다른 서비스를 쿼리합니다. 원본 서비스가 PrivateLink나 제한적인 IP 액세스 목록을 사용하는 경우에도 쿼리할 수 있습니다'
+keywords: ['remoteSecure', 'service to service', 'cross service', 'private networking', 'privatelink', 'ip access list', 'named collection', 'organization network connectivity']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
+안전한 조직 네트워크 연결(Secure organization network connectivity)을 사용하면 ClickHouse Cloud 서비스에서 동일한 조직 및 리전에 있는 다른 서비스를 [`remoteSecure()`](/ko/reference/functions/table-functions/remote)로 쿼리할 수 있습니다. 트래픽이 공용 인터넷이 아닌 ClickHouse Cloud의 프라이빗 네트워크를 통해 전달되므로, 데이터를 읽어 오는 대상 서비스가 [PrivateLink](/ko/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) 또는 [IP 액세스 목록](/ko/products/cloud/guides/security/connectivity/setting-ip-filters)으로 접근이 제한되어 있어도 정상적으로 동작합니다.
+
+다음과 같은 경우에 사용하십시오.
+
+* 서비스가 PrivateLink 또는 엄격한 IP 액세스 목록으로 제한되어 있어 퍼블릭 엔드포인트를 통해 `remoteSecure()`를 사용할 수 없는 경우
+* 보안 요구 사항상 서비스 간 트래픽이 공용 인터넷을 거치는 것이 허용되지 않는 경우
+* 서비스 간에 [웨어하우스(warehouses)](/ko/products/cloud/features/infrastructure/warehouses)(컴퓨트-컴퓨트 분리)로 데이터를 공유하지 않지만, 서비스 간 쿼리가 필요한 경우
+
+<Note>
+  이 기능은 비공개 프리뷰 단계이며, 각 연결은 ClickHouse 팀이 직접 설정해 드립니다. 참여를 원하시면 ClickHouse 고객 계정 담당팀 또는 [ClickHouse 지원팀](https://clickhouse.com/support/program)에 문의하십시오.
+</Note>
+
+## 작동 방식 {#how-it-works}
+
+이 가이드에서는 다음 두 가지 용어를 사용합니다.
+
+* **프로듀서(Producer)**: 읽으려는 테이블을 보유한 서비스입니다.
+* **컨슈머(Consumer)**: `remoteSecure()`를 실행하여 프로듀서의 데이터를 읽는 서비스입니다.
+
+ClickHouse Cloud는 컨슈머에서 프로듀서로 향하는 단방향 연결을 생성합니다. 컨슈머는 ClickHouse Cloud가 관리하는 인증서로 인증하며, 프로듀서는 표준 `GRANT`로 컨슈머가 읽을 수 있는 테이블을 제어합니다. 따라서 비밀번호를 따로 생성하거나 교체할 필요가 없습니다.
+
+쿼리는 다음 세 가지 검사를 모두 통과해야 합니다.
+
+1. **네트워크**: 연결이 설정된 컨슈머만 프라이빗 네트워크를 통해 프로듀서에 접근할 수 있습니다.
+2. **아이덴티티**: 컨슈머는 자신의 호스트명에 연결된 인증서로 인증합니다.
+3. **테이블 권한**: 프로듀서는 `GRANT`로 컨슈머가 읽을 수 있는 테이블을 결정합니다. 권한이 부여되지 않은 테이블에 접근하면 액세스 거부 오류가 반환됩니다.
+
+## 사전 요구 사항 {#prerequisites}
+
+* 두 서비스가 동일한 ClickHouse Cloud 조직, 클라우드 제공업체, 리전에 있어야 합니다. 예를 들어 AWS `us-east-2`의 서비스는 AWS `us-west-2`의 서비스에 연결할 수 없습니다. 연결을 생성하기 전에 ClickHouse 팀이 서비스의 적격 여부를 확인합니다.
+* 두 서비스 모두 규제 대상(HIPAA 또는 PCI) 서비스가 아니어야 합니다.
+* 두 서비스의 서비스 ID와 호스트명이 필요합니다. 두 값 모두 콘솔의 각 서비스 **설정** 페이지에서 확인할 수 있습니다.
+* 두 서비스 모두에서 관리자 권한으로 SQL을 실행할 수 있어야 합니다.
+
+<Tip>
+  운영 환경에 영향을 주지 않도록 테스트 서비스로 먼저 시작하십시오. 컨슈머 서비스는 첫 번째 연결이 생성될 때 한 차례 롤링 재시작됩니다.
+</Tip>
+
+## 연결 설정 {#setup}
+
+### 서비스 세부 정보 전달 {#send-service-details}
+
+비공개 프리뷰 기간에는 연결 설정을 위한 콘솔 UI가 제공되지 않습니다. 다음 정보를 ClickHouse 담당자에게 전달하십시오.
+
+* 프로듀서(Producer)와 컨슈머(Consumer)의 서비스 ID. 각 ID가 어느 쪽에 해당하는지와 양방향 쿼리가 필요한지도 함께 알려 주십시오.
+* 컨슈머의 롤링 재시작이 가능한 시간대. 이후에 추가하는 연결은 재시작을 유발하지 않습니다.
+
+### ClickHouse에서 연결 생성 {#clickhouse-creates-connection}
+
+ClickHouse에서 두 서비스가 모두 요건을 충족하는지 확인한 후 연결을 생성합니다. 그런 다음 프로듀서에 `rt_<Consumer service ID>`라는 이름으로 인증서 기반 인증 사용자를 생성하고, 정확한 사용자 이름을 전달해 드립니다.
+
+### 컨슈머에 테이블 액세스 권한 부여 {#grant-access}
+
+아래 테스트 쿼리를 실행하거나, 프로듀서에서 사용자 소유 테이블에 대한 조회 권한을 부여하십시오.
+
+```sql
+CREATE TABLE default.rs_demo_events (id UInt32, val String) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO default.rs_demo_events VALUES (1, 'hello'), (2, 'from the Producer');
+
+GRANT SELECT ON default.rs_demo_events TO `rt_<Consumer service ID>`;
+
+CREATE TABLE default.rs_demo_no_grant (id UInt32) ENGINE = MergeTree ORDER BY id;
+```
+
+### 컨슈머(Consumer)에서 쿼리하기 {#query-from-consumer}
+
+컨슈머에서 다음을 실행하십시오. 비공개 프리뷰 기능인 이름이 지정된 컬렉션(Named Collections)은 ClickHouse에서 활성화해 드립니다. 아래 SQL은 프로듀서(Producer)를 가리키는 [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 생성한 다음, 이 컬렉션을 통해 쿼리를 실행합니다. 프로듀서의 호스트명은 콘솔에서 확인할 수 있으며, 프로듀서에 직접 연결할 때 사용하는 호스트명과 동일합니다.
+
+```sql
+CREATE NAMED COLLECTION IF NOT EXISTS my_producer AS
+    host = '<Producer hostname>',
+    port = 9440,
+    user = 'rt_<Consumer service ID>',
+    database = 'default';
+
+SELECT * FROM remoteSecure(my_producer, table = 'rs_demo_events');
+
+SELECT * FROM remoteSecure(my_producer, table = 'rs_demo_no_grant');
+```
+
+테스트 쿼리를 실행했다면 첫 번째 쿼리는 결과를 반환하지만, 두 번째 쿼리는 권한이 부족하여 액세스 거부 오류가 발생한 것을 확인할 수 있습니다.
+
+## 제한 사항 {#limitations}
+
+### 범위 {#scope}
+
+* 쿼리는 읽기 전용입니다. 컨슈머는 `remoteSecure()`를 통해 `SELECT`를 수행할 수 있지만 프로듀서에 `INSERT`할 수는 없습니다.
+* 두 서비스는 동일한 조직, 클라우드 제공업체, 리전에 있어야 합니다. cross-region 연결과 조직 간 연결은 향후 지원될 예정입니다.
+* 하나의 연결은 하나의 서비스에만 적용됩니다. [웨어하우스(warehouses)](/ko/products/cloud/features/infrastructure/warehouses)를 사용하는 경우, 한 서비스에 대한 연결은 해당 서비스와 데이터를 공유하는 다른 서비스에는 적용되지 않으므로 서비스마다 별도의 연결이 필요합니다.
+* 연결은 단방향입니다. 양방향으로 쿼리하려면 연결이 2개 필요합니다.
+* 읽기 작업은 현재의 [`remoteSecure()`](/ko/reference/functions/table-functions/remote) 테이블 함수와 마찬가지로 프로듀서에서 실행됩니다.
+
+### 유휴 상태 전환 {#idling}
+
+* 유휴 상태이거나 중지된 프로듀서는 `remoteSecure()` 쿼리를 받아도 깨어나지 않으며, 쿼리는 연결 거부(connection refused) 오류를 반환합니다. 컨슈머가 프로듀서에 안정적으로 쿼리해야 한다면 프로듀서에서 [유휴 상태 전환](/ko/products/cloud/features/autoscaling/idling)을 비활성화하십시오. 단, 이 경우 프로듀서가 계속 실행되므로 컴퓨트 비용이 지속적으로 청구됩니다.
+* 장기 실행 `remoteSecure()` 쿼리는 실행 도중 컨슈머가 유휴 상태로 전환되면 실패할 수 있습니다.
+
+### 오류 메시지 {#error-messages}
+
+대부분의 실패는 원인을 알려 주는 메시지 대신 연결 거부, 핸드셰이크 거부, 타임아웃 같은 일반적인 네트워크 오류로 나타납니다. 아래의 [문제 해결](#troubleshooting) 표를 참고하십시오. 또한 오류 메시지 개선에 활용할 수 있도록 오류 내용을 공유해 주십시오.
+
+### 서비스 삭제 {#deleting-a-service}
+
+연결이 있더라도 두 서비스 중 어느 쪽이든 삭제할 수 있습니다. 비공개 프리뷰 기간에는 서비스를 삭제한 경우 저희에게 알려 주십시오. 연결을 정리해 드리겠습니다.
+
+## 문제 해결 {#troubleshooting}
+
+| 증상                             | 예상 원인                                      | 조치 방법                                                                              |
+| ------------------------------ | ------------------------------------------ | ---------------------------------------------------------------------------------- |
+| 액세스 거부                         | 테이블에 컨슈머 사용자에 대한 권한이 부여되지 않았습니다       | [컨슈머에 테이블 액세스 권한 부여](#grant-access)의 설명에 따라 프로듀서에서 `GRANT SELECT`를 실행하십시오 |
+| 인증 실패                          | 명명된 컬렉션의 사용자가 당사에서 생성한 사용자와 일치하지 않습니다      | 당사에서 전달한 사용자 이름을 확인하십시오                                                            |
+| 연결 거부                          | 프로듀서가 유휴 상태이거나 중지되었거나, 해당 방향의 연결이 없습니다 | 프로듀서를 시작하십시오. 이미 실행 중이라면 당사에 연결 방향을 확인해 주십시오                                   |
+| 명확한 오류 없이 쿼리 응답이 멈추거나 시간 초과됩니다 | 연결 설정이 아직 완료되지 않았을 수 있습니다                  | 두 서비스 ID를 모두 알려 주시고 당사에 문의하십시오                                                     |
+
+## 자주 묻는 질문 {#faq}
+
+<AccordionGroup>
+  <Accordion title="추가 비용이 발생합니까?" id="cost">
+    실제로 사용한 컴퓨트에 대해서만 비용이 청구되며, 여기에는 프로듀서가 유휴 상태가 아닌 시간도 포함됩니다.
+  </Accordion>
+
+  <Accordion title="비밀번호나 인증서를 직접 관리해야 합니까?" id="credentials">
+    아닙니다. 컨슈머는 ClickHouse Cloud가 대신 관리하는 인증서로 인증합니다.
+  </Accordion>
+
+  <Accordion title="트래픽이 공용 인터넷을 거칩니까?" id="public-internet">
+    아닙니다. 트래픽은 ClickHouse Cloud의 프라이빗 네트워크 안에서만 전달됩니다. 따라서 프로듀서가 PrivateLink 트래픽만 허용하거나 IP 액세스 목록에 허용된 주소가 하나도 없더라도 정상적으로 동작합니다.
+  </Accordion>
+
+  <Accordion title="프로듀서가 컨슈머의 데이터를 읽을 수 있습니까?" id="reverse-reads">
+    반대 방향의 연결을 별도로 요청하지 않는 한 읽을 수 없습니다.
+  </Accordion>
+
+  <Accordion title="이 기능을 활성화하면 서비스가 재시작됩니까?" id="restarts">
+    컨슈머에서 처음 연결을 생성할 때 롤링 재시작이 한 번 트리거됩니다. 프로듀서는 재시작되지 않으며, 이후에 연결을 추가하거나 철회하더라도 재시작은 발생하지 않습니다.
+  </Accordion>
+
+  <Accordion title="액세스는 어떻게 제거합니까?" id="remove-access">
+    테이블에 대한 액세스를 제거하려면 프로듀서에서 `REVOKE`를 실행하십시오. 비공개 프리뷰 기간에는 연결 자체를 제거하려면 ClickHouse 담당자에게 문의하십시오.
+  </Accordion>
+</AccordionGroup>
