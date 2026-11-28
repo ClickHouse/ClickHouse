@@ -239,20 +239,20 @@ struct QueryPlanOptimizationSettings
 
     struct DistinctAggregationSettings
     {
-        size_t group_by_two_level_threshold;
-        size_t group_by_two_level_threshold_bytes;
-        float min_hit_rate_to_use_consecutive_keys_optimization;
-        bool enable_prefetch;
-        bool serialize_string_with_zero_byte;
-        bool enable_parallel_single_level_merge;
-        bool enable_parallel_single_level_merge_by_index;
-        bool enable_packed_string_keys;
-        bool enable_fixed_and_packed_string_keys;
-        bool enable_adaptive_aggregator;
-        UInt64 adaptive_aggregator_freeze_threshold;
-        UInt64 adaptive_aggregator_freeze_threshold_bytes;
-        bool adaptive_aggregator_disable_thaw;
-        bool use_aggregation_memory_tracker;
+        size_t group_by_two_level_threshold = 0;
+        size_t group_by_two_level_threshold_bytes = 0;
+        float min_hit_rate_to_use_consecutive_keys_optimization = 0;
+        bool enable_prefetch = false;
+        bool serialize_string_with_zero_byte = false;
+        bool enable_parallel_single_level_merge = false;
+        bool enable_parallel_single_level_merge_by_index = false;
+        bool enable_packed_string_keys = false;
+        bool enable_fixed_and_packed_string_keys = false;
+        bool enable_adaptive_aggregator = false;
+        UInt64 adaptive_aggregator_freeze_threshold = 0;
+        UInt64 adaptive_aggregator_freeze_threshold_bytes = 0;
+        bool adaptive_aggregator_disable_thaw = false;
+        bool use_aggregation_memory_tracker = false;
     } distinct_aggregation_settings;
 
     bool optimize_use_implicit_projections;
