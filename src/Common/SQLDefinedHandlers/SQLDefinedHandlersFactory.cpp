@@ -8,6 +8,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/StorageID.h>
 #include <base/sleep.h>
 
@@ -227,6 +228,7 @@ void SQLDefinedHandlersFactory::createFromSQL(const ASTCreateHandlerQuery & quer
 
     /// Build (validates the query and computes the canonical statement), then check ambiguity, then persist.
     auto handler = makeSQLDefinedHandler(query);
+    checkStoredQueryConstructionSettings(query);
     checkAmbiguity(*handler, loaded_handlers);
 
     metadata_storage->store(query.handler_name, handler->create_statement, /* replace */ false);
@@ -264,6 +266,7 @@ void SQLDefinedHandlersFactory::createReplicated(const ASTCreateHandlerQuery & q
         try
         {
             handler = makeSQLDefinedHandler(query);
+            checkStoredQueryConstructionSettings(query);
             checkAmbiguity(*handler, current);
         }
         catch (...)
@@ -429,6 +432,7 @@ String SQLDefinedHandlersFactory::prepareAlter(const String & handler_name)
 bool SQLDefinedHandlersFactory::updateFromSQL(
     const ASTCreateHandlerQuery & alter_query, const String & expected_base, const ASTCreateHandlerQuery & merged)
 {
+    checkStoredQueryConstructionSettings(alter_query);
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 

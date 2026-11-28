@@ -54,6 +54,9 @@ public:
     /// The query to be executed by the handler (the part after AS). Stored as a child.
     ASTPtr query;
 
+    /// `query` keeps query-construction settings that are not applied when the handler is created (not formatted).
+    bool has_unapplied_construction_settings = false;
+
     /// Optional `DEFINER = ... SQL SECURITY ...` clause (an `ASTSQLSecurity`), absent means INVOKER. Stored as a child.
     ASTPtr sql_security;
 
