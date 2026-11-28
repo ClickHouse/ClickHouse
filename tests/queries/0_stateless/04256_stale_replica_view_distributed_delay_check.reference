@@ -1,0 +1,3 @@
+[lazy] distributed_two_replicas_view_replicated2: 0
+[local] distributed_mv_to_target: 2
+[remote] distributed_mv_to_target: 2

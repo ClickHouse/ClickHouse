@@ -8,6 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ReplicatedTableDelay.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -225,15 +226,6 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        const auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(main_table_storage, DeferredTable::Load).get();
-
-        if (!replicated_storage)
-        {
-            /// Table is not replicated, use local server.
-            emplace_local_stream(main_table_storage);
-            return;
-        }
-
         const UInt64 max_allowed_delay = settings[Setting::max_replica_delay_for_distributed_queries];
 
         if (!max_allowed_delay)
@@ -242,7 +234,7 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        UInt64 local_delay = replicated_storage->getAbsoluteDelay();
+        UInt64 local_delay = getReplicatedDelay(main_table_storage, context).max_absolute_delay;
 
         if (local_delay < max_allowed_delay)
         {
