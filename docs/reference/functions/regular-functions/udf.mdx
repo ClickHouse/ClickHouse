@@ -17,7 +17,7 @@ ClickHouse supports several types of user defined functions (UDFs):
 - [Experimental driver-based executable UDFs](#driver-based-executable-user-defined-functions) let an operator-supplied "driver" turn a code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into an executable UDF at function-creation time (for example, by compiling it). They build on executable UDFs and require server-side driver configuration.
 
 <Note>
-With the configuration installed by the packages, the server isolates itself from the filesystem of the host (see [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation)), and the default Docker image has no shell or interpreter. Executable UDFs that run scripts need additional configuration, and driver-based UDFs need the isolation disabled. See [Executable UDFs with filesystem isolation](#filesystem-isolation).
+With the configuration installed by the packages, the server isolates itself from the filesystem of the host (see [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation)), and the default Docker image has no shell or interpreter. Executable UDFs that run scripts and driver-based UDFs need additional configuration. See [Executable UDFs with filesystem isolation](#filesystem-isolation).
 </Note>
 
 ## Executable User Defined Functions {#executable-user-defined-functions}
@@ -622,13 +622,29 @@ The driver registry is loaded on server start and refreshed on `SYSTEM RELOAD CO
 
 ### Drivers and filesystem isolation {#drivers-and-filesystem-isolation}
 
-Drivers do not work with [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation). A driver generates the program of a function in the working directory of the function, inside [`dynamic_user_defined_executable_functions_path`](/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path). The server writes to this directory, so in the isolated filesystem it is mounted with `noexec`, like every path that the server can write to, and the program could never be started. This cannot be changed with `filesystem_isolation_paths`: a path the server writes to is never executable, because not letting the server run the files it writes is a main purpose of the isolation. So `CREATE FUNCTION` with a driver is refused while the server is isolated, whatever the configuration of the paths, and even for a driver whose generated function would run only programs from visible read-only paths. While the isolation is in force:
+A driver generates the program of a function in the working directory of the function, inside [`dynamic_user_defined_executable_functions_path`](/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path). With [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation), every path that the server writes to is mounted with `noexec`, so by default that program could never be started. While the dynamic directory is not executable:
 
 - `CREATE FUNCTION ... ENGINE = DriverName(...)` fails with the `SUPPORT_IS_DISABLED` error.
 - At startup, a persisted `ATTACH FUNCTION` whose generated configuration is missing cannot be recreated, because that would run the driver.
 - Functions that were created before the isolation was enabled are still loaded from their generated configurations, but calling them fails, because their programs cannot be started.
 
-The `config.xml` installed by the packages sets `filesystem_isolation` to `best_effort`, so disable the isolation explicitly on a server that uses drivers:
+To use drivers with the isolation, declare the dynamic directory as writable and executable with `<read_write_executable>` in `filesystem_isolation_paths`, and make the drivers' runtime visible. The drivers are started with `/usr/bin/env`, and a driver written as a shell script needs `/bin/sh`:
+
+```xml title="/etc/clickhouse-server/config.d/udf_drivers_isolation.xml"
+<clickhouse>
+    <filesystem_isolation_paths>
+        <read_write_executable>/var/lib/clickhouse/dynamic_user_defined_executable_functions</read_write_executable>
+        <!-- The runtime of the drivers and of the programs they generate. -->
+        <read_only>/bin</read_only>
+        <read_only>/usr/bin</read_only>
+        <read_only>/lib</read_only>
+        <read_only>/lib64</read_only>
+        <read_only>/usr/lib</read_only>
+    </filesystem_isolation_paths>
+</clickhouse>
+```
+
+The path must be the one in `dynamic_user_defined_executable_functions_path`, and the change takes effect after a restart. A `<read_write_executable>` path lets the server run the files it writes there, which the isolation otherwise prevents. Declare only the dynamic directory this way, not a broader path. To use drivers without this, disable the isolation instead:
 
 ```xml title="/etc/clickhouse-server/config.d/filesystem_isolation.xml"
 <clickhouse>
@@ -708,7 +724,7 @@ The originating query is persisted as an `ATTACH FUNCTION ...` statement in the 
 ### Limitations {#driver-limitations}
 
 - The feature is experimental and gated behind `allow_experimental_executable_udf_drivers`.
-- Drivers are not supported with [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation), which the `config.xml` of the packages enables. See [Drivers and filesystem isolation](#drivers-and-filesystem-isolation).
+- With [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation), which the `config.xml` of the packages enables, drivers need `dynamic_user_defined_executable_functions_path` declared as `<read_write_executable>`. See [Drivers and filesystem isolation](#drivers-and-filesystem-isolation).
 - Driver-based functions are not supported with replicated user-defined function storage (`ON CLUSTER` and `<user_defined_zookeeper_path>`), because only the originating query is replicated, not the generated artifacts.
 - `RESTORE` of a backed-up driver-based function persists the query but does not re-run the driver; the generated configuration is materialized later by restart recovery.
 
