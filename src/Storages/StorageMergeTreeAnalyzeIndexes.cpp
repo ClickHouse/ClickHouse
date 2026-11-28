@@ -127,9 +127,8 @@ protected:
     {
         const auto & context = getContext();
 
-        auto reader_settings = MergeTreeReaderSettings::createForQuery(context, *table_settings, query_info);
-
         const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        auto reader_settings = MergeTreeReaderSettings::createForQuery(context, *table_settings, query_info, metadata_snapshot->getColumns());
         const auto * merge_tree_data = castStorage<MergeTreeData>(storage, DeferredTable::Load).get();
         if (!merge_tree_data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", storage->getName());
