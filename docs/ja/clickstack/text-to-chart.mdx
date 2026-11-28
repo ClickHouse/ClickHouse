@@ -12,7 +12,7 @@ ClickStack の Text-to-Chart 機能では、表示したい内容をプレーン
 この機能は、大規模言語モデル (LLM) を使用してテキストプロンプトをクエリに変換し、その後 [Chart Explorer](/ja/clickstack/features/dashboards/overview#navigate-chart-explorer) で可視化を作成します。設定済みのデータソースであれば、どのデータソースでも利用できます。
 
 <div id="prerequisites">
-  ## 前提条件
+  ## 前提条件 {#prerequisites}
 </div>
 
 Text-to-Chart を使用するには、[Anthropic APIキー](https://console.anthropic.com/) が必要です。ClickStack の起動時に `ANTHROPIC_API_KEY` 環境変数を設定してください。
@@ -26,9 +26,9 @@ Text-to-Chart を使用するには、[Anthropic APIキー](https://console.anth
     ```
   </Tab>
 
-  <Tab title="Docker（HyperDX のみ）">
+  <Tab title="Docker（ClickStack UI のみ）">
     ```bash
-    docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx-local
+    docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-local
     ```
   </Tab>
 
@@ -54,26 +54,20 @@ Text-to-Chart を使用するには、[Anthropic APIキー](https://console.anth
   </Tab>
 </Tabs>
 
-<div id="using-text-to-chart">
-  ## Text-to-Chart を使う
-</div>
+## Text-to-Chart を使う {#using-text-to-chart}
 
 <Steps>
   <Step title="Chart Explorer に移動する" id="navigate-chart-explorer">
-    HyperDX の左側のメニューから **Chart Explorer** を選択します。
+    ClickStack UI の左側のメニューから **Chart Explorer** を選択します。
   </Step>
 
   <Step title="データソースを選択する" id="select-data-source">
     可視化したいデータソースを選択します。たとえば **ログ**、**トレース**、**メトリクス** などです。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Chart explorer](/images/clickstack/text-to-chart/chart-explorer.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Chart explorer](/images/clickstack/text-to-chart/chart-explorer.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -87,20 +81,14 @@ Text-to-Chart を使用するには、[Anthropic APIキー](https://console.anth
     ClickStack はプロンプトをクエリに変換し、自動的に可視化を表示します。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Text to chart](/images/clickstack/text-to-chart/text-to-chart.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Text to chart](/images/clickstack/text-to-chart/text-to-chart.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="demo-data">
-  ## デモデータで試す
-</div>
+## デモデータで試す {#demo-data}
 
 Text-to-Chart を手早く試すには、[ローカルモード](/ja/clickstack/deployment/local-mode-only)の Dockerイメージと、[リモートのデモデータセット](/ja/clickstack/example-datasets/remote-demo-data)を使うのが最も簡単です。
 
@@ -116,13 +104,9 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 * **Password**: 空のままにします
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![接続を作成](/images/clickstack/text-to-chart/create-connection.webp)
-
-</Frame>
-
+  <Frame>
+    ![接続を作成](/images/clickstack/text-to-chart/create-connection.webp)
+  </Frame>
 </div>
 
 続いて、各ログソース — **ログ**、**トレース**、**メトリクス**、**Sessions** — が `otel_v2` データベースを使用するように変更します。ログソースの設定方法の詳細については、[リモートのデモデータセットガイド](/ja/clickstack/example-datasets/remote-demo-data)を参照してください。
@@ -130,7 +114,7 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 接続したら、**Chart Explorer** を開き、利用可能なログ、トレース、メトリクスに対してプロンプトを試してみてください。
 
 <div id="example-prompts">
-  ## プロンプトの例
+  ## プロンプトの例 {#example-prompts}
 </div>
 
 以下のプロンプトは、オブザーバビリティ データを扱う際の一般的なユースケースを示しています。
@@ -145,16 +129,14 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 プロンプトでは、設定済みのデータソースで利用可能な任意のカラムや属性を参照できます。プロンプトが具体的であるほど、生成されるチャートの精度は高くなります。
 
 <div id="limitations">
-  ## 制限事項
+  ## 制限事項 {#limitations}
 </div>
 
 * Text-to-Chart は現在、LLMプロバイダーとして Anthropic のみをサポートしています。OpenAI を含む追加のプロバイダーへの対応は、今後のリリースで予定されています。
 * データソースとしてサポートされているのは、ログとトレースのみです。Prometheus メトリクスにはまだ対応していません。
 * チャートの精度は、プロンプトの明確さと基盤となるデータの構造に依存します。生成されたチャートが期待どおりでない場合は、プロンプトを言い換えるか、カラム名を明示的に指定してみてください。
 
-<div id="further-reading">
-  ## 参考資料
-</div>
+## 参考資料 {#further-reading}
 
 * [テキストからチャートへ: ClickStack でよりすばやく可視化する方法](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — この機能を紹介するブログ記事
 * [ダッシュボードと可視化](/ja/clickstack/features/dashboards/overview) — Chart Explorer を使った手動でのチャート作成

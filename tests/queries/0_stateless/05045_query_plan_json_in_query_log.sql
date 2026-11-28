@@ -11,7 +11,7 @@
 --
 -- The plan is stored flat: `{"Version": <n>, "Root": <id>, "ExecutionTimeNs": <ns>,
 -- "MaxThreads": <n>, "Output": [...], "Nodes": [...]}`, with each node naming its children by
--- id. Anything a reader can compute from those is not stored -- see FlatJSONPlanRenderer.
+-- id, a number. Anything a reader can compute from those is not stored -- see FlatJSONPlanRenderer.
 
 SET log_query_plans = 0;
 SELECT count() FROM numbers(1000) WHERE number > 900 SETTINGS log_comment = '05045_off' FORMAT Null;
@@ -47,7 +47,7 @@ SELECT
     count(),
     anyLast(isValidJSON(toJSONString(query_plan))),
     anyLast(JSONExtractUInt(toJSONString(query_plan), 'Version')),
-    anyLast(JSONExtractString(toJSONString(query_plan), 'Root')) != '',
+    anyLast(JSONType(toJSONString(query_plan), 'Root')) IN ('Int64', 'UInt64'),
     anyLast(JSONHas(toJSONString(query_plan), 'Nodes')),
     anyLast(position(toJSONString(query_plan), '"Statistics"')) > 0,
     anyLast(position(toJSONString(query_plan), 'ReadFromSystemNumbers')) > 0,
@@ -63,7 +63,7 @@ SELECT
     'exception',
     count(),
     anyLast(isValidJSON(toJSONString(query_plan))),
-    anyLast(JSONExtractString(toJSONString(query_plan), 'Root')) != '',
+    anyLast(JSONType(toJSONString(query_plan), 'Root')) IN ('Int64', 'UInt64'),
     anyLast(position(toJSONString(query_plan), '"Statistics"')) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'ExceptionWhileProcessing'

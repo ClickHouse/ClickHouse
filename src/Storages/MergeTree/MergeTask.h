@@ -236,7 +236,6 @@ private:
         Names deduplicate_by_columns{};
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
-        bool vertical_ttl_delete{false};
         /// When true, all source parts are fully expired (MergeType::TTLDrop).
         /// The data pipeline is skipped entirely — no readers are opened,
         /// no buffers allocated, and the result is an empty part.
@@ -335,6 +334,10 @@ private:
         bool need_remove_expired_values{false};
         bool force_ttl{false};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
+        /// Set if `finalizeRowsSources` rewrites `rows_sources`: the merging algorithm writes here instead of `rows_sources_temporary_file`.
+        std::shared_ptr<RowsSourcesTemporaryFile> merged_rows_sources;
+        /// For a vertical merge with TTL: which of the rows the merging algorithm emits `TTLTransform` drops.
+        std::shared_ptr<TemporaryDataBuffer> ttl_skip_flags;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
         /// For projections to rebuild
@@ -344,9 +347,9 @@ private:
 
         /// Pre-calculate squash: accumulates raw source blocks before calling calculate().
         /// Shared across all projections since they all consume the same source blocks.
-        /// Only the columns required by at least one projection (plus _row_exists when
-        /// present) are squashed, so wide source columns no projection reads are not
-        /// retained in memory until the squash boundary.
+        /// Only the columns required by at least one projection are squashed, so wide
+        /// source columns no projection reads are not retained in memory until the
+        /// squash boundary.
         std::optional<Squashing> pre_calculate_squash;
         NameSet pre_calculate_required_columns;
         UInt64 pre_calculate_starting_offset{0};
@@ -387,14 +390,19 @@ private:
         [[nodiscard]] bool prepare() const;
         [[nodiscard]] bool executeImpl() const;
         void finalize() const;
+        /// Checks the `rows_sources` of a vertical merge; if the merging algorithm wrote `merged_rows_sources`, rewrites it into the final one.
+        [[nodiscard]] bool finalizeRowsSources() const;
+        /// Each part's `_row_exists` without the mask, for `rewriteRowsSources`; empty unless `vertical_lightweight_delete`.
+        [[nodiscard]] std::vector<QueryPipeline> createPipelinesForReadingRowExists() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 3>;
+        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 4>;
 
         const ExecuteAndFinalizeHorizontalPartSubtasks subtasks
         {
             &ExecuteAndFinalizeHorizontalPart::prepare,
             &ExecuteAndFinalizeHorizontalPart::executeImpl,
+            &ExecuteAndFinalizeHorizontalPart::finalizeRowsSources,
             &ExecuteAndFinalizeHorizontalPart::executeMergeProjections
         };
 
@@ -409,6 +417,8 @@ private:
 
         [[nodiscard]] MergeAlgorithm chooseMergeAlgorithm() const;
         [[nodiscard]] bool canCheckpointVerticalMerge() const;
+        /// Whether `TTLTransform` writes `ttl_skip_flags` for the rewrite of `rows_sources`.
+        [[nodiscard]] bool recordsTTLSkipFlags() const;
 
         struct SavedCheckpointLoadResult
         {
@@ -645,7 +655,13 @@ private:
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
     static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
     static MergeCheckpointIdentity makeMergeCheckpointIdentity(const GlobalRuntimeContext & global_ctx);
-    static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
+    /// Copies `rows_sources` from `in` to `out`, skipping the rows dropped outside the merging algorithm; returns the kept row count.
+    static size_t rewriteRowsSources(
+        ReadBuffer & in,
+        WriteBuffer & out,
+        std::vector<QueryPipeline> row_exists_per_part,
+        std::unique_ptr<ReadBuffer> ttl_skip_flags,
+        const GlobalRuntimeContext & global_ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
     static void mergeBuiltStatistics(BuildStatisticsTransformMap && build_statistics_transforms, const GlobalRuntimeContextPtr & global_ctx);

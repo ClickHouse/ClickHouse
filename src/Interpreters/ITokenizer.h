@@ -14,6 +14,7 @@
 #include <Interpreters/BloomFilter.h>
 #include <base/FnTraits.h>
 #include <base/types.h>
+#include <base/unaligned.h>
 #include <fmt/format.h>
 
 #if USE_JIEBA
@@ -379,7 +380,7 @@ private:
                 if (candidate < resume)
                     continue;
 
-                size_t separator_length = matchSeparator(data, length, candidate - data);
+                const size_t separator_length = short_separators.empty() ? matchSeparator(data, length, candidate - data) : matchShortSeparator(candidate, end);
                 if (separator_length == 0)
                     continue;
 
@@ -397,11 +398,32 @@ private:
             callback(token_start, end - token_start);
     }
 
+    /// Reads 8 bytes at `pos`, which the padding of the data allows.
+    ALWAYS_INLINE size_t matchShortSeparator(const char * pos, const char * end) const
+    {
+        const UInt64 word = unalignedLoadLittleEndian<UInt64>(pos);
+        for (const auto & separator : short_separators)
+        {
+            if (separator.length <= static_cast<size_t>(end - pos) && (word & separator.mask) == separator.bytes)
+                return separator.length;
+        }
+        return 0;
+    }
+
     std::vector<String> separators;
     /// The first bytes of all separators. Only positions holding one of them can start a separator.
     ByteSetLookup separator_first_bytes;
     /// If every separator is a single byte, `separator_first_bytes` is exactly the set of separators.
     bool all_separators_single_byte = false;
+
+    struct ShortSeparator
+    {
+        UInt64 bytes;
+        UInt64 mask;
+        size_t length;
+    };
+    /// Filled only when every separator is at most 8 bytes and not all of them are single bytes.
+    std::vector<ShortSeparator> short_separators;
 };
 
 /// Parser extracting tokens separated by a regular expression, or - in `match_tokens` mode - tokens
@@ -833,6 +855,13 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
 void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, size_t length, BloomFilter & bloom_filter);
 
 /// Tokenizes `rows`-many rows of `input`, starting at offset `from`. Returns a ColumnArray(String) with one array per row, containing the tokens.
-ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows);
+/// For an Array `input`, `element_token_offsets`, if set, receives for each non-NULL element
+/// the offset in the returned data where its tokens end.
+ColumnPtr tokenizeToArray(
+    const ITokenizer & tokenizer,
+    const IColumn & input,
+    size_t from,
+    size_t rows,
+    PaddedPODArray<UInt64> * element_token_offsets = nullptr);
 
 }

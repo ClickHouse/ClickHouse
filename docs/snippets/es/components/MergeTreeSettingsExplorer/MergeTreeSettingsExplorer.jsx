@@ -17,7 +17,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_*",
-      count: 13,
+      count: 14,
       settings: [
         { name: "allow_coalescing_columns_in_partition_or_order_key", path: "/allow#allow_coalescing_columns_in_partition_or_order_key", default: "0" },
         { name: "allow_commit_order_projection", path: "/allow#allow_commit_order_projection", default: "0" },
@@ -31,6 +31,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "allow_summing_columns_in_partition_or_order_key", path: "/allow#allow_summing_columns_in_partition_or_order_key", default: "0" },
         { name: "allow_suspicious_indices", path: "/allow#allow_suspicious_indices", default: "0" },
         { name: "allow_tuple_element_aggregation", path: "/allow#allow_tuple_element_aggregation", default: "0" },
+        { name: "allow_vector_similarity_index_in_specialized_merge_tree", path: "/allow#allow_vector_similarity_index_in_specialized_merge_tree", default: "0" },
         { name: "allow_vertical_merges_from_compact_to_wide_parts", path: "/allow#allow_vertical_merges_from_compact_to_wide_parts", default: "1" }
       ],
       children: []
@@ -176,11 +177,12 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 8,
+      count: 9,
       settings: [
         { name: "enable_adaptive_codec_selection", path: "/enable#enable_adaptive_codec_selection", default: "0" },
         { name: "enable_index_granularity_compression", path: "/enable#enable_index_granularity_compression", default: "1" },
         { name: "enable_max_bytes_limit_for_min_age_to_force_merge", path: "/enable#enable_max_bytes_limit_for_min_age_to_force_merge", default: "1" },
+        { name: "enable_merge_checkpoints", path: "/enable#enable_merge_checkpoints", default: "0" },
         { name: "enable_mixed_granularity_parts", path: "/enable#enable_mixed_granularity_parts", default: "1" },
         { name: "enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", path: "/enable#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", default: "0" },
         { name: "enable_row_mask_update_coalescing", path: "/enable#enable_row_mask_update_coalescing", default: "1" },
@@ -319,7 +321,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_*",
-      count: 17,
+      count: 18,
       settings: [
         { name: "max_avg_part_size_for_too_many_parts", path: "/max#max_avg_part_size_for_too_many_parts", default: "1073741824" },
         { name: "max_buckets_in_map", path: "/max#max_buckets_in_map", default: "32" },
@@ -328,6 +330,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_concurrent_queries", path: "/max#max_concurrent_queries", default: "0" },
         { name: "max_digestion_size_per_segment", path: "/max#max_digestion_size_per_segment", default: "268435456" },
         { name: "max_file_name_length", path: "/max#max_file_name_length", default: "127" },
+        { name: "max_memory_ratio_to_activate_adaptive_write_buffer", path: "/max#max_memory_ratio_to_activate_adaptive_write_buffer", default: "0.03125" },
         { name: "max_partitions_to_read", path: "/max#max_partitions_to_read", default: "-1" },
         { name: "max_projections", path: "/max#max_projections", default: "25" },
         { name: "max_row_mask_update_coalescing_ast_bytes", path: "/max#max_row_mask_update_coalescing_ast_bytes", default: "1048576" },
@@ -440,8 +443,10 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "merge_*",
-      count: 3,
+      count: 5,
       settings: [
+        { name: "merge_checkpoints_min_bytes", path: "/merge#merge_checkpoints_min_bytes", default: "10737418240" },
+        { name: "merge_checkpoints_min_interval_seconds", path: "/merge#merge_checkpoints_min_interval_seconds", default: "60" },
         { name: "merge_total_max_bytes_to_prewarm_cache", path: "/merge#merge_total_max_bytes_to_prewarm_cache", default: "16106127360" },
         { name: "merge_use_batch_sorting_queue", path: "/merge#merge_use_batch_sorting_queue", default: "0" },
         { name: "merge_workload", path: "/merge#merge_workload", default: '""' }
@@ -808,7 +813,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "shared_merge_tree_use_outdated_parts_compact_format", path: "/shared-merge#shared_merge_tree_use_outdated_parts_compact_format", default: "1" },
         { name: "shared_merge_tree_use_too_many_parts_count_from_virtual_parts", path: "/shared-merge#shared_merge_tree_use_too_many_parts_count_from_virtual_parts", default: "0" },
         { name: "shared_merge_tree_use_zookeeper_connection_pool", path: "/shared-merge#shared_merge_tree_use_zookeeper_connection_pool", default: "0" },
-        { name: "shared_merge_tree_virtual_parts_discovery_batch", path: "/shared-merge#shared_merge_tree_virtual_parts_discovery_batch", default: "1" },
+        { name: "shared_merge_tree_virtual_parts_discovery_batch", path: "/shared-merge#shared_merge_tree_virtual_parts_discovery_batch", default: "16" },
         { name: "shared_merge_tree_virtual_parts_partition_atomic_discovery", path: "/shared-merge#shared_merge_tree_virtual_parts_partition_atomic_discovery", default: "1" }
       ],
       children: []
@@ -840,7 +845,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "text_index_max_memory_usage_before_flush", path: "/text-index#text_index_max_memory_usage_before_flush", default: "1073741824" },
         { name: "text_index_max_processed_tokens_before_flush", path: "/text-index#text_index_max_processed_tokens_before_flush", default: "100000000" },
         { name: "text_index_posting_list_block_size", path: "/text-index#text_index_posting_list_block_size", default: "1048576" },
-        { name: "text_index_posting_list_codec", path: "/text-index#text_index_posting_list_codec", default: "none" },
+        { name: "text_index_posting_list_codec", path: "/text-index#text_index_posting_list_codec", default: "pfor" },
         { name: "text_index_serialization_version", path: "/text-index#text_index_serialization_version", default: "v2_with_positions" }
       ],
       children: []
@@ -912,8 +917,9 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "Otros",
-      count: 55,
+      count: 60,
       settings: [
+        { name: "adaptive_codec_selection_period", path: "/other#adaptive_codec_selection_period", default: "8" },
         { name: "adaptive_write_buffer_initial_size", path: "/other#adaptive_write_buffer_initial_size", default: "16384" },
         { name: "add_implicit_sign_column_constraint_for_collapsing_engine", path: "/other#add_implicit_sign_column_constraint_for_collapsing_engine", default: "0" },
         { name: "alter_column_secondary_index_mode", path: "/other#alter_column_secondary_index_mode", default: "rebuild" },
@@ -922,6 +928,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "assign_part_uuids", path: "/other#assign_part_uuids", default: "0" },
         { name: "auto_statistics_types", path: "/other#auto_statistics_types", default: "basic, uniq_v2" },
         { name: "background_task_preferred_step_execution_time_ms", path: "/other#background_task_preferred_step_execution_time_ms", default: "50" },
+        { name: "cache_temporarily_for_merges", path: "/other#cache_temporarily_for_merges", default: "0" },
         { name: "clean_deleted_rows", path: "/other#clean_deleted_rows", default: "Never" },
         { name: "clone_replica_zookeeper_create_get_part_batch_size", path: "/other#clone_replica_zookeeper_create_get_part_batch_size", default: "100" },
         { name: "compatibility_allow_sampling_expression_not_in_primary_key", path: "/other#compatibility_allow_sampling_expression_not_in_primary_key", default: "0" },
@@ -931,10 +938,12 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "default_compression_codec", path: "/other#default_compression_codec", default: '""' },
         { name: "disk", path: "/other#disk", default: '""' },
         { name: "dynamic_serialization_version", path: "/other#dynamic_serialization_version", default: "v3" },
+        { name: "empty_parts_lifetime", path: "/other#empty_parts_lifetime", default: "0" },
         { name: "enforce_index_structure_match_on_partition_manipulation", path: "/other#enforce_index_structure_match_on_partition_manipulation", default: "0" },
         { name: "execute_merges_on_single_replica_time_threshold", path: "/other#execute_merges_on_single_replica_time_threshold", default: "0" },
         { name: "finished_mutations_to_keep", path: "/other#finished_mutations_to_keep", default: "100" },
         { name: "force_read_through_cache_for_merges", path: "/other#force_read_through_cache_for_merges", default: "0" },
+        { name: "group_fsync_before_insert_finish", path: "/other#group_fsync_before_insert_finish", default: "auto" },
         { name: "initialization_retry_period", path: "/other#initialization_retry_period", default: "60" },
         { name: "kill_threads", path: "/other#kill_threads", default: "128" },
         { name: "lightweight_mutation_projection_mode", path: "/other#lightweight_mutation_projection_mode", default: "throw" },
@@ -945,6 +954,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "notify_newest_block_number", path: "/other#notify_newest_block_number", default: "0" },
         { name: "nullable_serialization_version", path: "/other#nullable_serialization_version", default: "basic" },
         { name: "object_serialization_version", path: "/other#object_serialization_version", default: "v3" },
+        { name: "object_typed_shared_data_serialization_version", path: "/other#object_typed_shared_data_serialization_version", default: "v1" },
         { name: "old_parts_lifetime", path: "/other#old_parts_lifetime", default: "480" },
         { name: "optimize_row_order", path: "/other#optimize_row_order", default: "0" },
         { name: "optimize_row_order_if_no_order_by", path: "/other#optimize_row_order_if_no_order_by", default: "0" },

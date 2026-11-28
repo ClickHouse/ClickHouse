@@ -1,22 +1,20 @@
 ---
-title: 如何在单台 ClickHouse 服务器上使用 Let's Encrypt 启用 SSL
-description: 了解如何借助 Let's Encrypt 为单台 ClickHouse 服务器配置 SSL，包括证书签发、配置和验证。
+title: 如何在单台 ClickHouse 服务端上使用 Let's Encrypt 启用 SSL
+description: 了解如何借助 Let's Encrypt 为单台 ClickHouse 服务端配置 SSL，包括证书签发、配置和验证。
 date: 2024-12-11
 tags: ['安全与身份验证']
 keywords: ['SSL', 'Let/`s Encrypt']
 ---
 
-<div id="steps-to-follow">
-  ## 操作步骤
-</div>
+## 操作步骤 {#steps-to-follow}
 
-以下步骤可用于借助免费、自动化且开放的证书颁发机构 (CA) [Let&#39;s Encrypt](https://letsencrypt.org/) ，为单个 ClickHouse 服务器启用 SSL。Let&#39;s Encrypt 旨在让任何人都能轻松使用 HTTPS 保护自己的网站。通过自动化证书签发和续期流程，Let&#39;s Encrypt 可确保网站持续保持安全，无需人工干预。
+以下步骤可用于借助免费、自动化且开放的证书颁发机构 (CA) [Let&#39;s Encrypt](https://letsencrypt.org/) ，为单个 ClickHouse 服务端启用 SSL。Let&#39;s Encrypt 旨在让任何人都能轻松使用 HTTPS 保护自己的网站。通过自动化证书签发和续订流程，Let&#39;s Encrypt 可确保网站持续保持安全，无需人工干预。
 
 <Note>
   在以下指南中，我们假设 ClickHouse 已安装在标准的软件包路径中。所有示例均使用域名 `product-test-server.clickhouse-dev.com`。请根据实际情况替换为您的域名。
 </Note>
 
-1. 确认您已有一条指向您的 server 的 DNS `A` 或 `AAAA` 记录。这可以使用 Linux 工具 `dig.` 来完成。例如，若使用 Cloudflare DNS server `1.1.1.1`，则 `product-test-server.clickhouse-dev.com` 的响应如下：
+1. 确认您已有一条指向您的 服务端 的 DNS `A` 或 `AAAA` 记录。这可以使用 Linux 工具 `dig.` 来完成。例如，若使用 Cloudflare DNS 服务端 `1.1.1.1`，则 `product-test-server.clickhouse-dev.com` 的响应如下：
 
 <br />
 
@@ -51,18 +49,14 @@ product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
 product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
 ```
 
-2. 在服务器上开放 80 端口。该端口将用于通过 certbot 和 ACME 协议自动续订证书。对于 AWS，可通过[修改实例关联的安全组 (Security Group) ](https://repost.aws/knowledge-center/connect-http-https-ec2)来实现。
+2. 在服务端上开放 80 端口。该端口将用于通过 certbot 和 ACME 协议自动续订证书。对于 AWS，可通过[修改实例关联的安全组 (Security Group) ](https://repost.aws/knowledge-center/connect-http-https-ec2)来实现。
 
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![显示已开放 80 端口的 AWS 安全组（Security Group）配置](/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp)
-
-</Frame>
-
+  <Frame>
+    ![显示已开放 80 端口的 AWS 安全组（Security Group）配置](/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp)
+  </Frame>
 </div>
 
 3. 安装 [`certbot`](https://certbot.eff.org/instructions)，例如使用 `apt`

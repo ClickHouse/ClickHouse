@@ -15,19 +15,15 @@ doc_type: 'guide'
   JDBC を使用するには ClickHouse JDBC Bridge が必要です。そのため、ローカルマシン上で `clickhouse-local` を使用して、データベースから ClickHouse Cloud へデータをストリーミングする必要があります。詳細については、ドキュメントの **Migrate** セクションにある [**Using clickhouse-local**](/ja/get-started/migrate/other-methods/clickhouse-local-etl) ページを参照してください。
 </Note>
 
-**概要:** <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a> を [jdbc テーブル関数](/ja/reference/functions/table-functions/jdbc) または [JDBC テーブルエンジン](/ja/reference/engines/table-engines/integrations/jdbc) と組み合わせることで、<a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">JDBCドライバー</a> が利用可能な任意の外部データソースに ClickHouse からアクセスできます。また、ネイティブな組み込みの [integration engine](/ja/reference/engines/table-engines/integrations/index) が存在しないデータソースでも利用可能です:
+**概要:** <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a> を [jdbc テーブル関数](/ja/reference/functions/table-functions/jdbc) または [JDBC テーブルエンジン](/ja/reference/engines/table-engines/integrations/jdbc) と組み合わせることで、<a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">JDBCドライバー</a> が利用可能な任意の外部データソースに ClickHouse からアクセスできます:
 
 <div className="ch-image-lg ch-image-background-white">
-
-<Frame>
-
-![ClickHouse JDBC Bridge のアーキテクチャ図](/images/integrations/data-ingestion/dbms/jdbc-01.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse JDBC Bridge のアーキテクチャ図](/images/integrations/data-ingestion/dbms/jdbc-01.webp)
+  </Frame>
 </div>
 
-これは、対象の外部データソース向けのネイティブな組み込み [integration engine](/ja/reference/engines/table-engines/integrations/index)、table function、または外部 Dictionary は利用できない一方で、そのデータソース向けの JDBCドライバー は存在する場合に便利です。
+これは、対象の外部データソース向けのネイティブな組み込み [integration エンジン](/ja/reference/engines/table-engines/integrations/index)、テーブル関数、または外部 Dictionary は利用できない一方で、そのデータソース向けの JDBCドライバー は存在する場合に便利です。
 
 ClickHouse JDBC Bridge は、読み取りと書き込みの両方に使用できます。また、複数の外部データソースに対して並行して使用することも可能です。たとえば、複数の外部および内部データソースにまたがる分散クエリを ClickHouse 上でリアルタイムに実行できます。
 
@@ -47,20 +43,14 @@ ClickHouse JDBC Bridge は、読み取りと書き込みの両方に使用でき
   5. 現行バージョンの **ClickHouse** が[インストールされていて](/ja/get-started/setup/install)、実行中である
 </Info>
 
-<div id="install-the-clickhouse-jdbc-bridge-locally">
-  ## ClickHouse JDBC Bridge をローカルにインストールする
-</div>
+## ClickHouse JDBC Bridge をローカルにインストールする {#install-the-clickhouse-jdbc-bridge-locally}
 
 ClickHouse JDBC Bridge を利用する最も簡単な方法は、ClickHouse が動作しているのと同じホストにインストールして実行することです。
 
 <div className="ch-image-lg ch-image-background-white">
-
-<Frame>
-
-![ClickHouse JDBC Bridge のローカルデプロイ構成図](/images/integrations/data-ingestion/dbms/jdbc-02.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse JDBC Bridge のローカルデプロイ構成図](/images/integrations/data-ingestion/dbms/jdbc-02.webp)
+  </Frame>
 </div>
 
 まず、ClickHouse が動作しているマシンの Unix シェルに接続し、あとで ClickHouse JDBC Bridge をインストールするためのローカルフォルダーを作成します (フォルダー名や配置場所は任意です) :
@@ -79,24 +69,24 @@ wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0
 MySQL に接続できるよう、名前付きデータソースを作成します。
 
 ```bash
- cd ~/clickhouse-jdbc-bridge
- mkdir -p config/datasources
- touch config/datasources/mysql8.json
+cd ~/clickhouse-jdbc-bridge
+mkdir -p config/datasources
+touch config/datasources/mysql8.json
 ```
 
 以下の設定を `~/clickhouse-jdbc-bridge/config/datasources/mysql8.json` ファイルにコピーして貼り付けます。
 
 ```json
- {
-   "mysql8": {
-   "driverUrls": [
-     "https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar"
-   ],
-   "jdbcUrl": "jdbc:mysql://<host>:<port>",
-   "username": "<username>",
-   "password": "<password>"
-   }
- }
+{
+  "mysql8": {
+  "driverUrls": [
+    "https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar"
+  ],
+  "jdbcUrl": "jdbc:mysql://<host>:<port>",
+  "username": "<username>",
+  "password": "<password>"
+  }
+}
 ```
 
 <Note>
@@ -113,17 +103,15 @@ MySQL に接続できるよう、名前付きデータソースを作成しま�
 これで ClickHouse JDBC Bridge を起動する準備が整いました。
 
 ```bash
- cd ~/clickhouse-jdbc-bridge
- java -jar clickhouse-jdbc-bridge-2.0.7-shaded.jar
+cd ~/clickhouse-jdbc-bridge
+java -jar clickhouse-jdbc-bridge-2.0.7-shaded.jar
 ```
 
 <Note>
   ClickHouse JDBC Bridge はフォアグラウンドモードで起動しました。Bridge を停止するには、先ほどの Unix シェルのウィンドウを前面に戻して `CTRL+C` を押します。
 </Note>
 
-<div id="use-the-jdbc-connection-from-within-clickhouse">
-  ## ClickHouse 内から JDBC 接続を使用する
-</div>
+## ClickHouse 内から JDBC 接続を使用する {#use-the-jdbc-connection-from-within-clickhouse}
 
 ClickHouse では、[jdbc テーブル関数](/ja/reference/functions/table-functions/jdbc) または [JDBC テーブルエンジン](/ja/reference/engines/table-engines/integrations/jdbc) を使用して MySQL のデータにアクセスできます。
 
@@ -132,7 +120,7 @@ ClickHouse では、[jdbc テーブル関数](/ja/reference/functions/table-func
 * jdbc テーブル関数:
 
 ```sql
- SELECT * FROM jdbc('mysql8', 'mydatabase', 'mytable');
+SELECT * FROM jdbc('mysql8', 'mydatabase', 'mytable');
 ```
 
 <Note>
@@ -142,35 +130,29 @@ ClickHouse では、[jdbc テーブル関数](/ja/reference/functions/table-func
 * JDBC テーブルエンジン:
 
 ```sql
- CREATE TABLE mytable (
-      <column> <column_type>,
-      ...
- )
- ENGINE = JDBC('mysql8', 'mydatabase', 'mytable');
+CREATE TABLE mytable (
+     <column> <column_type>,
+     ...
+)
+ENGINE = JDBC('mysql8', 'mydatabase', 'mytable');
 
- SELECT * FROM mytable;
+SELECT * FROM mytable;
 ```
 
 <Note>
-  JDBC engine句の最初のパラメータとして、上で設定した名前付きデータソースの名前を使用しています
+  JDBC エンジン句の最初のパラメーターとして、上で設定した名前付きデータソースの名前を使用しています
 
-  ClickHouse JDBC engineテーブルのスキーマと接続先のMySQLテーブルのスキーマは揃っている必要があります。たとえば、カラム名とその順序は同一である必要があり、カラムのデータ型には互換性が必要です
+  ClickHouse JDBC エンジンテーブルのスキーマと接続先のMySQLテーブルのスキーマは揃っている必要があります。たとえば、カラム名とその順序は同一である必要があり、カラムのデータ型には互換性が必要です
 </Note>
 
-<div id="install-the-clickhouse-jdbc-bridge-externally">
-  ## ClickHouse JDBC Bridge を外部にインストールする
-</div>
+## ClickHouse JDBC Bridge を外部にインストールする {#install-the-clickhouse-jdbc-bridge-externally}
 
 分散 ClickHouse クラスター (ClickHouse ホストが複数あるクラスター) では、ClickHouse JDBC Bridge を専用ホストに外部インストールして実行するのが適切です。
 
 <div className="ch-image-lg ch-image-background-white">
-
-<Frame>
-
-![ClickHouse JDBC Bridge 外部デプロイメント図](/images/integrations/data-ingestion/dbms/jdbc-03.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse JDBC Bridge 外部デプロイメント図](/images/integrations/data-ingestion/dbms/jdbc-03.webp)
+  </Frame>
 </div>
 
 この構成には、各 ClickHouse ホストから JDBC Bridge にアクセスできるという利点があります。そうでない場合、Bridge 経由で外部データソースにアクセスする ClickHouse インスタンスごとに、JDBC Bridge をローカルにインストールする必要があります。
@@ -211,11 +193,11 @@ ClickHouse JDBC Bridge を外部にインストールするには、次の手順
 
 [//]: # "TODO: "
 
-[//]: # "- jdbc テーブル関数 では、スキーマもパラメータとして指定すると、毎回 2 つのクエリを実行せずに済むため、パフォーマンスが向上することに言及する"
+[//]: # "- jdbc テーブル関数 では、スキーマもパラメーターとして指定すると、毎回 2 つのクエリを実行せずに済むため、パフォーマンスが向上することに言及する"
 
 [//]: #
 
-[//]: # "- アドホッククエリと table クエリ、保存クエリ、名前付きクエリについて言及する"
+[//]: # "- アドホッククエリと テーブル クエリ、保存クエリ、名前付きクエリについて言及する"
 
 [//]: #
 

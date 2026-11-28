@@ -1,0 +1,108 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-08-15
+title: '데모 데이 - 2026-08-15'
+sidebarTitle: '2026-08-15'
+description: '2026-08-15 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+## 대시보드 변수 {#dashboard-variables}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/gY2Kej-EYx4" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이번 주의 주요 변경 사항은 대시보드 변수입니다. 대시보드 변수는 대시보드에서 이미 사용 중인 필터 모델을 기반으로 하며, 기존 필터든 새 필터든 모두 변수로 사용할 수 있습니다.
+
+변수는 기본적으로 필터의 표시 이름을 사용합니다. 이름에 특수 문자가 포함되어 있거나 두 필터의 표시 이름이 같다면 사용자 정의 변수 이름을 지정할 수 있습니다. 사용자 정의 이름은 나중에 필터 이름을 변경하더라도 그대로 유지됩니다. 구성 페이지에는 참조해야 할 이름이 표시되며, 변수가 활성화되면 필터 툴팁에도 이 이름이 표시됩니다.
+
+원시 SQL(Raw SQL) 차트에서는 여러 방식으로 변수를 사용할 수 있습니다. `$__filter($var)`는 변수 하나의 현재 선택 항목을 확장합니다. 이는 모든 필터를 확장하는 기존 `$__filters` 매크로의 단일 변수 버전입니다.
+
+더 주목할 만한 추가 기능은 `$__conditionalAll(condition, $var)`입니다. 첫 번째 인수는 조건이고 두 번째 인수는 변수입니다. 변수에 선택 항목이 있으면 해당 조건이 쿼리에 포함됩니다. 선택 항목이 없으면 전체 표현식이 `1 = 1`이 되므로 필터링에 아무런 영향을 주지 않습니다.
+
+이 기능 덕분에 서로 다른 소스 간 매핑이 가능해집니다. 대시보드에서 트레이스 상태 코드를 `error` 또는 `info`에 매핑하면, 로그 테이블을 기준으로 정의한 심각도 필터로 트레이스 테이블을 필터링할 수 있습니다. 대시보드 수준에서 `error`를 선택하면 트레이스 쿼리는 오류 상태만 필터링합니다.
+
+자동 완성은 사용 가능한 모든 변수와 각 변수가 지원하는 포맷을 제안합니다. Brandon의 제안을 반영하여, 이제 현재 선택 항목을 적용한 실제 확장 결과도 인라인으로 표시됩니다. 매크로 제안에도 확장 결과가 함께 표시되며, 각 매크로의 기능을 설명하는 문서 섹션이 새로 추가되었습니다. 유효성 검사는 존재하지 않는 변수에 대한 참조와 잘못된 인수로 호출된 매크로를 감지합니다.
+
+빌더 차트도 SQL 및 Lucene 입력을 포함한 대부분의 편집 가능한 필드에서 동일한 변수 치환을 사용합니다. 변수는 `WHERE`, `GROUP BY`, `HAVING`, `ORDER BY`에서 사용할 수 있으며, 동일한 자동 완성 및 유효성 검사가 적용됩니다. Lucene 필드는 변수를 지원하지만 매크로는 지원하지 않습니다. SQL 빌더 필드에서는 원시 SQL(Raw SQL)에서 쓸 수 있는 전체 매크로가 아니라 변수 관련 매크로만 제공됩니다.
+
+알림에는 한 가지 엄격한 규칙이 있습니다. 모든 변수는 빈 값으로 평가됩니다. 알림 쿼리가 변수를 참조하면 저장하기 전에 편집기에 경고가 표시됩니다. 미리보기와 생성된 SQL에는 알림 상세 페이지를 포함하여 빈 값으로 확장된 결과가 표시되며, 알림 작업은 실행 시 이 빈 값을 적용합니다.
+
+변수 구성은 여전히 `NEXT_PUBLIC_ENABLE_DASHBOARD_VARIABLES` 플래그로 제어됩니다. 구성된 변수가 없으면 대시보드 동작은 이전과 같습니다.
+
+**관련 풀 리퀘스트:** [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) 필터 변수 구성 추가, [#2873](https://github.com/hyperdxio/hyperdx/pull/2873) 원시 SQL(Raw SQL) 차트에서 변수 치환, [#2874](https://github.com/hyperdxio/hyperdx/pull/2874) SQL 대시보드 변수 자동 완성 및 유효성 검사, [#2901](https://github.com/hyperdxio/hyperdx/pull/2901) 차트 빌더 타일에서 대시보드 변수 지원, [#2910](https://github.com/hyperdxio/hyperdx/pull/2910) 알림 쿼리에서 변수를 빈 값으로 확장, [#2923](https://github.com/hyperdxio/hyperdx/pull/2923) 종속 변수 값 쿼리 지원, [#2937](https://github.com/hyperdxio/hyperdx/pull/2937) 중첩 매크로 및 매크로 내 변수 참조 지원, [#2944](https://github.com/hyperdxio/hyperdx/pull/2944) 외부 API에 대시보드 변수 추가
+
+## 평가 이력이 포함된 알림 상세 페이지 {#alert-detail-page-with-evaluation-history}
+
+*데모 진행자 [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Y0entaRF-R8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+지금까지 알림은 이력 스트립 외에는 제공하는 정보가 거의 없었습니다. 알림이 실제로 어떻게 동작하는지 파악하려 해도 확인할 수 있는 내용이 많지 않았습니다.
+
+새로운 상세 페이지에서는 모든 평가 내역을 확인할 수 있습니다. 그룹화된 알림의 경우 어떤 그룹에서 알림이 발생했는지, 임계값을 넘은 값은 무엇인지 구분하여 보여줍니다. 각 엔트리에는 ClickHouse 쿼리(Query) 소요 시간도 표시되며, 알림 구성도 함께 확인할 수 있습니다.
+
+백필된 버킷 컬럼은 약간의 설명이 필요합니다. 평가가 누락되면 다음 실행 시 누락된 버킷을 처리하여 공백을 채웁니다. 따라서 백필된 버킷이 있다면 알림이 일정보다 지연되고 있다는 뜻입니다. 이제 느린 ClickHouse 쿼리(Query)가 이후 평가를 소리 없이 지연시키는 대신 눈에 보이는 흔적을 남깁니다.
+
+차트 표식은 평가된 버킷의 시작 시점에 맞춰 표시되므로, 알림이 언제 발생했고 언제 OK 상태로 돌아왔는지 더 쉽게 파악할 수 있습니다.
+
+상세 페이지에서 알림을 바로 편집하거나 삭제할 수도 있습니다. 저장된 검색 모달 대화 상자나 대시보드 타일 편집기로 돌아갈 필요가 없습니다. 더 많은 알림 구성 항목을 이 페이지로 옮기는 방안은 계속 검토 중입니다.
+
+이 페이지는 여전히 `NEXT_PUBLIC_ENABLE_ALERT_DETAILS` 플래그를 통해서만 활성화됩니다.
+
+**관련 풀 리퀘스트:** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) 알림 평가 읽기 모델 및 `GET /alerts/:id/evaluations`, [#2834](https://github.com/hyperdxio/hyperdx/pull/2834) AlertHistory에 알림 평가 오류 및 분석 정보 영구 저장, [#2835](https://github.com/hyperdxio/hyperdx/pull/2835) 평가 이력이 포함된 알림 상세 페이지, [#2928](https://github.com/hyperdxio/hyperdx/pull/2928) 알림 차트 표식을 평가된 버킷 시작 시점에 정렬, [#2931](https://github.com/hyperdxio/hyperdx/pull/2931) 알림 상세 페이지에서 알림 편집 및 삭제 지원
+
+## 알림 조사 및 MCP 도구 어노테이션 {#investigating-alerts-and-mcp-tool-annotations}
+
+*데모 진행자: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/942yeJitK4Q" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**ClickHouse Observability 전용:** 이제 발생한 알림에 Investigate 버튼이 표시됩니다. 알림 페이지나 알림 상세 페이지에서 이 버튼을 클릭하면 노트북 조사가 시작됩니다.
+
+최종 목표는 알림이 발생하면 조사가 자동으로 시작되도록 하는 것입니다. 이 버튼은 최종 형태가 아니라 그 과정에서 유용한 중간 단계입니다.
+
+또한 ClickStack MCP 서버의 모든 도구에 어노테이션 힌트가 추가되었습니다. 이전에는 어떤 도구가 읽기 전용이고 어떤 도구가 데이터를 변경하거나 삭제하는지 서버가 전혀 알려 주지 않았습니다.
+
+`readOnlyHint`와 `destructiveHint`가 추가되면서 클라이언트는 이러한 도구를 구분하여 처리하는 데 필요한 정보를 얻을 수 있습니다. 읽기 작업은 중단 없이 진행하고, 파괴적인 작업은 명시적인 승인을 받을 때까지 대기하도록 할 수 있습니다. 대표적인 예가 알림 삭제이며, 이러한 작업은 실행 전에 사용자에게 확인을 받아야 합니다.
+
+마지막 변경 사항은 에이전트가 처음에 어떤 도구를 선택하는지와 관련이 있습니다. 명확한 선택 정책 없이 도구 세트가 늘어나면서 `clickstack_sql` 사용 빈도가 점점 높아졌습니다. 그 결과 빌더 도구가 더 적합한 상황에서도 에이전트가 원시 SQL(Raw SQL)을 사용하는 경우가 생겼습니다.
+
+이는 쿼리 정확성만의 문제가 아닙니다. 원시 SQL(Raw SQL)은 정적인 결과 타일을 생성하는 반면, 빌더 도구인 `clickstack_table`, `clickstack_timeseries`, `clickstack_search`는 클릭하여 세부 내용을 살펴보고 다른 관점으로 피벗할 수 있는 타일을 생성합니다.
+
+이제 MCP는 에이전트가 빌더 도구를 우선 사용하도록 유도하고, 원시 SQL(Raw SQL)은 빌더 도구로 표현할 수 없는 쿼리에만 사용하도록 합니다. 이 변경 이후 평가 점수가 눈에 띄게 향상되었습니다.
+
+**관련 풀 리퀘스트:** [#2838](https://github.com/hyperdxio/hyperdx/pull/2838) 모든 도구에 MCP 도구 어노테이션(`readOnlyHint` 등) 추가, [#2840](https://github.com/hyperdxio/hyperdx/pull/2840) 원시 SQL(Raw SQL) 대신 빌더 쿼리 도구를 사용하도록 에이전트 유도, [#2870](https://github.com/hyperdxio/hyperdx/pull/2870) 대시보드 에이전트가 시계열별 타일 필터를 사용하도록 유도. Investigate 버튼 자체에 대해서는 공개된 풀 리퀘스트가 없습니다.
+
+## 단일 쿼리로 생성하는 다중 시계열 메트릭 차트 {#multi-series-metric-charts-in-a-single-query}
+
+*데모 진행자: [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/jJKgFrMfGjU" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 하나의 차트에 여러 메트릭을 표시하려면 시계열마다 ClickHouse 쿼리(Query)를 하나씩 실행한 뒤, Node 또는 브라우저에서 결과 집합을 머지해야 했습니다. 즉, 시계열이 N개인 차트는 N개의 쿼리를 생성했습니다.
+
+이제 다중 시계열 차트는 단일 SQL 쿼리(SQL query)로 컴파일됩니다. 각 시계열은 CTE로 변환되며, 마지막 단계에서 ClickHouse가 이를 머지합니다. 비율도 같은 방식으로 처리됩니다. 두 시계열을 하나의 쿼리에서 생성하고, 비율은 최종 프로젝션(projection)에서 계산합니다.
+
+가장 직접적인 이점은 쿼리 수 감소입니다. 또한 이와 같은 쿼리의 구조적 형태(Shape)는 메트릭 수식의 토대가 됩니다. 수식을 최종 `SELECT`에서 표현하려면 모든 시계열이 하나의 릴레이션 안에 컬럼으로 존재해야 합니다. 컴파일러가 이제 바로 이러한 형태를 생성하며, 이를 바탕으로 수식 기능 작업도 이미 진행되고 있습니다.
+
+이 변경 과정에서 회귀 오류가 하나 발견되었습니다. 부동 소수점 수를 반환하는 집계(aggregations)와 정수(integer)를 반환하는 집계(aggregations)를 함께 사용하는 다중 시계열 타일이 렌더링되지 않는 문제였습니다. `Float64`를 반환하는 히스토그램 `quantile`과 `Int64`를 반환하는 히스토그램 `count`를 함께 사용하기만 해도 이 문제가 트리거되었습니다.
+
+조합된 `UNION ALL`과 피벗이 모든 시계열을 같은 컬럼으로 전달하면서 ClickHouse가 유형을 `Variant(Float64, Int64)`로 확장한 것이 원인이었습니다. 이 문제는 현재 수정되었습니다.
+
+**관련 풀 리퀘스트:** [#2858](https://github.com/hyperdxio/hyperdx/pull/2858) 다중 시계열 메트릭 머지에 대한 통합 테스트 커버리지 확장, [#2859](https://github.com/hyperdxio/hyperdx/pull/2859) 다중 시계열 메트릭 머지 연산을 ClickHouse로 이전, [#2907](https://github.com/hyperdxio/hyperdx/pull/2907) 다중 시계열 메트릭 타일에 대한 알림 작업 커버리지 추가, [#2916](https://github.com/hyperdxio/hyperdx/pull/2916) float 및 int 집계(aggregations)를 함께 사용하는 다중 시계열 메트릭 차트 문제 수정, [#2872](https://github.com/hyperdxio/hyperdx/pull/2872) 수식 표현식 모델, [#2908](https://github.com/hyperdxio/hyperdx/pull/2908) 조합된 메트릭 쿼리에서 수식 렌더링, [#2909](https://github.com/hyperdxio/hyperdx/pull/2909) 메트릭 수식용 차트 편집기 UI
+
+## Lucene 자동 완성 및 비밀번호 요구 사항 수정 {#lucene-autocomplete-and-password-requirement-fixes}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/8MODmM5RT6Q" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+대시보드 변수를 테스트하던 중 별개의 회귀 오류가 발견되었습니다. Lucene 자동 완성이 어느새 거의 모든 곳에서 작동하지 않고 있었으며, 정상적으로 작동하는 곳은 검색 페이지뿐이었습니다.
+
+또 다른 변경 사항은 초대된 사용자가 비밀번호를 설정하는 Join Team 페이지에 적용되었습니다. 백엔드에서는 비밀번호 요구 사항을 검증하고 있었지만 이 페이지에는 해당 요구 사항이 표시되지 않았습니다. 그래서 유효하지 않은 값을 입력하면 &quot;Password is invalid&quot;라는 일반적인 메시지만 표시되어, 사용자는 정책을 짐작할 수밖에 없었습니다.
+
+이제 해당 요구 사항이 화면에 표시됩니다. 또한 요구 사항을 표시하는 공유 구성 요소를 점검하면서 백엔드와 일치하지 않는 부분 두 가지도 발견되었습니다. 하나는 허용되는 특수 문자의 범위이고, 다른 하나는 비밀번호 최대 길이입니다. 두 가지 모두 수정되었습니다.
+
+**관련 풀 리퀘스트:** [#2902](https://github.com/hyperdxio/hyperdx/pull/2902) Lucene 자동 완성 복원, [#2904](https://github.com/hyperdxio/hyperdx/pull/2904) Join Team 페이지에 비밀번호 요구 사항 표시

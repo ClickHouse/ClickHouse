@@ -3736,18 +3736,24 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     /// The `Initial` header omits the single-byte codec type, so it is exactly one byte shorter.
     EXPECT_EQ(out_initial.str().size() + 1, out_with_codec.str().size());
 
-    TextIndexHeader header_with_positions;
-    header_with_positions.version = MergeTreeTextIndexSerializationVersion::V2_WithPositions;
-    header_with_positions.codec_type = IPostingListCodec::Type::None;
-    header_with_positions.has_positions = true;
-    header_with_positions.positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
-    header_with_positions.sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr());
+    TextIndexHeader header_with_positions
+    {
+        .version = MergeTreeTextIndexSerializationVersion::V2_WithPositions,
+        .codec_type = IPostingListCodec::Type::None,
+        .has_positions = true,
+        .positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor),
+        .position_increment_gap = 63,
+        .sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr()),
+        .scoring_stats = {},
+    };
 
     WriteBufferFromOwnString out_with_positions;
     TextIndexSerialization::serializeHeader(header_with_positions, out_with_positions);
 
-    /// A positional `V2_WithPositions` header adds the positions flag and the positions codec byte on top of the codec type.
-    EXPECT_EQ(out_with_codec.str().size() + 2, out_with_positions.str().size());
+    /// Positions add the flag, codec and gap bytes and the block size.
+    EXPECT_EQ(
+        out_with_codec.str().size() + 3 + getLengthOfVarUInt(TextIndexBlockedPositionsCodec::BLOCK_SIZE),
+        out_with_positions.str().size());
 
     /// Without positions the codec byte is omitted, so the header costs only the flag. This keeps a
     /// non-positional part the same size as before positions existed.
@@ -3779,6 +3785,8 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     EXPECT_EQ(with_positions_data.version, MergeTreeTextIndexSerializationVersion::V2_WithPositions);
     EXPECT_TRUE(with_positions_data.has_positions);
     EXPECT_EQ(with_positions_data.positions_codec, static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor));
+    EXPECT_EQ(static_cast<UInt64>(with_positions_data.position_increment_gap), 63u);
+    EXPECT_EQ(with_positions_data.positions_block_size, TextIndexBlockedPositionsCodec::BLOCK_SIZE);
 }
 
 TEST(PostingListCursorTest, TextIndexHeaderPersistsTextIndexScoringKind)

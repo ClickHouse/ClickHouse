@@ -57590,5 +57590,237 @@
   {
     "source": "/products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
     "destination": "/products/cloud/api-reference/prometheus/get-organization-postgresql-metrics"
+  },
+  {
+    "destination": "/ar/get-started/sample-datasets/stackoverflow",
+    "source": "/ar/getting-started/example-datasets/stackoverflow"
+  },
+  {
+    "destination": "/ar/reference/system-tables/filesystem_cache_settings",
+    "source": "/ar/operations/system-tables/filesystem_cache_settings"
+  },
+  {
+    "destination": "/ar/concepts/features/configuration/server-config/configuration-files",
+    "source": "/ar/operations/configuration-files"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/postgres/ordering-keys",
+    "source": "/ar/integrations/clickpipes/postgres/ordering_keys"
+  },
+  {
+    "destination": "/ar/products/cloud/features/admin-features/api/openapi",
+    "source": "/ar/cloud/manage/openapi"
+  },
+  {
+    "destination": "/ar/products/cloud/features/admin-features/api/api-overview",
+    "source": "/ar/cloud/manage/api/api-overview"
+  },
+  {
+    "destination": "/ar/products/cloud/reference/security/console-roles",
+    "source": "/ar/cloud/security/console-roles"
+  },
+  {
+    "destination": "/ar/products/cloud/guides/deletion-protection",
+    "source": "/ar/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/ar/reference/functions/regular-functions/udf",
+    "source": "/ar/sql-reference/functions/udf"
+  },
+  {
+    "destination": "/ar/reference/settings/session-settings",
+    "source": "/ar/operations/settings/settings"
+  },
+  {
+    "destination": "/ar/concepts/features/performance/prewhere",
+    "source": "/ar/optimize/prewhere"
+  },
+  {
+    "destination": "/es/get-started/sample-datasets/stackoverflow",
+    "source": "/es/getting-started/example-datasets/stackoverflow"
+  },
+  {
+    "destination": "/es/reference/system-tables/filesystem_cache_settings",
+    "source": "/es/operations/system-tables/filesystem_cache_settings"
+  },
+  {
+    "destination": "/es/concepts/features/configuration/server-config/configuration-files",
+    "source": "/es/operations/configuration-files"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/postgres/ordering-keys",
+    "source": "/es/integrations/clickpipes/postgres/ordering_keys"
+  },
+  {
+    "destination": "/es/products/cloud/features/admin-features/api/openapi",
+    "source": "/es/cloud/manage/openapi"
+  },
+  {
+    "destination": "/es/products/cloud/features/admin-features/api/api-overview",
+    "source": "/es/cloud/manage/api/api-overview"
+  },
+  {
+    "destination": "/es/products/cloud/reference/security/console-roles",
+    "source": "/es/cloud/security/console-roles"
+  },
+  {
+    "destination": "/es/products/cloud/guides/deletion-protection",
+    "source": "/es/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/es/reference/functions/regular-functions/udf",
+    "source": "/es/sql-reference/functions/udf"
+  },
+  {
+    "destination": "/es/reference/settings/session-settings",
+    "source": "/es/operations/settings/settings"
+  },
+  {
+    "destination": "/es/concepts/features/performance/prewhere",
+    "source": "/es/optimize/prewhere"
+  },
+  {
+    "destination": "/fr/get-started/sample-datasets/stackoverflow",
+    "source": "/fr/getting-started/example-datasets/stackoverflow"
+  },
+  {
+    "destination": "/fr/reference/system-tables/filesystem_cache_settings",
+    "source": "/fr/operations/system-tables/filesystem_cache_settings"
+  },
+  {
+    "destination": "/fr/concepts/features/configuration/server-config/configuration-files",
+    "source": "/fr/operations/configuration-files"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/postgres/ordering-keys",
+    "source": "/fr/integrations/clickpipes/postgres/ordering_keys"
+  },
+  {
+    "destination": "/fr/products/cloud/features/admin-features/api/openapi",
+    "source": "/fr/cloud/manage/openapi"
+  },
+  {
+    "destination": "/fr/products/cloud/features/admin-features/api/api-overview",
+    "source": "/fr/cloud/manage/api/api-overview"
+  },
+  {
+    "destination": "/fr/products/cloud/reference/security/console-roles",
+    "source": "/fr/cloud/security/console-roles"
+  },
+  {
+    "destination": "/fr/products/cloud/guides/deletion-protection",
+    "source": "/fr/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/fr/reference/functions/regular-functions/udf",
+    "source": "/fr/sql-reference/functions/udf"
+  },
+  {
+    "destination": "/fr/reference/settings/session-settings",
+    "source": "/fr/operations/settings/settings"
+  },
+  {
+    "destination": "/fr/concepts/features/performance/prewhere",
+    "source": "/fr/optimize/prewhere"
+  },
+  {
+    "destination": "/ja/get-started/sample-datasets/stackoverflow",
+    "source": "/ja/getting-started/example-datasets/stackoverflow"
+  },
+  {
+    "destination": "/ja/reference/system-tables/filesystem_cache_settings",
+    "source": "/ja/operations/system-tables/filesystem_cache_settings"
+  },
+  {
+    "destination": "/ja/concepts/features/configuration/server-config/configuration-files",
+    "source": "/ja/operations/configuration-files"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/postgres/ordering-keys",
+    "source": "/ja/integrations/clickpipes/postgres/ordering_keys"
+  },
+  {
+    "destination": "/ja/products/cloud/features/admin-features/api/openapi",
+    "source": "/ja/cloud/manage/openapi"
+  },
+  {
+    "destination": "/ja/products/cloud/features/admin-features/api/api-overview",
+    "source": "/ja/cloud/manage/api/api-overview"
+  },
+  {
+    "destination": "/ja/products/cloud/reference/security/console-roles",
+    "source": "/ja/cloud/security/console-roles"
+  },
+  {
+    "destination": "/ja/products/cloud/guides/deletion-protection",
+    "source": "/ja/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/ja/reference/functions/regular-functions/udf",
+    "source": "/ja/sql-reference/functions/udf"
+  },
+  {
+    "destination": "/ja/reference/settings/session-settings",
+    "source": "/ja/operations/settings/settings"
+  },
+  {
+    "destination": "/ja/concepts/features/performance/prewhere",
+    "source": "/ja/optimize/prewhere"
+  },
+  {
+    "destination": "/ko/products/cloud/guides/deletion-protection",
+    "source": "/ko/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/pt-BR/get-started/sample-datasets/stackoverflow",
+    "source": "/pt-BR/getting-started/example-datasets/stackoverflow"
+  },
+  {
+    "destination": "/pt-BR/reference/system-tables/filesystem_cache_settings",
+    "source": "/pt-BR/operations/system-tables/filesystem_cache_settings"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/configuration/server-config/configuration-files",
+    "source": "/pt-BR/operations/configuration-files"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/postgres/ordering-keys",
+    "source": "/pt-BR/integrations/clickpipes/postgres/ordering_keys"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/admin-features/api/openapi",
+    "source": "/pt-BR/cloud/manage/openapi"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/admin-features/api/api-overview",
+    "source": "/pt-BR/cloud/manage/api/api-overview"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/reference/security/console-roles",
+    "source": "/pt-BR/cloud/security/console-roles"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/guides/deletion-protection",
+    "source": "/pt-BR/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/pt-BR/reference/functions/regular-functions/udf",
+    "source": "/pt-BR/sql-reference/functions/udf"
+  },
+  {
+    "destination": "/pt-BR/reference/settings/session-settings",
+    "source": "/pt-BR/operations/settings/settings"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/performance/prewhere",
+    "source": "/pt-BR/optimize/prewhere"
+  },
+  {
+    "destination": "/ru/products/cloud/guides/deletion-protection",
+    "source": "/ru/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/zh/products/cloud/guides/deletion-protection",
+    "source": "/zh/cloud/manage/deletion-protection"
   }
 ]

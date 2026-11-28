@@ -16,7 +16,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -295,7 +295,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
          * And otherwise it will look like excessively growing memory consumption in context of query.
          *  (observed in long INSERT SELECTs)
          */
-        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+        ServerOwnedMemoryScope temporarily_disable_memory_tracker;
         /// The in-memory primary index lives on the part for its whole lifetime (freed only when the
         /// part is merged away), so build it in the dedicated MergeTree arena — same rationale as the
         /// memory-tracker blocker above.
@@ -397,7 +397,7 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
     {
         if (write_final_mark && !last_index_block.empty())
         {
-            MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+            ServerOwnedMemoryScope temporarily_disable_memory_tracker;
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             calculateAndSerializePrimaryIndexRow(last_index_block, last_index_block.rows() - 1);
         }

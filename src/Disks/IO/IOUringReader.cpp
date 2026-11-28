@@ -10,7 +10,7 @@
 #    include <Common/CurrentMetrics.h>
 #    include <Common/CurrentMemoryTracker.h>
 #    include <Common/MemoryTracker.h>
-#    include <Common/MemoryTrackerSwitcher.h>
+#    include <Common/ServerOwnedMemory.h>
 #    include <Common/ProfileEvents.h>
 #    include <Common/Stopwatch.h>
 #    include <Common/ThreadPool.h>
@@ -90,7 +90,7 @@ IOUringReader::IOUringReader(uint32_t entries_)
         tracked_ring_size = static_cast<size_t>(ring_size);
         /// The io_uring ring is a process-wide singleton, attribute its memory to global tracker
         /// rather than the query that happens to trigger lazy initialization.
-        MemoryTrackerSwitcher switcher{&total_memory_tracker};
+        ServerOwnedMemoryScope server_owned;
         [[maybe_unused]] auto trace = CurrentMemoryTracker::allocNoThrow(static_cast<Int64>(tracked_ring_size));
     }
 
@@ -104,7 +104,7 @@ IOUringReader::IOUringReader(uint32_t entries_)
         io_uring_queue_exit(&ring);
         if (tracked_ring_size)
         {
-            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            ServerOwnedMemoryScope server_owned;
             [[maybe_unused]] auto trace = CurrentMemoryTracker::free(static_cast<Int64>(tracked_ring_size));
             tracked_ring_size = 0;
         }
@@ -380,7 +380,7 @@ IOUringReader::~IOUringReader()
     io_uring_queue_exit(&ring);
     if (tracked_ring_size)
     {
-        MemoryTrackerSwitcher switcher{&total_memory_tracker};
+        ServerOwnedMemoryScope server_owned;
         [[maybe_unused]] auto trace = CurrentMemoryTracker::free(static_cast<Int64>(tracked_ring_size));
         tracked_ring_size = 0;
     }

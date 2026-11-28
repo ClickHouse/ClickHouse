@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/RegexpUtils.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
 #include <Functions/Regexps.h>
@@ -505,6 +506,7 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                  function_name == "mapContainsValue" ||
                  function_name == "mapContainsValueLike" ||
                  function_name == "match" ||
+                 function_name == "fullMatch" ||
                  function_name == "like" ||
                  function_name == "notLike" ||
                  function_name.starts_with("hasToken") ||
@@ -900,13 +902,17 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.set_bloom_filters = std::move(bloom_filters);
         return true;
     }
-    if (function_name == "match")
+    if (function_name == "match" || function_name == "fullMatch")
     {
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_MATCH;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
 
-        auto & value = const_value.safeGet<String>();
+        /// `fullMatch` is `match` with the pattern anchored at both ends, so its substrings come from the anchored form.
+        String value = const_value.safeGet<String>();
+        if (function_name == "fullMatch")
+            value = anchorRegexpToMatchWholeString(value);
+
         /// Validate the regexp before using its required substring to build
         /// the skip-index condition.
         Regexps::createRegexp</*like=*/ false, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(value);

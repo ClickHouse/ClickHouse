@@ -42,6 +42,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <base/scope_guard.h>
 #include <deque>
 #include <limits>
@@ -61,6 +62,11 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
 extern const int NOT_IMPLEMENTED;
+}
+
+namespace DB::Setting
+{
+extern const SettingsNonZeroUInt64 iceberg_metadata_previous_versions_max;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -606,7 +612,7 @@ static bool writeMetadataFiles(
     for (const auto & [partition_key, _] : data_files.files_by_partition)
         touched_partitions.insert(partition_key);
 
-    auto result = MetadataGenerator(metadata).generateNextMetadata(
+    auto result = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).generateNextMetadata(
         filename_generator,
         metadata_info.path,
         parent_snapshot,
@@ -957,6 +963,7 @@ void mutate(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations are supported only for the second version of iceberg format");
         if (format_version >= 3)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg DELETE and UPDATE are not supported for format-version 3 tables");
+        persistent_table_components.schema_processor->registerMetadata(metadata);
         auto partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
         auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
         Poco::JSON::Object::Ptr partititon_spec;
@@ -1137,9 +1144,24 @@ void alter(
 
         auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
 
+        /// `ignore` comes from ClickHouse's copy of the schema, which may lag other writers, so the latest one must agree.
+        const auto & command = params[0];
+        if (command.ignore)
+        {
+            const auto fields = getCurrentSchema(metadata)->getArray(Iceberg::f_fields);
+            bool column_exists = false;
+            for (UInt32 field_index = 0; field_index < fields->size() && !column_exists; ++field_index)
+                column_exists = fields->getObject(field_index)->getValue<String>(Iceberg::f_name) == command.column_name;
+            if (command.if_not_exists ? column_exists : !column_exists)
+                return;
+        }
+        if (command.type == AlterCommand::Type::ADD_COLUMN && !command.data_type)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Data type have to be specified for column {} to add", backQuote(command.column_name));
+
         const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 
-        auto metadata_json_generator = MetadataGenerator(metadata);
+        auto metadata_json_generator = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
 
         switch (params[0].type)
         {
@@ -1182,9 +1204,18 @@ void alter(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter the Iceberg table, its new schema would be invalid: {}", *violation);
         }
 
-        std::string json_representation = stringifyJSON(metadata, 4);
-
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+        const Int64 commit_timestamp = std::max<Int64>(
+            metadata->getValue<Int64>(Iceberg::f_last_updated_ms),
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+        metadata->set(Iceberg::f_last_updated_ms, commit_timestamp);
+        appendToMetadataLog(
+            metadata,
+            metadata_info.path.serialize(),
+            commit_timestamp,
+            context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
+
+        std::string json_representation = stringifyJSON(metadata, 4);
 
         auto hint_path = filename_generator.generateVersionHint();
 

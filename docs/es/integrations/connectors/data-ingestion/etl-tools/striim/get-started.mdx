@@ -1,0 +1,218 @@
+---
+title: "Primeros pasos con Striim for ClickHouse"
+sidebarTitle: "Primeros pasos"
+slug: /integrations/connectors/data-ingestion/etl-tools/striim/get-started
+description: "Regístrese en Striim for ClickHouse, configure la fuente y el destino de ClickHouse e inicie una canalización de replicación."
+doc_type: guide
+keywords: ['striim', 'clickhouse', 'cdc', 'ingesta de datos', 'replicación en tiempo real']
+---
+
+Use esta guía para registrarse y empezar a replicar datos desde su base de datos fuente a su instancia de ClickHouse. Para ver un ejemplo completo, consulte la [canalización de ejemplo de SQL Server](/es/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline).
+
+## Requisitos previos {#prerequisites}
+
+| **Necesita** | **Detalles**                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ClickHouse   | Un servicio de ClickHouse Cloud en ejecución o una implementación autogestionada, con acceso de administrador para crear una base de datos y un usuario. `CoalescingMergeTree` requiere la versión 25.6 o posterior del servidor de ClickHouse.                                                                                                                                                                      |
+| Fuente       | Acceso de administrador al sistema de datos fuente para configurar CDC y los permisos de lectura necesarios.                                                                                                                                                                                                                                                                                                      |
+| Ruta de red  | Una ruta de red aprobada desde Striim en AWS hasta su fuente y hasta ClickHouse. Si es necesario, Striim for ClickHouse admite conectividad privada mediante listas de permitidos de IP, AWS PrivateLink o tunelización SSH. Consulte la documentación de Striim sobre [Seguridad y redes](https://www.striim.com/docs/striimforclickhouse/en/security-and-networking-for-striim.html) para obtener más información. |
+
+## Cree su cuenta de Striim {#create-your-striim-account}
+
+Regístrese directamente con Striim o a través de AWS Marketplace. Su período de prueba gratuito de 14 días comienza en el momento en que activa su cuenta. No se necesita tarjeta de crédito para el período de prueba.
+
+1. Abra el [formulario de registro de Striim for ClickHouse](https://go2.striim.com/trial-clickhouse), introduzca los datos obligatorios y seleccione **Sign up**.
+2. Abra el correo electrónico de activación, active la cuenta e inicie sesión en la consola en la nube de Striim.
+
+Si su organización realiza sus compras a través de AWS Marketplace, siga las instrucciones de [Subscribe and sign up](https://www.striim.com/docs/striimforclickhouse/en/subscribe-and-sign-up.html#id211623) y, una vez suscrito a Striim for ClickHouse en AWS Marketplace, complete la configuración de la cuenta de Striim.
+
+## Cree su servicio {#create-your-service}
+
+Un servicio es un entorno gestionado de Striim en AWS en el que puede crear, ejecutar y supervisar canalizaciones que escriben en ClickHouse. Su cuenta solo puede tener un servicio de Striim for ClickHouse activo a la vez.
+
+1. La primera vez que inicie sesión en Striim for ClickHouse, seleccione **Get Started**. También puede seleccionar **Marketplace** en la barra lateral. En **Striim for ClickHouse**, seleccione **Create**.
+2. Configure lo siguiente:
+   * **Service Name:** un nombre que identifique el workload o el entorno.
+   * **AWS Region:** la región en la que se ejecuta el servicio. Si está disponible, seleccione la misma región que su servicio de ClickHouse para reducir la latencia y los cargos de transferencia cross-region. De lo contrario, seleccione la región disponible más cercana.
+3. El nombre y la región no se pueden modificar una vez creado el servicio. Para cambiar cualquiera de ellos, debe eliminar el servicio y crear uno nuevo.
+4. Seleccione **Create a service**. El aprovisionamiento puede tardar varios minutos. Los servicios nuevos usan el plan **Premium** de forma predeterminada. Puede cambiar el plan en la página **Billing**.
+5. Cuando el servicio esté listo, elija cómo iniciarlo:
+   * **Start building with Striim Clara AI:** inicie el servicio con Clara AI gestionado por Striim. No se requiere ninguna clave de API.
+   * **Review your service settings before launch:** configure su propio proveedor de IA, administre usuarios o configure SSH o AWS PrivateLink antes de iniciarlo.
+
+En los siguientes inicios de sesión, abra el servicio desde la lista **Services** para crear canalizaciones o administrar su configuración.
+
+![Crear un servicio de Striim for ClickHouse](/images/integrations/striim/create-service.png)
+
+## Preparar el destino de ClickHouse {#prepare-your-clickhouse-target}
+
+<Steps>
+  <Step title="Obtenga los datos de conexión" id="get-connection-details">
+    En ClickHouse Cloud, seleccione su servicio, haga clic en **Connect** y, a continuación, elija **HTTPS** para ver el host y el puerto (8443). Si usa ClickHouse autogestionado, solicite el host y el puerto a su administrador.
+  </Step>
+
+  <Step title="Elija o cree la base de datos de destino" id="create-target-database">
+    Striim no crea la base de datos de destino, y la aplicación se detiene durante el inicio si no existe. Utilice una base de datos existente o cree una nueva:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS <your_database>;
+    ```
+  </Step>
+
+  <Step title="Cree un usuario dedicado para Striim" id="create-target-user">
+    Utilice un usuario dedicado en lugar del usuario administrador predeterminado:
+
+    ```sql
+    CREATE USER <user> IDENTIFIED BY '<password>';
+    ```
+
+    Si usa ClickHouse autogestionado, también puede configurar la autenticación SSL X.509.
+  </Step>
+
+  <Step title="Otorgue los privilegios necesarios" id="grant-target-privileges">
+    Otorgue al usuario los siguientes privilegios, tal como se indica en la [documentación de Striim](https://www.striim.com/docs/striimforclickhouse/en/initial-setup-to-write-to-clickhouse.html):
+
+    ```sql
+    GRANT CREATE TABLE ON <your_database>.* TO <user>;
+    GRANT ALTER TABLE ON <your_database>.* TO <user>;
+    GRANT DROP TABLE ON <your_database>.* TO <user>;
+    GRANT TRUNCATE ON <your_database>.* TO <user>;
+    GRANT CREATE DATABASE ON *.* TO <user>;
+    GRANT SHOW TABLES ON *.* TO <user>;
+    GRANT SHOW DATABASES ON *.* TO <user>;
+    GRANT SELECT ON information_schema.* TO <user>;
+    GRANT SELECT ON system.tables TO <user>;
+    GRANT SELECT ON system.columns TO <user>;
+    GRANT SELECT ON system.parts TO <user>;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON <your_database>.* TO <user>;
+    ```
+  </Step>
+</Steps>
+
+### Configuración recomendada de ClickHouse {#recommended-clickhouse-configuration}
+
+| Ajuste                 | **ClickHouse Cloud**                                                        | **Autogestionado**                                                                             |
+| ---------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Puerto                 | 8443 (abierto de forma predeterminada; gestionado por ClickHouse Cloud)     | Abra los que necesite: 8123 (HTTP), 9000 (nativo), 8443 (HTTPS), 9440 (TLS)                    |
+| Cifrado                | Siempre TLS                                                                 | Configure TLS por su cuenta y habilítelo en el perfil de conexión con la propiedad `EnableSSL` |
+| Motor de base de datos | `Shared`                                                                    | `Atomic` (predeterminado)                                                                      |
+| Autenticación          | Nombre de usuario y contraseña                                              | Nombre de usuario y contraseña, o SSL X.509 (TLS mutuo)                                        |
+| Conectividad privada   | AWS PrivateLink (solo en los planes Scale y Enterprise de ClickHouse Cloud) | Túnel SSH o lista de permitidos de IP                                                             |
+
+## Crear un perfil de conexión {#create-a-connection-profile}
+
+Cree un perfil de conexión de ClickHouse al que las canalizaciones puedan hacer referencia por su nombre. En el asistente de perfiles de conexión, configure lo siguiente:
+
+| **Propiedad**                                                         | **Valor**                                                                                                             |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| URL de conexión                                                       | `jdbc:clickhouse://<host>:<port>`, con el host y el puerto de la sección anterior (puerto 8443 para ClickHouse Cloud) |
+| Tipo de autenticación                                                 | Contraseña (predeterminado) o SSL X.509                                                                               |
+| Nombre de usuario / Contraseña                                        | Datos del usuario de ClickHouse dedicado a Striim que creó en el paso anterior al preparar su destino de ClickHouse.  |
+| Certificado SSL del cliente, Clave SSL del cliente, Certificado de CA | Obligatorio solo para SSL X.509. La clave privada debe estar en formato PKCS#8 PEM.                                   |
+
+Para rotar credenciales o certificados, abra **Connection Profiles**, edite el perfil y guarde los cambios.
+
+Para AWS PrivateLink, conserve la URL de conexión proporcionada por ClickHouse Cloud. Configure una zona alojada privada de Route 53 para que, desde su servicio de Striim, el nombre del host se resuelva en el endpoint privado. Consulte [Configuración inicial para escribir en ClickHouse](https://www.striim.com/docs/striimforclickhouse/en/initial-setup-to-write-to-clickhouse.html).
+
+## Preparación de la fuente {#prepare-your-source}
+
+Cada tipo de fuente tiene su propia configuración. Busque su fuente en [Fuentes](https://www.striim.com/docs/striimforclickhouse/en/sources.html) en la documentación de Striim for ClickHouse y siga el tema de configuración correspondiente. En las fuentes compatibles con CDC (Change Data Capture, captura de datos de cambios), es posible que deba habilitar la captura de cambios en la fuente y crear un usuario dedicado para Striim con los privilegios indicados para esa fuente. Antes de continuar, tenga a mano lo siguiente:
+
+* Host, puerto y credenciales del usuario de Striim.
+* Los esquemas y las tablas que desea replicar. Siempre que sea posible, seleccione tablas concretas en lugar de esquemas completos.
+* La confirmación de que Striim puede acceder a la fuente desde AWS (cortafuegos, VPC, PrivateLink, SSH o lista de permitidos de IP).
+* Su plan: CDC para Oracle, SQL Server, Snowflake y Salesforce requiere el plan Premium.
+
+## Crear e iniciar una canalización {#build-and-start-a-pipeline}
+
+Puede crear una canalización mediante uno de los siguientes métodos:
+
+* **Striim Clara AI:** Seleccione **Ask Clara** y describa la canalización. Por ejemplo: «Build a pipeline from &lt;source&gt; to ClickHouse for &lt;schema.table&gt;.». Clara le pedirá la estrategia de lectura y los datos de conexión y, a continuación, generará un plan TQL. Revise el plan, seleccione **Accept TQL** y, después, **Deploy and Start this App**. Consulte [Build your first application](https://www.striim.com/docs/striimforclickhouse/en/build-your-first-application.html).
+* **Asistente de canalización automatizada:** Cree dos aplicaciones vinculadas: una para la carga inicial y otra para CDC (Change Data Capture, captura de datos de cambios). Striim inicia automáticamente la aplicación de CDC cuando finaliza la carga inicial. [Consulte el procedimiento más abajo](#using-the-automated-pipeline-wizard).
+* **Flow Designer:** Cree y edite aplicaciones de forma visual y agregue transformaciones antes de que los datos lleguen a ClickHouse. También puede exportar el TQL de una aplicación, editarlo e importar la configuración actualizada.
+
+### Uso del asistente de canalización automatizada {#using-the-automated-pipeline-wizard}
+
+1. Seleccione **Apps &gt; Create an App** y, a continuación, busque y seleccione su fuente.
+2. Seleccione **Get Started** y elija la canalización automatizada (carga inicial más CDC), si está disponible para su fuente.
+3. Introduzca un nombre para la canalización, seleccione un espacio de nombres y haga clic en **Next**.
+4. Introduzca las propiedades de conexión de su fuente. Junto a cada parámetro de configuración se muestra ayuda en línea. Striim valida la conexión; debe resolver cualquier error antes de poder continuar.
+5. Seleccione los esquemas que desea replicar, excepto los esquemas del sistema, y luego haga clic en **Next**.
+6. Seleccione las tablas de cada esquema y luego haga clic en **Next**.
+7. Seleccione su perfil de conexión de ClickHouse y un **Table Engine**. Consulte [Cómo llegan los datos a ClickHouse](#how-data-lands-in-clickhouse) para conocer el comportamiento de cada motor.
+8. Revise las correspondencias de tablas. Modifíquelas si es necesario y luego haga clic en **Save &amp; Start**.
+
+Striim ejecuta primero la carga inicial. Cuando esta finaliza, Striim pone en reposo la aplicación de carga inicial e inicia automáticamente la aplicación CDC vinculada.
+
+No ejecute sentencias DDL en las tablas de origen durante la carga inicial. Conserve los logs de cambios o los streams de la fuente desde el inicio de la carga inicial hasta que la aplicación CDC se haya puesto al día. Si la canalización se detiene, revise el error y las posibles acciones correctivas sugeridas antes de reanudarla.
+
+## Verificar los datos en ClickHouse {#verify-data-in-clickhouse}
+
+1. En la vista de monitorización de Striim, confirme que los eventos se están leyendo y escribiendo. También puede preguntarle a Clara cuál es el retraso actual.
+
+2. En ClickHouse, inspeccione la tabla que ha creado Striim:
+
+   ```sql
+   SHOW CREATE TABLE <your_database>.<your_table>;
+   ```
+
+3. Compare el número de filas con el de la fuente. Para tablas `ReplacingMergeTree`, utilice la consulta que se muestra en la siguiente sección.
+
+4. Realice un pequeño cambio en la fuente (una inserción, una actualización y una eliminación en una fila de prueba) y confirme que se refleja en ClickHouse.
+
+## Cómo llegan los datos a ClickHouse {#how-data-lands-in-clickhouse}
+
+Seleccione **Table Engine** al configurar el destino de ClickHouse. ClickHouse Writer usa **`MergeTree`** de forma predeterminada. El motor determina cómo se aplican los cambios y si Striim puede crear la tabla de destino.
+
+| **Motor de tabla**                                  | **Comportamiento**                                                                                                                                                                                           | **Ideal para**                                                                                                                                                      |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ReplacingMergeTree`                                | Las actualizaciones y eliminaciones se escriben como filas nuevas con una versión y un indicador de eliminación lógica; los duplicados se eliminan mediante fusiones en segundo plano o con `FINAL`.         | Fuentes de CDC que envían la imagen completa de la fila en cada actualización. El patrón de CDC más sencillo y de mayor caudal; admite volver a aplicar sin riesgo. |
+| `MergeTree`                                         | Solo anexión de forma predeterminada. Con Mode = `MERGE`, las actualizaciones y eliminaciones se aplican sobre la tabla (eliminación ligera o mediante mutación).                                            | Cargas iniciales, logs y eventos, o CDC cuando se quiere eliminar físicamente las filas sin columnas adicionales.                                                   |
+| `CollapsingMergeTree`                               | Escribe una columna de signo: +1 para el estado actual, -1 para cancelarlo.                                                                                                                                  | Fuentes de CDC que envían tanto la imagen anterior como la posterior. No es seguro volver a aplicar tras una recuperación.                                          |
+| `CoalescingMergeTree`                               | Actualizaciones parciales de filas; `NULL` significa &quot;dejar sin cambios&quot;. Requiere la versión 25.6 o posterior del servidor y columnas `Nullable` en las columnas que no forman parte de la clave. | Fuentes de CDC que envían filas parciales.                                                                                                                          |
+| `SummingMergeTree`                                  | Solo inserción. La aplicación se detiene ante un `UPDATE` o `DELETE`.                                                                                                                                        | Agregaciones numéricas de solo anexión, como contadores.                                                                                                            |
+| `AggregatingMergeTree`, `Replicated`, `Distributed` | Solo escritura de datos. Debe crear usted mismo las tablas de destino antes del despliegue.                                                                                                                  | Tablas subyacentes de vistas materializadas; implementaciones autogestionadas en cluster y con sharding.                                                            |
+
+Para la creación y la evolución automáticas del esquema, utilice `MergeTree`, `ReplacingMergeTree`, `CollapsingMergeTree`, `CoalescingMergeTree` o `SummingMergeTree`. En `ReplacingMergeTree`, Striim añade las columnas `__STRIIM_VERSION` y `__STRIIM_ISDELETED`; en `CollapsingMergeTree`, la columna `__STRIIM_SIGN`. Consulte las tablas `ReplacingMergeTree` con `FINAL` y excluya las filas eliminadas lógicamente:
+
+```sql
+SELECT * FROM <your_database>.<your_table> FINAL WHERE __STRIIM_ISDELETED = 0;
+```
+
+Los tipos de datos de origen se asignan automáticamente a tipos de ClickHouse. Consulte [Tipos de datos compatibles](https://www.striim.com/docs/striimforclickhouse/en/clickhouse-writer-programmer-s-reference.html#supported-data-types-787538).
+
+## Supervisión de la canalización {#monitor-your-pipeline}
+
+Striim publica métricas de ClickHouse Writer en la interfaz de usuario web, entre ellas los eventos aceptados, los eventos confirmados por ClickHouse, la actualidad de los datos en el destino, la última actividad de escritura, el recuento de batches y los tiempos de fusión por tabla. Las alertas del sistema se habilitan automáticamente, y puede añadir alertas personalizadas por correo electrónico, Slack o Microsoft Teams. También puede preguntarle a Clara, por ejemplo: «¿Cuál es el retraso actual de mi aplicación?».
+
+## Resolución de problemas {#troubleshooting}
+
+<Accordion title="La aplicación se detiene durante el inicio indicando que falta una base de datos">
+  Striim no crea la base de datos de destino. Créela en ClickHouse y reinicie la aplicación.
+</Accordion>
+
+<Accordion title="No se encuentra la tabla o la columna, pero el mismo esquema funciona en otro entorno">
+  Los nombres de columnas siempre son sensibles a mayúsculas y minúsculas; en el caso de los nombres de bases de datos y de tablas, depende del sistema de archivos del servidor (en un sistema Linux habitual, son sensibles a mayúsculas y minúsculas). Respete exactamente las mayúsculas y minúsculas definidas en ClickHouse.
+</Accordion>
+
+<Accordion title="CollapsingMergeTree muestra duplicados o sumas negativas tras un reinicio">
+  La entrega es de tipo at-least-once (al menos una vez) y este motor no realiza deduplicación. Si utiliza la recuperación, es preferible usar `ReplacingMergeTree`, o `MergeTree` con Mode = `MERGE`.
+</Accordion>
+
+<Accordion title="PrivateLink: Connection timed out">
+  Compruebe que el grupo de seguridad del punto de conexión de VPC permita el tráfico entrante en los puertos 443, 8443, 9440 y 3306, y que las reglas de salida permitan la conexión.
+</Accordion>
+
+<Accordion title="PrivateLink: Connection reset by peer">
+  Añada el ID del punto de conexión de AWS a la lista de permitidos del servicio en ClickHouse Cloud.
+</Accordion>
+
+<Accordion title="La aplicación falla con una excepción que no reconoce">
+  Pida a Clara que le explique el error y le sugiera soluciones. Revise sus recomendaciones antes de realizar cambios en producción.
+</Accordion>
+
+## Próximos pasos {#next-steps}
+
+* Canalización de ejemplo: [De SQL Server a ClickHouse](/es/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline)
+* [Documentación de Striim for ClickHouse](https://www.striim.com/docs/striimforclickhouse/en/index-en.html) sobre fuentes, transformaciones y evolución del esquema
+* ¿Necesita replicar datos en otros destinos además de ClickHouse? Consulte [Striim Platform](https://www.striim.com/striim-platform/) o [Striim Cloud](https://www.striim.com/striim-cloud/).

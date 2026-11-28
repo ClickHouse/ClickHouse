@@ -1,0 +1,183 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/browser
+description: 'ClickStack Browser SDK を使用して、ブラウザーのログ、トレース、セッションリプレイを収集します。'
+title: 'Browser JS'
+doc_type: 'guide'
+keywords: ['ClickHouse オブザーバビリティ', 'SDK', 'ブラウザー', 'セッションリプレイ']
+sidebarTitle: 'Browser JS'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+ClickStack Browser SDK は OpenTelemetry をベースに構築されており、ブラウザーのリクエスト、エラー、セッションリプレイを収集します。この SDK を使用すると、ClickHouse オブザーバビリティでフロントエンドのイベントをバックエンドのテレメトリーと突き合わせて調査できます。
+
+<ClickStackIntegrates signals={['logs', 'traces']} />
+
+## インストール {#install}
+
+フロントエンドアプリケーションにパッケージをインストールします。
+
+```shell
+npm install @clickhouse/clickstack-browser
+```
+
+このパッケージは ES モジュールを使用します。OpenTelemetry のピア依存関係は npm によって自動的にインストールされます。アプリケーションで `@opentelemetry/api` も直接インストールする場合は、バージョン `~1.9.1` を使用し、インストールされるコピーが 1 つだけになるようにしてください。バージョン 1.10 はこの SDK のサポート範囲外です。
+
+## 宛先を設定する {#configure-destination}
+
+<Tabs>
+  <Tab title="完全マネージド型">
+    <BetaBadge label="ベータ版" />
+
+    サービスで **チーム設定 → Data → Managed Telemetry** を開き、**OTLP HTTP エンドポイント** と **APIキー** をコピーします。エンドポイントには、ポートを含む完全な HTTPS エンドポイントを使用し、`/v1/traces` のようなシグナルパスは含めないでください。
+
+    アプリケーションのエントリモジュールで SDK を初期化します。
+
+    ```javascript
+    import { init } from '@clickhouse/clickstack-browser';
+
+    init({
+      endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+      apiKey: 'Bearer YOUR_INGESTION_API_KEY',
+      serviceName: 'my-frontend-app',
+    });
+    ```
+  </Tab>
+
+  <Tab title="セルフマネージド">
+    collector の OTLP HTTP エンドポイントと、collector に設定済みのインジェストキーを使用します。エンドポイントには、ユーザーのブラウザーから接続可能である必要があります。collector のセットアップについては、[OpenTelemetry によるデータの取り込み](/ja/clickstack/observability/ingesting-data/opentelemetry#self-managed)を参照してください。
+
+    ```javascript
+    import { init } from '@clickhouse/clickstack-browser';
+
+    init({
+      endpoint: 'https://YOUR_COLLECTOR_HOST:4318',
+      apiKey: 'YOUR_INGESTION_API_KEY',
+      serviceName: 'my-frontend-app',
+    });
+    ```
+
+    collector の OTLP レシーバーに設定されたキーを使用してください。また、collector の HTTP receiver の CORS 設定で、アプリケーションのオリジンを許可しておく必要があります。
+  </Tab>
+</Tabs>
+
+`init` は、ページ読み込みごとに 1 回、エントリモジュールのトップレベルで呼び出してください (Vite では `src/main.ts`、Next.js では `instrumentation-client.ts` など)。初期化は非同期で行われるため、同じ tick 内で直後に発行されたリクエストは収集されない場合があります。React の effect 内では初期化しないでください。`shutdown` を呼び出すクリーンアップ処理が実行されると、そのページ読み込みではテレメトリーが完全に停止します。
+
+<Note>
+  ブラウザー側の設定は、インジェストキーも含めて、ページを読み込んだ誰からでも参照できます。キーをサーバー側で保持するには、`/otel` のような同一オリジンのエンドポイントを使用して `apiKey` を省略し、適切な認証ヘッダーを付与して OTLP リクエストを転送するようにサーバーを設定してください。
+</Note>
+
+## インジェストを確認する {#verify-ingestion}
+
+アプリケーションを読み込み、ページを操作してリクエストを送信し、コンソールエラーを発生させます。ClickHouse オブザーバビリティで直近の時間範囲を選択し、ログまたはトレースで `my-frontend-app` を検索します。セッションリプレイを開いて、記録されたセッションを確認します。
+
+データが表示されない場合は、ブラウザのコンソールと、`/v1/traces` および `/v1/logs` へのネットワークリクエストを確認してください。あわせて、エンドポイント、認証ヘッダー、CORS、Content Security Policy (CSP) の設定も確認します。セルフマネージドのデプロイメントでは、使用している ClickStack のバージョンがリプレイと SDK 標準の `session.id` 属性に対応していることを確認してください。レコードを受信できていても、それだけでセッションが UI に表示されるとは限りません。
+
+## 初期化オプション {#initialization-options}
+
+これらのオプションを `init` に渡します。共有の collector を使用する場合は `endpoint` を指定し、トレースとログの宛先が異なる場合は両方のシグナル用エンドポイントを指定します。
+
+| オプション                | デフォルト                      | 用途                                                                                                           |
+| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `endpoint`           | 両方のシグナル用エンドポイントを設定しない場合は必須 | ベースとなる OTLP HTTP URL、または同一オリジンのプロキシパス。シグナルごとのパスは SDK が付加します                                                  |
+| `tracesEndpoint`     | 未設定                        | トレース送信先の完全な URL。`endpoint` から導出される URL ではなく、指定した値がそのまま使用されます                                                 |
+| `logsEndpoint`       | 未設定                        | ログおよびリプレイ送信先の完全な URL。`endpoint` から導出される URL ではなく、指定した値がそのまま使用されます                                            |
+| `serviceName`        | 必須                         | すべてのテレメトリーに `service.name` を設定します                                                                            |
+| `apiKey`             | 未設定                        | `authorization` ヘッダーの値。上記の宛先に応じたフォーマットを使用してください                                                              |
+| `traceOrigins`       | 未設定                        | トレースコンテキストを受け取るバックエンドのオリジンまたは正規表現                                                                            |
+| `replay`             | `true`                     | セッションリプレイを記録します。`false` にすると、ブラウザーのテレメトリーは維持したままリプレイのみを無効化します                                                |
+| `resourceAttributes` | 未設定                        | 追加のリソース属性 (リプレイにも適用) 。キーが重複する場合は `serviceName`、`serviceVersion`、`environment` の値が優先されます                      |
+| `maskAllText`        | `true`                     | リプレイ内のテキストをマスクします                                                                                            |
+| `maskAllInputs`      | `true`                     | input、textarea、select の値をマスクします                                                                              |
+| `console`            | `'error'`                  | `'error'`、`'warn'`、`'info'` (`console.log` を含む) 、`'debug'` のいずれかを指定し、そのレベル以上のログを収集します。無効化するには `false` を指定します |
+| `serviceVersion`     | 未設定                        | アプリケーションのリリースを識別します                                                                                          |
+| `environment`        | 未設定                        | `deployment.environment.name` を設定します                                                                         |
+| `sanitizeUrl`        | 未設定                        | 記録された URL を書き換えます (例：クエリパラメータの除去)                                                                            |
+
+API の詳細については、[ブラウザー SDK リファレンス](https://github.com/ClickHouse/clickstack-browser#quick-start)を参照してください。
+
+## セッションリプレイとプライバシー {#session-replay-and-privacy}
+
+セッションリプレイはデフォルトで有効になっています。また、テキストと入力値もデフォルトでマスクされます。
+
+マスキングでは、チェックボックスやラジオボタンの状態、リンクの URL やプレースホルダーなどの属性は隠されません。機密性の高い要素を除外するには、`rr-block` クラスを使用してください。また、URL のサニタイズは、リプレイされるページコンテンツ、スタックトレース、コンソールメッセージに含まれる URL には適用されません。ユーザー情報は、プライバシーポリシーで許可されている範囲でのみ収集してください。
+
+ブラウザのテレメトリーを停止せずにリプレイのみを一時停止するには、次のようにします。
+
+```javascript
+import { pauseReplay } from '@clickhouse/clickstack-browser';
+
+pauseReplay();
+```
+
+記録を再開するには、次のようにします。
+
+```javascript
+import { resumeReplay } from '@clickhouse/clickstack-browser';
+
+resumeReplay();
+```
+
+## フロントエンドとバックエンドのトレースを関連付ける {#trace-propagation}
+
+ブラウザのリクエストをバックエンドのトレースと関連付けるには、`init` のオプションに `traceOrigins` を追加し、例の値を実際のバックエンドのオリジンに置き換えてください。
+
+```javascript
+traceOrigins: ['https://api.example.com'],
+```
+
+ページ自身のオリジン、および条件に一致するバックエンドへのリクエストには、`traceparent`、`tracestate`、`baggage` が付与されます。バックエンドは、このコンテキストを引き継げるよう計装済みである必要があります。
+
+クロスオリジンのバックエンドでは、CORS でこれらのヘッダーを許可する必要があります。また、テレメトリーの collector 側でもフロントエンドのオリジンを許可しておく必要があります。アプリケーションで Content Security Policy を使用している場合は、`connect-src` で collector のエンドポイントを許可してください。
+
+## ユーザーの識別とエラーの記録 {#users-and-errors}
+
+サインイン時に `setUser` を使用して、以降のスパンとログにユーザー情報を付与します。
+
+```javascript
+import { setUser } from '@clickhouse/clickstack-browser';
+
+setUser({ id: 'user-123', email: 'user@example.com' });
+```
+
+サインアウト時には、ユーザー情報をクリアして新しい session を開始します。
+
+```javascript
+import { setUser, startNewSession } from '@clickhouse/clickstack-browser';
+
+setUser(null);
+startNewSession();
+```
+
+以降のスパンとログにアプリケーションのメタデータを付与するには、`setAttributes` を使用します。呼び出すたびに前回設定した属性が置き換えられます。クリアするには `null` を渡します。
+
+```javascript
+import { setAttributes } from '@clickhouse/clickstack-browser';
+
+setAttributes({ 'app.team.name': 'checkout' });
+```
+
+キャッチされないエラーや未処理の Promise の reject は自動的に収集されます。`console.error` 経由で報告を行う React のエラーバウンダリも、デフォルトで収集されます。キャッチ済みで、まだログに記録されていないエラーには `recordException` を使用してください。同じエラーを記録とログ出力の両方で扱うと、イベントが重複して作成されます:
+
+```javascript
+import { recordException } from '@clickhouse/clickstack-browser';
+
+try {
+  await submitCheckout();
+} catch (error) {
+  recordException(error, { 'app.operation': 'checkout' });
+  // Handle the error in your application.
+}
+```
+
+`submitCheckout` は、監視対象とするアプリケーションの操作に置き換えてください。
+
+## HyperDX ブラウザー SDK からの移行 {#migration}
+
+このアップグレードは、パッケージ名を変更するだけでは完了しません。`url` は `endpoint` に、`service` は `serviceName` に、`tracePropagationTargets` は `traceOrigins` に変更されています。また、テキストおよび入力のマスキングは、デフォルトで `true` になりました。`setGlobalAttributes` は、ユーザーのアイデンティティには `setUser`、アプリケーションのメタデータには `setAttributes` を使用するよう置き換えてください。`console.error` 経由でエラーを報告する React のエラーバウンダリでは、追加のフックは不要です。エラーがまだログに記録されていない場合は、`recordException` を使用してください。
+
+削除されたオプションと属性の変更点については、[SDK 移行ガイド](https://github.com/ClickHouse/clickstack-browser/blob/main/docs/migration.md)を参照してください。script タグでインストールする場合や、すでに OpenTelemetry を初期化しているアプリケーションの場合は、[SDK README](https://github.com/ClickHouse/clickstack-browser#readme) を参照してください。
+
+ClickStack Browser SDK によってアプリケーションで互換性の問題が発生した場合は、原因を調査する間、[レガシー HyperDX ブラウザー SDK](https://github.com/hyperdxio/hyperdx-js/tree/main/packages/browser) を使用できます。その際は、上記の移行ガイドを参考に、設定と API 呼び出しを元に戻してください。2 つの SDK に互換性はないため、同時に実行しないでください。

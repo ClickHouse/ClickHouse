@@ -16,6 +16,22 @@
 namespace DB
 {
 
+namespace
+{
+    /// Claims node `path` by creating it with `value`, which must identify the claimant, and returns whether the claim succeeded.
+    /// An existing node is ours only if it holds our `value`, so a retry recognizes the node that an earlier attempt created
+    /// before the Keeper response was lost. With a `value` shared by several claimants all of them would become owners.
+    bool claimNode(Coordination::ZooKeeperWithFaultInjection::Ptr zk, const String & path, const String & value)
+    {
+        auto code = zk->tryCreate(path, value, zkutil::CreateMode::Persistent);
+        if (code == Coordination::Error::ZOK)
+            return true;
+        if (code == Coordination::Error::ZNODEEXISTS)
+            return zk->get(path) == value;
+        throw zkutil::KeeperException::fromPath(code, path);
+    }
+}
+
 RestoreCoordinationOnCluster::RestoreCoordinationOnCluster(
     const UUID & restore_uuid_,
     const String & root_zookeeper_path_,
@@ -146,25 +162,14 @@ ZooKeeperRetriesInfo RestoreCoordinationOnCluster::getOnClusterInitializationKee
 bool RestoreCoordinationOnCluster::acquireCreatingSharedDatabase(const String & database_name)
 {
     bool result = false;
-    auto holder = with_retries.createRetriesControlHolder("acquireCreatingTableInReplicatedDatabase");
+    auto holder = with_retries.createRetriesControlHolder("acquireCreatingSharedDatabase");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
             with_retries.renewZooKeeper(zk);
 
             String path = fs::path(zookeeper_path) / "shared_databases_acquired" / escapeForFileName(database_name);
-            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
-            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException::fromPath(code, path);
-
-            if (code == Coordination::Error::ZOK)
-            {
-                result = true;
-                return;
-            }
-
-            /// We need to check who created that node
-            result = zk->get(path) == toString(current_host_index);
+            result = claimNode(zk, path, toString(current_host_index));
         });
     return result;
 }
@@ -182,18 +187,7 @@ bool RestoreCoordinationOnCluster::acquireCreatingTableInReplicatedDatabase(cons
             zk->createIfNotExists(path, "");
 
             path += "/" + escapeForFileName(table_name);
-            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
-            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException::fromPath(code, path);
-
-            if (code == Coordination::Error::ZOK)
-            {
-                result = true;
-                return;
-            }
-
-            /// We need to check who created that node
-            result = zk->get(path) == toString(current_host_index);
+            result = claimNode(zk, path, toString(current_host_index));
         });
     return result;
 }
@@ -208,18 +202,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataIntoReplicatedTable(const
             with_retries.renewZooKeeper(zk);
 
             String path = zookeeper_path + "/repl_tables_data_acquired/" + escapeForFileName(table_zk_path);
-            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
-            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException::fromPath(code, path);
-
-            if (code == Coordination::Error::ZOK)
-            {
-                result = true;
-                return;
-            }
-
-            /// We need to check who created that node
-            result = zk->get(path) == toString(current_host_index);
+            result = claimNode(zk, path, toString(current_host_index));
         });
     return result;
 }
@@ -235,18 +218,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedAccessStorage(const String &
             with_retries.renewZooKeeper(zk);
 
             String path = zookeeper_path + "/repl_access_storages_acquired/" + escapeForFileName(access_storage_zk_path);
-            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
-            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException::fromPath(code, path);
-
-            if (code == Coordination::Error::ZOK)
-            {
-                result = true;
-                return;
-            }
-
-            /// We need to check who created that node
-            result = zk->get(path) == toString(current_host_index);
+            result = claimNode(zk, path, toString(current_host_index));
         });
     return result;
 }
@@ -272,18 +244,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & lo
                     break;
             }
 
-            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
-            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException::fromPath(code, path);
-
-            if (code == Coordination::Error::ZOK)
-            {
-                result = true;
-                return;
-            }
-
-            /// We need to check who created that node
-            result = zk->get(path) == toString(current_host_index);
+            result = claimNode(zk, path, toString(current_host_index));
         });
     return result;
 }
@@ -304,21 +265,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedWorkloadEntities(const Strin
             /// exists. Acquiring separately per entity type could let different replicas win the two types and
             /// break such references.
             String path = zookeeper_path + "/repl_workload_entities_acquired/" + escapeForFileName(loader_zk_path);
-
-            /// Record current_host_index as the node value so that a host which creates the node but loses the
-            /// Keeper response can still recognize itself as the owner on retry (sees ZNODEEXISTS, reads the value).
-            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
-            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException::fromPath(code, path);
-
-            if (code == Coordination::Error::ZOK)
-            {
-                result = true;
-                return;
-            }
-
-            /// The node already exists - this replica owns the restore only if it is the one that created the node.
-            result = zk->get(path) == toString(current_host_index);
+            result = claimNode(zk, path, toString(current_host_index));
         });
     return result;
 }
@@ -334,23 +281,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedNamedCollections(const Strin
             with_retries.renewZooKeeper(zk);
 
             String path = zookeeper_path + "/repl_named_collections_acquired/" + escapeForFileName(replication_id);
-
-            /// Record current_host_index as the node value so that a host which creates the node but loses the
-            /// Keeper response can still recognize itself as the owner on retry (sees ZNODEEXISTS, reads the value).
-            /// With an empty value the owner's retry would deny ownership to every host, and nothing would restore
-            /// the collections.
-            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
-            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException::fromPath(code, path);
-
-            if (code == Coordination::Error::ZOK)
-            {
-                result = true;
-                return;
-            }
-
-            /// The node already exists - this replica owns the restore only if it is the one that created the node.
-            result = zk->get(path) == toString(current_host_index);
+            result = claimNode(zk, path, toString(current_host_index));
         });
     return result;
 }
@@ -411,18 +342,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataForKeeperMap(const String
             auto normalized_root_zk_path = root_zk_path.substr(1);
             std::string restore_lock_path = fs::path(zookeeper_path) / "keeper_map_tables" / escapeForFileName(normalized_root_zk_path);
             zk->createAncestors(restore_lock_path);
-            auto code = zk->tryCreate(restore_lock_path, table_unique_id, zkutil::CreateMode::Persistent);
-
-            if (code == Coordination::Error::ZOK)
-            {
-                lock_acquired = true;
-                return;
-            }
-
-            if (code == Coordination::Error::ZNODEEXISTS)
-                lock_acquired = table_unique_id == zk->get(restore_lock_path);
-            else
-                throw zkutil::KeeperException::fromPath(code, restore_lock_path);
+            lock_acquired = claimNode(zk, restore_lock_path, table_unique_id);
         });
     return lock_acquired;
 }

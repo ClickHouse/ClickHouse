@@ -10,24 +10,20 @@ doc_type: 'guide'
 
 此数据集包含 Stack Overflow 上的所有 `Posts`、`Users`、`Votes`、`Comments`、`Badges`、`PostHistory` 和 `PostLinks` 数据。
 
-您既可以下载预先准备好的 Parquet 版本数据，其中包含截至 2024 年 4 月的全部数据，也可以下载 XML 格式的最新数据并将其加载。Stack Overflow 会定期更新这些数据——历史上通常每 3 个月更新一次。
+您既可以下载预先准备好的 Parquet 版本数据，其中包含截至 2024 年 4 月的全部帖子，也可以下载 XML 格式的最新数据并将其加载。Stack Overflow 会定期更新这些数据——历史上通常每 3 个月更新一次。
 
 下图展示了 Parquet 格式下可用表的 schema。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Stack Overflow schema](/images/getting-started/example-datasets/stackoverflow.webp)
-
-</Frame>
-
+  <Frame>
+    ![Stack Overflow schema](/images/getting-started/example-datasets/stackoverflow.webp)
+  </Frame>
 </div>
 
 有关这些数据的 schema 说明，请参见[此处](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede)。
 
 <div id="pre-prepared-data">
-  ## 预先准备好的数据
+  ## 预先准备好的数据 {#pre-prepared-data}
 </div>
 
 我们提供了这份数据的 Parquet 格式副本，数据更新至 2024 年 4 月。对于 ClickHouse 来说，按行数看 (6000 万条 posts) ，这个数据集并不算大，但其中包含大量文本以及较大的 String 列。
@@ -38,29 +34,27 @@ CREATE DATABASE stackoverflow
 
 以下耗时针对位于 `eu-west-2` 的 96 GiB、24 vCPU ClickHouse Cloud 集群。数据集位于 `eu-west-3`。
 
-<div id="posts">
-  ### Posts
-</div>
+### 帖子 {#posts}
 
 ```sql
 CREATE TABLE stackoverflow.posts
 (
-    `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+    `Id` Int32 CODEC(Delta, Default),
     `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
     `AcceptedAnswerId` UInt32,
     `CreationDate` DateTime64(3, 'UTC'),
     `Score` Int32,
-    `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+    `ViewCount` UInt32 CODEC(Delta, Default),
     `Body` String,
     `OwnerUserId` Int32,
     `OwnerDisplayName` String,
     `LastEditorUserId` Int32,
     `LastEditorDisplayName` String,
-    `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
     `LastActivityDate` DateTime64(3, 'UTC'),
     `Title` String,
     `Tags` String,
-    `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+    `AnswerCount` UInt16 CODEC(Delta, Default),
     `CommentCount` UInt8,
     `FavoriteCount` UInt8,
     `ContentLicense` LowCardinality(String),
@@ -70,7 +64,7 @@ CREATE TABLE stackoverflow.posts
 )
 ENGINE = MergeTree
 PARTITION BY toYear(CreationDate)
-ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate);
 
 INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
@@ -79,11 +73,9 @@ INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation
 0 rows in set. Elapsed: 265.466 sec. Processed 59.82 million rows, 38.07 GB (225.34 thousand rows/s., 143.42 MB/s.)
 ```
 
-Posts 也可按年份获取，例如 [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet)
+帖子 也可按年份获取，例如 [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet)
 
-<div id="votes">
-  ### Votes
-</div>
+### 投票 {#votes}
 
 ```sql
 CREATE TABLE stackoverflow.votes
@@ -96,7 +88,7 @@ CREATE TABLE stackoverflow.votes
     `BountyAmount` UInt8
 )
 ENGINE = MergeTree
-ORDER BY (VoteTypeId, CreationDate, PostId, UserId)
+ORDER BY (VoteTypeId, CreationDate, PostId, UserId);
 
 INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
@@ -105,11 +97,9 @@ INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation
 0 rows in set. Elapsed: 21.605 sec. Processed 238.98 million rows, 2.13 GB (11.06 million rows/s., 98.46 MB/s.)
 ```
 
-Votes 也提供按年份划分的版本，例如 [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet)
+投票 也提供按年份划分的版本，例如 [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet)
 
-<div id="comments">
-  ### Comments
-</div>
+### Comments {#comments}
 
 ```sql
 CREATE TABLE stackoverflow.comments
@@ -123,7 +113,7 @@ CREATE TABLE stackoverflow.comments
     `UserDisplayName` LowCardinality(String)
 )
 ENGINE = MergeTree
-ORDER BY CreationDate
+ORDER BY CreationDate;
 
 INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet', NOSIGN)
 ```
@@ -134,16 +124,14 @@ INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentat
 
 Comments 也按年份提供，例如 [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/2020.parquet)
 
-<div id="users">
-  ### Users
-</div>
+### Users {#users}
 
 ```sql
 CREATE TABLE stackoverflow.users
 (
     `Id` Int32,
     `Reputation` LowCardinality(String),
-    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
     `DisplayName` String,
     `LastAccessDate` DateTime64(3, 'UTC'),
     `AboutMe` String,
@@ -155,7 +143,7 @@ CREATE TABLE stackoverflow.users
     `AccountId` Int32
 )
 ENGINE = MergeTree
-ORDER BY (Id, CreationDate)
+ORDER BY (Id, CreationDate);
 
 INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
@@ -164,9 +152,7 @@ INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation
 0 rows in set. Elapsed: 10.988 sec. Processed 22.48 million rows, 1.36 GB (2.05 million rows/s., 124.10 MB/s.)
 ```
 
-<div id="badges">
-  ### Badges
-</div>
+### 徽章 {#badges}
 
 ```sql
 CREATE TABLE stackoverflow.badges
@@ -179,7 +165,7 @@ CREATE TABLE stackoverflow.badges
     `TagBased` Bool
 )
 ENGINE = MergeTree
-ORDER BY UserId
+ORDER BY UserId;
 
 INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
 ```
@@ -188,9 +174,7 @@ INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentatio
 0 rows in set. Elapsed: 6.635 sec. Processed 51.29 million rows, 797.05 MB (7.73 million rows/s., 120.13 MB/s.)
 ```
 
-<div id="postlinks">
-  ### PostLinks
-</div>
+### PostLinks {#postlinks}
 
 ```sql
 CREATE TABLE stackoverflow.postlinks
@@ -202,7 +186,7 @@ CREATE TABLE stackoverflow.postlinks
     `LinkTypeId` Enum8('Linked' = 1, 'Duplicate' = 3)
 )
 ENGINE = MergeTree
-ORDER BY (PostId, RelatedPostId)
+ORDER BY (PostId, RelatedPostId);
 
 INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
@@ -211,9 +195,7 @@ INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documenta
 0 rows in set. Elapsed: 1.534 sec. Processed 6.55 million rows, 129.70 MB (4.27 million rows/s., 84.57 MB/s.)
 ```
 
-<div id="posthistory">
-  ### PostHistory
-</div>
+### PostHistory {#posthistory}
 
 ```sql
 CREATE TABLE stackoverflow.posthistory
@@ -230,7 +212,7 @@ CREATE TABLE stackoverflow.posthistory
     `UserDisplayName` String
 )
 ENGINE = MergeTree
-ORDER BY (CreationDate, PostId)
+ORDER BY (CreationDate, PostId);
 
 INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posthistory/*.parquet', NOSIGN)
 ```
@@ -240,13 +222,13 @@ INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documen
 ```
 
 <div id="original-dataset">
-  ## 原始数据集
+  ## 原始数据集 {#original-dataset}
 </div>
 
 原始数据集可在 [https://archive.org/download/stackexchange](https://archive.org/download/stackexchange) 下载，格式为压缩的 (7zip) XML；文件名前缀为 `stackoverflow.com*`。
 
 <div id="download">
-  ### 下载
+  ### 下载 {#download}
 </div>
 
 ```bash
@@ -262,7 +244,7 @@ wget https://archive.org/download/stackexchange/stackoverflow.com-Votes.7z
 这些文件最大可达 35GB，下载大约需要 30 分钟，具体取决于网络连接情况——下载服务器会将速度限制在约 20MB/秒。
 
 <div id="convert-to-json">
-  ### 转换为 JSON
+  ### 转换为 JSON {#convert-to-json}
 </div>
 
 在撰写本文时，ClickHouse 尚不原生支持将 XML 用作输入格式。要将数据加载到 ClickHouse 中，首先需要将其转换为 NDJSON。
@@ -310,13 +292,13 @@ clickhouse local --query "SELECT * FROM file('posts.json', JSONEachRow, 'Id Int3
 ```
 
 <div id="example-queries">
-  ## 示例查询
+  ## 示例查询 {#example-queries}
 </div>
 
 以下是几个简单的查询，帮助你快速上手。
 
 <div id="most-popular-tags-on-stack-overflow">
-  ### Stack Overflow 上最热门的标签
+  ### Stack Overflow 上最热门的标签 {#most-popular-tags-on-stack-overflow}
 </div>
 
 ```sql
@@ -348,7 +330,7 @@ LIMIT 10
 ```
 
 <div id="user-with-the-most-answers-active-accounts">
-  ### 回答最多的用户 (活跃账号)
+  ### 回答最多的用户 (活跃账号) {#user-with-the-most-answers-active-accounts}
 </div>
 
 该账号需要有 `UserId`。
@@ -378,7 +360,7 @@ LIMIT 5
 ```
 
 <div id="clickhouse-related-posts-with-the-most-views">
-  ### 浏览量最高的 ClickHouse 相关文章
+  ### 浏览量最高的 ClickHouse 相关文章 {#clickhouse-related-posts-with-the-most-views}
 </div>
 
 ```sql
@@ -412,7 +394,7 @@ LIMIT 10
 ```
 
 <div id="most-controversial-posts">
-  ### 争议最大的帖子
+  ### 争议最大的帖子 {#most-controversial-posts}
 </div>
 
 ```sql
@@ -450,7 +432,7 @@ LIMIT 3
 ```
 
 <div id="attribution">
-  ## 致谢
+  ## 致谢 {#attribution}
 </div>
 
 感谢 Stack Overflow 根据 `cc-by-sa 4.0` 许可证提供这些数据，并感谢他们所做的努力；数据原始来源见 [https://archive.org/details/stackexchange](https://archive.org/details/stackexchange)。

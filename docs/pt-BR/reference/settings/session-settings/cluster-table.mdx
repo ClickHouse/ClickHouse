@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="cluster_table_function_buckets_batch_size">
-  ## cluster_table_function_buckets_batch_size
-</div>
+## cluster_table_function_buckets_batch_size {#cluster_table_function_buckets_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -23,9 +21,23 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Define o tamanho aproximado de um batch (em bytes) usado no processamento distribuído de tarefas em funções de tabela de cluster com granularidade de divisão `bucket`. O sistema acumula dados até que pelo menos essa quantidade seja atingida. O tamanho real pode ser ligeiramente maior para se alinhar aos limites dos dados.
 
-<div id="cluster_table_function_split_granularity">
-  ## cluster_table_function_split_granularity
-</div>
+## cluster_table_function_pushed_down_filter {#cluster_table_function_pushed_down_filter}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "Nova configuração interna."}]}]} />
+
+Esta é uma configuração interna que não deve ser usada diretamente. O iniciador de uma consulta com uma função de tabela cluster a define, para as réplicas, como o filtro serializado da tabela, de modo que as réplicas descartem as linhas que não atendem a esse filtro antes de enviá-las.
+
+## cluster_table_function_split_by_split_offsets {#cluster_table_function_split_by_split_offsets}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração."}]}]} />
+
+Com a granularidade de divisão `bucket`, quando os metadados da tabela registram o tamanho do arquivo e os offsets dos grupos de linhas (`split_offsets` no Iceberg), os arquivos são divididos em intervalos de bytes nesses offsets sem precisar lê-los; cada tarefa lê os grupos de linhas que começam no seu intervalo. Caso contrário, e também quando há um acerto no cache de condições de consulta, o iniciador lê o rodapé de cada arquivo.
+
+Exige que todos os servidores do cluster ofereçam suporte a esse recurso: uma tarefa com um intervalo de bytes não pode ser enviada a um servidor de versão mais antiga.
+
+## cluster_table_function_split_granularity {#cluster_table_function_split_granularity}
 
 <SettingsInfoBlock type="ObjectStorageGranularityLevel" default_value="file" />
 

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <string>
 
 
 namespace DB
@@ -47,6 +48,6 @@ private:
 /// Observes the running query's elapsed-time limit and killed flag, and throws when either is reached.
 /// Empty when there is no query to observe. Out of line so that including this header does not pull in
 /// `ProcessList`.
-std::function<void()> makeCancellationCheck(const char * function_name);
+std::function<void()> makeCancellationCheck(std::string function_name);
 
 }

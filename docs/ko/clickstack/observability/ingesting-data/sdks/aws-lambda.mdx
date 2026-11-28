@@ -1,0 +1,135 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/aws-lambda
+description: 'ClickHouse Observability 및 자가 관리형 배포 환경을 위한 AWS Lambda 설정 및 구성 방법입니다.'
+title: 'AWS Lambda'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+sidebarTitle: 'AWS Lambda'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+async 핸들러를 사용하는 Node.js 함수에는 ClickStack Node.js SDK를 사용하세요. 그 외 런타임이나 콜백 기반 핸들러에는 아래에서 설명하는 OpenTelemetry Lambda 레이어를 사용하세요.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Node.js async 핸들러 {#nodejs-async-handlers}
+
+SDK의 최소 요구 버전인 Node.js 22.15 이상을 충족하는 Lambda Node.js 런타임을 사용하십시오. SDK를 설치한 후 배포 패키지에 포함하십시오:
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+핸들러가 로드되기 전에 SDK를 초기화하고 서비스 이름을 지정하려면 다음 Lambda 환경 변수를 설정하십시오:
+
+```text
+NODE_OPTIONS=--import @clickhouse/clickstack-node/register
+OTEL_SERVICE_NAME=my-lambda-function
+```
+
+호출이 반환되기 전에 버퍼에 저장된 텔레메트리를 내보낼 수 있도록 async 핸들러를 `withFlush`로 감싸세요:
+
+```javascript
+// index.mjs
+import { withFlush } from '@clickhouse/clickstack-node';
+
+export const handler = withFlush(async (event) => {
+  console.log('request received');
+  return { statusCode: 200, body: 'OK' };
+});
+```
+
+함수의 핸들러를 `index.handler`로 설정하십시오. 함수를 번들링하는 경우 SDK와 계측된 의존성은 외부(external) 모듈로 유지하고 배포 패키지에 포함하십시오. 이 설정에서는 auto-instrumentation Lambda 레이어를 함께 활성화하지 마십시오.
+
+Lambda 함수의 환경 구성에서 아래 대상 변수를 설정하십시오. 엔드포인트는 함수에서 연결할 수 있어야 합니다. SDK는 호출 제한 시간이 되기 전에 플러시를 마칩니다. 콜백 기반 핸들러는 `withFlush`에서 지원되지 않습니다.
+
+### 대상 구성 {#configure-destination}
+
+<Tabs>
+  <Tab title="완전 관리형">
+    <BetaBadge label="베타 제공" />
+
+    서비스에서 **팀 설정 → 데이터 → Managed Telemetry**를 열고 **OTLP HTTP 엔드포인트**와 **API Key**를 복사하십시오. 엔드포인트는 포트를 포함한 전체 HTTPS 주소를 사용하십시오.
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="자가 관리형">
+    collector의 OTLP HTTP 엔드포인트와 수집 API Key를 사용하십시오. collector에 TLS가 구성되어 있지 않으면 `https://` 대신 `http://`를 사용하십시오. collector 설정 방법은 [OpenTelemetry로 수집하기](/ko/clickstack/observability/ingesting-data/opentelemetry#self-managed)를 참조하십시오.
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## 기타 런타임 및 핸들러 {#other-runtimes-and-handlers}
+
+공식 [Lambda auto-instrumentation 지침](https://opentelemetry.io/docs/platforms/faas/lambda-auto-instrument/)에 따라 사용 중인 런타임, 아키텍처, AWS 리전에 맞는 레이어를 선택하고 instrumentation 래퍼를 구성하십시오.
+
+[OpenTelemetry Collector Lambda 레이어](https://opentelemetry.io/docs/platforms/faas/lambda-collector/)를 추가하고 구성하십시오. 업스트림 문서에 설명된 대로 애플리케이션의 SDK 익스포터는 계속 로컬 Collector를 가리키도록 두십시오. Collector의 외부 연결은 아래 설명에 따라 구성하십시오.
+
+### Lambda Collector 대상 구성 {#configure-lambda-collector-destination}
+
+Lambda 함수의 환경 변수에 `CLICKHOUSE_OTLP_ENDPOINT`와 `CLICKHOUSE_INGESTION_API_KEY`를 설정하십시오. 그런 다음 Collector 구성에 다음 익스포터를 추가하십시오.
+
+<Tabs>
+  <Tab title="완전 관리형">
+    <BetaBadge label="베타 제공" />
+
+    서비스에서 **팀 설정 → Data → Managed Telemetry**를 열고 **OTLP HTTP 엔드포인트**와 **API key**를 복사하십시오. `CLICKHOUSE_OTLP_ENDPOINT`에는 포트를 포함한 전체 HTTPS 엔드포인트를, `CLICKHOUSE_INGESTION_API_KEY`에는 복사한 키를 설정하십시오.
+
+    ```yaml
+    exporters:
+      otlphttp/clickhouse:
+        endpoint: ${env:CLICKHOUSE_OTLP_ENDPOINT}
+        headers:
+          Authorization: "Bearer ${env:CLICKHOUSE_INGESTION_API_KEY}"
+    ```
+  </Tab>
+
+  <Tab title="자가 관리형">
+    `CLICKHOUSE_OTLP_ENDPOINT`에는 collector의 OTLP HTTP 엔드포인트를, `CLICKHOUSE_INGESTION_API_KEY`에는 해당 collector의 수집 키를 설정하십시오. 엔드포인트는 Lambda 함수에서 연결할 수 있어야 합니다. 대상 collector 설정 방법은 [OpenTelemetry로 수집하기](/ko/clickstack/observability/ingesting-data/opentelemetry#self-managed)를 참조하십시오.
+
+    ```yaml
+    exporters:
+      otlphttp/clickhouse:
+        endpoint: ${env:CLICKHOUSE_OTLP_ENDPOINT}
+        headers:
+          Authorization: "${env:CLICKHOUSE_INGESTION_API_KEY}"
+    ```
+  </Tab>
+</Tabs>
+
+전송할 각 신호 파이프라인의 `exporters` 목록에 `otlphttp/clickhouse`를 추가하십시오. 예를 들어 업스트림 `otlp` 수신기를 사용하는 경우 다음과 같습니다.
+
+```yaml
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+    metrics:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+    logs:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+```
+
+이 설정을 기존 Collector 구성에 머지하되, 수신기 및 프로세서 설정은 그대로 유지하십시오. 업스트림 Collector 설정 지침에 따라 구성 파일을 함수와 함께 패키징하고, `OPENTELEMETRY_COLLECTOR_CONFIG_URI`를 해당 파일의 위치(예: `/var/task/collector.yaml`)로 설정하십시오.
+
+## 수집 확인 {#verify-ingestion}
+
+함수를 배포한 후 호출하십시오. ClickHouse Observability에서 최근 시간 범위를 선택하고 Traces에서 함수의 서비스 이름을 찾으십시오. instrumentation에서 로그와 메트릭 신호도 내보내는 경우 Logs와 Metrics도 확인하십시오. 파이프라인을 추가해도 이러한 신호의 수집이 자동으로 활성화되지는 않습니다.
+
+계층 구성 및 문제 해결은 [OpenTelemetry Lambda 문서](https://github.com/open-telemetry/opentelemetry-lambda)를 참조하십시오.

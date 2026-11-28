@@ -638,7 +638,7 @@ ORDER BY tuple();
 
   任意のパラメータ `posting_list_block_size` (デフォルト: 1048576) は、ポスティングリストブロックのサイズを行数で指定します。
 
-  任意のパラメータ `posting_list_codec` (デフォルト: `none`) は、ポスティングリストに使用するコーデックを指定します。
+  任意のパラメータ `posting_list_codec` (デフォルト: `pfor`) は、ポスティングリストに使用するコーデックを指定します。
 
   * `none` - ポスティングリストは追加の圧縮を行わずに保存されます。
   * `bitpacking` - [差分 (delta) 符号化](https://en.wikipedia.org/wiki/Delta_encoding) を適用した後、[bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) を適用します (いずれも固定サイズのブロック内で実行されます) 。SELECT クエリが遅くなるため、現時点では推奨されません。
@@ -665,7 +665,7 @@ ORDER BY tuple();
   ```
 </details>
 
-*索引の粒度。*
+*インデックス粒度。*
 テキスト索引は、ClickHouse では [スキップ索引](/ja/reference/engines/table-engines/mergetree-family/mergetree#skip-index-types) の一種として実装されています。
 ただし、他のスキップ索引とは異なり、テキスト索引では無限粒度 (1 億) が使用されます。
 これは、テキスト索引のテーブル定義を見ると確認できます。
@@ -697,8 +697,8 @@ SHOW CREATE TABLE table;
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-この巨大な索引粒度により、テキスト索引はパート全体に対して作成されます。
-明示的に指定された索引粒度は無視されます。
+この巨大なインデックス粒度により、テキスト索引はパート全体に対して作成されます。
+明示的に指定されたインデックス粒度は無視されます。
 
 ## テキスト索引の使用 {#using-a-text-index}
 
@@ -914,6 +914,16 @@ Array 関数の [hasAny](/ja/reference/functions/regular-functions/array-functio
 ```sql
 SELECT count() FROM table WHERE hasAny(tags, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
+```
+
+#### `arrayJoin` {#functions-example-arrayjoin}
+
+索引対象の配列の1つの要素に対する条件では、`has` および `hasAny` と同じように索引が使用されます。`arrayJoin(tags) = 'clickhouse'` は `has(tags, 'clickhouse')` と同様に、`arrayJoin(tags) IN (set)` は `hasAny(tags, set)` と同様に索引を使用します。これは `GLOBAL IN`、`transform_null_in = 1` を指定した `IN`(集合に `NULL` が含まれない場合)、および `ARRAY JOIN` 句にも当てはまります。索引はグラニュールをスキップするだけであり、ClickHouse は引き続き各要素に対して条件をチェックします。`LEFT ARRAY JOIN` では索引は使用されません。
+
+例:
+
+```sql
+SELECT arrayJoin(tags) AS tag FROM table WHERE tag IN ('clickhouse', 'olap');
 ```
 
 #### `mapContains` {#functions-example-mapcontains}
@@ -1630,7 +1640,10 @@ cache を設定するには、以下のサーバー設定を参照してくだ�
 テキスト索引のオンディスクフォーマットのバージョンは、テーブルレベルの設定 [`text_index_serialization_version`](/ja/reference/settings/merge-tree-settings/text-index) (デフォルト: `v2_with_positions`) で制御されます。
 この設定は厳密な制約ではなく優先指定です。設定されたバージョンで索引を表現できない場合は、表現可能なより新しいバージョンが自動的に選択されるため、この設定が原因でテキスト索引の書き込みに失敗することはありません。
 ローリングアップグレード中は、すでにアップグレード済みのサーバーで [`compatibility`](/ja/reference/settings/session-settings/compatibility#compatibility) 設定を使用してフォーマットを固定します。この設定を対応するフォーマットが導入されたバージョンより古いバージョンにすると、`text_index_serialization_version` は自動的に古い値に戻り、新しいサーバーでも古いサーバーが引き続き読み取れるフォーマットで書き込まれます。
-posting list コーデックはこのバージョンの管理対象外です。`posting_list_codec = 'pfor'` (または `text_index_posting_list_codec` 設定) で書き込まれたパーツは、そのコーデックが導入される前のサーバーでは読み取れず、`text_index_serialization_version` も `compatibility` もその使用を抑止できません。これは、`support_phrase_search` の場合と同様に、索引に対して指定されたコーデックがバージョンの優先指定よりも優先されるためです。そのテーブルを読み取る可能性のあるすべてのサーバーをアップグレードし終えるまで、`pfor` を有効にしないでください。
+
+ポスティングリストコーデックは `text_index_serialization_version` では制御されません。`pfor` コーデックで書き込まれたパーツは、26.10 より古いサーバーでは読み取れません。
+
+26.11 以降、[`text_index_posting_list_codec`](/ja/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec) 設定のデフォルトは `pfor` です。ローリングアップグレード中は、アップグレード済みのサーバーで [`compatibility`](/ja/reference/settings/session-settings/compatibility#compatibility) を 26.11 より古いバージョンに設定してください。これによりデフォルトが `none` に戻り、アップグレード済みのサーバーは引き続き古いサーバーでも読み取れるパーツを書き込みます。
 
 ## テキスト索引とブルームフィルタベースの索引の違い {#text-index-vs-bloom-filter-indexes}
 
@@ -1640,7 +1653,7 @@ posting list コーデックはこのバージョンの管理対象外です。`
 
 * 偽陽性が発生しうる確率的データ構造に基づいています。
 * 集合への所属判定、つまりそのカラムにトークン X が含まれている可能性があるか、あるいは確実に含まれていないか、ということしか判定できません。
-* クエリ実行時に大まかな範囲をスキップできるよう、granule レベルの情報を格納します。
+* クエリ実行時に大まかな範囲をスキップできるよう、グラニュール レベルの情報を格納します。
 * 適切にチューニングするのが難しいです (例は [こちら](/ja/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) を参照) 。
 * 比較的コンパクトです (1 パーツあたり数 KB ～数 MB) 。
 
