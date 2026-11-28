@@ -1,12 +1,14 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -75,6 +77,10 @@ void tryMarkJoin(QueryPlan::Node & node)
     if (join_step->getJoin()->pipelineType() != JoinPipelineType::FillRightFirst)
         return;
 
+    /// A set-operation join starts the build only after its probe side has a row, so this would deadlock.
+    if (join_step->getJoin()->getTableJoin().setOperation() != JoinSetOperation::None)
+        return;
+
     const size_t probe_idx = join_step->swap_streams ? 1 : 0;
 
     auto * reading = findProbeSideReading(node.children[probe_idx]);
@@ -99,8 +105,8 @@ void tryMarkJoin(QueryPlan::Node & node)
     /// filter never does, and an exact-set-only key type may lose its set to a bloom-filter
     /// overflow.
     const auto & primary_key_columns = reading->getStorageMetadata()->getPrimaryKey().column_names;
-    std::vector<RuntimeFilterIndexAnalysisDescriptor> prefix;
-    std::vector<BuildRuntimeFilterStep *> build_steps;
+    VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> prefix;
+    VectorWithMemoryTracking<BuildRuntimeFilterStep *> build_steps;
     for (const auto & pk_column : primary_key_columns)
     {
         const RuntimeFilterIndexAnalysisDescriptor * covering = nullptr;
@@ -145,7 +151,7 @@ void tryMarkJoin(QueryPlan::Node & node)
 
 void markSealGatedReading(QueryPlan::Node & root)
 {
-    std::vector<QueryPlan::Node *> stack = {&root};
+    VectorWithMemoryTracking<QueryPlan::Node *> stack = {&root};
     while (!stack.empty())
     {
         auto * node = stack.back();

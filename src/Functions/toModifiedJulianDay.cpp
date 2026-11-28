@@ -22,12 +22,12 @@ namespace DB
     class ExecutableFunctionToModifiedJulianDay final : public IExecutableFunction
     {
     public:
-        String getName() const override
+        [[nodiscard]] String getName() const override
         {
             return Name::name;
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             const IColumn * col_from = arguments[0].column.get();
             const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(col_from);
@@ -96,7 +96,7 @@ namespace DB
                 return col_to;
         }
 
-        bool useDefaultImplementationForConstants() const override
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override
         {
             return true;
         }
@@ -104,7 +104,7 @@ namespace DB
         /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
         /// row references it, so the throwing variant must not be executed on the whole dictionary -
         /// the empty string is not a date and it would fail on entirely valid data.
-        bool canBeExecutedOnDefaultArguments() const override
+        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override
         {
             return nullOnErrors;
         }

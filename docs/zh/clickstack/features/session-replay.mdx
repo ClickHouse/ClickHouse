@@ -7,14 +7,12 @@ doc_type: 'guide'
 keywords: ['ClickStack', '会话回放', '浏览器 SDK', '前端可观测性', '用户会话', '调试']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickStack 中的会话回放会捕获并重建用户在 Web 应用中的交互，让你能够以可视化方式精确回放用户在一次会话中看到的内容及其执行的操作。它并非视频录制；SDK 记录的是 DOM 变化、鼠标移动、点击、滚动、键盘输入、控制台日志、网络请求 (XHR、Fetch、WebSocket) 以及 JavaScript 异常，然后再在浏览器中还原整个过程。
 
 由于会话回放与日志、链路追踪和指标一起存储在 ClickHouse 中，你可以从查看用户体验，快速切换到检查支撑该体验的后端链路追踪和数据库查询——这一切只需点击几下即可完成。这使会话回放非常适合用于调试生产环境问题、理解用户行为、识别 UX 卡点，以及直观确认支持团队报告的问题。
 
 <div id="instrumentation">
-  ## 为你的应用添加埋点
+  ## 为你的应用添加埋点 {#instrumentation}
 </div>
 
 ClickStack 与 OpenTelemetry 完全兼容，因此你可以使用标准的 OpenTelemetry JavaScript SDK 或任意一个 [ClickStack 语言 SDK](/zh/clickstack/ingesting-data/sdks) 发送浏览器遥测数据 (链路追踪、异常) 。不过，**会话回放需要使用 ClickStack Browser SDK** (`@hyperdx/browser`) ，它在 OpenTelemetry SDK 的基础上扩展了会话录制、控制台捕获和网络请求捕获功能。如果你只需要链路追踪而不需要会话回放，那么任何兼容 OTel 的浏览器 SDK 都可以与 ClickStack 配合使用。
@@ -68,7 +66,7 @@ ClickStack 与 OpenTelemetry 完全兼容，因此你可以使用标准的 OpenT
     对于不使用打包器的应用，可以通过 script tag 直接引入 SDK。这样会暴露出全局变量 `HyperDX`，其用法与 NPM 包相同。
 
     ```html
-    <script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+    <script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js" integrity="sha384-qwXeKpfQhV/97qMbKb9cscCuDW2XD5LgagHyvVlEHHYcem1wqmiey1JnHGTfggTv" crossorigin="anonymous"></script>
     <script>
       window.HyperDX.init({
         url: 'http://your-otel-collector:4318',
@@ -84,27 +82,33 @@ ClickStack 与 OpenTelemetry 完全兼容，因此你可以使用标准的 OpenT
 </Tabs>
 
 <Note>
-  `tracePropagationTargets` 选项是将会话回放与后端链路追踪关联起来的关键——请将其设置为你的 API 域名，以启用完整的前后端分布式链路追踪。有关 SDK 选项的完整列表，包括隐私控制、自定义 actions、React 错误边界和 source maps，请参阅 [Browser SDK 参考文档](/zh/clickstack/ingesting-data/sdks/browser)。
+  `tracePropagationTargets` 选项是将会话回放与后端链路追踪关联起来的关键——请将其设置为你的 API 域名，以启用完整的前后端分布式链路追踪。有关 SDK 选项的完整列表，包括隐私控制、自定义操作、React 错误边界和 source maps，请参阅 [Browser SDK 参考文档](/zh/clickstack/ingesting-data/sdks/browser)。
 </Note>
 
-Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/clickstack/ingesting-data/sdks/browser#options)，以及[附加用户信息](/zh/clickstack/ingesting-data/sdks/browser#attach-user-information-or-metadata)，这样你就可以在 ClickStack UI 中按用户搜索和过滤会话。
+Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/clickstack/ingesting-data/sdks/browser#initialization-options)，以及[附加用户信息](/zh/clickstack/ingesting-data/sdks/browser#users-and-errors)，这样你就可以在 ClickStack 用户界面 中按用户搜索和过滤会话。
 
-<div id="viewing-replays">
-  ## 查看会话回放
+## 查看会话回放 {#viewing-replays}
+
+在 ClickStack 用户界面中，从左侧边栏进入 **Client Sessions**。此视图会列出所有已捕获的浏览器会话，包括其耗时和事件数量。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![会话回放搜索视图](/images/clickstack/session-replay/replay-search-view.webp)
+  </Frame>
 </div>
-
-在 ClickStack UI (HyperDX) 中，从左侧边栏进入 **Client Sessions**。此视图会列出所有已捕获的浏览器会话，包括其耗时和事件数量。
-
-<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="会话回放搜索视图" size="lg" />
 
 点击任意会话上的 play 按钮即可回放。回放视图右侧显示重建的用户体验，左侧则显示浏览器事件时间线，包括网络请求、控制台日志和错误。
 
-<Image img="/images/clickstack/session-replay/session-replay.webp" alt="会话回放播放" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![会话回放播放](/images/clickstack/session-replay/session-replay.webp)
+  </Frame>
+</div>
 
 在 **Highlighted** 和 **All Events** 模式之间切换，以调整时间线上显示的详细程度。错误会以红色标注，点击任意事件都会将回放跳转到该会话中的相应位置。
 
 <div id="session-to-trace">
-  ### 从会话到 trace
+  ### 从会话到 trace {#session-to-trace}
 </div>
 
 当你在会话时间线中选中某个网络请求或错误时，可以点击 **Trace** 选项卡，沿着请求一路追踪到后端服务——查看这次用户交互触发的相关日志、span 和数据库查询。
@@ -115,16 +119,18 @@ Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/c
   <img src="/images/clickstack/session-replay/clickpy-trace.webp" alt="在 ClickStack 中从会话回放深入查看后端链路追踪" />
 </Frame>
 
-<div id="trace-to-session">
-  ### 从 trace 到会话回放
+### 从 trace 到会话回放 {#trace-to-session}
+
+这种关联在反向场景下同样成立。在 **搜索** 视图中查看某个 trace 时，点击它打开 trace 详情，然后选择 **会话回放** 选项卡，即可看到用户在该 trace 发生时的实际体验。这在排查 错误 或请求缓慢时尤其有用——你可以从 backend 问题入手，立即切换到用户视角。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![会话回放 trace 视图](/images/clickstack/session-replay/trace-to-replay.webp)
+  </Frame>
 </div>
 
-这种关联在反向场景下同样成立。在 **搜索** 视图中查看某个 trace 时，点击它打开 trace 详情，然后选择 **会话回放** 标签页，即可看到用户在该 trace 发生时的实际体验。这在排查 error 或请求缓慢时尤其有用——你可以从 backend 问题入手，立即切换到用户视角。
-
-<Image img="/images/clickstack/session-replay/trace-to-replay.webp" alt="会话回放 trace 视图" size="lg" />
-
 <div id="data-storage">
-  ## 会话数据如何存储
+  ## 会话数据如何存储 {#data-storage}
 </div>
 
 会话回放数据存储在 ClickHouse 的专用 [`hyperdx_sessions`](/zh/clickstack/ingesting-data/schemas#sessions) 表中，与日志和链路追踪分开存放。每个会话事件对应表中的一行，其中 `Body` 字段包含事件载荷，`LogAttributes` map 中存储事件元数据。`Body` 和 `LogAttributes` 这两列共同保存用于重建回放的原始会话事件详情。
@@ -132,7 +138,7 @@ Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/c
 有关完整的表 schema 信息，请参阅 [ClickStack 使用的表和 schema](/zh/clickstack/ingesting-data/schemas)。
 
 <div id="try-it-out">
-  ## 试一试
+  ## 试一试 {#try-it-out}
 </div>
 
 有两种方式可以体验会话回放的实际效果：
@@ -141,7 +147,7 @@ Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/c
 * **本地演示** — [会话回放演示](/zh/clickstack/example-datasets/session-replay) 将逐步讲解如何为一个演示应用埋点，包括在本地运行 ClickStack 以及查看你的回放。
 
 <div id="learn-more">
-  ## 了解更多
+  ## 了解更多 {#learn-more}
 </div>
 
 * [会话回放演示](/zh/clickstack/example-datasets/session-replay) — 带分步说明的交互式本地演示应用
@@ -149,4 +155,4 @@ Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/c
 * [搜索](/zh/clickstack/features/search) — 用于筛选会话和事件的搜索语法
 * [仪表盘](/zh/clickstack/features/dashboards/overview) — 基于会话和链路追踪数据构建可视化内容和仪表盘
 * [告警](/zh/clickstack/features/alerts) — 针对错误、延迟和其他信号设置告警
-* [ClickStack 架构](/zh/clickstack/architecture) — ClickHouse、HyperDX 和 OTel collector 如何协同配合
+* [ClickStack 架构](/zh/clickstack/architecture) — ClickHouse、ClickStack 用户界面和 OTel collector 如何协同配合

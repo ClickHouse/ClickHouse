@@ -333,9 +333,9 @@ struct NaiveBayesEntry
     {
     }
 
-    UInt32 ngramIndex() const { return static_cast<UInt32>(key >> 32); }
-    UInt32 classId() const { return static_cast<UInt32>(key); }
-    UInt64 getCount() const { return count; }
+    [[nodiscard]] UInt32 ngramIndex() const { return static_cast<UInt32>(key >> 32); }
+    [[nodiscard]] UInt32 classId() const { return static_cast<UInt32>(key); }
+    [[nodiscard]] UInt64 getCount() const { return count; }
 
     /// Orders entries by the packed key — n-gram index first, then class id; the count is not part of the
     /// order. `buildNgramTables` sorts on this so each n-gram's rows are contiguous and its per-class rows adjacent.
@@ -595,13 +595,13 @@ public:
     }
 
     /// Maps a dense class index back to the original class id.
-    UInt32 classIdAt(size_t class_index) const
+    [[nodiscard]] UInt32 classIdAt(size_t class_index) const
     {
         chassert(class_index < class_ids.size());
         return class_ids[class_index];
     }
 
-    UInt64 getAllocatedBytes() const
+    [[nodiscard]] UInt64 getAllocatedBytes() const
     {
         UInt64 total = sizeof(*this);
         total += key_arena.allocatedBytes();
@@ -611,7 +611,7 @@ public:
         return total;
     }
 
-    size_t getElementCount() const { return ngram_to_index.size(); }
+    [[nodiscard]] size_t getElementCount() const { return ngram_to_index.size(); }
 
 private:
     ClassIndexMap buildClassTables(
@@ -779,9 +779,9 @@ public:
         return scratch.probabilities;
     }
 
-    UInt64 getAllocatedBytes() const { return sizeof(*this) + data->getAllocatedBytes(); }
+    [[nodiscard]] UInt64 getAllocatedBytes() const { return sizeof(*this) + data->getAllocatedBytes(); }
 
-    size_t getElementCount() const { return data->getElementCount(); }
+    [[nodiscard]] size_t getElementCount() const { return data->getElementCount(); }
 
 private:
     /// Index of the maximum score; ties resolve to the smallest index, which is the smallest class id.

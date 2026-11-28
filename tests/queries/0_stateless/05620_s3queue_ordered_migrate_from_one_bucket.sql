@@ -154,6 +154,12 @@ WHERE path = '/clickhouse/' || currentDatabase() || '/q_interrupted/buckets/0' A
 SELECT 'interrupted / bucket 1', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
 WHERE path = '/clickhouse/' || currentDatabase() || '/q_interrupted/buckets/1' AND name = 'processed';
 
+-- From the Keeper rewrite below until its ALTER, `q_peer` has 2 buckets in Keeper and 1 locally, which ATTACH
+-- refuses: it lives in a Memory database, whose table metadata a restart never loads.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+
 CREATE TABLE q_peer (x UInt64)
 ENGINE = S3Queue('http://localhost:11111/test/05620_peer/', 'username', 'password', CSV)
 SETTINGS mode = 'ordered', buckets = 1,
@@ -176,6 +182,8 @@ SELECT 'peer / bucket 0', count(), max(JSONExtractString(value, 'file_path')) FR
 WHERE path = '/clickhouse/' || currentDatabase() || '/q_peer/buckets/0' AND name = 'processed';
 SELECT 'peer / bucket 1', count(), max(JSONExtractString(value, 'file_path')) FROM system.zookeeper
 WHERE path = '/clickhouse/' || currentDatabase() || '/q_peer/buckets/1' AND name = 'processed';
+
+USE {CLICKHOUSE_DATABASE:Identifier};
 
 -- 8. A refused migration creates no bucket nodes.
 CREATE TABLE q_part (x UInt64)
@@ -207,6 +215,6 @@ DROP TABLE q_legacy;
 DROP TABLE q_dual_root;
 DROP TABLE q_dual_bucket;
 DROP TABLE q_interrupted;
-DROP TABLE q_peer;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 DROP TABLE q_part_holder SYNC;
 DROP TABLE q_part;

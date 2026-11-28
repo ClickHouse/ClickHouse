@@ -7,6 +7,7 @@
 -- The algorithm is set explicitly wherever it is asserted, because the choice among the algorithms
 -- allowed by `join_algorithm` is made at run time and depends on the number of threads.
 
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET log_queries = 1;
 -- The reported kind is the executed one, and the optimizer may execute a join with its sides swapped,
 -- which reverses LEFT and RIGHT. Disable that here so the kinds are the ones the queries are written
@@ -160,16 +161,16 @@ SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment =
 SELECT count() FROM ta ASOF LEFT JOIN tb USING (a, t) FORMAT Null SETTINGS log_comment = '04891_join_count_pfsm_serial', join_algorithm = 'parallel_full_sorting_merge', max_threads = 4;
 
 
--- `ie_join` has no `IJoin`: the whole algorithm is `IEJoinStep`, which reports itself. It is only
+-- `inequality` has no `IJoin`: the whole algorithm is `InequalityJoinStep`, which reports itself. It is only
 -- picked for two inequality conditions.
 SELECT count() FROM (SELECT number AS t FROM numbers(10)) i1 JOIN (SELECT number AS t_lo, number + 5 AS t_hi FROM numbers(10)) i2 ON i1.t >= i2.t_lo AND i1.t <= i2.t_hi
 FORMAT Null
-SETTINGS log_comment = '04891_join_count_ie_inner', join_algorithm = 'ie_join,hash';
+SETTINGS log_comment = '04891_join_count_ie_inner', join_algorithm = 'inequality,hash';
 -- A right-side ANTI join is executed as its left-side mirror, with the input pipelines swapped, and the
 -- reported kind is the executed one, so it is LEFT rather than the RIGHT of the query text.
 SELECT count() FROM (SELECT number AS t FROM numbers(10)) i1 RIGHT ANTI JOIN (SELECT number AS t_lo, number + 5 AS t_hi FROM numbers(10)) i2 ON i1.t >= i2.t_lo AND i1.t <= i2.t_hi
 FORMAT Null
-SETTINGS log_comment = '04891_join_count_ie_right_anti', join_algorithm = 'ie_join,hash';
+SETTINGS log_comment = '04891_join_count_ie_right_anti', join_algorithm = 'inequality,hash';
 
 
 -- These columns describe the pipeline that was built for the query, like the other `used_` columns of

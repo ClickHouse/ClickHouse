@@ -51,6 +51,7 @@
 
 
 #include <Parsers/ASTAlterQuery.h>
+#include <base/sanitizer_defs.h>
 
 namespace CurrentMetrics
 {
@@ -658,12 +659,15 @@ struct BackupsWorker::BackupStarter
         }
 
         /// Remove files of the corrupted backup.
-        bool should_remove_files_in_backup = backup && backup_is_corrupted && backups_worker.remove_backup_files_after_failure
+        bool can_remove_files_in_backup = backup && backup_is_corrupted
             && backup_coordination && backup_coordination->isErrorSet() &&
             (backup_coordination->isBackupQuerySentToOtherHosts() ? backup_coordination->allHostsFinished() : backup_coordination->finished());
 
-        if (should_remove_files_in_backup)
+        if (can_remove_files_in_backup && backups_worker.remove_backup_files_after_failure)
             backup->tryRemoveAllFiles();
+        /// Files are kept, but a lock with nothing else to keep would fence the destination against every retry.
+        else if (can_remove_files_in_backup && !on_cluster)
+            backup->tryRemoveLockFileIfNothingWritten();
 
         backup.reset();
 
@@ -1559,6 +1563,7 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
 }
 
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw_if_error)
 {
     std::lock_guard lock{infos_mutex};

@@ -27,6 +27,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 
+namespace fs = std::filesystem;
+
 
 namespace DB
 {

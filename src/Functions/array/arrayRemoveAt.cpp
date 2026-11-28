@@ -33,8 +33,8 @@ std::optional<size_t> getRemovePosition(Int64 index, size_t array_size)
         return static_cast<size_t>(positive_index - 1);
     }
 
-    /// Compute |index| in the unsigned domain so INT64_MIN is handled without overflow.
-    const UInt64 distance_from_end = UInt64(0) - static_cast<UInt64>(index);
+    /// Compute |index| as |index + 1| + 1, so that INT64_MIN is handled without overflow in either domain.
+    const UInt64 distance_from_end = static_cast<UInt64>(-(index + 1)) + 1;
     if (distance_from_end > array_size)
         return std::nullopt;
 
@@ -58,13 +58,13 @@ public:
     static constexpr auto name = "arrayRemoveAt";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayRemoveAt>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments[0]->onlyNull())
             return arguments[0];
@@ -87,7 +87,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(
+    [[nodiscard]] ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count) const override

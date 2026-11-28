@@ -127,10 +127,14 @@ insert into tab5 select number, number, number, number from numbers(5);
 select * from (select * from tab union all select * from tab3) order by (a + b) * c, sin(a / b);
 select * from (explain plan actions = 1 select * from (select * from tab union all select * from tab3) order by (a + b) * c, sin(a / b) settings enable_parallel_replicas = 0) where explain like '%sort description%' or explain like '%ReadType%';
 
-select * from (select * from tab where (a + b) * c = 8 union all select * from tab3 where (a + b) * c = 18) order by sin(a / b);
+-- All rows with `a = b` have the same `sin(a / b)`, and parallel replicas return such ties in a
+-- different order, so the result is checked without them.
+select * from (select * from tab where (a + b) * c = 8 union all select * from tab3 where (a + b) * c = 18) order by sin(a / b) settings enable_parallel_replicas = 0;
 select * from (explain plan actions = 1 select * from (select * from tab where (a + b) * c = 8 union all select * from tab3 where (a + b) * c = 18) order by sin(a / b) settings enable_parallel_replicas = 0) where explain like '%sort description%' or explain like '%ReadType%';
 
-select * from (select * from tab where (a + b) * c = 8 union all select * from tab4) order by sin(a / b);
+-- All rows with `a = b` have the same `sin(a / b)`, and parallel replicas return such ties in a
+-- different order, so the result is checked without them.
+select * from (select * from tab where (a + b) * c = 8 union all select * from tab4) order by sin(a / b) settings enable_parallel_replicas = 0;
 select * from (explain plan actions = 1 select * from (select * from tab where (a + b) * c = 8 union all select * from tab4) order by sin(a / b) settings enable_parallel_replicas = 0) where explain like '%sort description%' or explain like '%ReadType%';
 
 select * from (select * from tab union all select * from tab5) order by (a + b) * c;

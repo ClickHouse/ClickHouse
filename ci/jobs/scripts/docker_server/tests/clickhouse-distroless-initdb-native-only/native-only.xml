@@ -1,0 +1,4 @@
+<clickhouse>
+    <http_port remove="remove"/>
+    <https_port remove="remove"/>
+</clickhouse>

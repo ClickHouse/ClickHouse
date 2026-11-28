@@ -1,5 +1,5 @@
 -- The generated `samples` column of the samples tables declares the codecs for the elements of its tuples: `Delta, T64, ZSTD(3)`
--- for the timestamps and `ALP, ZSTD(3)` for the values, and the generated `bucket`, `min_time` and `max_time` columns get the codec
+-- for the timestamps and `ALP, ZSTD(4)` for the values, and the generated `bucket`, `min_time` and `max_time` columns get the codec
 -- of the timestamps. A copy of the table (`CREATE TABLE ... AS`) gets the declarations once, and a declared `samples` column keeps
 -- the codecs declared for it.
 

@@ -1,4 +1,5 @@
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -77,6 +78,15 @@ String backQuoteIfNeed(std::string_view x)
         writeProbablyBackQuotedString(x, wb);
     }
     return res;
+}
+
+
+String backQuoteIfNotBareWord(std::string_view x)
+{
+    bool is_bare_word = !x.empty() && isValidIdentifierBegin(x[0]) && std::all_of(x.begin() + 1, x.end(), isWordCharASCII);
+    if (is_bare_word)
+        return String(x);
+    return backQuote(x);
 }
 
 

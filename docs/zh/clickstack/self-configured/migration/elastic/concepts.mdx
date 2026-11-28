@@ -1,0 +1,280 @@
+---
+slug: /clickstack/self-configured/migration/elastic/concepts
+title: '等价概念'
+sidebarTitle: '等价概念'
+description: '等价概念 - Self-managed ClickHouse Observability 与 Elastic'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'reference'
+---
+
+<Note>
+  默认提供的全托管 ClickHouse Observability 已对您屏蔽了本页所述的数据库及摄取内部结构。从 Elastic 迁移时，您无需管理这些概念，只需按照[数据迁移指南](/zh/clickstack/observability/migration/elastic/migrating-data)操作即可。本参考文档适用于 **Self-managed ClickHouse Observability**，在该模式下，这些内部结构由您自行控制。
+</Note>
+
+## Elastic Stack 与 Self-managed ClickHouse Observability 对比 {#elastic-vs-clickstack}
+
+Elastic Stack 和 Self-managed ClickHouse Observability 都涵盖了可观测性平台的各项核心角色，但二者在实现这些角色时秉持不同的设计理念。这些角色包括：
+
+* **UI 与告警**：用于查询数据、构建仪表盘和管理告警的工具。
+* **存储与查询引擎**：负责存储可观测性数据并处理分析型查询的后端系统。
+* **数据采集与 ETL**：在摄取之前收集并处理遥测数据的 agent 和管道。
+
+下表概述了两个技术栈如何将各自的组件对应到这些角色：
+
+| **角色**         | **Elastic Stack**                                     | **Self-managed ClickHouse Observability**                           | **说明**                                                                                                               |
+| -------------- | ----------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **UI 与告警**     | **Kibana** — 仪表盘、搜索和告警                                | **Observability UI** — 实时 UI、搜索和告警                                  | 两者都是用户的主要交互界面，均提供可视化和告警管理功能。Observability UI 专为可观测性打造，并与 OpenTelemetry 语义紧密结合。                                       |
+| **存储与查询引擎**    | **Elasticsearch** — 基于倒排索引的 JSON 文档存储                 | **ClickHouse** — 采用向量化引擎的列式数据库                                      | Elasticsearch 使用针对搜索优化的倒排索引；ClickHouse 借助列式存储和 SQL，对结构化和半结构化数据进行高速分析。                                                |
+| **数据采集**       | **Elastic Agent**、**Beats** (例如 Filebeat、Metricbeat)  | **ClickHouse Observability Collector** (边缘 + 网关)                    | Elastic 支持自定义 shipper 以及由 Fleet 统一管理的 agent。Self-managed ClickHouse Observability 依托 OpenTelemetry，实现与供应商无关的数据采集和处理。 |
+| **插桩 SDK**     | **Elastic APM agents** (专有)                           | **OpenTelemetry SDK** (由 Self-managed ClickHouse Observability 分发)  | Elastic SDK 与 Elastic 技术栈绑定。Self-managed ClickHouse Observability 基于 OpenTelemetry SDK，为各主流语言提供日志、指标和链路追踪支持。         |
+| **ETL / 数据处理** | **Logstash**、摄取管道                                     | **ClickHouse Observability Collector** + ClickHouse 物化视图            | Elastic 使用摄取管道和 Logstash 进行数据转换。Self-managed ClickHouse Observability 通过物化视图和 OTel 采集器处理器将计算前移到写入时，以高效、增量的方式转换数据。   |
+| **架构理念**       | 垂直集成，专有 agent 和格式                                     | 基于开放标准，组件松耦合                                                        | Elastic 打造的是紧密集成的生态系统。Self-managed ClickHouse Observability 注重模块化和标准 (OpenTelemetry、SQL、对象存储) ，兼顾灵活性与成本效益。           |
+
+Self-managed ClickHouse Observability 注重开放标准和互操作性，从采集到 UI 全链路原生支持 OpenTelemetry。相比之下，Elastic 提供的是一个耦合紧密、垂直集成程度更高的生态系统，并使用专有的 agent 和格式。
+
+**Elasticsearch** 和 **ClickHouse** 分别是各自技术栈中负责数据存储、处理和查询的核心引擎，因此理解二者的差异至关重要。它们决定了整个可观测性架构的性能、可扩展性和灵活性。下一节将探讨 Elasticsearch 与 ClickHouse 之间的关键差异，包括二者在数据建模、数据摄取、查询执行和存储管理方面的不同。
+
+## Elasticsearch 与 ClickHouse 对比 {#elasticsearch-vs-clickhouse}
+
+ClickHouse 和 Elasticsearch 采用不同的底层模型来组织和查询数据，但许多核心概念的作用相似。本节面向熟悉 Elastic 的用户，梳理关键概念在 ClickHouse 中的对应项。尽管术语有所不同，但大多数可观测性工作流都能在 Self-managed ClickHouse Observability 中实现，而且通常效率更高。
+
+### 核心结构概念 {#core-structural-concepts}
+
+| **Elasticsearch** | **ClickHouse / SQL** | **描述**                                                                                                                                                                                                                                  |
+| ----------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **字段**            | **列**                | 数据的基本单元，保存一个或多个特定类型的值。Elasticsearch 字段既可以存储基本类型，也可以存储数组和对象。每个字段只能有一种类型。ClickHouse 同样支持数组和对象 (`Tuples`、`Maps`、`Nested`) ，并支持 [`Variant`](/zh/reference/data-types/variant) 和 [`Dynamic`](/zh/reference/data-types/dynamic) 等动态类型，使同一列可以包含多种类型。 |
+| **文档**            | **行**                | 字段 (列) 的集合。Elasticsearch 文档默认更为灵活，会根据数据动态添加新字段 (类型由数据推断) 。ClickHouse 的行默认受 schema 约束，用户需要为一行插入全部列或部分列。ClickHouse 中的 [`JSON`](/zh/guides/clickhouse/data-formats/json/intro) 类型支持根据已插入的数据创建 Dynamic 列，提供等价的半结构化能力。                          |
+| **索引**            | **表**                | 查询执行和存储的单元。在这两个系统中，查询都在存储行/文档的索引或表上执行。                                                                                                                                                                                                  |
+| *隐式*              | Schema (SQL)         | SQL schema 将表组织到命名空间中，通常用于访问控制。Elasticsearch 和 ClickHouse 都没有 schema 的概念，但两者都通过角色和 RBAC 支持行级和表级安全。                                                                                                                                      |
+| **集群**            | **集群 / 数据库**         | Elasticsearch 集群是管理一个或多个索引的运行时实例。在 ClickHouse 中，数据库在逻辑命名空间内组织表，提供与 Elasticsearch 集群相同的逻辑分组。ClickHouse 集群是一组分布式节点，这一点与 Elasticsearch 类似，但它与数据本身解耦，彼此独立。                                                                                  |
+
+### 数据建模与灵活性 {#data-modeling-and-flexibility}
+
+Elasticsearch 以 schema 灵活著称，这得益于其[动态映射](https://www.elastic.co/docs/manage-data/data-store/mapping/dynamic-mapping)机制。在摄取文档时，字段会随之自动创建，类型也会自动推断——除非指定了 schema。ClickHouse 默认更为严格——表需使用显式表结构定义——但也通过 [`Dynamic`](/zh/reference/data-types/dynamic)、[`Variant`](/zh/reference/data-types/variant) 和 [`JSON`](/zh/guides/clickhouse/data-formats/json/intro) 类型提供了灵活性。借助这些类型，可以摄取半结构化数据，并实现与 Elasticsearch 类似的动态列创建和类型推断。同样，[`Map`](/zh/reference/data-types/map) 类型允许存储任意键值对——但键和值各自只能使用单一类型。
+
+ClickHouse 对类型灵活性的处理更加透明、可控。在 Elasticsearch 中，类型冲突可能导致摄取错误；而 ClickHouse 允许在 [`Variant`](/zh/reference/data-types/variant) 列中存储混合类型的数据，并可借助 [`JSON`](/zh/guides/clickhouse/data-formats/json/intro) 类型实现模式演进。
+
+如果不使用 [`JSON`](/zh/guides/clickhouse/data-formats/json/intro)，schema 则为静态定义。如果某一行未提供值，这些值要么被定义为 [`Nullable`](/zh/reference/data-types/nullable) (Self-managed ClickHouse Observability 中未使用) ，要么回退为该类型的默认值，例如 `String` 类型的空值。
+
+### 摄取与转换 {#ingestion-and-transformation}
+
+Elasticsearch 使用由处理器 (例如 `enrich`、`rename`、`grok`) 组成的摄取管道，在建立索引之前对文档进行转换。在 ClickHouse 中，可以通过 [**增量物化视图**](/zh/concepts/features/materialized-views/incremental-materialized-view) 实现类似功能：它能够对传入数据进行[过滤、转换](/zh/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation)或[补充信息](/zh/concepts/features/materialized-views/incremental-materialized-view#lookup-table)，并将结果插入目标端表。如果只需存储 materialized view 的输出，还可以将数据插入使用 `Null` 表引擎的表。这样只会保留物化视图的结果，原始数据则会被丢弃，从而节省存储空间。
+
+在富集方面，Elasticsearch 提供专用的 [enrich 处理器](https://www.elastic.co/docs/reference/enrich-processor/enrich-processor)，用于为文档添加上下文信息。在 ClickHouse 中，[**字典**](/zh/concepts/features/dictionaries/index) 既可在[查询时](/zh/concepts/features/dictionaries/index#query-time-enrichment)使用，也可在[摄取时](/zh/concepts/features/dictionaries/index#index-time-enrichment)使用，为数据行补充信息，例如在 insert 时[将 IP 映射到地理位置](/zh/guides/use-cases/observability/build-your-own/schema-design#using-ip-dictionaries)，或执行 [User-Agent 查找](/zh/guides/use-cases/observability/build-your-own/schema-design#using-regex-dictionaries-user-agent-parsing)。
+
+### 查询语言 {#query-languages}
+
+Elasticsearch 支持[多种查询语言](https://www.elastic.co/docs/explore-analyze/query-filter/languages)，包括 [DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl)、[ES|QL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/esql)、[EQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/eql) 和 [KQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/kql) (Lucene 风格) 查询，但对连接的支持有限——仅能通过 [`ES|QL`](https://www.elastic.co/docs/reference/query-languages/esql/commands/lookup-join) 使用 **left outer join**。ClickHouse 则支持**完整的 SQL 语法**，包括[所有连接类型](/zh/reference/statements/select/join#supported-types-of-join)、[窗口函数](/zh/reference/functions/window-functions/index)、子查询 (含关联子查询) 以及 CTE。如果您需要将可观测性信号与业务数据或基础设施数据关联分析，这将是一大优势。
+
+在 Self-managed ClickHouse Observability 中，[UI 提供了兼容 Lucene 的搜索接口](/zh/clickstack/observability/features/search)，便于平滑过渡，同时还依托 ClickHouse 后端提供完整的 SQL 支持。该语法与 [Elastic 查询字符串](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax)语法相近。有关两者语法的详细对比，请参阅[《在 Self-managed ClickHouse Observability 与 Elastic 中进行搜索》](/zh/clickstack/observability/migration/elastic/search)。
+
+### 文件格式与接口 {#file-formats-and-interfaces}
+
+Elasticsearch 支持以 JSON 格式 (以及[有限的 CSV 格式](https://www.elastic.co/docs/reference/enrich-processor/csv-processor)) 摄取数据。ClickHouse 则支持超过 **70 种文件格式**，包括 Parquet、Protobuf、Arrow、CSV 等，摄取和导出均可使用。因此，ClickHouse 能更轻松地与外部管道和工具集成。
+
+两个系统都提供 REST API，但 ClickHouse 还提供了**原生协议**，可实现低延迟、高吞吐量的交互。与 HTTP 相比，原生接口在查询进度、压缩和流式传输方面的支持更为高效，也是大多数生产环境中数据摄取的默认方式。
+
+### 索引与存储 {#indexing-and-storage}
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Elasticsearch](/images/use-cases/observability/elasticsearch.webp)
+  </Frame>
+</div>
+
+分片是 Elasticsearch 可扩展性模型的核心概念。每个 ① [**索引**](https://www.elastic.co/blog/what-is-an-elasticsearch-index) 会被拆分为若干**分片**，每个分片都是一个物理 Lucene 索引，以分段的形式存储在磁盘上。为了提升容错能力，一个分片可以拥有一个或多个物理副本，称为副本分片。为了实现可扩展性，分片和副本可以分布在多个节点上。单个分片 ② 由一个或多个不可变分段组成。分段是 Lucene 的基本索引结构；Lucene 是一个 Java 库，Elasticsearch 的索引和搜索功能正是基于它构建的。
+
+<Info>
+  **Elasticsearch 中的插入处理**
+
+  Ⓐ 新插入的文档 Ⓑ 首先进入内存中的索引缓冲区，该缓冲区默认每秒刷盘一次。系统通过路由公式确定已刷盘文档的目标分片，并在磁盘上为该分片写入一个新分段。为了提高查询效率，并支持物理删除已删除或已更新的文档，分段会在后台持续合并为更大的分段，直至达到 5 GB 的大小上限。不过，也可以强制将分段合并为更大的分段。
+</Info>
+
+由于 [JVM 堆和元数据开销](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#each-shard-has-overhead)，Elasticsearch 建议将分片大小控制在约 [50 GB 或 2 亿个文档](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards)。此外，[每个分片最多只能容纳 20 亿个文档](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#troubleshooting-max-docs-limit)，这是一个硬性上限。Elasticsearch 会在各分片之间并行执行查询，但每个分片只使用**单个线程**处理，因此过度分片不仅成本高昂，还会适得其反。这使得分片与扩展天然地紧密耦合：要提升性能，就需要更多的分片 (和节点) 。
+
+Elasticsearch 会将所有字段写入[**倒排索引**](https://www.elastic.co/docs/manage-data/data-store/index-basics)以实现快速搜索，并可选择使用 [**doc values**](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/doc-values) 来支持聚合、排序和脚本字段访问。数值字段和地理字段使用 [Block K-D 树](https://users.cs.duke.edu/~pankaj/publications/papers/bkd-sstd.pdf)，用于地理空间数据以及数值和日期范围的搜索。
+
+值得注意的是，Elasticsearch 会在 [`_source`](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field) 中存储完整的原始文档 (使用 `LZ4`、`Deflate` 或 `ZSTD` 压缩) ，而 ClickHouse 并不单独存储文档形式的数据，而是在查询时从列中重建数据，从而节省存储空间。Elasticsearch 也可以通过 [Synthetic `_source`](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field#synthetic-source) 实现同样的能力，但存在一些[限制](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field#synthetic-source-restrictions)。此外，禁用 `_source` 还会带来一些[影响](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field#include-exclude)，而 ClickHouse 不存在这些问题。
+
+在 Elasticsearch 中，[索引映射](https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping.html) (相当于 ClickHouse 中的表 schema) 决定了字段的类型，以及用于持久化和查询的数据结构。
+
+相比之下，ClickHouse 采用**列式**存储——每一列都独立存储，但始终按照表的主键/排序键排序。正是这种排序使[稀疏主索引](/zh/concepts/core-concepts/primary-indexes)成为可能，让 ClickHouse 能够在查询执行过程中高效地跳过无关数据。当查询按主键字段过滤时，ClickHouse 只读取每列中的相关部分，即使没有为每一列建立完整索引，也能显著减少磁盘 I/O 并提升性能。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ClickHouse](/images/use-cases/observability/clickhouse.webp)
+  </Frame>
+</div>
+
+ClickHouse 还支持 [**跳过索引**](/zh/concepts/features/performance/skip-indexes/skipping-indexes)，它通过为选定的列预先计算索引数据来加速过滤。跳过索引需要显式定义，但能显著提升性能。此外，ClickHouse 允许为每一列单独指定 [压缩编解码器](/zh/guides/use-cases/observability/build-your-own/schema-design#using-codecs) 和压缩算法——这是 Elasticsearch 所不支持的 (其 [压缩](https://www.elastic.co/docs/reference/elasticsearch/index-settings/index-modules) 仅作用于 `_source` JSON 存储) 。
+
+ClickHouse 同样支持分片，但其模型的设计更倾向于 **垂直扩缩容**。单个分片可以存储 **数万亿行** 数据，只要内存、CPU 和磁盘资源允许，就能始终保持高效运行。与 Elasticsearch 不同，ClickHouse 对每个分片 **没有硬性的行数限制**。ClickHouse 中的分片是逻辑层面的——实际上就是独立的表——除非数据集超出单个节点的容量，否则无需拆分。这种情况通常源于磁盘容量限制，只有在确实需要横向扩展时才会 ① 引入分片，从而降低复杂度和开销。此时，与 Elasticsearch 类似，每个分片保存数据的一个子集。单个分片内的数据以 ② 不可变数据分区片段集合的形式组织，每个数据分区片段包含 ③ 多个数据结构。
+
+ClickHouse 分片内的处理是 **完全并行化** 的，建议用户优先进行垂直扩缩容，以避免在节点之间传输数据带来的网络开销。
+
+<Info>
+  **ClickHouse 中的插入处理**
+
+  ClickHouse 中的插入操作 **默认是同步的**——写入只有在提交后才会被确认——但也可以配置为 **异步插入**，以实现类似 Elastic 的缓冲和批处理。如果使用 [异步数据插入](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)，Ⓐ 新插入的行会先进入 Ⓑ 内存中的插入缓冲区，该缓冲区默认每 200 毫秒刷盘一次。如果使用多个分片，则会通过 [分布式表](/zh/reference/engines/table-engines/special/distributed) 将新插入的行路由到对应的目标分片，随后在磁盘上为该分片写入一个新的数据分区片段。
+</Info>
+
+### 分布与复制 {#distribution-and-replication}
+
+尽管 Elasticsearch 和 ClickHouse 都使用集群、分片和副本来确保可扩展性和容错能力，但二者的模型在实现方式和性能特征上存在显著差异。
+
+Elasticsearch 采用 **主节点-次级** 模型进行复制。数据写入主分片后，会被同步复制到一个或多个副本。这些副本本身也是完整的分片，分布在各个节点上以实现冗余。只有在所有必需的副本都确认操作后，Elasticsearch 才会确认写入——这种模型提供了接近 **顺序一致性** 的保证，但在完全同步之前，仍可能从副本读到 **脏读** 数据。**master 节点** 负责协调集群，管理分片分配、健康状态以及领导者选举。
+
+相比之下，ClickHouse 默认采用 **最终一致性**，并由 **Keeper** (ZooKeeper 的轻量级替代方案) 进行协调。写入既可以直接发送到任意副本，也可以通过 [**分布式表**](/zh/reference/engines/table-engines/special/distributed) 发送，由后者自动选择副本。复制是异步的——变更会在写入被确认后传播到其他副本。如需更严格的保证，ClickHouse 也[支持 **顺序一致性**](/zh/get-started/migrate/postgres/appendix#sequential-consistency)，即写入只有在所有副本上提交后才会被确认，但由于会影响性能，此模式很少使用。分布式表统一了对多个分片的访问：将 `SELECT` 查询转发到所有分片并合并结果；对于 `INSERT` 操作，则将数据均匀路由到各分片以实现负载均衡。ClickHouse 的复制机制非常灵活：任何副本 (即分片的一份拷贝) 都可以接受写入，所有变更都会异步同步到其他副本。借助这种架构，系统在故障或维护期间仍能不间断地提供查询服务，并自动完成重新同步——无需在数据层强制实施主节点-次级模式。
+
+<Info>
+  **ClickHouse Cloud**
+
+  在 **ClickHouse Cloud** 中，该架构引入了一种 shared-nothing 计算资源模型，其中单个**分片以对象存储为后端**。这取代了传统基于副本的高可用性方案，使该分片能够**同时被多个节点读写**。借助存储与计算的分离，系统可以弹性扩展，而无需显式管理副本。
+</Info>
+
+总结如下：
+
+* **Elastic**：分片是与 JVM 内存绑定的物理 Lucene 结构，过度分片会造成性能损失。复制是同步的，并由 master 节点协调。
+* **ClickHouse**：分片是逻辑概念，可纵向扩展，本地执行效率极高。复制是异步的 (但也可以是顺序的) ，协调机制也很轻量。
+
+总而言之，ClickHouse 尽量减少了分片调优的需要，在大规模场景下兼顾简洁性与性能，同时仍能在需要时提供强一致性保证。
+
+### 去重与路由 {#deduplication-and-routing}
+
+Elasticsearch 基于文档的 `_id` 进行去重，并据此将文档路由到相应的分片。ClickHouse 不会存储默认的行标识符，但支持**写入时去重**，使用户能够安全地重试失败的插入操作。如需更精细的控制，可借助 `ReplacingMergeTree` 等表引擎按指定列进行去重。
+
+Elasticsearch 中的索引路由可确保特定文档始终路由到特定分片。在 ClickHouse 中，您可以定义**分片键**或使用 `Distributed` 表来实现类似的数据局部性。
+
+### 聚合与执行模型 {#aggregations-execution-model}
+
+虽然两个系统都支持数据聚合，但 ClickHouse 提供的[函数要多得多](/zh/reference/functions/aggregate-functions/reference-index)，包括统计函数、近似函数以及专用分析函数。
+
+在可观测性用例中，聚合最常见的用途之一是统计特定日志消息或事件的出现次数 (并在频率异常时发出告警) 。
+
+在 Elasticsearch 中，与 ClickHouse 的 `SELECT count(*) FROM ... GROUP BY ...` SQL 查询等价的是 [terms 聚合](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html)，它是 Elasticsearch 的一种[桶聚合](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket.html)。
+
+ClickHouse 中结合 `count(*)` 的 `GROUP BY` 与 Elasticsearch 的 terms 聚合在功能上大体等价，但二者在实现方式、性能和结果质量上差异很大。
+
+当查询的数据分布在多个分片上时，Elasticsearch 的这种聚合会[在 &quot;top-N&quot; 查询中估算结果](https://www.elastic.co/docs/reference/aggregations/search-aggregations-bucket-terms-aggregation#terms-agg-doc-count-error) (例如按计数排名前 10 的主机) 。这种估算提升了速度，但可能牺牲准确性。您可以通过[检查 `doc_count_error_upper_bound`](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#terms-agg-doc-count-error) 并增大 `shard_size` 参数来减小这种误差，但代价是内存使用量增加、查询性能下降。
+
+此外，Elasticsearch 要求所有分桶聚合都必须指定 [`size` 设置](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#search-aggregations-bucket-terms-aggregation-size)：不显式设置上限，就无法返回全部唯一分组。high-cardinality 聚合可能触及 [`max_buckets` 限制](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-settings.html#search-settings-max-buckets)，或者需要借助[复合聚合](https://www.elastic.co/docs/reference/aggregations/search-aggregations-bucket-composite-aggregation)进行分页，而这种方式通常既复杂又低效。
+
+相比之下，ClickHouse 开箱即支持精确聚合。`count(*)` 等函数无需调整配置即可返回准确结果，查询行为因此更简单、更可预测。
+
+ClickHouse 没有任何大小限制。您可以在大型数据集上执行不设上限的 group-by 查询。如果超出内存阈值，ClickHouse [可以溢写到磁盘](/zh/reference/statements/select/group-by#group-by-in-external-memory)。按主键前缀分组的聚合尤其高效，通常只需极少的内存消耗即可完成。
+
+#### 执行模型 {#execution-model}
+
+上述差异源于 Elasticsearch 和 ClickHouse 各自的执行模型，二者在查询执行和并行度方面采取了截然不同的方法。
+
+ClickHouse 的设计目标是在现代硬件上实现最高效率。默认情况下，在拥有 N 个 CPU 核心的机器上，ClickHouse 会使用 N 个并发执行 lane 来运行 SQL 查询：
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ClickHouse 执行](/images/use-cases/observability/clickhouse-execution.webp)
+  </Frame>
+</div>
+
+在单个节点上，执行 lane 会将数据拆分为相互独立的范围，从而在多个 CPU 线程上并发处理，包括过滤、聚合和排序。各个 lane 的本地结果最终会被合并；如果查询包含 limit 子句，还会应用 limit 算子。
+
+查询执行还通过以下方式进一步并行化：
+
+1. **SIMD 向量化**：对列式数据的操作会使用 [CPU SIMD 指令](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) (例如 [AVX512](https://en.wikipedia.org/wiki/AVX-512)) ，从而对值进行批量处理。
+2. **集群级并行度**：在分布式部署中，每个节点在本地执行查询处理。[部分聚合状态](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states)会以流式方式传输到发起查询的节点并进行合并。如果查询的 `GROUP BY` 键与分片键一致，则可以[尽量减少甚至完全避免](/zh/reference/settings/session-settings/distributed#distributed_group_by_no_merge)合并。
+
+<br />
+
+该模型能够在多个核心和节点之间高效扩展，使 ClickHouse 非常适合大规模分析。借助*部分聚合状态*，来自不同线程和节点的中间结果可以在不损失准确性的前提下进行合并。
+
+相比之下，Elasticsearch 在大多数聚合中为每个分片只分配一个线程，无论可用的 CPU 核心有多少。这些线程返回分片本地的 top-N 结果，再由协调节点进行合并。这种方式可能无法充分利用系统资源，并可能导致全局聚合结果不准确，尤其是当高频词项分布在多个分片上时。增大 `shard_size` 参数可以提高准确性，但代价是更高的内存使用量和查询延迟。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Elasticsearch 执行](/images/use-cases/observability/elasticsearch-execution.webp)
+  </Frame>
+</div>
+
+总之，ClickHouse 以更细粒度的并行度执行聚合和查询，并能更精细地控制硬件资源；而 Elasticsearch 依赖基于分片的执行方式，受到的约束也更为严格。
+
+如需进一步了解这两种技术中聚合的工作机制，推荐阅读博客文章 [&quot;ClickHouse vs. Elasticsearch: The Mechanics of Count Aggregations&quot;](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#elasticsearch)。
+
+### 数据管理 {#data-management}
+
+在管理时间序列可观测性数据方面，Elasticsearch 和 ClickHouse 采用的方法截然不同，尤其体现在数据保留、滚动更新 (rollover) 和分层存储等方面。
+
+#### 索引生命周期管理与原生 TTL 对比 {#lifecycle-vs-ttl}
+
+在 Elasticsearch 中，长期数据管理依靠 **索引生命周期管理 (Index Lifecycle Management, ILM)&#x20;**&#x20;和 **数据流 (Data Streams)&#x20;**&#x20;来实现。借助这些功能，您可以定义策略来控制何时对索引执行滚动 (例如在达到一定大小或存在时长之后) 、何时将较旧的索引迁移到成本更低的存储 (例如 warm 或 cold 层级) ，以及何时最终将其删除。之所以需要这样做，是因为 Elasticsearch **不支持重新分片**，而分片又无法无限增长，否则性能会下降。为了控制分片大小并支持高效删除，必须定期创建新索引并移除旧索引——本质上是在索引级别对数据进行轮换。
+
+ClickHouse 则采用了不同的方法。数据通常存储在**单个表**中，并在列或分区级别通过 **生存时间 (TTL) 表达式**进行管理。数据可以**按日期分区**，因此无需创建新表或执行索引滚动即可高效删除。当数据随时间老化并满足 TTL 条件时，ClickHouse 会自动将其移除——无需额外的基础设施来管理轮换。
+
+#### 存储层级与冷热架构 {#storage-tiers}
+
+Elasticsearch 支持 **hot-warm-cold-frozen** 存储架构，数据会在性能特征各异的存储层级之间迁移。这通常通过 ILM 进行配置，并与集群中的节点角色绑定。
+
+ClickHouse 通过 `MergeTree` 等原生表引擎支持**分层存储**，可根据自定义规则自动将较旧的数据迁移到不同的**卷** (例如从 SSD 到 HDD，再到对象存储) 。这种方式可以实现类似 Elastic hot-warm-cold 的效果，却无需管理多种节点角色或多个集群，省去了相应的复杂性。
+
+<Info>
+  **ClickHouse Cloud**
+
+  在 **ClickHouse Cloud** 中，这一过程更加无缝：所有数据都存储在**对象存储 (例如 S3)&#x20;**&#x4E0A;，计算资源与存储相互解耦。数据可以一直保留在对象存储中，直到被查询时才会被拉取并缓存到本地 (或分布式缓存中) 。这样既能获得与 Elastic frozen 层级相当的成本，又具备更优的性能特征。由于无需在存储层级之间迁移数据，冷热架构也就不再必要。
+</Info>
+
+### Rollups 与增量聚合 {#rollups-vs-incremental-aggregates}
+
+在 Elasticsearch 中，**rollups** 或 **aggregates** 是通过一种称为 [**transforms**](https://www.elastic.co/guide/en/elasticsearch/reference/current/transforms.html) 的机制实现的。它们采用**滑动窗口**模型，按固定时间间隔 (例如每小时或每天) 对时间序列数据进行汇总。transforms 被配置为周期性运行的后台作业，从一个索引中聚合数据，并将结果写入单独的 **rollup 索引**。这样可以避免反复扫描高基数的原始数据，从而降低长时间范围查询的开销。
+
+下图抽象地展示了 transforms 的工作原理 (注意：我们用蓝色表示属于同一桶的所有文档，即需要预先计算聚合值的桶) ：
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Elasticsearch transforms](/images/use-cases/observability/es-transforms.webp)
+  </Frame>
+</div>
+
+持续运行的 transforms 会根据可配置的检查时间间隔 (即 transform [frequency](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html)，默认值为 1 分钟) 创建 transform [检查点](https://www.elastic.co/guide/en/elasticsearch/reference/current/transform-checkpoints.html)。在上图中，我们假设 ① 检查时间间隔到期后创建了一个新检查点。此时，Elasticsearch 会检查 transforms 源索引中的变更，发现自上一个检查点以来新增了三个 `blue` 文档 (11、12 和 13) 。于是，系统会在源索引中筛选出所有现有的 `blue` 文档，并通过 [复合聚合](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-composite-aggregation.html) (以便利用结果[分页](https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html)) 重新计算聚合值 (并在目标索引中用一个新文档替换包含旧聚合值的文档) 。同理，在 ② 和 ③ 处，系统也会检查变更，并基于同一 &#39;blue&#39; 桶中的所有现有文档重新计算聚合值，以此处理新的检查点。
+
+ClickHouse 采用了截然不同的方法。ClickHouse 不会定期重新聚合数据，而是支持**增量物化视图**，在**写入时**即对数据进行转换和聚合。当新数据写入源表时，materialized view 仅针对新**插入的数据块**执行预定义的 SQL 聚合查询，并将聚合结果写入 target table。
+
+这一模型得益于 ClickHouse 对[**部分聚合状态**](/zh/reference/data-types/aggregatefunction)的支持——即聚合函数的中间表示形式，可以先存储、之后再合并。借此，您可以维护查询速度快、更新成本低的部分聚合结果。由于聚合在数据到达时即已完成，因此既无需运行开销高昂的周期性作业，也无需重新汇总旧数据。
+
+下面我们抽象地展示增量物化视图的工作机制 (注意：我们用蓝色表示属于同一分组的所有行，即需要预先计算聚合值的分组) ：
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ClickHouse 物化视图](/images/use-cases/observability/ch-mvs.webp)
+  </Frame>
+</div>
+
+在上图中，materialized view 的源表中已有一个数据分区片段，存储了属于同一分组的若干 `blue` 行 (1 到 10) 。对于该分组，视图的 target table 中也已有一个数据分区片段，存储着 `blue` 分组的[部分聚合状态](https://www.youtube.com/watch?v=QDAJTKZT8y4)。当 ① ② ③ 向源表插入新行时，每次插入都会在源表中创建相应的数据分区片段；与此同时，系统 (仅) 针对每个新插入的行块计算部分聚合状态，并以数据分区片段的形式插入 materialized view 的 target table。④ 在后台合并数据分区片段时，部分聚合状态会随之合并，从而实现增量数据聚合。
+
+请注意，所有[聚合函数](/zh/reference/functions/aggregate-functions/reference-index) (超过 90 个) 及其与聚合函数[组合器](https://www.youtube.com/watch?v=7ApwD0cfAFI)的组合，均支持[部分聚合状态](/zh/reference/data-types/aggregatefunction)。
+
+如需查看 Elasticsearch 与 ClickHouse 在增量聚合方面更具体的对比，请参阅此[示例](https://github.com/ClickHouse/examples/tree/main/blog-examples/clickhouse-vs-elasticsearch/continuous-data-transformation#continuous-data-transformation-example)。
+
+ClickHouse 这一方法的优势包括：
+
+* **聚合结果始终最新**：物化视图始终与源表保持同步。
+* **无需后台作业**：聚合在写入时完成，而非在查询时执行。
+* **更出色的实时性能**：非常适合需要即时获取最新聚合结果的可观测性工作负载和实时分析场景。
+* **可组合**：物化视图可以分层叠加，也可以与其他视图和表进行连接，从而实现更复杂的查询加速策略。
+* **可设置不同的生存时间 (TTL)**：物化视图的源表和 target table 可以分别应用不同的生存时间 (TTL) 设置。
+
+这种模式在可观测性用例中尤为强大：当您需要计算每分钟错误率、延迟或 Top-N 细分等指标时，无需在每次查询时扫描数十亿条原始记录。
+
+### 湖仓支持 {#lakehouse-support}
+
+ClickHouse 和 Elasticsearch 在湖仓集成方面采取了截然不同的思路。ClickHouse 是一个功能完备的查询执行引擎，能够对 [Iceberg](/zh/reference/functions/table-functions/iceberg) 和 [Delta Lake](/zh/reference/functions/table-functions/deltalake) 等湖仓格式执行查询，并可与 [AWS Glue](/zh/guides/use-cases/data-warehousing/glue-catalog) 和 [Unity catalog](/zh/guides/use-cases/data-warehousing/unity-catalog) 等数据湖目录集成。这些格式依赖于对 [Parquet](/zh/reference/formats/Parquet/Parquet) 文件的高效查询，而 ClickHouse 对此提供全面支持。ClickHouse 可以直接读取 Iceberg 和 Delta Lake 表，从而与现代数据湖架构无缝集成。
+
+相比之下，Elasticsearch 与其内部数据格式及基于 Lucene 的存储引擎紧密耦合。它无法直接查询湖仓格式或 Parquet 文件，因而难以融入现代数据湖架构。在 Elasticsearch 中，数据必须先经过转换并加载为其专有格式，才能进行查询。
+
+ClickHouse 的湖仓能力不仅限于读取数据：
+
+* **数据目录集成**：ClickHouse 支持与 [AWS Glue](/zh/guides/use-cases/data-warehousing/glue-catalog) 等数据目录集成，可自动发现并访问对象存储中的表。
+* **对象存储支持**：原生支持直接查询存储在 [S3](/zh/reference/engines/table-engines/integrations/s3)、[GCS](/zh/reference/functions/table-functions/gcs) 和 [Azure Blob Storage](/zh/reference/engines/table-engines/integrations/azureBlobStorage) 中的数据，无需迁移数据。
+* **联邦查询**：能够借助[外部字典](/zh/concepts/features/dictionaries/index)和[表函数](/zh/reference/functions/table-functions/index)，对多个数据源 (包括湖仓表、传统数据库和 ClickHouse 表) 中的数据进行关联分析。
+* **增量加载**：支持借助 [S3Queue](/zh/reference/engines/table-engines/integrations/s3queue) 和 [ClickPipes](/zh/integrations/clickpipes/home) 等功能，将数据从湖仓表持续加载到本地 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表中。
+* **性能优化**：使用[集群函数](/zh/reference/functions/table-functions/cluster)对湖仓数据执行分布式查询，以提升性能。
+
+凭借这些能力，ClickHouse 天然适合正在采用湖仓架构的组织，使其既能利用数据湖的灵活性，又能获得列式数据库的高性能。

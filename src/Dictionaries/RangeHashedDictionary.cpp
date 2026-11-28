@@ -57,21 +57,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
         {
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
 
-            if constexpr (std::is_same_v<ValueType, Array>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, modified_key_columns, [&](size_t, const Array & value, bool) { out->insert(value); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, modified_key_columns, [&](size_t, const Map & value, bool) { out->insert(value); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
+            if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
 
@@ -79,15 +65,18 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                     getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         modified_key_columns,
-                        [&](size_t row, const Object & value, bool is_null)
+                        [&](size_t row, const ColumnAttributeValue<ValueType> & value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insert(value);
+                            value.insertInto(*out);
                         },
                         default_mask);
                 else
                     getItemsShortCircuitImpl<ValueType, false>(
-                        attribute, modified_key_columns, [&](size_t, const Object & value, bool) { out->insert(value); }, default_mask);
+                        attribute,
+                        modified_key_columns,
+                        [&](size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); },
+                        default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -136,33 +125,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
             DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(
             dictionary_attribute.null_value, default_values_column);
 
-            if constexpr (std::is_same_v<ValueType, Array>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    modified_key_columns,
-                    [&](size_t, const Array & value, bool)
-                    {
-                        out->insert(value);
-                    },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    modified_key_columns,
-                    [&](size_t, const Map & value, bool)
-                    {
-                        out->insert(value);
-                    },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
+            if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
 
@@ -170,20 +133,17 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                     getItemsImpl<ValueType, true>(
                         attribute,
                         modified_key_columns,
-                        [&](size_t row, const Object & value, bool is_null)
+                        [&](size_t row, const ColumnAttributeValue<ValueType> & value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insert(value);
+                            value.insertInto(*out);
                         },
                         default_value_extractor);
                 else
                     getItemsImpl<ValueType, false>(
                         attribute,
                         modified_key_columns,
-                        [&](size_t, const Object & value, bool)
-                        {
-                            out->insert(value);
-                        },
+                        [&](size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); },
                         default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)

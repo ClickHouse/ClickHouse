@@ -149,19 +149,20 @@ ORDER BY [...]
 Estos son los parámetros específicos de HNSW disponibles:
 
 * `<quantization>` controla la cuantización de los vectores en el grafo de proximidad. Los valores posibles son `f64`, `f32`, `f16`, `bf16`, `i8` o `b1`. El valor predeterminado es `bf16`. Tenga en cuenta que este parámetro no afecta a la representación de los vectores en la columna subyacente.
-* `<hnsw_max_connections_per_layer>` controla el número de vecinos por nodo del grafo, también conocido como el hiperparámetro `M` de HNSW. El valor predeterminado es `32`. El valor `0` significa que se usa el valor predeterminado.
-* `<hnsw_candidate_list_size_for_construction>` controla el tamaño de la lista dinámica de candidatos durante la construcción del grafo HNSW, también conocido como el hiperparámetro `ef_construction` de HNSW. El valor predeterminado es `128`. El valor `0` significa que se usa el valor predeterminado.
+* `<hnsw_max_connections_per_layer>` controla el número de vecinos por nodo del grafo, también conocido como el hiperparámetro `M` de HNSW. El valor predeterminado es `32`. El valor `0` significa que se usa el valor predeterminado. El valor máximo es `512`.
+* `<hnsw_candidate_list_size_for_construction>` controla el tamaño de la lista dinámica de candidatos durante la construcción del grafo HNSW, también conocido como el hiperparámetro `ef_construction` de HNSW. El valor predeterminado es `128`. El valor `0` significa que se usa el valor predeterminado. El valor máximo es `3200`.
 
 Los valores predeterminados de todos los parámetros específicos de HNSW funcionan razonablemente bien en la mayoría de los casos de uso.
 Por lo tanto, no recomendamos personalizar los parámetros específicos de HNSW.
 
 Se aplican restricciones adicionales:
 
-* Los índices de similitud vectorial solo pueden crearse sobre columnas de tipo [Array(Float32)](/es/reference/data-types/array), [Array(Float64)](/es/reference/data-types/array) o [Array(BFloat16)](/es/reference/data-types/array). No se permiten Arrays de valores de coma flotante Nullable ni LowCardinality, como `Array(Nullable(Float32))` y `Array(LowCardinality(Float32))`.
+* Los índices de similitud vectorial solo pueden crearse sobre columnas de tipo [Array(Float32)](/es/reference/data-types/array), [Array(Float64)](/es/reference/data-types/array) o [Array(BFloat16)](/es/reference/data-types/array). No se permiten Arrays de números de coma flotante Nullable ni LowCardinality, como `Array(Nullable(Float32))` y `Array(LowCardinality(Float32))`.
 * Los índices de similitud vectorial deben crearse sobre una única columna.
 * Los índices de similitud vectorial pueden crearse sobre expresiones calculadas (p. ej., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`), pero esos índices no podrán usarse más adelante para la búsqueda aproximada de vecinos.
 * Los índices de similitud vectorial requieren que todos los arrays de la columna subyacente tengan `<dimension>` elementos; esto se comprueba durante la creación del índice. Para detectar incumplimientos de este requisito lo antes posible, los usuarios pueden añadir una [restricción](/es/reference/statements/create/table#constraints) a la columna del vector, por ejemplo, `CONSTRAINT same_length CHECK length(vectors) = 256`.
 * Del mismo modo, los valores de array de la columna subyacente no deben estar vacíos (`[]`) ni tener un valor predeterminado (también `[]`).
+* Los índices de similitud vectorial solo pueden crearse en tablas con el motor `MergeTree` o `ReplicatedMergeTree`. Otros motores de la familia, p. ej., `ReplacingMergeTree` o `CollapsingMergeTree`, se rechazan porque `SELECT ... FINAL` puede devolver resultados incorrectos con el índice. El ajuste de MergeTree `allow_vector_similarity_index_in_specialized_merge_tree` permite crearlos de todos modos.
 
 **Estimación del consumo de almacenamiento y memoria**
 
@@ -175,7 +176,7 @@ Consumo de almacenamiento de la columna vectorial en la tabla (sin comprimir):
 Storage consumption = Number of vectors * Dimension * Size of column data type
 ```
 
-Ejemplo del [conjunto de datos dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
+Ejemplo del [conjunto de datos de dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
 
 ```text
 Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
@@ -187,19 +188,19 @@ Del mismo modo, el índice vectorial también se construye íntegramente en memo
 Consumo de memoria necesario para cargar un índice vectorial:
 
 ```text
-Memoria para vectores en el índice (mv) = Número de vectores * Dimensión * Tamaño del tipo de dato cuantizado
-Memoria para el grafo en memoria (mg) = Número de vectores * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
+Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
+Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
 
-Consumo de memoria: mv + mg
+Memory consumption: mv + mg
 ```
 
-Ejemplo con el [conjunto de datos dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
+Ejemplo del [conjunto de datos de dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
 
 ```text
-Memoria para vectores en el índice (mv) = 1 millón * 1536 * 2 (para BFloat16) = 3072 MB
-Memoria para el grafo en memoria (mg) = 1 millón * 64 * 2 * 4 = 512 MB
+Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
+Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
 
-Consumo de memoria = 3072 + 512 = 3584 MB
+Memory consumption = 3072 + 512 = 3584 MB
 ```
 
 La fórmula anterior no contempla la memoria adicional que necesitan los índices de similitud vectorial para asignar estructuras de datos en tiempo de ejecución, como búferes y cachés preasignados.
@@ -207,7 +208,7 @@ La fórmula anterior no contempla la memoria adicional que necesitan los índice
 #### Uso de un índice de similitud vectorial {#using-a-vector-similarity-index}
 
 <Note>
-  Para usar índices de similitud vectorial, la configuración [compatibility](/es/reference/settings/session-settings/compatibility#compatibility) debe estar establecida en `''` (el valor predeterminado), o en `'25.1'` o una versión posterior.
+  Para usar índices de similitud vectorial, el parámetro de configuración [compatibility](/es/reference/settings/session-settings/compatibility#compatibility) debe estar establecido en `''` (el valor predeterminado), o en `'25.1'` o una versión posterior.
 </Note>
 
 Los índices de similitud vectorial admiten consultas SELECT con la siguiente forma:
@@ -224,12 +225,12 @@ LIMIT <N>
 El optimizador de consultas de ClickHouse intenta hacer coincidir la plantilla de consulta anterior y aprovechar los índices de similitud vectorial disponibles.
 Una consulta solo puede usar un índice de similitud vectorial si la función de distancia en la consulta SELECT coincide con la función de distancia especificada en la definición del índice.
 
-Los usuarios avanzados pueden proporcionar un valor personalizado para el parámetro [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/es/reference/settings/session-settings/other#hnsw_candidate_list_size_for_search) (también conocido como el hiperparámetro HNSW &quot;ef&#95;search&quot;) para ajustar el tamaño de la lista de candidatos durante la búsqueda (p. ej., `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
-El valor predeterminado de 256 para este parámetro funciona bien en la mayoría de los casos de uso.
-Valores más altos implican mayor precisión a costa de un rendimiento más lento.
+Los usuarios avanzados pueden proporcionar un valor personalizado para el parámetro de configuración [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/es/reference/settings/session-settings/other#hnsw_candidate_list_size_for_search) (también conocido como el hiperparámetro HNSW &quot;ef&#95;search&quot;) para ajustar el tamaño de la lista de candidatos durante la búsqueda (p. ej., `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
+El valor predeterminado de 256 para este parámetro de configuración funciona bien en la mayoría de los casos de uso.
+Valores más altos implican mayor exactitud a costa de un rendimiento más lento.
 
 Si la consulta puede utilizar un índice de similitud vectorial, ClickHouse comprueba que el LIMIT `<N>` proporcionado en las consultas SELECT esté dentro de límites razonables.
-Más concretamente, se devuelve un error si `<N>` es mayor que el valor del parámetro [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/es/reference/settings/session-settings/max#max_limit_for_vector_search_queries), cuyo valor predeterminado es 100.
+Más concretamente, se devuelve un error si `<N>` es mayor que el valor del parámetro de configuración [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/es/reference/settings/session-settings/max#max_limit_for_vector_search_queries), cuyo valor predeterminado es 100.
 Valores de LIMIT demasiado grandes pueden ralentizar las búsquedas y, por lo general, indican un error de uso.
 
 Para comprobar si una consulta SELECT utiliza un índice de similitud vectorial, puede agregar el prefijo `EXPLAIN indexes = 1` a la consulta.
@@ -267,7 +268,7 @@ puede devolver
     └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-En este ejemplo, 1 millón de vectores del [dataset dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M), cada uno con dimensión 1536, se almacenan en 575 gránulos, es decir, 1,7k filas por gránulo.
+En este ejemplo, 1 millón de vectores del [conjunto de datos de dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M), cada uno con dimensión 1536, se almacenan en 575 gránulos, es decir, 1,7k filas por gránulo.
 La consulta solicita 10 vecinos y el índice de similitud vectorial los encuentra en 10 gránulos distintos.
 Estos 10 gránulos se leerán durante la ejecución de la consulta.
 
@@ -276,13 +277,13 @@ En este caso, el índice de similitud vectorial descartó dos de cuatro gránulo
 Cuantos más gránulos se puedan descartar, más efectivo será el uso del índice.
 
 <Tip>
-  Para forzar el uso del índice, puedes ejecutar la consulta SELECT con la configuración [force&#95;data&#95;skipping&#95;indices](/es/reference/settings/session-settings/force#force_data_skipping_indices) (indica el nombre del índice como valor de la configuración).
+  Para forzar el uso del índice, puedes ejecutar la consulta SELECT con el parámetro de configuración [force&#95;data&#95;skipping&#95;indices](/es/reference/settings/session-settings/force#force_data_skipping_indexes) (indica el nombre del índice como valor del parámetro de configuración).
 </Tip>
 
-**Post-filtrado y pre-filtrado**
+**Filtrado posterior y filtrado previo**
 
 Los usuarios pueden especificar opcionalmente una cláusula `WHERE` con condiciones de filtro adicionales para la consulta SELECT.
-ClickHouse evaluará estas condiciones de filtro mediante la estrategia de post-filtering o pre-filtering.
+ClickHouse evaluará estas condiciones de filtro mediante la estrategia de filtrado posterior o filtrado previo.
 En resumen, ambas estrategias determinan el orden en que se evalúan los filtros:
 
 * El postfiltrado significa que primero se evalúa el índice de similitud vectorial y, después, ClickHouse evalúa los filtros adicionales especificados en la cláusula `WHERE`.

@@ -575,6 +575,97 @@ def test_max_set_size(started_cluster):
     assert res1 == [total_values[1]]
 
 
+def test_regex_partitioning_does_not_read_all_buckets(started_cluster):
+    """
+    Ordered mode used to list `buckets/<i>/processed` of every bucket on each
+    poll, no matter which buckets the files belong to. With partition bucketing
+    3 writers use at most 3 of the 16 buckets, so reading their files must take
+    fewer Keeper lists than there are buckets, both on a fresh queue and once
+    the per-partition nodes exist.
+
+    A direct `SELECT` runs the queue source in the foreground, so the Keeper
+    requests of the poll land in the query's own `query_log` row and nothing
+    from the background threads gets counted.
+    """
+    # No Keeper fault injection, as in `test_max_set_size`: a direct
+    # `SELECT` with `commit_on_select` fails on a fault injected into `commit`.
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_not_all_buckets_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    partition_regex = r'(?P<hostname>server-\d+)_(?P<timestamp>\d{8}T\d{6}\.\d{6}Z)_(?P<sequence>\d+)'
+    buckets = 16
+    num_writers = 3
+
+    def put_one_file_per_writer(sequence):
+        for writer in range(1, num_writers + 1):
+            put_s3_file_content(
+                started_cluster,
+                f"{files_path}/server-{writer}_20251217T100000.000000Z_{sequence:04d}.csv",
+                f"{writer},{writer},{sequence}\n".encode(),
+            )
+
+    put_one_file_per_writer(1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "processing_threads_num": buckets,
+            "buckets": buckets,
+            "bucketing_mode": "partition",
+            # The `SELECT` commits what it read, so the second round has
+            # per-partition nodes to look up.
+            "commit_on_select": 1,
+        },
+        partitioning_mode="regex",
+        partition_regex=partition_regex,
+        partition_component="hostname",
+    )
+
+    def read_files(round_name, expected_rows):
+        query_id = f"{table_name}_{round_name}"
+        node.query(
+            f"SELECT * FROM {table_name} FORMAT Null",
+            query_id=query_id,
+            settings={"stream_like_engine_allow_direct_select": 1},
+        )
+        node.query("SYSTEM FLUSH LOGS query_log")
+        read_rows, keeper_lists = map(
+            int,
+            node.query(
+                f"""
+                SELECT read_rows, ProfileEvents['ZooKeeperList']
+                FROM system.query_log
+                WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+                ORDER BY event_time_microseconds DESC
+                LIMIT 1
+                """
+            )
+            .strip()
+            .split("\t"),
+        )
+        # Only new files are read, including when every listed file is processed.
+        assert read_rows == expected_rows, (round_name, read_rows)
+        # The old code did one list per bucket here.
+        assert keeper_lists < buckets, (
+            f"{round_name}: {keeper_lists} Keeper lists to read files of {num_writers} writers"
+        )
+
+    read_files("fresh", num_writers)
+    read_files("already_processed", 0)
+
+    put_one_file_per_writer(2)
+    read_files("with_processed_nodes", num_writers)
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
 def test_drop_table(started_cluster):
     node = started_cluster.instances["instance"]
     table_name = "test_drop"

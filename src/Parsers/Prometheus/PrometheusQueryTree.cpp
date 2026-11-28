@@ -2,10 +2,13 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <Core/DecimalFunctions.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
+#include <base/EnumReflection.h>
+#include <base/arithmeticOverflow.h>
 #include <fmt/ranges.h>
 
 #include <cmath>
@@ -126,7 +129,7 @@ namespace
         if (milliseconds < 0)
             str += "-";
         /// Negated as unsigned, so the most negative duration is not undefined behaviour.
-        UInt64 rest = milliseconds < 0 ? (0 - static_cast<UInt64>(milliseconds)) : static_cast<UInt64>(milliseconds);
+        UInt64 rest = milliseconds < 0 ? common::negateIgnoreOverflow(static_cast<UInt64>(milliseconds)) : static_cast<UInt64>(milliseconds);
         for (const auto & unit : units)
         {
             if (unit.exact_only && (rest % unit.length_ms))
@@ -144,6 +147,8 @@ namespace
     template <typename NodeType>
     NodeType * cloneNodeImpl(const NodeType * node, std::vector<std::unique_ptr<Node>> & node_list)
     {
+        checkStackSize();
+
         auto new_node = std::make_unique<NodeType>(*node);
         for (const auto * & child : new_node->children)
         {
@@ -404,6 +409,32 @@ bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 time_s
 }
 
 
+String PrometheusQueryTree::Node::getTypeAndName() const
+{
+    return String{magic_enum::enum_name(node_type)};
+}
+
+String PrometheusQueryTree::Function::getTypeAndName() const
+{
+    return fmt::format("Function '{}'", function_name);
+}
+
+String PrometheusQueryTree::UnaryOperator::getTypeAndName() const
+{
+    return fmt::format("Unary operator '{}'", operator_name);
+}
+
+String PrometheusQueryTree::BinaryOperator::getTypeAndName() const
+{
+    return fmt::format("Binary operator '{}'", operator_name);
+}
+
+String PrometheusQueryTree::AggregationOperator::getTypeAndName() const
+{
+    return fmt::format("Aggregation operator '{}'", operator_name);
+}
+
+
 String PrometheusQueryTree::Scalar::toString(const PrometheusQueryTree &) const
 {
     if (std::isfinite(scalar))
@@ -518,6 +549,8 @@ String PrometheusQueryTree::RangeSelector::toString(const PrometheusQueryTree & 
 
 String PrometheusQueryTree::Subquery::toString(const PrometheusQueryTree & tree) const
 {
+    checkStackSize();
+
     bool need_parentheses = (getPrecedence() <= getExpression()->getPrecedence());
 
     String str;
@@ -539,6 +572,8 @@ String PrometheusQueryTree::Subquery::toString(const PrometheusQueryTree & tree)
 
 String PrometheusQueryTree::Offset::toString(const PrometheusQueryTree & tree) const
 {
+    checkStackSize();
+
     String str = getExpression()->toString(tree);
     switch (at_modifier)
     {
@@ -566,6 +601,8 @@ String PrometheusQueryTree::Offset::toString(const PrometheusQueryTree & tree) c
 
 String PrometheusQueryTree::Function::toString(const PrometheusQueryTree & tree) const
 {
+    checkStackSize();
+
     String str = function_name;
     str += "(";
     bool need_comma = false;
@@ -582,6 +619,8 @@ String PrometheusQueryTree::Function::toString(const PrometheusQueryTree & tree)
 
 String PrometheusQueryTree::UnaryOperator::toString(const PrometheusQueryTree & tree) const
 {
+    checkStackSize();
+
     bool need_parentheses = (getPrecedence() < getArgument()->getPrecedence());
     String str = operator_name;
     if (need_parentheses)
@@ -594,6 +633,8 @@ String PrometheusQueryTree::UnaryOperator::toString(const PrometheusQueryTree & 
 
 String PrometheusQueryTree::BinaryOperator::toString(const PrometheusQueryTree & tree) const
 {
+    checkStackSize();
+
     auto precedence = getPrecedence();
     auto left_arg_precedence = getLeftArgument()->getPrecedence();
     auto right_arg_precedence = getRightArgument()->getPrecedence();
@@ -639,20 +680,16 @@ String PrometheusQueryTree::BinaryOperator::toString(const PrometheusQueryTree &
 
     if (group_left || group_right)
     {
-        if (!extra_labels.empty())
+        str += "(";
+        bool need_comma = false;
+        for (const auto & label : extra_labels)
         {
-            str += "(";
-            bool need_comma = false;
-            for (const auto & label : extra_labels)
-            {
-                if (need_comma)
-                    str += ", ";
-                str += formatLabelName(label);
-                need_comma = true;
-            }
-            str += ")";
+            if (need_comma)
+                str += ", ";
+            str += formatLabelName(label);
+            need_comma = true;
         }
-        str += " ";
+        str += ") ";
     }
 
     if (need_right_parentheses)
@@ -696,7 +733,7 @@ int PrometheusQueryTree::BinaryOperator::getPrecedence() const
         return 6;
     if (operator_name == "or")
         return 7;
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary operator {} is not implemented", operator_name);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not implemented", getTypeAndName());
 }
 
 bool PrometheusQueryTree::BinaryOperator::isRightAssociative() const
@@ -706,6 +743,8 @@ bool PrometheusQueryTree::BinaryOperator::isRightAssociative() const
 
 String PrometheusQueryTree::AggregationOperator::toString(const PrometheusQueryTree & tree) const
 {
+    checkStackSize();
+
     String str = operator_name;
 
     if (by)

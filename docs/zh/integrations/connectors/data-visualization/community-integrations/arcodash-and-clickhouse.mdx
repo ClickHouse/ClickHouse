@@ -1,0 +1,62 @@
+---
+sidebarTitle: 'arcodash'
+slug: /integrations/arcodash
+keywords: ['clickhouse', 'arcodash', 'connect', 'integrate', 'visualization', 'dashboard', 'alerts']
+description: '通过 HTTP 接口将 arcodash 连接到 ClickHouse，用于构建 SQL 仪表盘和定时数据检查。'
+title: '将 arcodash 连接到 ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[arcodash](https://www.arcodash.com/connectors/clickhouse/?utm_source=clickhouse-docs\&utm_medium=docs\&utm_campaign=growth-v2\&utm_content=clickhouse-docs-integration) 是一款内置数据检查功能的托管式 BI 工具，提供 SQL 仪表盘、AI 查询助手，以及可通过电子邮件、Slack、Teams、Webhook 或 PagerDuty 发送告警的定时检查。它通过 HTTP(S) 接口连接 ClickHouse。
+
+<Steps>
+  <Step title="收集连接详情" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+
+    arcodash 需要以下信息：主机、HTTP 端口 (`8123`；如使用启用 HTTPS 的 ClickHouse Cloud，则为 `8443`) 、用户名、密码和数据库。
+  </Step>
+
+  <Step title="创建只读用户" id="2-create-a-read-only-user">
+    ```sql
+    CREATE USER arcodash_ro IDENTIFIED BY 'change-me' SETTINGS readonly = 1;
+    GRANT SELECT ON analytics.* TO arcodash_ro;
+    GRANT SELECT ON system.columns TO arcodash_ro;
+    ```
+
+    模式浏览器需要读取 `system.columns`。
+  </Step>
+
+  <Step title="添加连接器" id="3-add-the-connector">
+    在 arcodash 中，依次选择 **Connect** &gt; **ClickHouse**，然后输入主机、端口、用户名、密码和数据库。如使用 ClickHouse Cloud，请启用 HTTPS，然后运行连接测试。
+
+    <Image size="lg" img="/images/integrations/data-visualization/arcodash_01.png" alt="arcodash ClickHouse 连接器表单" border />
+  </Step>
+
+  <Step title="运行查询和检查" id="4-run-a-query-and-a-check">
+    ```sql
+    SELECT dateDiff('second', max(loaded_at), now()) AS seconds_since_last_row
+    FROM analytics.events
+    ```
+
+    将该查询保存为监控项，针对 `seconds_since_last_row` 设置条件 `>` `3600`，即可在表停止接收数据时发出告警。
+
+    <Image size="lg" img="/images/integrations/data-visualization/arcodash_02.png" alt="基于 ClickHouse 查询的 arcodash 监控" border />
+  </Step>
+</Steps>
+
+## 限制 {#limitations}
+
+* arcodash 仅使用 HTTP 接口，不使用原生端口 `9000`。
+* arcodash 会自行追加 `FORMAT` 子句，因此查询本身不能以 `FORMAT` 结尾。
+* 每个查询最多返回 10,000 行结果。
+* arcodash 不公布固定的出站 IP 地址，因此 ClickHouse 服务器必须能够从互联网访问。

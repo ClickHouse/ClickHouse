@@ -135,7 +135,8 @@ restart:
         if (p < end) {
             if ((flags & RPP_SEVENBIT))
                 ch &= 0x7f;
-            if (isalpha((unsigned char)ch)) {
+            /* As `isalpha` in the C locale, without the wrap around of the `isalpha` of musl for a character below `a`. */
+            if (((unsigned char)ch | 32) >= 'a' && ((unsigned char)ch | 32) <= 'z') {
                 if ((flags & RPP_FORCELOWER))
                     ch = (char)tolower((unsigned char)ch);
                 if ((flags & RPP_FORCEUPPER))

@@ -187,12 +187,12 @@ struct LaneStates
         v0 ^= words;
     }
 
-    ALWAYS_INLINE UInt64Vec word(size_t k) const
+    [[nodiscard]] ALWAYS_INLINE UInt64Vec word(size_t k) const
     {
         return loadLanes([&](size_t i) ALWAYS_INLINE { return data[i] + 8 * k; });
     }
 
-    ALWAYS_INLINE UInt64Vec sizes() const
+    [[nodiscard]] ALWAYS_INLINE UInt64Vec sizes() const
     {
         return makeLanes([&](size_t i) ALWAYS_INLINE { return UInt64(size[i]); });
     }
@@ -246,7 +246,7 @@ struct LaneStates
     }
 
     /// The last partial word with the size modulo 256 in the high byte.
-    ALWAYS_INLINE UInt64Vec lastWord() const
+    [[nodiscard]] ALWAYS_INLINE UInt64Vec lastWord() const
     {
         const UInt64Vec lane_sizes = sizes();
         /// The 8 bytes that end at the end of the string. They start before the string when it is shorter than 8 bytes, so
@@ -303,9 +303,10 @@ struct ScalarState
         words = size / 8;
     }
 
-    [[maybe_unused]] ALWAYS_INLINE void round() { SIPROUND; }
+    /// SipHash wraps around modulo 2^64 by design. The pragma of `SipHash.h` does not reach the `SIPROUND` expanded here.
+    [[maybe_unused]] ALWAYS_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW void round() { SIPROUND; }
 
-    [[maybe_unused]] ALWAYS_INLINE void compressWord(size_t k)
+    [[maybe_unused]] ALWAYS_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW void compressWord(size_t k)
     {
         const UInt64 word = unalignedLoad<UInt64>(data + 8 * k);
         v3 ^= word;
@@ -314,7 +315,7 @@ struct ScalarState
         v0 ^= word;
     }
 
-    [[maybe_unused]] ALWAYS_INLINE UInt64 lastWord() const
+    [[nodiscard]] [[maybe_unused]] ALWAYS_INLINE UInt64 lastWord() const
     {
         const size_t remaining = size - 8 * words;
         const UInt64 last = remaining ? unalignedLoad<UInt64>(data + 8 * words) & ((1ULL << (remaining * 8)) - 1) : 0;

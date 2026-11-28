@@ -6,7 +6,6 @@ keywords: ['ClickStack configuration', 'observability configuration', 'ClickStac
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 The following configuration options are available for each component of ClickStack:
 
@@ -64,7 +63,7 @@ Configure the database connection used by your sources in Team Settings.
 | `Host` | ClickHouse HTTP(S) endpoint, including its port. This is separate from the collector's export endpoint. |
 | `Username` | ClickHouse username; defaults to `default`. |
 | `Password` | ClickHouse password; defaults to empty. |
-| `Query Log Setting Prefix` | Optional prefix for a custom ClickHouse setting that records the current user's email in query logs. Include the same prefix in ClickHouse's `custom_settings_prefixes` configuration or queries will be rejected. |
+| `Query Log Setting Prefix` | Optional prefix for a custom ClickHouse setting that records the current user's email in query logs. Include the same prefix in ClickHouse's `custom_settings_prefixes` configuration or queries will be rejected. To see which dashboard, alert, or other ClickStack feature issued a query, without user identifiers, see [Find what drives query load](/clickstack/managing/performance-tuning#query-attribution). |
 | `Prometheus compatible` | When available, treats Host as a Prometheus-compatible API endpoint for proxied PromQL queries. This connection can't be used for ClickHouse-backed logs, traces, or OTel metric sources. |
 
 ### Data source settings {#datasource-settings}
@@ -78,7 +77,15 @@ The ClickStack UI relies on the user defining a source for each of the Observabi
 
 This configuration can be performed inside the application from `Team Settings -> Sources`, as shown below for logs:
 
-<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="ClickStack UI Source configuration" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickStack UI Source configuration](/images/use-cases/observability/hyperdx-25.webp)
+
+</Frame>
+
+</div>
 
 Each source needs table and column mappings so the ClickStack UI can query its data. Metrics sources can use separate tables for different metric types. The `Enabled` toggle appears when editing an existing source; source-level `Query Settings` accept up to ten name/value pairs.
 
@@ -183,7 +190,7 @@ The following settings are available for each source:
 | `Exponential Histogram Table` | Table storing exponential histogram-type metrics.                                       | No | Yes                     | `otel_metrics_exponential_histogram` |
 | `Correlated Log Source`| Optional. Linked log source (e.g. ClickStack UI logs).                                               | No       | No                          | –                           |
 | `Summary Table` | Table storing summary metrics. Summary and exponential histogram support is not yet complete. | No | Yes | `otel_metrics_summary` |
-| `Minimum auto granularity` | Minimum bucket size for automatically selected chart granularity. Does not override explicit chart granularity. | No | No | No minimum |
+| `Minimum auto granularity` | Minimum bucket size for automatically selected chart granularity. Does not override explicit chart granularity. Applies to charts in the UI, such as dashboard tiles. Alerts, charts queried through the external API, and the MCP query tools don't apply it yet. | No | No | No minimum |
 
 A metric source also stores its timestamp and resource-attribute mappings (normally `TimeUnix` and `ResourceAttributes`). A unified `series Table` field is shown only for teams with metrics-series-table support enabled.
 
@@ -253,15 +260,39 @@ Each attribute is configured with the following settings:
 
 For example, this trace source has been configured with a Highlighted Attribute and a Highlighted Trace Attribute:
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="Highlighted Attributes configuration" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Highlighted Attributes configuration](/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp)
+
+</Frame>
+
+</div>
 
 These attributes are displayed in the side panel after clicking on a log or span:
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="Highlighted Attributes" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Highlighted Attributes](/images/use-cases/observability/hyperdx-highlighted-attributes.webp)
+
+</Frame>
+
+</div>
 
 Clicking on an attribute provides options for using the attribute as a search value. If the optional Lucene expression is provided in the attribute configuration, then the Lucene expression will be used for the search instead of the SQL expression.
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="Highlighted Attributes Search" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Highlighted Attributes Search](/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp)
+
+</Frame>
+
+</div>
 
 ### Correlated sources {#correlated-sources}
 
@@ -276,7 +307,15 @@ Setting these correlations enables several features. For example, ClickStack UI 
 
 For example, below is the Logs source configured with correlated sources:
 
-<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="ClickStack UI Source correlated" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickStack UI Source correlated](/images/use-cases/observability/hyperdx-26.webp)
+
+</Frame>
+
+</div>
 
 ### ClickHouse client settings {#clickhouse-client-settings}
 

@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -49,6 +50,13 @@ Field convertFieldTo(const Field & src)
 template <is_decimal DecimalT>
 Field convertFieldTo(const Field & src, UInt32 scale)
 {
+    /// The scale comes from the type name as text, which is not checked by `DataTypeFactory`. An
+    /// out-of-range scale later overruns a fixed-size buffer in `writeDecimalFractional`, so reject
+    /// it here, matching `readDecimalFieldBinary` and `DataTypeDecimalBase`.
+    if (scale > DecimalUtils::max_precision<DecimalT>)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
+                        scale, DecimalUtils::max_precision<DecimalT>);
+
     if (src.getType() == Field::TypeToEnum<DecimalField<DecimalT>>::value
         && src.safeGet<DecimalField<DecimalT>>().getScale() == scale)
         return src;

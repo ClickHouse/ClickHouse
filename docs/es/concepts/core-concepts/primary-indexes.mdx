@@ -6,8 +6,6 @@ keywords: ['índice primario disperso', 'índice primario', 'índice']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <Tip>
   **¿Buscas información avanzada sobre la indexación?**
 
@@ -17,32 +15,38 @@ import { Image } from "/snippets/es/components/Image.jsx";
 </Tip>
 
 <div id="how-does-the-sparse-primary-index-work-in-clickHouse">
-  ## ¿Cómo funciona el índice primario disperso en ClickHouse?
+  ## ¿Cómo funciona el índice primario disperso en ClickHouse? {#how-does-the-sparse-primary-index-work-in-clickHouse}
 </div>
 
 <br />
 
 El índice primario disperso en ClickHouse ayuda a identificar de forma eficiente los [gránulos](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) —bloques de filas— que podrían contener datos que coincidan con la condición de una consulta sobre las columnas de la clave primaria de la tabla. En la siguiente sección, explicamos cómo se construye este índice a partir de los valores de esas columnas.
 
-<div id="sparse-primary-index-creation">
-  ### Creación del índice primario disperso
-</div>
+### Creación del índice primario disperso {#sparse-primary-index-creation}
 
 Para ilustrar cómo se construye el índice primario disperso, usamos la tabla [uk&#95;price&#95;paid&#95;simple](/es/concepts/core-concepts/parts) junto con algunas animaciones.
 
 Como [recordatorio](/es/concepts/core-concepts/parts), en nuestra tabla de ejemplo ① con la clave primaria (town, street), los datos ② insertados se ③ almacenan en disco, ordenados por los valores de las columnas de la clave primaria y comprimidos, en archivos separados para cada columna:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+  </Frame>
+</div>
 
 <br />
 
 <br />
 
-Para su procesamiento, los datos de cada columna se ④ dividen lógicamente en gránulos; cada uno abarca 8.192 filas y constituye la unidad más pequeña con la que trabajan los mecanismos de procesamiento de datos de ClickHouse.
+Para su procesamiento, los datos de cada columna se ④ dividen lógicamente en gránulos; cada uno abarca 8,192 filas y constituye la unidad más pequeña con la que trabajan los mecanismos de procesamiento de datos de ClickHouse.
 
-Esta estructura de gránulos también es lo que hace que el índice primario sea **disperso**: en lugar de indexar cada fila, ClickHouse almacena ⑤ los valores de la clave primaria de una sola fila por gránulo, concretamente la primera. Esto da como resultado una entrada de índice por gránulo:
+Esta estructura de gránulos también es lo que hace que el índice primario sea **disperso**: en lugar de indexar cada fila, ClickHouse almacena ⑤ los valores de la clave primaria de una sola fila por gránulo, concretamente la primera. Esto da como resultado una entrada del índice por gránulo:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -50,13 +54,15 @@ Esta estructura de gránulos también es lo que hace que el índice primario sea
 
 Gracias a su naturaleza dispersa, el índice primario es lo bastante pequeño como para caber por completo en memoria, lo que permite filtrar rápidamente las consultas con predicados sobre columnas de la clave primaria. En la siguiente sección, mostramos cómo ayuda a acelerar esas consultas.
 
-<div id="primary-index-usage">
-  ### Uso del índice primario
-</div>
+### Uso del índice primario {#primary-index-usage}
 
 A continuación, mostramos de forma esquemática cómo se utiliza el índice primario disperso para acelerar las consultas con otra animación:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -81,7 +87,7 @@ A continuación, mostramos de forma esquemática cómo se utiliza el índice pri
 </Steps>
 
 <div id="monitoring-primary-indexes">
-  ## Supervisión de índices primarios
+  ## Supervisión de índices primarios {#monitoring-primary-indexes}
 </div>
 
 Cada [parte de datos](/es/concepts/core-concepts/parts) de la tabla tiene su propio índice primario. Podemos inspeccionar el contenido de estos índices mediante la [función de tabla mergeTreeIndex](/es/reference/functions/table-functions/mergeTreeIndex).
@@ -194,7 +200,7 @@ SELECT count() FROM uk.uk_price_paid_simple;
 ```
 
 <div id="key-takeaways">
-  ## Puntos clave
+  ## Puntos clave {#key-takeaways}
 </div>
 
 * Los **índices primarios dispersos** ayudan a ClickHouse a omitir datos innecesarios al identificar qué gránulos podrían contener filas que coincan con las condiciones de la consulta en las columnas de la clave primaria.
@@ -207,9 +213,7 @@ SELECT count() FROM uk.uk_price_paid_simple;
 
 * Puede **inspeccionar el contenido del índice** mediante la función de tabla `mergeTreeIndex` y supervisar el uso del índice con la cláusula `EXPLAIN`.
 
-<div id="where-to-find-more-information">
-  ## Dónde encontrar más información
-</div>
+## Dónde encontrar más información {#where-to-find-more-information}
 
 Para profundizar en cómo funcionan los índices primarios dispersos en ClickHouse, incluidas sus diferencias con los índices tradicionales de base de datos y las buenas prácticas para utilizarlos, consulta nuestra [guía detallada](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) sobre indexación.
 

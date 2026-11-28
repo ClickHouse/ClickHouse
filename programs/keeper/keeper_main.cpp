@@ -108,6 +108,8 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
 ///
 /// Not on WebAssembly: see the comment in `programs/main.cpp`.
 #if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || USE_GPU || defined(OS_WASM))
+/// Exported even under `-fvisibility=hidden`: otherwise libc would use its real `dlopen`.
+#pragma GCC visibility push(default)
 extern "C"
 {
     void * dlopen(const char *, int);
@@ -135,6 +137,7 @@ extern "C"
         return "ClickHouse does not allow dynamic library loading";
     }
 }
+#pragma GCC visibility pop
 #endif
 
 /// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create,

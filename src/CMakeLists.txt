@@ -200,6 +200,11 @@ if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
 
+if (USE_PULSAR)
+    add_subdirectory(Storages/Pulsar/Client/Proto)
+    add_headers_and_sources(dbms Storages/Pulsar/Client)
+endif()
+
 add_headers_and_sources(dbms Storages/ObjectStorage)
 add_headers_and_sources(dbms Storages/ObjectStorage/Azure)
 add_headers_and_sources(dbms Storages/ObjectStorage/S3)
@@ -364,7 +369,7 @@ if (TARGET ch_contrib::azure_sdk)
 endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
-target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::stringzilla)
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::stringzilla)
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::heks)
 if (TARGET ch_contrib::consistent_hashing)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::consistent_hashing)
@@ -403,6 +408,7 @@ add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
 add_object_library(clickhouse_interpreters_filecache Interpreters/FileCache)
 add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
 add_object_library(clickhouse_interpreters_adaptive_aggregation Interpreters/AdaptiveAggregation)
+add_object_library(clickhouse_interpreters_disk_set Interpreters/DiskSet)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_whatif Interpreters/WhatIf)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
@@ -511,7 +517,7 @@ endif()
 if (TARGET ch_contrib::ssh)
     add_object_library(clickhouse_server_ssh Server/SSH)
 endif()
-if (TARGET ch_contrib::arrow_flight)
+if (TARGET ch_contrib::arrow_flight_proto)
     add_object_library(clickhouse_server_arrowflight Server/ArrowFlight)
 endif()
 add_object_library(clickhouse_server_embedded_client Server/ClientEmbedded)
@@ -544,6 +550,8 @@ add_object_library(clickhouse_processors_queryplan_profiling_execution Processor
 add_object_library(clickhouse_processors_queryplan_profiling_metrics Processors/QueryPlan/Profiling/Metrics)
 add_object_library(clickhouse_processors_queryplan_profiling_time Processors/QueryPlan/Profiling/Time)
 add_object_library(clickhouse_processors_queryplan_profiling_analysis Processors/QueryPlan/Profiling/Analysis)
+add_object_library(clickhouse_processors_queryplan_profiling_render Processors/QueryPlan/Profiling/Render)
+add_object_library(clickhouse_processors_queryplan_profiling_capture Processors/QueryPlan/Profiling/Capture)
 add_object_library(clickhouse_processors_queryplan_streaming Processors/QueryPlan/Streaming)
 add_object_library(clickhouse_processors_queryplan_optimizations_cascades Processors/QueryPlan/Optimizations/Cascades)
 add_object_library(clickhouse_processors_queryplan_optimizations_cascades_rules Processors/QueryPlan/Optimizations/Cascades/Rules)
@@ -565,46 +573,17 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" AND ARCH_AMD64)
 endif()
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
-# Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
-# TUs where libcxx hardening needs to be disabled are specified here.
-set_property(SOURCE
-    Columns/IColumn.cpp                        # hashjoin_with_large_output
-    Processors/Transforms/WindowTransform.cpp                        # window functions
-    Processors/Transforms/Window/SlidingBlocks.cpp                   # window functions
-    Processors/Transforms/Window/SlidingArguments.cpp                # window functions
-    Processors/Transforms/Window/SlidingIndexes.cpp                  # window functions
-    Processors/Transforms/Window/Partition.cpp                       # window functions
-    Processors/Transforms/Window/Peers.cpp                           # window functions
-    Processors/Transforms/Window/Frame.cpp                           # window functions
-    Processors/Transforms/Window/WindowTransformParams.cpp           # window functions
-    WindowFunctions/Common/WindowArguments.cpp                       # window functions
-    WindowFunctions/General/WindowFunctionRank.cpp                   # window functions
-    WindowFunctions/General/WindowFunctionDenseRank.cpp              # window functions
-    WindowFunctions/General/WindowFunctionRowNumber.cpp              # window functions
-    WindowFunctions/General/WindowFunctionNtile.cpp                  # window functions
-    WindowFunctions/General/WindowFunctionPercentRank.cpp            # window functions
-    WindowFunctions/General/WindowFunctionCumeDist.cpp               # window functions
-    WindowFunctions/General/WindowFunctionNthValue.cpp               # window functions
-    WindowFunctions/General/WindowFunctionLagLead.cpp                # window functions
-    WindowFunctions/General/WindowFunctionExponentialTimeDecayed.cpp # window functions
-    WindowFunctions/General/WindowFunctionNonNegativeDerivative.cpp  # window functions
-    WindowFunctions/Aggregate/AggregateState.cpp                     # window functions
-    WindowFunctions/Aggregate/AggregateWindowFunctionPrefix.cpp      # window functions
-    WindowFunctions/Aggregate/AggregateWindowFunctionRecalculate.cpp # window functions
-    Interpreters/Aggregator.cpp                # destroy_aggregate_states
-    Common/IntervalTree.cpp                    # range_hashed_dictionary
-    PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
-
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
-elseif (USE_AVRO)
-    # The Avro input format reads Iceberg variants with the Parquet variant decoder.
+elseif (USE_AVRO OR USE_ORC)
+    # The Avro and ORC input formats read Iceberg variants with the Parquet variant decoder.
     list (APPEND dbms_sources Processors/Formats/Impl/Parquet/VariantEncoding.cpp)
     list (APPEND dbms_headers Processors/Formats/Impl/Parquet/VariantEncoding.h)
 endif()
 
 # Unconditional: when USE_VORTEX is off, the sources compile to the registration stubs.
 add_object_library(clickhouse_processors_formats_impl_vortex Processors/Formats/Impl/Vortex)
+add_object_library(clickhouse_processors_formats_impl_puffin Processors/Formats/Impl/Puffin)
 
 if (USE_ARROW)
     add_object_library(clickhouse_processors_formats_impl_arrow_ipc Processors/Formats/Impl/ArrowIPC)
@@ -863,7 +842,7 @@ endif ()
 
 # Native Arrow IPC reader/writer needs only the FlatBuffers-generated metadata headers, not the Arrow runtime.
 if (TARGET ch_contrib::arrow_ipc_metadata)
-    target_link_libraries(dbms PRIVATE ch_contrib::arrow_ipc_metadata)
+    target_link_libraries(dbms PUBLIC ch_contrib::arrow_ipc_metadata)
 endif ()
 
 if (TARGET ch_contrib::avrocpp)
@@ -1023,10 +1002,6 @@ if (TARGET ch_contrib::prometheus_protobufs)
     target_link_libraries(dbms PUBLIC ch_contrib::prometheus_protobufs)
 endif()
 
-if (TARGET ch_rust::skim)
-    target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
-    target_link_libraries(dbms PUBLIC ch_rust::skim)
-endif()
 
 if (TARGET ch_contrib::google_cloud_cpp)
     target_link_libraries(dbms PUBLIC ch_contrib::google_cloud_cpp)
@@ -1054,14 +1029,18 @@ if (TARGET ch_contrib::sha3iuf)
     target_link_libraries(dbms PUBLIC ch_contrib::sha3iuf)
 endif()
 
-if (TARGET ch_contrib::arrow_flight)
-    target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
+if (TARGET ch_contrib::arrow_flight_proto)
+    target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight_proto)
 endif()
 
 
 
 if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)
+endif()
+
+if (USE_PULSAR)
+    target_link_libraries(dbms PRIVATE clickhouse_pulsar_proto)
 endif()
 
 if (TARGET ch_rust::wasmtime)
@@ -1113,6 +1092,15 @@ if (ENABLE_TESTS)
 
     target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::heks)
 
+    if (USE_PULSAR)
+        target_link_libraries(unit_tests_dbms PRIVATE clickhouse_pulsar_proto)
+    endif()
+
+    # `gtest_memchr_strlen_page_boundary` calls every x86_64 `memchr` / `strlen` tier directly.
+    if (TARGET libllvmlibc_str_test_candidates)
+        target_link_libraries(unit_tests_dbms PRIVATE libllvmlibc_str_test_candidates)
+    endif()
+
     if (TARGET ch_contrib::krb5)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
     endif()
@@ -1147,10 +1135,6 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::parquet_format)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet_format)
-    endif()
-
-    if (TARGET ch_contrib::parquet)
-        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
 
     if (TARGET ch_contrib::arrow_ipc_metadata)
