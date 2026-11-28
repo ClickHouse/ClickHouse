@@ -91,7 +91,7 @@ models:
 
 #### 複雑な型の追加 {#adding-complex-types}
 
-dbt は、モデルの作成に使用される SQL を分析して、各カラムのデータ型を自動的に判定します。ただし、場合によってはこの処理でデータ型を正確に判定できず、contract の `data_type` プロパティで指定した型と競合することがあります。これを回避するには、モデルの SQL で `CAST()` 関数を使用して、意図した型を明示的に定義することを推奨します。たとえば、次のようになります。
+dbt は、モデルの作成に使用される SQL を分析して、各カラムのデータ型を自動的に判定します。ただし、場合によってはこの処理でデータ型を正確に判定できず、契約 の `data_type` プロパティで指定した型と競合することがあります。これを回避するには、モデルの SQL で `CAST()` 関数を使用して、意図した型を明示的に定義することを推奨します。たとえば、次のようになります。
 
 ```sql
 {{
@@ -103,11 +103,11 @@ dbt は、モデルの作成に使用される SQL を分析して、各カラ�
 }}
 
 select
-  -- event_type may be infered as a String but we may prefer LowCardinality(String):
+  -- event_type may be inferred as a String but we may prefer LowCardinality(String):
   CAST(event_type, 'LowCardinality(String)') as event_type,
-  -- countState() may be infered as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
+  -- countState() may be inferred as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
   CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count,
-  -- maxSimpleState() may be infered as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
+  -- maxSimpleState() may be inferred as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
   CAST(maxSimpleState(event_type), 'SimpleAggregateFunction(max, LowCardinality(String))') as max_event_type
 from {{ ref('user_events') }}
 group by event_type

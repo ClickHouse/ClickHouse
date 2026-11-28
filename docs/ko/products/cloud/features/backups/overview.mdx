@@ -13,27 +13,25 @@ import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureB
 
 ## 백업 {#backups}
 
-### ClickHouse Cloud에서 Backup이 작동하는 방식 {#how-backups-work-in-clickhouse-cloud}
+### ClickHouse Cloud에서 백업이 작동하는 방식 {#how-backups-work-in-clickhouse-cloud}
 
-ClickHouse Cloud Backup은 &quot;전체&quot; Backup과 &quot;증분&quot; Backup을 조합해 하나의 Backup 체인을 구성합니다. 체인은 전체 Backup으로 시작되며, 이후 예약된 여러 시점에 걸쳐 증분 Backup이 수행되어 연속된 Backup 시퀀스가 만들어집니다. Backup 체인이 일정 길이에 도달하면 새 체인이 시작됩니다. 필요할 경우 이 Backup 체인 전체를 사용해 데이터를 새 서비스로 복원할 수 있습니다. 특정 체인에 포함된 모든 Backup이 서비스에 설정된 보존 기간(보존에 대한 자세한 내용은 아래 참고)을 지나면 해당 체인은 폐기됩니다.
+ClickHouse Cloud 백업은 &quot;전체&quot; 백업과 &quot;증분&quot; 백업을 조합해 하나의 백업 체인을 구성합니다. 체인은 전체 백업(Full Backup)으로 시작되며, 이후 예약된 여러 시점에 걸쳐 증분 백업이 수행되어 연속된 백업 시퀀스가 만들어집니다. 백업 체인이 일정 길이에 도달하면 새 체인이 시작됩니다. 필요할 경우 이 백업 체인 전체를 사용해 데이터를 새 서비스로 복원할 수 있습니다. 특정 체인에 포함된 모든 백업이 서비스에 설정된 보존 기간(보존에 대한 자세한 내용은 아래 참고)을 지나면 해당 체인은 폐기됩니다.
 
-복원 가능한 시점의 수는 물리적 Backup 객체의 수와 일치하지 않습니다. 각 복원 시점이 의존하는 전체 Backup과 증분 Backup은 하나의 체인으로 묶여 함께 보존됩니다.
+복원 가능한 시점의 수는 물리적 백업 객체의 수와 일치하지 않습니다. 각 복원 시점이 의존하는 전체 백업(Full Backup)과 증분 백업은 하나의 체인으로 묶여 함께 보존됩니다.
 
-아래 스크린샷에서 실선 사각형은 전체 Backup을, 점선 사각형은 체인에 포함된 증분 Backup을 나타냅니다.
+아래 스크린샷에서 실선 사각형은 전체 백업(Full Backup)을, 점선 사각형은 체인에 포함된 증분 백업을 나타냅니다.
 
-1일 차에는 Backup 체인을 시작하기 위해 전체 Backup이 수행됩니다. 2일 차에는 증분 Backup이 수행되며, 전체 Backup과 증분 Backup 모두에서 복원할 수 있습니다. 7일 차가 되면 체인에는 전체 Backup 1개와 증분 Backup 6개가 있으며, 모두 표시되고 복원에 사용할 수 있습니다. 8일 차에는 새 전체 Backup이 수행되고, 9일 차에는 새 체인에 Backup 2개가 쌓이면 이전 체인이 폐기됩니다.
+1일 차에는 백업 체인을 시작하기 위해 전체 백업(Full Backup)이 수행됩니다. 2일 차에는 증분 백업이 수행되며, 전체 백업(Full Backup)과 증분 백업 모두에서 복원할 수 있습니다. 7일 차가 되면 체인에는 전체 백업(Full Backup) 1개와 증분 백업 6개가 있으며, 모두 표시되고 복원에 사용할 수 있습니다. 8일 차에는 새 전체 백업(Full Backup)이 수행되고, 9일 차에는 새 체인에 백업 2개가 쌓이면 이전 체인이 폐기됩니다.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse Cloud의 Backup 체인 예시](/images/cloud/manage/backup-chain.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud의 백업 체인 예시](/images/cloud/manage/backup-chain.webp)
+  </Frame>
 </div>
 
-### 기본 백업 정책 {#default-backup-policy}
+<div id="default-backup-policy">
+  ### 기본 백업 정책 {#default-backup-policy}
+</div>
 
 백업은 Basic, Scale, Enterprise 티어에서 스토리지와 별도로 사용량이 측정되며 청구됩니다.
 현재 서비스는 기본적으로 24시간 보존 기간의 하루 1회 백업으로 설정됩니다. 백업 구성은 서비스 및 계약에 따라 달라질 수 있습니다.
@@ -77,11 +75,17 @@ ClickHouse Cloud 백업의 동작 방식에 대한 자세한 내용은 [백업](
   동일한 클라우드 제공업체 내에서
   다른 리전으로 백업을 내보내는 경우에는 [데이터 전송](/ko/products/cloud/reference/billing/network-data-transfer)
   요금이 부과됩니다.
-
-  현재 [Transparent Data Encryption (TDE)](/ko/products/cloud/guides/security/cmek#transparent-data-encryption-tde)를 사용하는 서비스나 규제 대상 서비스에 대해서는 백업 / 복원을 지원하지 않습니다.
 </Info>
 
-AWS, GCP, Azure 객체 스토리지에 전체 백업 및 증분 백업을 수행하는 방법과 백업에서 복원하는 방법에 대한 예시는 [&quot;자체 Cloud 계정으로 백업 내보내기&quot;](/ko/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)를 참조하십시오.
+<Warning>
+  **자체 버킷으로 백업을 내보낼 수 없는 서비스**
+
+  **HIPAA 준수** 또는 **PCI 준수** 리전 유형으로 생성된 서비스(규제 대상 서비스)나 [투명한 데이터 암호화(Transparent Data Encryption, TDE)](/ko/products/cloud/guides/security/cmek#transparent-data-encryption-tde)를 사용하는 서비스는 자체 버킷으로 백업할 수 없습니다.
+
+  규제 대상 서비스에서 이는 사용자가 변경할 수 있는 설정이 아니라 규제 환경의 보안 통제 조치입니다. 콘솔에서 **Set up external backup** 옵션이 비활성화되어 있고 `BACKUP` 권한(privilege)도 부여되지 않으므로, 외부 버킷(external bucket)으로 `BACKUP ... TO`를 실행하는 것도 허용되지 않습니다. ClickHouse가 관리하는 백업, 백업 일정 구성, 동일 리전의 새 서비스로의 복원은 계속 사용할 수 있습니다. 자세한 내용은 [HIPAA 온보딩](/ko/products/cloud/guides/security/compliance/hipaa-onboarding#backups) 및 [PCI 온보딩](/ko/products/cloud/guides/security/compliance/pci-onboarding#backups)을 참조하십시오.
+</Warning>
+
+AWS, GCP, Azure 객체 스토리지에 전체 백업(Full Backup) 및 증분 백업을 수행하는 방법과 백업에서 복원하는 방법에 대한 예시는 [&quot;자체 Cloud 계정으로 백업 내보내기&quot;](/ko/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)를 참조하십시오.
 
 ### Backup 옵션 {#backup-options}
 

@@ -57,6 +57,7 @@ struct LastElementCacheStats
 
     void update(size_t num_tries, size_t num_misses)
     {
+        chassert(num_misses <= num_tries);
         hits += num_tries - num_misses;
         misses += num_misses;
     }
@@ -423,6 +424,16 @@ public:
         {
             return false;
         }
+    }
+
+    /// Whether a row of the block may have the NULL key, which `isNullAt` tells row by row. False means that
+    /// no row has it, so a caller can skip the check of every row.
+    [[nodiscard]] ALWAYS_INLINE bool mayHaveNullRows() const
+    {
+        if constexpr (nullable)
+            return !block_has_no_nulls;
+        else
+            return false;
     }
 
 protected:

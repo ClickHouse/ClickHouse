@@ -11,7 +11,7 @@ chDB 是一个快速的进程内 SQL OLAP 引擎，由 [ClickHouse](https://gith
 如果你想在编程语言中使用 ClickHouse 的强大能力，而无需连接到 ClickHouse server，就可以使用它。
 
 <div id="key-features">
-  ## 主要特性
+  ## 主要特性 {#key-features}
 </div>
 
 * **进程内 SQL OLAP 引擎** - 由 ClickHouse 驱动，无需安装 ClickHouse server
@@ -22,7 +22,7 @@ chDB 是一个快速的进程内 SQL OLAP 引擎，由 [ClickHouse](https://gith
 * **DataStore API** - 与 pandas 兼容的 API，具备 SQL 优化能力，支持 630+ 个方法
 
 <div id="datastore">
-  ## DataStore: 与 pandas 兼容的 API
+  ## DataStore: 与 pandas 兼容的 API {#datastore}
 </div>
 
 **全新推出！** DataStore 提供与 pandas 兼容的 API，将熟悉的 pandas 语法与 ClickHouse 的高性能结合起来。
@@ -35,7 +35,7 @@ chDB 是一个快速的进程内 SQL OLAP 引擎，由 [ClickHouse](https://gith
 </Tip>
 
 <div id="one-line-migration">
-  ### 一行代码迁移
+  ### 一行代码迁移 {#one-line-migration}
 </div>
 
 ```python
@@ -48,7 +48,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 ```
 
 <div id="performance-highlights">
-  ### 性能亮点
+  ### 性能亮点 {#performance-highlights}
 </div>
 
 | 操作         | pandas  | DataStore | 加速比        |
@@ -60,7 +60,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 *基于 1000 万行数据的基准测试*
 
 <div id="datastore-features">
-  ### DataStore 功能
+  ### DataStore 功能 {#datastore-features}
 </div>
 
 * **630+ 个 API 方法** - 209 个 pandas DataFrame 方法，185+ 个 Accessor 方法
@@ -71,7 +71,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 了解更多：[DataStore 文档](/zh/chdb/datastore/index)
 
 <div id="what-languages-are-supported-by-chdb">
-  ## chDB 支持哪些语言？
+  ## chDB 支持哪些语言？ {#what-languages-are-supported-by-chdb}
 </div>
 
 chDB 提供以下语言绑定：
@@ -83,15 +83,13 @@ chDB 提供以下语言绑定：
 * [Bun](/zh/chdb/install/bun)
 * [C 和 C++](/zh/chdb/install/c)
 
-<div id="how-do-i-get-started">
-  ## 如何开始使用？
-</div>
+## 如何开始使用？ {#how-do-i-get-started}
 
 * 如果你使用的是 [Go](/zh/chdb/install/go)、[Rust](/zh/chdb/install/rust)、[Node.js](/zh/chdb/install/nodejs)、[Bun](/zh/chdb/install/bun) 或 [C 和 C++](/zh/chdb/install/c)，请查看对应语言的页面。
-* 如果你使用的是 Python，请参阅[入门开发者指南](/zh/chdb/getting-started)或 [chDB 按需课程](<https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python>)。
+* 如果你使用的是 Python，请参阅[入门开发者指南](/zh/chdb/getting-started)或 [chDB 点播课程](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python)。
 
 <div id="for-pandas-users">
-  ### 面向 pandas 用户
+  ### 面向 pandas 用户 {#for-pandas-users}
 </div>
 
 如果你熟悉 pandas，可先从 DataStore API 开始，获得兼具 pandas 体验和 ClickHouse 性能的使用方式：
@@ -103,7 +101,7 @@ chDB 提供以下语言绑定：
 * [性能指南](/zh/chdb/guides/pandas-performance) - 优化技巧
 
 <div id="datastore-reference">
-  ### DataStore API 参考文档
+  ### DataStore API 参考文档 {#datastore-reference}
 </div>
 
 * [工厂方法](/zh/chdb/datastore/factory-methods) - 从文件、数据库、云存储创建
@@ -114,7 +112,7 @@ chDB 提供以下语言绑定：
 * [调试](/zh/chdb/debugging/index) - explain()、性能分析、日志
 
 <div id="sql-guides">
-  ### SQL API 指南
+  ### SQL API 指南 {#sql-guides}
 </div>
 
 * [Python API 参考文档](/zh/chdb/api/python) - 完整的 SQL API 参考文档
@@ -127,7 +125,7 @@ chDB 提供以下语言绑定：
 * [使用 clickhouse-local 数据库](/zh/chdb/guides/clickhouse-local)
 
 <div id="an-introductory-video">
-  ## 介绍视频
+  ## 介绍视频 {#an-introductory-video}
 </div>
 
 观看一段关于 chDB 的简短介绍，了解它如何将 ClickHouse 的强大能力带到你的 Python 环境中：
@@ -139,7 +137,7 @@ chDB 提供以下语言绑定：
 </div>
 
 <div id="performance-benchmarks">
-  ## 性能基准测试
+  ## 性能基准测试 {#performance-benchmarks}
 </div>
 
 chDB 在各种场景下都展现出卓越的性能：
@@ -149,27 +147,21 @@ chDB 在各种场景下都展现出卓越的性能：
 * **[DataStore 与 Pandas 对比](/zh/chdb/datastore/index#performance)** - 在常见操作中，速度最高可达 pandas 的 20 倍
 
 <div className="ch-image-md">
-
-<Frame>
-
-![DataFrame 性能测试结果](/images/chdb/df_bench.webp)
-
-</Frame>
-
+  <Frame>
+    ![DataFrame 基准测试结果](/images/chdb/df_bench.webp)
+  </Frame>
 </div>
 
-<div id="about-chdb">
-  ## 关于 chDB
-</div>
+## 关于 chDB {#about-chdb}
 
 * 在[博客](https://clickhouse.com/blog/chdb-embedded-clickhouse-rocket-engine-on-a-bicycle)上阅读 chDB 项目诞生的完整故事
 * 在[博客](https://clickhouse.com/blog/welcome-chdb-to-clickhouse)上了解 chDB 及其用例
-* 学习 [chDB 点播课程](<https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python>)
+* 学习 [chDB 点播课程](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python)
 * 通过 [codapi 示例](https://antonz.org/trying-chdb/)在浏览器中体验 chDB
 * 更多示例请参见 (https://github.com/chdb-io/chdb/tree/main/examples)
 
 <div id="license">
-  ## 许可证
+  ## 许可证 {#license}
 </div>
 
 chDB 采用 Apache License 2.0 许可证。更多信息，请参阅 [LICENSE](https://github.com/chdb-io/chdb/blob/main/LICENSE.txt)。

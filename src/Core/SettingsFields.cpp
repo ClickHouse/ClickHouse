@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/parseURI.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Common/DateLUTImpl.h>
@@ -359,6 +360,18 @@ void SettingFieldString::readBinary(ReadBuffer & in)
     *this = std::move(str);
 }
 
+void SettingFieldSecretString::writeBinary(WriteBuffer & out) const
+{
+    writeStringBinary(value, out);
+}
+
+void SettingFieldSecretString::readBinary(ReadBuffer & in)
+{
+    String str;
+    readStringBinary(str, in);
+    *this = str;
+}
+
 SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
 
 String SettingFieldMap::toString() const
@@ -457,14 +470,7 @@ void SettingFieldURI::readBinary(ReadBuffer & in)
 
 Poco::URI SettingFieldURI::parseURI(const String & str)
 {
-    try
-    {
-        return Poco::URI{str};
-    }
-    catch (const Poco::SyntaxException & e)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse URI: {}", e.displayText());
-    }
+    return DB::parseURI(str);
 }
 
 

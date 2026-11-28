@@ -19,9 +19,7 @@ doc_type: 'reference'
   يتوفر [هنا](/ar/concepts/features/operations/update/replacing-merge-tree) دليل مفصل حول ReplacingMergeTree، بما في ذلك أفضل الممارسات وكيفية تحسين الأداء.
 </Note>
 
-<div id="creating-a-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -43,20 +41,16 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
   يُحدَّد تفرّد الصفوف بواسطة قسم `ORDER BY` في الجدول، وليس بواسطة `PRIMARY KEY`.
 </Note>
 
-<div id="replacingmergetree-parameters">
-  ## معلمات ReplacingMergeTree
-</div>
+## معلمات ReplacingMergeTree {#replacingmergetree-parameters}
 
-<div id="ver">
-  ### `ver`
-</div>
+### `ver` {#ver}
 
-`ver` — عمود يحتوي على رقم الإصدار. النوع `UInt*` أو `Date` أو `DateTime` أو `DateTime64`. مُعامِل اختياري.
+`ver` — عمود يحتوي على رقم الإصدار. النوع `UInt*` أو `Date` أو `DateTime` أو `DateTime64`. معلمة اختيارية. ويمكن أن يكون أيضًا عمودًا فرعيًا من عمود آخر، مثل عنصر في `Tuple` أو مسار محدد النوع في `JSON`: `ReplacingMergeTree(meta.ver)`.
 
 عند الدمج، يحتفظ `ReplacingMergeTree` بصف واحد فقط من بين جميع الصفوف التي لها مفتاح الفرز نفسه:
 
 * الصف الأخير في التحديد، إذا لم يتم تعيين `ver`. والتحديد هو مجموعة من الصفوف ضمن مجموعة من الأجزاء المشاركة في عملية الدمج. ويكون الجزء الذي أُنشئ مؤخرًا (آخر عملية insert) هو الأخير في التحديد. لذلك، بعد إزالة التكرار، يبقى آخر صف أُدرج من أحدث عملية insert لكل مفتاح فرز فريد.
-* الصف ذو أكبر إصدار، إذا تم تحديد `ver`. وإذا كانت قيمة `ver` متطابقة في عدة صفوف، فستُطبَّق عليها قاعدة &quot;إذا لم يتم تحديد `ver`&quot;، أي سيبقى الصف المُدرَج الأحدث.
+* الصف ذو أكبر إصدار، إذا تم تحديد `ver`. وإذا كانت قيمة `ver` متطابقة في عدة صفوف، فستُطبَّق عليها قاعدة &quot;إذا لم يتم تحديد `ver`&quot;، أي سيبقى الصف المُدرَج الأحدث.
 
 مثال:
 
@@ -100,13 +94,11 @@ SELECT * FROM mySecondReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 ```
 
-<div id="is_deleted">
-  ### `is_deleted`
-</div>
+### `is_deleted` {#is_deleted}
 
 `is_deleted` — اسم عمود يُستخدم أثناء عملية الدمج لتحديد ما إذا كانت البيانات في هذا الصف تمثل الحالة أم يجب حذفها؛ `1` يشير إلى صف &quot;محذوف&quot;، و`0` يشير إلى صف &quot;حالة&quot;.
 
-نوع بيانات العمود — `UInt8`.
+نوع بيانات العمود — `UInt8`. ويمكن، كما هو الحال مع `ver`، أن يكون عمودًا فرعيًا من عمود آخر.
 
 <Note>
   لا يمكن تمكين `is_deleted` إلا عند استخدام `ver`.
@@ -116,12 +108,12 @@ SELECT * FROM mySecondReplacingMT FINAL;
   يحتفظ ClickHouse افتراضيًا بالصف الأخير للمفتاح حتى إذا كان هذا الصف صف حذف. وذلك حتى يمكن
   إدراج أي صفوف لاحقة ذات أرقام إصدارات أقل بأمان، مع استمرار تطبيق صف الحذف.
 
-  لحذف صفوف الحذف هذه نهائيًا، فعِّل إعداد الجدول `allow_experimental_replacing_merge_with_cleanup` ثم نفِّذ أحد الخيارين التاليين:
+  لحذف صفوف الحذف هذه نهائيًا، فعِّل إعداد الجدول `allow_experimental_replacing_merge_with_cleanup` ثم نفِّذ أحد الخيارين التاليين:
 
   1. اضبط إعدادات الجدول `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge` و`min_age_to_force_merge_on_partition_only` و`min_age_to_force_merge_seconds`. إذا كانت جميع الأجزاء في القسم أقدم من `min_age_to_force_merge_seconds`، فسيُجري ClickHouse دمجها
      كلها في جزء واحد ويزيل أي صفوف حذف.
 
-  2. شغِّل يدويًا `OPTIMIZE TABLE table [PARTITION partition | PARTITION ID 'partition_id'] FINAL CLEANUP`.
+  2. شغِّل يدويًا `OPTIMIZE TABLE table [PARTITION partition | PARTITION ID 'partition_id'] FINAL CLEANUP`.
 </Note>
 
 مثال:
@@ -158,9 +150,7 @@ select * from myThirdReplacingMT final;
 └─────┴─────────┴─────────────────────┴────────────┘
 ```
 
-<div id="query-clauses">
-  ## عبارات الاستعلام
-</div>
+## عبارات الاستعلام {#query-clauses}
 
 عند إنشاء جدول `ReplacingMergeTree`، تكون [العبارات](/ar/reference/engines/table-engines/mergetree-family/mergetree) نفسها مطلوبة، كما هو الحال عند إنشاء جدول `MergeTree`.
 
@@ -185,9 +175,7 @@ select * from myThirdReplacingMT final;
   * `ver` - العمود الذي يحتوي على الإصدار. مَعلمة اختيارية. للاطلاع على الوصف، راجع النص أعلاه.
 </details>
 
-<div id="query-time-de-duplication--final">
-  ## إزالة التكرار وقت الاستعلام &amp; FINAL
-</div>
+## إزالة التكرار وقت الاستعلام &amp; FINAL {#query-time-de-duplication--final}
 
 عند وقت الدمج، يحدّد محرك ReplacingMergeTree الصفوف المكررة باستخدام قيم أعمدة `ORDER BY` (المستخدمة في إنشاء الجدول) بوصفها معرّفًا فريدًا، ولا يحتفظ إلا بأعلى إصدار. لكن هذا لا يوفّر سوى صحة نهائية بمرور الوقت، إذ لا يضمن إزالة تكرار الصفوف، لذا ينبغي عدم الاعتماد عليه. ولذلك قد تُنتج الاستعلامات نتائج غير صحيحة بسبب احتساب صفوف التحديث والحذف ضمن الاستعلامات.
 

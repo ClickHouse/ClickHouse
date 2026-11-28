@@ -1,0 +1,20 @@
+-- parent String and child IPv6
+(false,\'2001:db8::1\')	2001:db8::1	IPv6
+(true,\'2001:db8::2\')	2001:db8::2	IPv6
+(false,\'2001:db8::3\')	2001:db8::3	IPv6
+-- child IPv6 only
+2001:db8::1
+2001:db8::2
+2001:db8::3
+-- parent Tuple without the child and child IPv6
+(false)	2001:db8::1
+(true)	2001:db8::2
+(false)	2001:db8::3
+-- struct inside a list: parent String and child Array(IPv6)
+[(\'::ffff:1.2.3.0\')]	['::ffff:1.2.3.0']
+[(\'::ffff:1.2.3.1\')]	['::ffff:1.2.3.1']
+[(\'::ffff:1.2.3.2\')]	['::ffff:1.2.3.2']
+-- dictionary-encoded child: parent String and child IPv6
+2866616C73652C2720015C72B85C305C305C305C305C305C305C305C305C305C305C30012729	2001:db8::1
+28747275652C2720015C72B85C305C305C305C305C305C305C305C305C305C305C30022729	2001:db8::2
+2866616C73652C2720015C72B85C305C305C305C305C305C305C305C305C305C305C30032729	2001:db8::3

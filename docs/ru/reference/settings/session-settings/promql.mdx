@@ -34,6 +34,16 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 Задаёт время оценки, используемое в диалекте promql, в виде Unix-временной метки в секундах с необязательной дробной частью. `auto` означает текущее время.
 
+## promql_max_points_per_series {#promql_max_points_per_series}
+
+<PrivatePreviewBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="11000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "11000"},{"label": "Новая настройка, ограничивающая разрешение запроса диапазона в HTTP API Prometheus (аналогично Prometheus)."}]}]} />
+
+Максимальное разрешение запроса диапазона в HTTP API Prometheus (`/api/v1/query_range`). Как и в Prometheus, запрос отклоняется, если `(end - start) / step` превышает это значение. 0 означает отсутствие ограничения. На табличную функцию [prometheusQueryRange](/ru/reference/functions/table-functions/prometheusQueryRange) это ограничение не распространяется.
+
 ## promql_push_down_label_matchers {#promql_push_down_label_matchers}
 
 <PrivatePreviewBadge />

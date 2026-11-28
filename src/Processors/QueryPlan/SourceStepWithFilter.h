@@ -84,6 +84,9 @@ public:
     [[nodiscard]] virtual bool supportsMinMaxFromStatistics() const { return false; }
     virtual void setMinMaxFromStatistics() {}
 
+    /// Whether a filter on `column` lets the source skip data by statistics without dropping rows that pass it.
+    [[nodiscard]] virtual bool canSkipDataByFilterOn(const ColumnWithTypeAndName & /*column*/) const { return false; }
+
     [[nodiscard]] const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
     std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
 

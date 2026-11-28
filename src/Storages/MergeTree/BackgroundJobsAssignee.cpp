@@ -153,6 +153,11 @@ bool BackgroundJobsAssignee::start()
     /// task's own mutexes. Destroying the holder deactivates the task, which waits for a run of
     /// `threadFunc` that may already have started; that run does not touch the storage because the
     /// workers are disabled while a `table_readonly` toggle is in flight.
+    /// The jobs run in the global background executors, which `finish` also uses. The server creates them at startup,
+    /// but `clickhouse-local` only for the first storage that needs them, like a `StorageObjectStorage` table with
+    /// background jobs, which does not go through `MergeTreeData`.
+    getContext()->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
+
     /// Read the cached id before taking holder_mutex so that the two locks are never nested.
     const auto current_storage_id = getStorageID();
 

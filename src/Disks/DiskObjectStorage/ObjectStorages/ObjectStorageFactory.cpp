@@ -20,10 +20,12 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
+#include <IO/parseURI.h>
 
 #include <Interpreters/Context.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 
 #include <Common/Macros.h>
@@ -149,7 +151,7 @@ S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::st
     if (config.has(config_prefix + ".endpoint_subpath"))
         endpoint_subpath = context->getMacros()->expand(config.getString(config_prefix + ".endpoint_subpath"));
 
-    S3::URI uri(fs::path(endpoint) / endpoint_subpath, false, true, uri_style);
+    S3::URI uri((fs::path(endpoint) / endpoint_subpath).string(), false, true, uri_style);
 
     /// An empty key remains empty.
     if (!uri.key.empty() && !uri.key.ends_with('/'))
@@ -192,7 +194,7 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
-        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), Poco::URI(endpoint).getScheme(), true);
+        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), parseURI(endpoint).getScheme(), true);
         auto uri = getS3URI(config, config_prefix, context, settings->auth_settings[S3AuthSetting::uri_style]);
         /// The endpoint of a disk created in SQL is user input, so it is subject to `remote_url_allow_hosts`
         /// like the URL of an `s3` table; checked before the client is built, which already talks to the endpoint.
@@ -242,7 +244,7 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
             /// Checked before `HDFSObjectStorage` connects; a disk loaded from existing metadata is only reported.
             if (remote_host_filter_check != RemoteHostFilterCheck::None)
             {
-                const Poco::URI endpoint_uri(uri);
+                const Poco::URI endpoint_uri = parseURI(uri);
                 if (!context->getGlobalContext()->getRemoteHostFilter().checkURL(
                         endpoint_uri, /* throw_on_error */ remote_host_filter_check == RemoteHostFilterCheck::Enforce))
                     warnAboutDiskNotAllowedByRemoteHostFilter(
@@ -319,12 +321,17 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
                 "loading instead.",
                 name);
 
+        /// As for the `AzureBlobStorage` table engine, a connection string is described by its blob service URL.
+        String description = std::holds_alternative<AzureBlobStorage::ConnectionString>(params.auth_method)
+            ? params.getConnectionURLWithoutQuery()
+            : String(stripQueryAndFragment(params.endpoint.getServiceEndpoint()));
+
         return std::make_shared<AzureObjectStorage>(
             name,
             /// A client without credentials must not probe or create the container: the denied request would fail the load.
             AzureBlobStorage::getContainerClient(params, /*readonly=*/ drop_credentials), std::move(azure_settings),
             params, params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
-            params.endpoint.getServiceEndpoint(), common_key_prefix);
+            description, common_key_prefix);
     };
 
     factory.registerObjectStorageType("azure_blob_storage", creator);

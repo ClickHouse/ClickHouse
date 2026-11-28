@@ -41,6 +41,8 @@ struct WriteOptions
     int compression_level = 3;
 
     size_t data_page_size = 1024 * 1024;
+    /// 0 = no limit.
+    size_t data_page_row_limit = 20000;
     size_t write_batch_size = 1024;
 
     bool use_dictionary_encoding = true;
@@ -51,6 +53,8 @@ struct WriteOptions
     /// Encode `FLOAT` and `DOUBLE` columns with `ALP` instead of `encoding`, without a dictionary.
     /// See `writeColumnImpl` for the reasoning.
     bool use_alp_encoding = false;
+    /// Write data pages as `DataPageV2` instead of `DataPage`.
+    bool use_data_page_v2 = false;
 
     bool write_column_chunk_statistics = true;
     bool write_page_statistics = true;

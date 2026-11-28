@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
+# Random settings limits: input_format_parquet_filter_push_down=(1, 1); input_format_parquet_page_filter_push_down=(1, 1); input_format_parquet_memory_high_watermark=(67108864, None); output_format_parquet_max_dictionary_size=(1048576, None)
 # no-fasttest: needs the Parquet format which is not built in fasttest.
 
 # The Parquet dictionary and bloom filters must not skip a row group whose NULL rows match an `IN` set holding NULL (`transform_null_in = 1`) or a `has` array holding NULL.

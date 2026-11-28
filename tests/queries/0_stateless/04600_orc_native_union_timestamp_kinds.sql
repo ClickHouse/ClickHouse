@@ -1,8 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires the ORC input format, which is not built in fasttest.
 
-SET allow_experimental_variant_type = 1;
-
 -- The DateTime64(9) branch carries no explicit timezone, so it is rendered in the session timezone,
 -- which the stateless test harness randomizes. Pin it to UTC so the output is deterministic (the
 -- DateTime64(9, 'UTC') branch is always rendered in UTC regardless of the session timezone).

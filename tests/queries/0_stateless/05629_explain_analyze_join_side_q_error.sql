@@ -7,6 +7,7 @@
 
 SET use_statistics = 1, materialize_statistics_on_insert = 1;
 SET enable_join_runtime_filters = 0; -- a runtime filter would lower the actual rows of a side without any estimation error
+SET query_plan_join_shard_by_pk_ranges = 0; -- so would a hash join sharded by primary-key ranges, which does not read the left rows of a range with no right rows
 SET query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 0;
 SET use_hash_table_stats_for_join_reordering = 0, collect_hash_table_stats_during_joins = 0;
 SET parallel_hash_join_threshold = 0;

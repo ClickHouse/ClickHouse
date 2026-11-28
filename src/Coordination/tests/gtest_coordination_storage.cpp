@@ -1203,13 +1203,13 @@ TEST_P(CoordinationTest, TestRemoveRecursiveAcls)
         EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK) << "Failed to add auth to session";
     }
 
-    const auto create = [&](const String & path)
+    const auto create = [&](const String & path, int32_t permissions = ACL::Create)
     {
         int new_zxid = ++zxid;
 
         const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
         create_request->path = path;
-        create_request->acls = {{.permissions = ACL::Create, .scheme = "auth", .id = ""}};
+        create_request->acls = {{.permissions = permissions, .scheme = "auth", .id = ""}};
 
         storage.preprocessRequest(create_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(create_request, 1, new_zxid);
@@ -1236,6 +1236,52 @@ TEST_P(CoordinationTest, TestRemoveRecursiveAcls)
 
         EXPECT_EQ(responses.size(), 1);
         EXPECT_EQ(responses[0].response->error, Coordination::Error::ZNOAUTH);
+    }
+
+    const auto remove_recursive = [&](const String & path, uint32_t limit)
+    {
+        int new_zxid = ++zxid;
+
+        auto remove_request = std::make_shared<ZooKeeperRemoveRecursiveRequest>();
+        remove_request->path = path;
+        remove_request->remove_nodes_limit = limit;
+
+        storage.preprocessRequest(remove_request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
+        auto responses = storage.processRequest(remove_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error;
+    };
+
+    /// Exceeding `remove_nodes_limit` wins over a missing Delete permission,
+    /// whatever node the walk reaches first.
+    for (uint32_t limit = 1; limit <= 3; ++limit)
+        EXPECT_EQ(remove_recursive("/A", limit), Coordination::Error::ZNOTEMPTY) << "/A limit " << limit;
+
+    create("/E", ACL::All);
+    create("/E/F", ACL::All & ~ACL::Delete);
+    create("/E/F/G", ACL::All);
+    create("/E/F/G/H", ACL::All);
+    create("/E/F/G/I", ACL::All);
+    for (uint32_t limit = 1; limit <= 4; ++limit)
+        EXPECT_EQ(remove_recursive("/E", limit), Coordination::Error::ZNOTEMPTY) << "/E limit " << limit;
+    EXPECT_EQ(remove_recursive("/E", 5), Coordination::Error::ZNOAUTH) << "/E limit 5";
+
+    for (size_t i = 0; i < 16; ++i)
+    {
+        const String root = fmt::format("/S{}", i);
+        create(root, ACL::All);
+        create(root + "/a", ACL::All & ~ACL::Delete);
+        create(root + "/b", ACL::All);
+        create(root + "/b/x", ACL::All);
+        create(root + "/b/y", ACL::All);
+    }
+    for (size_t i = 0; i < 16; ++i)
+    {
+        const String root = fmt::format("/S{}", i);
+        for (uint32_t limit = 1; limit <= 4; ++limit)
+            EXPECT_EQ(remove_recursive(root, limit), Coordination::Error::ZNOTEMPTY) << root << " limit " << limit;
+        EXPECT_EQ(remove_recursive(root, 5), Coordination::Error::ZNOAUTH) << root << " limit 5";
     }
 }
 
@@ -1920,6 +1966,20 @@ TEST_P(CoordinationTest, TestListWithStatOrDataWatches)
         EXPECT_EQ(storage.getTotalWatchesCount(), 1);
         EXPECT_EQ(set("/dir/child"), children_changed);
         EXPECT_TRUE(create("/dir/child5").empty());
+    }
+
+    {
+        SCOPED_TRACE("SetWatches fires a children event for a list watch whose children changed");
+        auto set_watches = std::make_shared<ZooKeeperSetWatchesRequest>();
+        set_watches->zxid = 0;
+        set_watches->child_watches = {"/dir"};
+        EXPECT_EQ(run(set_watches, watcher), children_changed);
+
+        auto set_watches2 = std::make_shared<ZooKeeperSetWatches2Request>();
+        set_watches2->zxid = 0;
+        set_watches2->child_watches = {"/dir"};
+        EXPECT_EQ(run(set_watches2, watcher), children_changed);
+        EXPECT_EQ(storage.getTotalWatchesCount(), 0);
     }
 
     {

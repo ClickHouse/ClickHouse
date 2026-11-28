@@ -9,19 +9,13 @@ doc_type: 'guide'
 import ExampleSetup from '/snippets/ru/_example_setup.mdx';
 import Syntax from '/snippets/ru/_syntax.mdx';
 
-<div id="syntax">
-  ## Синтаксис
-</div>
+## Синтаксис {#syntax}
 
 <Syntax />
 
-<div id="configure-backup-destinations-for-disk">
-  ## Настройка пунктов назначения резервных копий на диске
-</div>
+## Настройка пунктов назначения резервных копий на диске {#configure-backup-destinations-for-disk}
 
-<div id="configure-a-backup-destination">
-  ### Настройка пункта назначения резервной копии для локального диска
-</div>
+### Настройка пункта назначения резервной копии для локального диска {#configure-a-backup-destination}
 
 В примерах ниже пункт назначения резервной копии задается как `Disk('backups', '1.zip')`.
 Чтобы использовать движок резервного копирования `Disk`, сначала добавьте файл, который задает
@@ -51,9 +45,7 @@ import Syntax from '/snippets/ru/_syntax.mdx';
 </clickhouse>
 ```
 
-<div id="backuprestore-using-an-s3-disk">
-  ### Настройка пункта назначения резервной копии для S3-диска
-</div>
+### Настройка пункта назначения резервной копии для S3-диска {#backuprestore-using-an-s3-disk}
 
 Также можно выполнять `BACKUP`/`RESTORE` в S3, настроив S3-диск в
 конфигурации хранилища ClickHouse. Настройте диск следующим образом, добавив файл в
@@ -102,13 +94,9 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
     синтаксис `BACKUP ... TO S3(<endpoint>)`.
 </Note>
 
-<div id="usage-examples">
-  ## Примеры резервного копирования/восстановления на локальный диск
-</div>
+## Примеры резервного копирования/восстановления на локальный диск {#usage-examples}
 
-<div id="backup-and-restore-a-table">
-  ### Резервное копирование и восстановление таблицы
-</div>
+### Резервное копирование и восстановление таблицы {#backup-and-restore-a-table}
 
 <ExampleSetup />
 
@@ -172,9 +160,7 @@ RESTORE TABLE test_db.test_table AS test_db.test_table_renamed FROM Disk('backup
 
 Можно использовать и другие форматы, помимо zip. Подробности см. ниже в разделе [&quot;Резервные копии в tar-архивах&quot;](#backups-as-tar-archives).
 
-<div id="incremental-backups">
-  ### Инкрементные резервные копии на диск
-</div>
+### Инкрементные резервные копии на диск {#incremental-backups}
 
 Базовая резервная копия в ClickHouse — это исходная полная резервная копия, на основе которой создаются последующие
 инкрементные резервные копии. Инкрементные резервные копии хранят только изменения,
@@ -206,9 +192,7 @@ RESTORE TABLE test_db.test_table AS test_db.test_table2
 FROM Disk('backups', 'incremental-a.zip');
 ```
 
-<div id="assign-a-password-to-the-backup">
-  ### Защита резервной копии
-</div>
+### Защита резервной копии {#assign-a-password-to-the-backup}
 
 Для резервной копии, записанной на диск, можно задать пароль.
 Пароль можно указать с помощью настройки `password`.
@@ -235,9 +219,7 @@ FROM Disk('backups', 'password-protected.zip')
 SETTINGS password='qwerty'
 ```
 
-<div id="backups-as-tar-archives">
-  ### Резервные копии в виде tar-архивов
-</div>
+### Резервные копии в виде tar-архивов {#backups-as-tar-archives}
 
 Резервные копии можно хранить не только в zip-архивах, но и в tar-архивах.
 Функциональность такая же, как у zip, за исключением того, что защита паролем
@@ -273,9 +255,7 @@ BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar.gz')
 * `.tzst`
 * `.tar.xz`
 
-<div id="compression-settings">
-  ### Настройки сжатия
-</div>
+### Настройки сжатия {#compression-settings}
 
 Метод и уровень сжатия можно указать с помощью
 настроек `compression_method` и `compression_level` соответственно.
@@ -290,9 +270,7 @@ TO Disk('backups', 'filename.zip')
 SETTINGS compression_method='lzma', compression_level=3
 ```
 
-<div id="restore-specific-partitions">
-  ### Восстановление определённых партиций
-</div>
+### Восстановление определённых партиций {#restore-specific-partitions}
 
 Если нужно восстановить определённые партиции таблицы, их можно явно указать.
 

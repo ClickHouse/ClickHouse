@@ -1,5 +1,181 @@
 [
   {
+    "destination": "/concepts/features/connect-to-clickhouse",
+    "source": "/concepts/features/interfaces/overview"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse",
+    "source": "/concepts/features/interfaces/native-clients-interfaces-index"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/clickhousectl",
+    "source": "/concepts/features/interfaces/cli"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client",
+    "source": "/concepts/features/interfaces/client"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/web-terminal",
+    "source": "/concepts/features/interfaces/web-terminal"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/mcp",
+    "source": "/concepts/features/interfaces/mcp"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/mcp",
+    "source": "/interfaces/mcp"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/mcp",
+    "source": "/concepts/features/connect-to-clickhouse/ai-clients/mcp"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/drivers/adbc",
+    "source": "/concepts/features/interfaces/adbc"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/drivers/adbc",
+    "source": "/interfaces/adbc"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/drivers/odbc",
+    "source": "/concepts/features/interfaces/odbc"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/drivers/odbc",
+    "source": "/concepts/features/interfaces/odbc/index"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/http",
+    "source": "/concepts/features/interfaces/http"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/http/framing-formats",
+    "source": "/concepts/features/interfaces/framing-formats"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/http/framing-formats",
+    "source": "/interfaces/framing-formats"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/native-tcp",
+    "source": "/concepts/features/interfaces/tcp"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/grpc",
+    "source": "/concepts/features/interfaces/grpc"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/arrow-flight",
+    "source": "/concepts/features/interfaces/arrowflight"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/compatibility/mysql",
+    "source": "/concepts/features/interfaces/mysql"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql",
+    "source": "/concepts/features/interfaces/postgresql"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/ssh",
+    "source": "/concepts/features/interfaces/ssh"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/ssh",
+    "source": "/concepts/features/connect-to-clickhouse/protocols/experimental/ssh"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search",
+    "source": "/concepts/features/interfaces/documentation-search"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql",
+    "source": "/concepts/features/interfaces/web-sql"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding",
+    "source": "/concepts/features/interfaces/web-ui-color-coding"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/pinned-columns",
+    "source": "/concepts/features/interfaces/web-ui-pinned-columns"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook",
+    "source": "/concepts/features/interfaces/web-ui-notebook"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook",
+    "source": "/interfaces/web-ui-notebook"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/result-shaping",
+    "source": "/concepts/features/interfaces/web-ui-result-shaping"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/result-shaping",
+    "source": "/interfaces/web-ui-result-shaping"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/sql-console",
+    "source": "/concepts/features/interfaces/sql-console"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/sql-console",
+    "source": "/interfaces/sql-console"
+  },
+  {
+    "destination": "/integrations",
+    "source": "/concepts/features/interfaces/third-party"
+  },
+  {
+    "destination": "/integrations",
+    "source": "/concepts/features/interfaces/third-party/index"
+  },
+  {
+    "destination": "/concepts/features/operations/insert/schema-inference",
+    "source": "/concepts/features/interfaces/schema-inference"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus/metrics",
+    "source": "/concepts/features/interfaces/prometheus-metrics"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus/metrics",
+    "source": "/interfaces/prometheus-metrics"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus",
+    "source": "/concepts/features/interfaces/prometheus"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus",
+    "source": "/integrations/connectors/data-integrations/prometheus"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus",
+    "source": "/concepts/features/connect-to-clickhouse/prometheus/index"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/http",
+    "source": "/concepts/features/connect-to-clickhouse/protocols/http/index"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus/metrics",
+    "source": "/guides/oss/deployment-and-scaling/monitoring/prometheus-metrics"
+  },
+  {
+    "destination": "/concepts/features/connect-to-clickhouse/drivers/odbc",
+    "source": "/interfaces/odbc/index"
+  },
+  {
+    "destination": "/integrations",
+    "source": "/interfaces/third-party/index"
+  },
+  {
     "destination": "/clickstack/self-configured/getting-started/managed",
     "source": "/clickstack/getting-started/managed"
   },
@@ -5476,19 +5652,19 @@
     "source": "/integrations/zingdata"
   },
   {
-    "destination": "/concepts/features/interfaces/overview",
+    "destination": "/concepts/features/connect-to-clickhouse",
     "source": "/interfaces"
   },
   {
-    "destination": "/concepts/features/interfaces/arrowflight",
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/arrow-flight",
     "source": "/interfaces/arrowflight"
   },
   {
-    "destination": "/concepts/features/interfaces/cli",
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/clickhousectl",
     "source": "/interfaces/cli"
   },
   {
-    "destination": "/concepts/features/interfaces/client",
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client",
     "source": "/interfaces/client"
   },
   {
@@ -5908,15 +6084,15 @@
     "source": "/interfaces/go"
   },
   {
-    "destination": "/concepts/features/interfaces/grpc",
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/grpc",
     "source": "/interfaces/grpc"
   },
   {
-    "destination": "/concepts/features/interfaces/http",
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/http",
     "source": "/interfaces/http"
   },
   {
-    "destination": "/concepts/features/interfaces/http",
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/http",
     "source": "/interfaces/http_interface"
   },
   {
@@ -5928,27 +6104,27 @@
     "source": "/interfaces/jdbc"
   },
   {
-    "destination": "/concepts/features/interfaces/mysql",
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/compatibility/mysql",
     "source": "/interfaces/mysql"
   },
   {
-    "destination": "/concepts/features/interfaces/native-clients-interfaces-index",
+    "destination": "/concepts/features/connect-to-clickhouse",
     "source": "/interfaces/natives-clients-and-interfaces"
   },
   {
-    "destination": "/concepts/features/interfaces/odbc",
+    "destination": "/concepts/features/connect-to-clickhouse/drivers/odbc",
     "source": "/interfaces/odbc"
   },
   {
-    "destination": "/concepts/features/interfaces/overview",
+    "destination": "/concepts/features/connect-to-clickhouse",
     "source": "/interfaces/overview"
   },
   {
-    "destination": "/concepts/features/interfaces/postgresql",
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql",
     "source": "/interfaces/postgresql"
   },
   {
-    "destination": "/concepts/features/interfaces/prometheus",
+    "destination": "/concepts/features/connect-to-clickhouse/prometheus",
     "source": "/interfaces/prometheus"
   },
   {
@@ -5956,7 +6132,7 @@
     "source": "/interfaces/python"
   },
   {
-    "destination": "/concepts/features/interfaces/schema-inference",
+    "destination": "/concepts/features/operations/insert/schema-inference",
     "source": "/interfaces/schema-inference"
   },
   {
@@ -5968,15 +6144,15 @@
     "source": "/interfaces/specs/NativeProtocol"
   },
   {
-    "destination": "/concepts/features/interfaces/ssh",
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/ssh",
     "source": "/interfaces/ssh"
   },
   {
-    "destination": "/concepts/features/interfaces/tcp",
+    "destination": "/concepts/features/connect-to-clickhouse/protocols/native-tcp",
     "source": "/interfaces/tcp"
   },
   {
-    "destination": "/concepts/features/interfaces/third-party",
+    "destination": "/integrations",
     "source": "/interfaces/third-party/"
   },
   {
@@ -6012,11 +6188,11 @@
     "source": "/interfaces/third-party_gui"
   },
   {
-    "destination": "/concepts/features/interfaces/third-party",
+    "destination": "/integrations",
     "source": "/interfaces/third_party"
   },
   {
-    "destination": "/concepts/features/interfaces/web-terminal",
+    "destination": "/concepts/features/connect-to-clickhouse/native-tools/web-terminal",
     "source": "/interfaces/web-terminal"
   },
   {
@@ -52840,15 +53016,15 @@
     "source": "/integrations/airflow/migrating-from-airflow-clickhouse-plugin"
   },
   {
-    "destination": "/concepts/features/interfaces/documentation-search",
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search",
     "source": "/interfaces/documentation-search"
   },
   {
-    "destination": "/concepts/features/interfaces/web-sql",
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql",
     "source": "/interfaces/web-sql"
   },
   {
-    "destination": "/concepts/features/interfaces/web-ui-color-coding",
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding",
     "source": "/interfaces/web-ui-color-coding"
   },
   {
@@ -52932,7 +53108,7 @@
     "source": "/use-cases/observability/clickstack/demo-days/2026/2026-06-12"
   },
   {
-    "destination": "/concepts/features/interfaces/web-ui-pinned-columns",
+    "destination": "/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/pinned-columns",
     "source": "/interfaces/web-ui-pinned-columns"
   },
   {
@@ -57414,5 +57590,237 @@
   {
     "source": "/products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
     "destination": "/products/cloud/api-reference/prometheus/get-organization-postgresql-metrics"
+  },
+  {
+    "destination": "/ar/get-started/sample-datasets/stackoverflow",
+    "source": "/ar/getting-started/example-datasets/stackoverflow"
+  },
+  {
+    "destination": "/ar/reference/system-tables/filesystem_cache_settings",
+    "source": "/ar/operations/system-tables/filesystem_cache_settings"
+  },
+  {
+    "destination": "/ar/concepts/features/configuration/server-config/configuration-files",
+    "source": "/ar/operations/configuration-files"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/postgres/ordering-keys",
+    "source": "/ar/integrations/clickpipes/postgres/ordering_keys"
+  },
+  {
+    "destination": "/ar/products/cloud/features/admin-features/api/openapi",
+    "source": "/ar/cloud/manage/openapi"
+  },
+  {
+    "destination": "/ar/products/cloud/features/admin-features/api/api-overview",
+    "source": "/ar/cloud/manage/api/api-overview"
+  },
+  {
+    "destination": "/ar/products/cloud/reference/security/console-roles",
+    "source": "/ar/cloud/security/console-roles"
+  },
+  {
+    "destination": "/ar/products/cloud/guides/deletion-protection",
+    "source": "/ar/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/ar/reference/functions/regular-functions/udf",
+    "source": "/ar/sql-reference/functions/udf"
+  },
+  {
+    "destination": "/ar/reference/settings/session-settings",
+    "source": "/ar/operations/settings/settings"
+  },
+  {
+    "destination": "/ar/concepts/features/performance/prewhere",
+    "source": "/ar/optimize/prewhere"
+  },
+  {
+    "destination": "/es/get-started/sample-datasets/stackoverflow",
+    "source": "/es/getting-started/example-datasets/stackoverflow"
+  },
+  {
+    "destination": "/es/reference/system-tables/filesystem_cache_settings",
+    "source": "/es/operations/system-tables/filesystem_cache_settings"
+  },
+  {
+    "destination": "/es/concepts/features/configuration/server-config/configuration-files",
+    "source": "/es/operations/configuration-files"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/postgres/ordering-keys",
+    "source": "/es/integrations/clickpipes/postgres/ordering_keys"
+  },
+  {
+    "destination": "/es/products/cloud/features/admin-features/api/openapi",
+    "source": "/es/cloud/manage/openapi"
+  },
+  {
+    "destination": "/es/products/cloud/features/admin-features/api/api-overview",
+    "source": "/es/cloud/manage/api/api-overview"
+  },
+  {
+    "destination": "/es/products/cloud/reference/security/console-roles",
+    "source": "/es/cloud/security/console-roles"
+  },
+  {
+    "destination": "/es/products/cloud/guides/deletion-protection",
+    "source": "/es/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/es/reference/functions/regular-functions/udf",
+    "source": "/es/sql-reference/functions/udf"
+  },
+  {
+    "destination": "/es/reference/settings/session-settings",
+    "source": "/es/operations/settings/settings"
+  },
+  {
+    "destination": "/es/concepts/features/performance/prewhere",
+    "source": "/es/optimize/prewhere"
+  },
+  {
+    "destination": "/fr/get-started/sample-datasets/stackoverflow",
+    "source": "/fr/getting-started/example-datasets/stackoverflow"
+  },
+  {
+    "destination": "/fr/reference/system-tables/filesystem_cache_settings",
+    "source": "/fr/operations/system-tables/filesystem_cache_settings"
+  },
+  {
+    "destination": "/fr/concepts/features/configuration/server-config/configuration-files",
+    "source": "/fr/operations/configuration-files"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/postgres/ordering-keys",
+    "source": "/fr/integrations/clickpipes/postgres/ordering_keys"
+  },
+  {
+    "destination": "/fr/products/cloud/features/admin-features/api/openapi",
+    "source": "/fr/cloud/manage/openapi"
+  },
+  {
+    "destination": "/fr/products/cloud/features/admin-features/api/api-overview",
+    "source": "/fr/cloud/manage/api/api-overview"
+  },
+  {
+    "destination": "/fr/products/cloud/reference/security/console-roles",
+    "source": "/fr/cloud/security/console-roles"
+  },
+  {
+    "destination": "/fr/products/cloud/guides/deletion-protection",
+    "source": "/fr/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/fr/reference/functions/regular-functions/udf",
+    "source": "/fr/sql-reference/functions/udf"
+  },
+  {
+    "destination": "/fr/reference/settings/session-settings",
+    "source": "/fr/operations/settings/settings"
+  },
+  {
+    "destination": "/fr/concepts/features/performance/prewhere",
+    "source": "/fr/optimize/prewhere"
+  },
+  {
+    "destination": "/ja/get-started/sample-datasets/stackoverflow",
+    "source": "/ja/getting-started/example-datasets/stackoverflow"
+  },
+  {
+    "destination": "/ja/reference/system-tables/filesystem_cache_settings",
+    "source": "/ja/operations/system-tables/filesystem_cache_settings"
+  },
+  {
+    "destination": "/ja/concepts/features/configuration/server-config/configuration-files",
+    "source": "/ja/operations/configuration-files"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/postgres/ordering-keys",
+    "source": "/ja/integrations/clickpipes/postgres/ordering_keys"
+  },
+  {
+    "destination": "/ja/products/cloud/features/admin-features/api/openapi",
+    "source": "/ja/cloud/manage/openapi"
+  },
+  {
+    "destination": "/ja/products/cloud/features/admin-features/api/api-overview",
+    "source": "/ja/cloud/manage/api/api-overview"
+  },
+  {
+    "destination": "/ja/products/cloud/reference/security/console-roles",
+    "source": "/ja/cloud/security/console-roles"
+  },
+  {
+    "destination": "/ja/products/cloud/guides/deletion-protection",
+    "source": "/ja/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/ja/reference/functions/regular-functions/udf",
+    "source": "/ja/sql-reference/functions/udf"
+  },
+  {
+    "destination": "/ja/reference/settings/session-settings",
+    "source": "/ja/operations/settings/settings"
+  },
+  {
+    "destination": "/ja/concepts/features/performance/prewhere",
+    "source": "/ja/optimize/prewhere"
+  },
+  {
+    "destination": "/ko/products/cloud/guides/deletion-protection",
+    "source": "/ko/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/pt-BR/get-started/sample-datasets/stackoverflow",
+    "source": "/pt-BR/getting-started/example-datasets/stackoverflow"
+  },
+  {
+    "destination": "/pt-BR/reference/system-tables/filesystem_cache_settings",
+    "source": "/pt-BR/operations/system-tables/filesystem_cache_settings"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/configuration/server-config/configuration-files",
+    "source": "/pt-BR/operations/configuration-files"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/postgres/ordering-keys",
+    "source": "/pt-BR/integrations/clickpipes/postgres/ordering_keys"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/admin-features/api/openapi",
+    "source": "/pt-BR/cloud/manage/openapi"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/admin-features/api/api-overview",
+    "source": "/pt-BR/cloud/manage/api/api-overview"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/reference/security/console-roles",
+    "source": "/pt-BR/cloud/security/console-roles"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/guides/deletion-protection",
+    "source": "/pt-BR/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/pt-BR/reference/functions/regular-functions/udf",
+    "source": "/pt-BR/sql-reference/functions/udf"
+  },
+  {
+    "destination": "/pt-BR/reference/settings/session-settings",
+    "source": "/pt-BR/operations/settings/settings"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/performance/prewhere",
+    "source": "/pt-BR/optimize/prewhere"
+  },
+  {
+    "destination": "/ru/products/cloud/guides/deletion-protection",
+    "source": "/ru/cloud/manage/deletion-protection"
+  },
+  {
+    "destination": "/zh/products/cloud/guides/deletion-protection",
+    "source": "/zh/cloud/manage/deletion-protection"
   }
 ]

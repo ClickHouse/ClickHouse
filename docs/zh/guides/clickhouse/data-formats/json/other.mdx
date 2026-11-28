@@ -14,9 +14,7 @@ doc_type: 'reference'
   同一 schema 中的不同对象可以采用不同技术。例如，某些对象最适合使用 `String 类型`，另一些则最适合使用 `Map 类型`。请注意，一旦使用了 `String 类型`，就无需再对 schema 做进一步决策。反过来，也可以在 `Map` key 中嵌套子对象——包括用 `String` 表示的 JSON——如下所示：
 </Info>
 
-<div id="using-string">
-  ## 使用 String 类型
-</div>
+## 使用 字符串 类型 {#using-string}
 
 如果对象变化非常频繁、结构不可预测，并且包含任意嵌套对象，则应使用 `String` 类型。可以像下面演示的那样，在查询时使用 JSON 函数提取值。
 
@@ -39,7 +37,7 @@ CREATE TABLE people
     `tags` String
 )
 ENGINE = MergeTree
-ORDER BY username
+ORDER BY username;
 
 INSERT INTO people FORMAT JSONEachRow
 {"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
@@ -167,9 +165,7 @@ String 函数比使用索引进行显式类型转换明显更慢 (&gt; 10x) 。�
 
 这种方法的灵活性显然是以性能和语法复杂度为代价的，因此只应将其用于 schema 中高度动态的对象。
 
-<div id="simple-json-functions">
-  ### 简单 JSON 函数
-</div>
+### 简单 JSON 函数 {#simple-json-functions}
 
 上述示例使用的是 JSON* 函数家族。它们使用基于 [simdjson](https://github.com/simdjson/simdjson) 的完整 JSON 解析器，解析严谨，并且能够区分嵌套在不同层级中的同名字段。这些函数能够处理语法正确但格式不规范的 JSON，例如键之间有两个空格。
 

@@ -25,7 +25,7 @@ The ratios are not regressions. Many of these tests measure a MergeTree feature 
 
 | # | Test | Queries | MergeTree, s | `IcebergLocal`, s | `IcebergLocal` slowdown | Worst query (local) | `IcebergS3`, s | `IcebergS3` slowdown | Worst query (S3) |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | `ie_join_selectivity_key_choice` | 1 | 0.014 | 2.42 | 175x | 175x (#0) | 2.39 | 173x | 173x (#0) |
+| 1 | `inequality_join_selectivity_key_choice` | 1 | 0.014 | 2.42 | 175x | 175x (#0) | 2.39 | 173x | 173x (#0) |
 | 2 | `lightweight_delete` | 1 | 0.006 | 0.480 | 76x | 76x (#0) | 0.482 | 77x | 77x (#0) |
 | 3 | `propagate_predicate_across_equi_join` | 5 | 0.653 | 3.18 | 49x | 167x (#0) | 3.49 | 53x | 183x (#0) |
 | 4 | `point_in_polygon` (`Memory`) | 1 | 0.089 | 3.22 | 36x | 36x (#0) | 3.49 | 39x | 39x (#0) |

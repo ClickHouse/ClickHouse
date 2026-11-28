@@ -3,7 +3,7 @@
 #include <functional>
 #include <optional>
 #include <span>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <base/types.h>
@@ -49,12 +49,12 @@ using JoinCardinalityReader = std::function<std::optional<UInt64>(const StepAnal
 /// The stages are read before all of it, to gather the per-stage timings the context carries.
 struct StepAnalyzer
 {
-    /// `IQueryPlanStep::getUniqID` of the step this analyses.
-    String id;
+    /// `IQueryPlanStep::getStepIndex` of the step this analyses.
+    UInt64 id = 0;
 
     /// The steps below this one: its own children, then the roots of the child plans it holds.
     /// Filled by the walk, which is the only thing that knows the shape.
-    std::vector<String> children;
+    VectorWithMemoryTracking<UInt64> children;
 
     /// What the passes that run across steps need to know about this one.
     ///
@@ -65,7 +65,7 @@ struct StepAnalyzer
     bool is_creating_set = false;
 
     /// Every step has at least the one unnamed stage.
-    std::vector<StepGroup> groups{{}};
+    VectorWithMemoryTracking<StepGroup> groups{{}};
 
     /// Empty when the step has nothing to report of its own.
     StepReporter reporter;

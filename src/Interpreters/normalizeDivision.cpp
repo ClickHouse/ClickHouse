@@ -9,6 +9,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -22,6 +23,8 @@ namespace
 
 bool normalize(IAST & ast, bool exact, const ContextPtr & context)
 {
+    checkStackSize();
+
     /// An explicit `ATTACH` definition may contain expressions from an older server.
     if (const auto * create = ast.as<ASTCreateQuery>(); create && create->attach)
         return false;
