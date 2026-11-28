@@ -10354,6 +10354,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
     /// A range for log entry to remove parts from the source table (myself).
     auto zookeeper = getZooKeeper();
+    /// The destination may use another (auxiliary) ZooKeeper.
+    auto dest_zookeeper = dest_table_storage->getZooKeeper();
     /// Retry if alter_partition_version changes
     for (size_t retry = 0; retry < 1000; ++retry)
     {
@@ -10418,7 +10420,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         /// Clone parts into destination table.
         String dest_alter_partition_version_path = dest_table_storage->zookeeper_path + "/alter_partition_version";
         Coordination::Stat dest_alter_partition_version_stat;
-        zookeeper->get(dest_alter_partition_version_path, &dest_alter_partition_version_stat);
+        dest_zookeeper->get(dest_alter_partition_version_path, &dest_alter_partition_version_stat);
         std::vector<scope_guard> temporary_parts_locks;
 
         for (const auto & src_part : src_all_parts)
@@ -10433,7 +10435,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
             auto lock = dest_table_storage->allocateBlockNumber(
                 partition_id,
-                zookeeper,
+                dest_zookeeper,
                 block_id_path);
 
             if (!lock.isLocked())
@@ -10542,7 +10544,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 for (const auto & dst_part : dst_parts)
                     dest_table_storage->lockSharedData(*dst_part, false, /*hardlinked_files*/ {});
 
-                Coordination::Error code = zookeeper->tryMulti(ops, op_results);
+                Coordination::Error code = dest_zookeeper->tryMulti(ops, op_results);
                 if (code == Coordination::Error::ZBADVERSION)
                     continue;
                 zkutil::KeeperMultiException::check(code, ops, op_results);
