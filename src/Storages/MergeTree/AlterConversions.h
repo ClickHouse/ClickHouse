@@ -3,6 +3,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -133,7 +134,7 @@ private:
     NameSet dropped_columns;
 
     /// New name -> old name of the columns cleared after a rename, whose entries were erased from `rename_map`.
-    NameToNameMap cleared_renamed_columns;
+    UnorderedMapWithMemoryTracking<String, String> cleared_renamed_columns;
 
     /// Every name used by a pending `RENAME COLUMN` (both sides) or `DROP COLUMN` command, as written
     /// in the command, before the normalization done for `rename_map` and `dropped_columns`.
