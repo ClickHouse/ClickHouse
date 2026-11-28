@@ -37,6 +37,16 @@ struct QuantileReservoirSampler
 
     void add(const Value & x) { data.insert(x); }
 
+    void addMany(const Value * __restrict values, size_t count) { data.insertMany(values, count); }
+
+    void addManySame(const Value & value, size_t count) { data.insertManySame(value, count); }
+
+    template <bool keep_nonzero>
+    void addManyFiltered(const Value * __restrict values, size_t count, const UInt8 * __restrict mask)
+    {
+        data.template insertManyFiltered<keep_nonzero>(values, count, mask);
+    }
+
     template <typename Weight>
     void add(const Value &, const Weight &)
     {
