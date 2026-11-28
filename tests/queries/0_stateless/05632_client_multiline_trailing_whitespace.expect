@@ -1,0 +1,53 @@
+#!/usr/bin/expect -f
+
+set basedir [file dirname $argv0]
+set timeout 5
+log_user 0
+expect_after {
+    timeout { puts stderr "Timed out waiting for client output"; exit 1 }
+    eof { puts stderr "Client exited unexpectedly"; exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh && \$CLICKHOUSE_LOCAL --interactive --multiline --highlight 1 --disable_suggestion --output-format-pretty-color 0 --history_file=\$CLICKHOUSE_TMP/[file tail $argv0].history"
+expect ":) "
+
+# Enter should read the current buffer even when highlighting has not refreshed yet.
+send -- "SELECT 42 FORMAT TSV; \r"
+expect -re {42\r?\n}
+expect ":) "
+
+send -- "SELECT 43 AS answer\\G \r"
+expect "Row 1:"
+expect -re {answer: +43}
+expect ":) "
+
+send -- "\033\[200~SELECT 45 FORMAT TSV;\n\033\[201~\r"
+expect -re {45\r?\n}
+expect ":) "
+
+send -- "SELECT\r"
+send -- " 44 FORMAT TSV;\r"
+expect -re {44\r?\n}
+expect ":) "
+
+# A delimiter inside an open SQL token must allow another line of input.
+send -- "SELECT hex('a; \r"
+send -- "b') FORMAT TSV;\r"
+expect -re {613B200A62\r?\n}
+expect ":) "
+
+send -- "SELECT 46 /* ; \r"
+send -- "*/ FORMAT TSV;\r"
+expect -re {46\r?\n}
+expect ":) "
+
+send -- "CREATE TABLE multiline_input (s String) ENGINE = Memory;\r"
+expect ":) "
+send -- "\033\[200~INSERT INTO multiline_input FORMAT TSV\n'raw; \033\[201~\r"
+expect ":) "
+send -- "SELECT countIf(startsWith(s, char(39))) + 46 FROM multiline_input FORMAT TSV;\r"
+expect -re {47\r?\n}
+expect ":) "
+
+send -- "\004"
+expect eof
