@@ -58,13 +58,9 @@ HTTP Sink コネクタはデータ型に依存しないため、Kafka のスキ�
     Kafka トピックと HTTP Sink コネクタのインスタンスを作成します。
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![HTTP Sink コネクタの作成方法を示す Confluent Cloud のインターフェイス](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
-
-    </Frame>
-
+      <Frame>
+        ![HTTP Sink コネクタの作成方法を示す Confluent Cloud のインターフェイス](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
+      </Frame>
     </div>
 
     <br />
@@ -83,13 +79,9 @@ HTTP Sink コネクタはデータ型に依存しないため、Kafka のスキ�
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![HTTP Sink コネクタの認証設定を示す Confluent Cloud のインターフェイス](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
-
-    </Frame>
-
+      <Frame>
+        ![HTTP Sink コネクタの認証設定を示す Confluent Cloud のインターフェイス](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
+      </Frame>
     </div>
 
     <br />
@@ -105,13 +97,9 @@ HTTP Sink コネクタはデータ型に依存しないため、Kafka のスキ�
         * `Maximum Reties` - デフォルトの (10) で適切ですが、より堅牢に再試行したい場合は調整してもかまいません。
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![HTTP Sink コネクタの詳細設定オプションを示す Confluent Cloud のインターフェイス](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
-
-    </Frame>
-
+      <Frame>
+        ![HTTP Sink コネクタの詳細設定オプションを示す Confluent Cloud のインターフェイス](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -119,13 +107,9 @@ HTTP Sink コネクタはデータ型に依存しないため、Kafka のスキ�
     HTTP Sink で設定したトピックにメッセージを作成します
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Kafka トピックでテストメッセージを作成する方法を示す Confluent Cloud のインターフェイス](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Kafka トピックでテストメッセージを作成する方法を示す Confluent Cloud のインターフェイス](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
+      </Frame>
     </div>
 
     <br />
@@ -135,11 +119,11 @@ HTTP Sink コネクタはデータ型に依存しないため、Kafka のスキ�
 </Steps>
 
 <div id="troubleshooting">
-  ### トラブルシューティング
+  ### トラブルシューティング {#troubleshooting}
 </div>
 
 <div id="http-sink-doesnt-batch-messages">
-  #### HTTP Sink がメッセージをバッチ化しない
+  #### HTTP Sink がメッセージをバッチ化しない {#http-sink-doesnt-batch-messages}
 </div>
 
 [Sink のドキュメント](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp)より:
@@ -150,11 +134,11 @@ HTTP Sink コネクタはデータ型に依存しないため、Kafka のスキ�
 2. HTTP API の URL にパラメータを追加すると、レコードごとに一意の URL になることがあります。そのため、追加の URL パラメータを使用するとバッチ化は無効になります。
 
 <div id="400-bad-request">
-  #### 400 Bad Request
+  #### 400 Bad Request {#400-bad-request}
 </div>
 
 <div id="cannot_parse_quoted_string">
-  ##### CANNOT_PARSE_QUOTED_STRING
+  ##### CANNOT_PARSE_QUOTED_STRING {#cannot_parse_quoted_string}
 </div>
 
 JSONオブジェクトを `String` カラムに挿入する際に、HTTP Sink が次のメッセージを出して失敗する場合:
@@ -166,7 +150,7 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 URL 内で、設定 `input_format_json_read_objects_as_strings=1` を URL エンコードされた文字列 `SETTINGS%20input_format_json_read_objects_as_strings%3D1` として指定します
 
 <div id="load-the-github-dataset-optional">
-  ### GitHub データセットを読み込む (任意)
+  ### GitHub データセットを読み込む (任意) {#load-the-github-dataset-optional}
 </div>
 
 この例では、GitHub データセットの Array フィールドを保持したまま扱います。サンプルでは、空の github トピックがあることを前提とし、Kafka へのメッセージの挿入に [kcat](https://github.com/edenhill/kcat) を使用します。

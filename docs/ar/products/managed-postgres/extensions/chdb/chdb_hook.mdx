@@ -33,18 +33,24 @@ COPY 18
 حمّل chdb&#95;hook بإحدى الطرق التالية بصفتك مستخدماً فائق الصلاحيات، واختر الطريقة
 الأنسب لحالة الاستخدام لديك:
 
+<Note>
+  على ClickHouse Managed Postgres:
+
+  * لا يدعم SQL Console في ClickHouse Cloud حتى الآن الأمر `LOAD 'chdb_hook'`،
+    لكن يمكن تنفيذه عبر psql أو أي اتصال قاعدة بيانات آخر.
+  * لا يُسمح باستخدام `ALTER SYSTEM` ولا يمكن تعديل `postgresql.conf`، لذا لا تنطبق
+    الأمثلة أدناه التي تعتمد عليهما. استخدم `ALTER DATABASE` أو
+    `ALTER ROLE` بدلاً من ذلك.
+  * يمكنك بدلاً من ذلك التواصل مع [الدعم](https://clickhouse.com/support/program) لإضافة
+    `chdb_hook` إلى إعدادات خدمة Postgres الخاصة بك، ليصبح بعدها قابلاً
+    للاستخدام في SQL Console أيضاً.
+</Note>
+
 * بشكل صريح عبر أمر [LOAD]؛ ويظل سارياً طوال مدة الجلسة:
 
   ```sql
   LOAD 'chdb_hook';
   ```
-
-  <Note>
-    لا يدعم SQL Console في ClickHouse Cloud حتى الآن الأمر `LOAD 'chdb_hook'`،
-    لكن يمكن تنفيذه عبر psql أو أي اتصال قاعدة بيانات آخر.
-    وبخلاف ذلك، تواصل مع ممثل الدعم لديك لإضافته إلى إعدادات خدمة Postgres
-    الخاصة بك، ليصبح بعدها قابلاً للاستخدام في SQL Console.
-  </Note>
 
 * لجميع الجلسات، عبر الإعداد [session&#95;preload&#95;libraries] في ملف
   `postgresql.conf`:
@@ -763,7 +769,7 @@ SET chdb_hook.max_parsing_threads = 2;
 * يزيد رقم الإصدار الفرعي (minor version) عند حدوث تغييرات SQL متوافقة مع الإصدارات السابقة
 * يزيد رقم إصدار التصحيح (patch) عند التغييرات التي تمسّ الملف الثنائي (binary) وحده
 
-بعد التثبيت، يمكن الاستعلام عن الإصدار في PostgreSQL باستخدام دالة
+بعد التثبيت، يُظهر PostgreSQL الإصدار عبر دالة
 [`pg_get_loaded_modules()`] المتوفرة في Postgres 18.
 
 ```sql

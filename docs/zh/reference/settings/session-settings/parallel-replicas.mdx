@@ -133,6 +133,16 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 如果为 true，ClickHouse 也会对非复制的 MergeTree 表使用并行副本算法
 
+## parallel_replicas_for_object_storage_tables {#parallel_replicas_for_object_storage_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置，用于通过并行副本读取使用对象存储引擎的表。"}]}]} />
+
+对于使用对象存储引擎且具有对应 `-Cluster` 表函数 (`S3`、`AzureBlobStorage`、`HDFS`、`Iceberg`、`IcebergS3`、`IcebergAzure`、`IcebergHDFS`、`IcebergLocal`、`DeltaLake`、`DeltaLakeS3`、`DeltaLakeAzure`、`Hudi`、`Paimon`、`PaimonS3`、`PaimonAzure`、`PaimonHDFS`) 的表，在 `cluster_for_parallel_replicas` 的各个副本上进行读取，方式与 `parallel_replicas_for_cluster_engines` 处理表函数时相同。若 `parallel_replicas_for_cluster_engines` 已禁用，则此设置不生效。
+
+只有存在该表的副本才会参与读取，且该表在每个副本上的定义必须一致。
+
 ## parallel_replicas_for_queries_with_multiple_tables {#parallel_replicas_for_queries_with_multiple_tables}
 
 <BetaBadge />

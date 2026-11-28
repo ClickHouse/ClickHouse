@@ -34,6 +34,14 @@ namespace FailPoints
 namespace Silk
 {
 
+void throwIoError(int code, const char * operation)
+{
+    if (code == ECONNRESET || code == ECONNABORTED || code == ETIMEDOUT)
+        Poco::Net::SocketImpl::error(code);
+    else
+        Poco::Net::SocketImpl::error(code, operation);
+}
+
 FiberStreamSocketImpl::FiberStreamSocketImpl(int sockfd)
     : Poco::Net::StreamSocketImpl(sockfd)
 {
@@ -109,7 +117,7 @@ bool FiberStreamSocketImpl::pollImpl(Poco::Timespan & timeout, int mode)
     timeout = (elapsed < timeout) ? (timeout - elapsed) : Poco::Timespan(0);
 
     if (r)
-        error(r, "poll");
+        throwIoError(r, "poll");
 
     return triggered != 0;
 }
@@ -175,7 +183,7 @@ int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)
         }
 
         if (r)
-            error(r, "send");
+            throwIoError(r, "send");
 
         useSendThrottlerBudget(static_cast<int>(bytes_written));
 
@@ -221,7 +229,7 @@ int FiberStreamSocketImpl::receiveBytes(void * buffer, int length, int flags)
     }
 
     if (r)
-        error(r, "recv");
+        throwIoError(r, "recv");
 
     useRecvThrottlerBudget(static_cast<int>(bytes_read));
 

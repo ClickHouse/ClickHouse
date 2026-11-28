@@ -8,7 +8,11 @@ from pathlib import Path
 
 import pytest  # pylint:disable=import-error; for style check
 
-from helpers.cluster import arm_per_test_coverage_for_module, run_and_check
+from helpers.cluster import (
+    arm_per_test_coverage_for_module,
+    describe_lost_network_interfaces,
+    run_and_check,
+)
 
 # This is a workaround for a problem with logging in pytest [1].
 #
@@ -143,6 +147,15 @@ def cleanup_environment():
 def per_test_coverage_module():
     # A cluster shared between modules keeps running into the next one.
     arm_per_test_coverage_for_module()
+    yield
+
+
+@pytest.fixture(autouse=True)
+def lost_network_interface_guard():
+    # A test on a cluster with an instance docker unplugged would fail on it without saying so.
+    lost = describe_lost_network_interfaces()
+    if lost:
+        raise Exception(lost)
     yield
 
 
