@@ -416,10 +416,40 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
     }
 }
 
+/// Name to read for each `header` entry in a block from a pre-26.5 peer. An entry with no legacy spelling
+/// keeps its name: a planner-generated column such as `__grouping_set` is spelled alike by both versions.
+static Names buildLegacySourceNames(const Block & header, const LegacyHeaderNames & legacy_names)
+{
+    Names source_names;
+    source_names.reserve(header.columns());
+    NameToNameMap source_to_entry_name;
+
+    for (const auto & elem : header)
+    {
+        if (legacy_names.ambiguous.contains(elem.name))
+            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                "Cannot resolve column {} in a block received from a server older than {}: its plan column identifier "
+                "has more than one pre-{} spelling", elem.name, legacy_quoted_identifiers_version.toString(),
+                legacy_quoted_identifiers_version.toString());
+
+        auto it = legacy_names.current_to_legacy.find(elem.name);
+        const auto & source_name = source_names.emplace_back(it == legacy_names.current_to_legacy.end() ? elem.name : it->second);
+
+        auto [claimed, inserted] = source_to_entry_name.emplace(source_name, elem.name);
+        if (!inserted && claimed->second != elem.name)
+            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                "Columns of a block received from a server older than {} do not map one to one onto the expected columns: {}",
+                legacy_quoted_identifiers_version.toString(), header.dumpNames());
+    }
+
+    return source_names;
+}
+
 /** If we receive a block with slightly different column types, or with excessive columns,
   *  we will adapt it to expected structure.
+  * `source_names`, if given, holds the name to read for each header entry instead of its own name.
   */
-static Block adaptBlockStructure(Block block, const Block & header)
+static Block adaptBlockStructure(Block block, const Block & header, const Names * source_names = nullptr)
 {
     /// Columns may be moved out of `block` below, so compute the number of rows up front.
     /// The block can have rows and no columns: the columns synthesized below are sized from that number.
@@ -438,10 +468,11 @@ static Block adaptBlockStructure(Block block, const Block & header)
     VectorWithMemoryTracking<size_t> remaining_uses(block.columns());
     {
         UnorderedMapWithMemoryTracking<std::string_view, size_t> occurrences;
-        for (const auto & elem : header)
+        for (size_t header_position = 0; header_position < header.columns(); ++header_position)
         {
-            const size_t occurrence = occurrences[elem.name]++;
-            auto it = block_positions_by_name.find(elem.name);
+            const auto & source_name = source_names ? (*source_names)[header_position] : header.getByPosition(header_position).name;
+            const size_t occurrence = occurrences[source_name]++;
+            auto it = block_positions_by_name.find(source_name);
             if (it == block_positions_by_name.end())
             {
                 source_positions.emplace_back();
@@ -492,7 +523,8 @@ static Block adaptBlockStructure(Block block, const Block & header)
         else
         {
             if (!source_position)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}", elem.name, block.dumpNames());
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}",
+                    source_names ? (*source_names)[header_position] : elem.name, block.dumpNames());
 
             auto & col = block.getByPosition(*source_position);
             const bool is_last_use = --remaining_uses[*source_position] == 0;
@@ -521,13 +553,13 @@ static Block adaptBlockStructure(Block block, const Block & header)
     return res;
 }
 
-Block RemoteQueryExecutor::adaptBlock(Block block) const
+Block RemoteQueryExecutor::adaptBlock(Block block, const Packet & packet)
 {
     /// Without a header, the caller takes the blocks as the remote server sends them.
     if (!header)
         return block;
 
-    return adaptBlockStructure(std::move(block), *header);
+    return adaptBlockStructure(std::move(block), *header, getLegacySourceNames(packet));
 }
 
 OpenTelemetry::SpanAttributes RemoteQueryExecutor::getFragmentSpanAttributes() const
@@ -995,6 +1027,18 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 #endif
 }
 
+const Names * RemoteQueryExecutor::getLegacySourceNames(const Packet & packet)
+{
+    if (legacy_header_names.empty()
+        || packet.origin_version == VersionNumber{}
+        || packet.origin_version >= legacy_quoted_identifiers_version)
+        return nullptr;
+
+    if (!legacy_source_names)
+        legacy_source_names = buildLegacySourceNames(*header, legacy_header_names);
+    return &*legacy_source_names;
+}
+
 void RemoteQueryExecutor::throwIfColumnLessResultFromOldServer() const
 {
     /// The result of the remote query has no columns, so its rows can travel only as the row count of
@@ -1058,7 +1102,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             if (!packet.block.empty() && (packet.block.rows() > 0))
             {
                 got_data_from_replica = true;
-                return ReadResult(adaptBlock(std::move(packet.block)));
+                return ReadResult(adaptBlock(std::move(packet.block), packet));
             }
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
@@ -1119,13 +1163,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
         case Protocol::Server::Totals:
             totals = std::move(packet.block);
             if (!totals.empty())
-                totals = adaptBlock(std::move(totals));
+                totals = adaptBlock(std::move(totals), packet);
             break;
 
         case Protocol::Server::Extremes:
             extremes = std::move(packet.block);
             if (!extremes.empty())
-                extremes = adaptBlock(std::move(extremes));
+                extremes = adaptBlock(std::move(extremes), packet);
             break;
 
         case Protocol::Server::Log:

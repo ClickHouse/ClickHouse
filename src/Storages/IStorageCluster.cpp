@@ -15,6 +15,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Planner/CollectLegacyActionNodeNames.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
@@ -205,8 +206,11 @@ void IStorageCluster::read(
     removeGroupingFunctionSpecializations(query_tree_to_send);
     ASTPtr query_to_send = queryNodeToDistributedSelectQuery(query_tree_to_send);
 
-    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
-        query_to_send, context, SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved());
+    PlannerContextPtr planner_context;
+    /// analyze() is required: without it, planning re-enters this read and recurses.
+    InterpreterSelectQueryAnalyzer interpreter(
+        query_to_send, context, SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved().analyze());
+    std::tie(sample_block, planner_context) = interpreter.getSampleBlockAndPlannerContext();
 
     /// The nodes that will run the query are the nodes of this storage's own cluster.
     updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, getClusterName(), /*add_structure_and_format=*/true);
@@ -239,7 +243,8 @@ void IStorageCluster::read(
         std::move(query_to_send),
         processed_stage,
         cluster,
-        log);
+        log,
+        std::move(planner_context));
 
     query_plan.addStep(std::move(reading));
 }
@@ -324,6 +329,9 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         /// The cluster of a *Cluster function uses every replica as a shard, so `shard_num`
         /// identifies the fan-out entry rather than a shard of the original cluster definition.
         remote_query_executor->setShardScope({storage->getClusterName(), shard_info.shard_num});
+        auto legacy_header_names = buildLegacyHeaderNames(*getOutputHeader(), planner_context, processed_stage);
+        if (!legacy_header_names.empty())
+            remote_query_executor->setLegacyHeaderNames(std::move(legacy_header_names));
         Pipe pipe{std::make_shared<RemoteSource>(
             remote_query_executor,
             add_agg_info,

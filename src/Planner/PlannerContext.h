@@ -34,6 +34,38 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
 using RawTableExpressionDataMap = std::unordered_map<QueryTreeNodePtr, TableExpressionData *>;
 
+/// Pre-26.5 spellings of this query's action node names, collected per query node while planning.
+class LegacyActionNodeNames
+{
+public:
+    enum class State : uint8_t
+    {
+        Absent,
+        Unchanged,
+        Unique,
+        /// Several different legacy spellings: the owner is unknown, so a caller must refuse the name.
+        Ambiguous,
+    };
+
+    struct Lookup
+    {
+        State state = State::Absent;
+        String legacy_name;
+    };
+
+    void add(const String & current_name, const String & legacy_name);
+
+    void addAmbiguous(const String & current_name);
+
+    [[nodiscard]] Lookup getLegacyName(const String & current_name) const;
+
+    [[nodiscard]] bool hasNoCandidates() const { return current_to_legacy.empty(); }
+
+private:
+    /// A name mapped to itself is Unchanged; an empty optional is Ambiguous.
+    std::unordered_map<String, std::optional<String>> current_to_legacy;
+};
+
 class GlobalPlannerContext
 {
 public:
@@ -91,12 +123,17 @@ public:
     /// Generate a unique integer id, used to disambiguate temporary table expressions
     size_t nextUniqueId() { return next_unique_id++; }
 
+    LegacyActionNodeNames & getLegacyActionNodeNames() noexcept { return legacy_action_node_names; }
+    [[nodiscard]] const LegacyActionNodeNames & getLegacyActionNodeNames() const noexcept { return legacy_action_node_names; }
+
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;
     size_t next_unique_id = 0;
 
     /// Planner contexts that own the data `shared_table_expression_data` points to.
     std::vector<PlannerContextPtr> shared_table_expression_data_owners;
+
+    LegacyActionNodeNames legacy_action_node_names;
 
     /// Table expression node to data map for correlated columns sources
     RawTableExpressionDataMap shared_table_expression_data;

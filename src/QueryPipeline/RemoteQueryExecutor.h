@@ -5,6 +5,7 @@
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/UniqueLock.h>
+#include <Core/LegacyHeaderNames.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Interpreters/ClientInfo.h>
@@ -243,6 +244,13 @@ public:
 
     void setDistributedFanout(size_t total_connections) { distributed_fanout = total_connections; }
 
+    /// Pre-26.5 spellings of the expected header's identifiers. Must be set before the query is sent.
+    void setLegacyHeaderNames(LegacyHeaderNames legacy_header_names_)
+    {
+        chassert(!sent_query);
+        legacy_header_names = std::move(legacy_header_names_);
+    }
+
     /// The header is the structure of the result of the remote query: the blocks received are adapted to it,
     /// and a header with no columns means a result whose rows carry no values. A caller that does not know
     /// the structure passes no header (`nullptr`) and gets the blocks as the remote server sends them.
@@ -283,9 +291,15 @@ private:
         std::optional<Extension> extension_,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
+    /// Name to read per header entry for a packet from a pre-26.5 peer, else nullptr.
+    const Names * getLegacySourceNames(const Packet & packet);
+
     SharedHeader header;
     Block totals;
     Block extremes;
+
+    LegacyHeaderNames legacy_header_names;
+    std::optional<Names> legacy_source_names;
 
     std::function<std::unique_ptr<IConnections>(AsyncCallback)> create_connections;
     std::unique_ptr<IConnections> connections;
@@ -445,8 +459,9 @@ private:
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet) TSA_REQUIRES(was_cancelled_mutex);
 
-    /// Adapt a received block to the header, if there is one.
-    Block adaptBlock(Block block) const;
+    /// Adapt a received block to the header, if there is one. `packet` is the packet the block came in: a block
+    /// from a pre-26.5 peer is read by the legacy spellings of the header's identifiers.
+    Block adaptBlock(Block block, const Packet & packet);
 
     /// Refuse a result with no columns from a server too old to send its rows.
     void throwIfColumnLessResultFromOldServer() const;

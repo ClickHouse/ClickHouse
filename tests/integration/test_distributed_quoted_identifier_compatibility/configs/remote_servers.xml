@@ -1,0 +1,27 @@
+<clickhouse>
+    <remote_servers>
+        <mixed_versions>
+            <shard>
+                <replica>
+                    <host>current</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>legacy</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </mixed_versions>
+        <!-- One legacy worker, so a single read task can only be served across the boundary. -->
+        <legacy_only>
+            <shard>
+                <replica>
+                    <host>legacy</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </legacy_only>
+    </remote_servers>
+</clickhouse>
