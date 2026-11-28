@@ -6867,6 +6867,113 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
+    /// A skip index whose name contains '/' can only be serialized with escaping on: without it the
+    /// name becomes a part of the file name as is (`getIndexFileName`), so `getIndexFromAST` rejects
+    /// such a name at CREATE / ADD INDEX time. Turning the setting off afterwards would leave the
+    /// table in a state where the index cannot be named at all - every read path and
+    /// `system.parts.secondary_indices_materialized` would surface a filename-encoding exception
+    /// instead of using the index - so reject the settings change instead of reaching that state.
+    ///
+    /// Only the initial ALTER is rejected. Under a Replicated database every replica re-runs this
+    /// check over an entry the initiator already accepted and committed; a replica catching up on
+    /// an ALTER that an older version let through must apply it rather than wedge its DDL queue on
+    /// an entry it cannot skip (the sort-direction check above follows the same rule). A table that
+    /// did reach that state is handled without throwing by `hasMaterializedSecondaryIndex`.
+    /// Shared Catalog secondaries replay without a metadata transaction and are told apart by the
+    /// client info instead.
+    {
+        bool is_initial_alter = true;
+        if (auto txn = local_context->getZooKeeperMetadataTransaction())
+            is_initial_alter = txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+        if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
+            is_initial_alter = false;
+#endif
+
+        bool touches_escape_index_filenames = false;
+        for (const auto & command : commands)
+        {
+            if ((command.type == AlterCommand::MODIFY_SETTING && command.settings_changes.tryGet("escape_index_filenames"))
+                || (command.type == AlterCommand::RESET_SETTING && command.settings_resets.contains("escape_index_filenames")))
+            {
+                touches_escape_index_filenames = true;
+                break;
+            }
+        }
+
+        if (is_initial_alter && touches_escape_index_filenames)
+        {
+            /// Resolve the value the same way `changeSettings` does: it rebuilds from the defaults and
+            /// applies the metadata's whole settings list, so a RESET lands on the configured default.
+            auto new_settings = getDefaultSettings();
+            if (auto new_settings_changes = new_metadata.getSettingsChanges())
+                new_settings->applyChanges(
+                    new_settings_changes->as<const ASTSetQuery &>().changes,
+                    local_context,
+                    /*is_loading_from_existing_metadata=*/true);
+
+            const bool old_escape_index_filenames = (*settings_from_storage)[MergeTreeSetting::escape_index_filenames];
+            const bool new_escape_index_filenames = (*new_settings)[MergeTreeSetting::escape_index_filenames];
+
+            if (!new_escape_index_filenames)
+            {
+                for (const auto & index : new_metadata.secondary_indices)
+                {
+                    if (index.name.contains('/'))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot disable setting `escape_index_filenames`: skip index name ({}) contains '/', "
+                            "which can only be stored with escaping enabled. Drop or rename the index first.",
+                            index.name);
+                }
+
+                /// An index dropped in this batch, or earlier with its `DROP INDEX` mutation still
+                /// pending, does not block the change by itself: that mutation resolves the files of an
+                /// index named with '/' with escaping regardless of the current policy
+                /// (`getDroppedIndexFileName`). The files it has not removed yet are covered below.
+            }
+
+            /// Changing the policy changes the file name of every index whose name needs escaping, and
+            /// the new name of one index must not be the name under which the files of another index
+            /// are still stored in the parts. Otherwise the files and marks of that other index, which
+            /// the part owns, would be read as granules of this one: wrong query results, and
+            /// `system.parts.secondary_indices_materialized` reporting an index that was never built.
+            /// For example, with escaping on, `a/b` is stored as `skp_idx_a%2Fb` and `a%2Fb` as
+            /// `skp_idx_a%252Fb`; with escaping off, `a%2Fb` resolves to `skp_idx_a%2Fb`.
+            /// The files that may still exist are those of the indices the table has now (including
+            /// the ones dropped in this very batch) and of the indices whose `DROP INDEX` mutation
+            /// has not finished yet.
+            if (new_escape_index_filenames != old_escape_index_filenames)
+            {
+                /// File name under the current policy -> the index it belongs to.
+                std::unordered_map<String, String> stored_file_name_to_index;
+                for (const auto & index : old_metadata.secondary_indices)
+                    stored_file_name_to_index.emplace(getDroppedIndexFileName(index.name, old_escape_index_filenames), index.name);
+
+                for (const auto & [mutation_id, mutation_commands] : getUnfinishedMutationCommands())
+                    for (const auto & mutation_command : mutation_commands)
+                        if (mutation_command.type == MutationCommand::DROP_INDEX)
+                            stored_file_name_to_index.emplace(
+                                getDroppedIndexFileName(mutation_command.column_name, old_escape_index_filenames),
+                                mutation_command.column_name);
+
+                for (const auto & index : new_metadata.secondary_indices)
+                {
+                    /// The legacy state (a name with '/' and escaping off) has no file name at all.
+                    if (!new_escape_index_filenames && index.name.contains('/'))
+                        continue;
+
+                    auto it = stored_file_name_to_index.find(getIndexFileName(index.name, new_escape_index_filenames));
+                    if (it != stored_file_name_to_index.end() && it->second != index.name)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot change setting `escape_index_filenames`: skip index ({}) would get the file name "
+                            "under which the data of skip index ({}) is stored in the existing parts. "
+                            "Drop one of these indices and wait for its `DROP INDEX` mutation to finish first.",
+                            index.name, it->second);
+                }
+            }
+        }
+    }
+
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
@@ -8109,6 +8216,14 @@ void MergeTreeData::changeSettings(
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
     }
+}
+
+void MergeTreeData::applyEscapeIndexFilenamesFromSettings(StorageInMemoryMetadata & metadata) const
+{
+    const bool escape_filenames = (*getSettings())[MergeTreeSetting::escape_index_filenames];
+    metadata.escape_index_filenames = escape_filenames;
+    for (auto & index : metadata.secondary_indices)
+        index.escape_filenames = escape_filenames;
 }
 
 std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const

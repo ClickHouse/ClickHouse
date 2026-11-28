@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -63,8 +64,17 @@ bool hasMaterializedTextIndex(
     for (const auto & index_desc : storage_snapshot->metadata->getSecondaryIndices())
     {
         if (index_desc.type == "text" && index_desc.name == text_index_name)
+        {
             if (const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&data_part_info_for_reader))
-                return loaded_part->getDataPart()->hasSecondaryIndex(index_desc.name, storage_snapshot->metadata);
+            {
+                /// Ask the same question as `MergeTreeReadTask::getTextIndexReadTaskForStep`: a part that keeps
+                /// only some of the index files cannot serve the virtual column, and the reader then falls back
+                /// to the default expression, which needs the base column to be injected here.
+                const auto & part = loaded_part->getDataPart();
+                auto skip_index = MergeTreeIndexFactory::instance().get(storage_snapshot->metadata, index_desc, *part->storage.getSettings());
+                return part->hasMaterializedSecondaryIndex(*skip_index);
+            }
+        }
     }
 
     return false;

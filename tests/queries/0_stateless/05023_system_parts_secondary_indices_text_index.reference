@@ -1,0 +1,6 @@
+after insert	['idx_s']
+after add index	['idx_s']
+after materialize index	['idx_s','idx_s2']
+packed	['idx_s']
+before modify column	['mm_v']
+after modify column	[]

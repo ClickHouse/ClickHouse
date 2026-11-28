@@ -16,6 +16,8 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Common/escapeForFileName.h>
 #include <Common/SipHash.h>
 
@@ -73,6 +75,11 @@ String getIndexFileName(const String & index_name, bool escape_filename)
             "Skip index name ({}) cannot contain '/' with `escape_index_filenames` disabled", index_name);
 
     return String(SKIP_INDEX_FILE_PREFIX) + index_name;
+}
+
+String getDroppedIndexFileName(const String & index_name, bool escape_filename)
+{
+    return getIndexFileName(index_name, escape_filename || index_name.contains('/'));
 }
 
 String IMergeTreeIndex::getFileName() const
@@ -333,6 +340,8 @@ const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPart & part)
 const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPartInfoForReader & part) { return part.getChecksums(); }
 const IDataPartStorage & getStorage(const IMergeTreeDataPart & part) { return part.getDataPartStorage(); }
 const IDataPartStorage & getStorage(const IMergeTreeDataPartInfoForReader & part) { return *part.getDataPartStorage(); }
+String getMarksFileExtension(const IMergeTreeDataPart & part) { return part.getMarksFileExtension(); }
+String getMarksFileExtension(const IMergeTreeDataPartInfoForReader & part) { return part.getIndexGranularityInfo().mark_type.getFileExtension(); }
 const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes(const IMergeTreeDataPart & part) { return part.getSecondaryIndexColumnTypes(); }
 const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes(const IMergeTreeDataPartInfoForReader & part) { return part.getSecondaryIndexColumnTypes(); }
 
@@ -440,6 +449,26 @@ MergeTreeIndexFormat getDeserializedFormatImpl(
     /// query then answers correctly without it.
     if (!isPartTypeCompatibleImpl(skip_index, part))
         return {0 /*unknown*/, {}};
+
+    /// Physical discovery proves only the substreams its index type looks at (the base `.idx`, and
+    /// for `text` also the optional `.pos`), while `MergeTreeIndexReader::initStreamIfNeeded` opens
+    /// EVERY substream of the returned layout and, for each of them, the marks file that
+    /// `MergeTreeIndexGranularityInfo` names. A part that holds only a part of that layout - a
+    /// `text` index whose dictionary or postings stream is gone, or any index whose marks file the
+    /// part does not own - therefore cannot serve the index at all. Report it as not deserializable
+    /// so the query answers without the index, instead of routing into the index and throwing on
+    /// the missing file. `system.parts.secondary_indices_materialized` asks the same question, so
+    /// the column and the readers agree by construction.
+    const String marks_extension = getMarksFileExtension(part);
+    const auto & checksums = getChecksums(part);
+    const auto & storage = getStorage(part);
+    for (const auto & substream : format.substreams)
+    {
+        const String substream_prefix = relative_path_prefix + substream.suffix;
+        if (!indexFileExistsInChecksums(checksums, substream_prefix, substream.extension, &storage)
+            || !indexFileExistsInChecksums(checksums, substream_prefix, marks_extension, &storage))
+            return {0 /*unknown*/, {}};
+    }
 
     return format;
 }
