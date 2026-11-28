@@ -1,0 +1,135 @@
+--- UInt32: reference
+993601
+993602
+993603
+993604
+993605
+--- UInt32: first and repeated runs
+993601
+993602
+993603
+993604
+993605
+993601
+993602
+993603
+993604
+993605
+--- DateTime64: reference
+2020-09-13 12:26:33.601
+2020-09-13 12:26:33.602
+2020-09-13 12:26:33.603
+2020-09-13 12:26:33.604
+2020-09-13 12:26:33.605
+--- DateTime64: first and repeated runs
+2020-09-13 12:26:33.601
+2020-09-13 12:26:33.602
+2020-09-13 12:26:33.603
+2020-09-13 12:26:33.604
+2020-09-13 12:26:33.605
+2020-09-13 12:26:33.601
+2020-09-13 12:26:33.602
+2020-09-13 12:26:33.603
+2020-09-13 12:26:33.604
+2020-09-13 12:26:33.605
+--- String DESC: reference
+я006336
+я006272
+я006208
+я006144
+я006080
+--- String DESC: first and repeated runs
+я006336
+я006272
+я006208
+я006144
+я006080
+я006336
+я006272
+я006208
+я006144
+я006080
+--- ties: reference
+0	5
+--- ties: first and repeated runs
+0	5
+0	5
+--- GROUP BY LIMIT: reference
+0	640	3070400
+1	640	3071040
+2	640	3071680
+3	640	3072320
+4	640	3072960
+--- GROUP BY LIMIT: first and repeated runs
+0	640	3070400
+1	640	3071040
+2	640	3071680
+3	640	3072320
+4	640	3072960
+0	640	3070400
+1	640	3071040
+2	640	3071680
+3	640	3072320
+4	640	3072960
+--- DEFAULT column: first and repeated runs
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+--- DEFAULT column: reference after ALTER
+0
+0
+0
+0
+0
+--- DEFAULT column: repeated run after ALTER
+0
+0
+0
+0
+0
+--- column added without DEFAULT: first and repeated runs
+64
+63
+62
+61
+60
+64
+63
+62
+61
+60
+--- column added without DEFAULT: reference after ALTER
+1000
+1000
+1000
+1000
+1000
+--- column added without DEFAULT: repeated run after ALTER
+1000
+1000
+1000
+1000
+1000
+--- rows read
+05565-int-first	6400
+05565-int-repeat	64
+05565-dt64-first	6400
+05565-dt64-repeat	64
+05565-str-first	6400
+05565-str-repeat	320
+05565-ties-first	6400
+05565-ties-repeat	6400
+05565-default-first	6400
+05565-default-repeat	6400
+05565-alter-first	6464
+05565-alter-repeat	64
+--- GROUP BY LIMIT: the repeated run reads fewer rows
+05565-group-first	0
+05565-group-repeat	1

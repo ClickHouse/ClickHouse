@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <optional>
 #include <Columns/IColumn_fwd.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
@@ -86,5 +87,10 @@ private:
 
 using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
 TopKThresholdTrackerPtr createTopKThresholdTracker(const SortColumnDescription & sort_desc, const IDataType & data_type);
+
+/// The first row of `[begin, end)` that sorts first in `direction`, for the integer, `Decimal32`, `Decimal64` and
+/// `DateTime64` columns `findExtreme*Index` supports; nullopt for other columns and for an empty range.
+std::optional<size_t> findTopKBestRowOfNumbers(const IColumn & column, size_t begin, size_t end, int direction);
+bool canFindTopKBestRowOfNumbers(const IColumn & column);
 
 }
