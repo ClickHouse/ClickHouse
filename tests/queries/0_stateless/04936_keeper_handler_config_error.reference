@@ -11,6 +11,7 @@ starts anyway
 handler section not read
 --- valid
 metrics endpoint: 200
+exports the labeled Keeper histogram count
 --- control default
 reports the unknown type
 not blamed on the address

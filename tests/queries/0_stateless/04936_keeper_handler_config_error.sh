@@ -227,15 +227,18 @@ STATUS=000
 for _ in $(seq 1 20); do
     pick_ports
     reset_state
-    write_config '<type>expose_metrics</type><metrics>true</metrics><events>true</events>' \
+    write_config '<type>expose_metrics</type><metrics>true</metrics><events>true</events><histograms>true</histograms><labels><environment>test</environment></labels>' \
         '' "${TMP_DIR}/keeper_config.xml"
     "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >"${TMP_DIR}/keeper.stdouterr" 2>&1 &
     KEEPER_PID=$!
 
     for _ in $(seq 1 600); do
-        STATUS="$(${CLICKHOUSE_CURL} -s -o /dev/null -w '%{http_code}' --max-time 2 \
-                      "http://127.0.0.1:${PROM_PORT}/metrics" 2>/dev/null)"
-        [ "$STATUS" = 200 ] && break
+        # Wait for this Keeper to bind the port before scraping it.
+        if grep -qF "Listening for Prometheus: http://127.0.0.1:${PROM_PORT}" "${TMP_DIR}/keeper.log" 2>/dev/null; then
+            STATUS="$(${CLICKHOUSE_CURL} -s -o "${TMP_DIR}/metrics" -w '%{http_code}' --max-time 2 \
+                          "http://127.0.0.1:${PROM_PORT}/metrics" 2>/dev/null)" || STATUS=000
+            [ "$STATUS" = 200 ] && break
+        fi
         kill -0 "$KEEPER_PID" 2>/dev/null || break
         sleep 0.1
     done
@@ -248,6 +251,9 @@ done
 
 [ "$STATUS" = 200 ] || { echo "last keeper exit: ${KEEPER_EXIT:-still running}"; keeper_said; }
 echo "metrics endpoint: ${STATUS}"
+# The readonly series is registered at startup, so no Keeper traffic is needed.
+[ "$STATUS" = 200 ] && grep -qxE 'ClickHouseHistogramMetrics_keeper_response_time_ms_count\{(environment="test",operation_type="readonly"|operation_type="readonly",environment="test")\} [0-9]+' "${TMP_DIR}/metrics" 2>/dev/null \
+    && echo 'exports the labeled Keeper histogram count' || echo 'FAIL: missing labeled Keeper histogram count'
 kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
 
 # The HTTP control endpoints read a different section through a different factory, so they need
