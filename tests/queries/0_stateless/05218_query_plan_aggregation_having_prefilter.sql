@@ -135,6 +135,18 @@ SELECT 'array join lowered out of the having', count() FROM (EXPLAIN actions = 1
     SETTINGS query_plan_lower_array_join_function = 1
 ) WHERE explain LIKE '%HAVING pre-filter: count() > 3%';
 
+-- A stateful outer condition is not merged into the HAVING filter, so it sees only the groups the HAVING
+-- keeps, and the HAVING bound applies on its own.
+SELECT 'stateful outer condition, not merged', count() FROM (EXPLAIN actions = 1
+    SELECT a, cnt FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3)
+    WHERE rowNumberInAllBlocks() = 0
+) WHERE explain LIKE '%HAVING pre-filter%';
+
+SELECT 'stateful outer condition across a projection, not merged', count() FROM (EXPLAIN actions = 1
+    SELECT a, d FROM (SELECT a, count() + 0 AS d FROM having_prefilter GROUP BY a HAVING count() > 3)
+    WHERE rowNumberInAllBlocks() = 0
+) WHERE explain LIKE '%HAVING pre-filter%';
+
 SELECT '--- refused ---';
 
 SELECT 'setting off', count() FROM (EXPLAIN actions = 1
@@ -232,18 +244,6 @@ SELECT 'non-deterministic conjunct over the aggregate', count() FROM (EXPLAIN ac
 SELECT 'array join in having', count() FROM (EXPLAIN actions = 1
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3 AND arrayJoin([1, 1]) = 1
     SETTINGS query_plan_lower_array_join_function = 0
-) WHERE explain LIKE '%HAVING pre-filter%';
-
--- The same class reached through the merge instead of written into the HAVING: the pass reads the
--- merged expression, so a stateful outer condition is refused rather than withdrawn later.
-SELECT 'stateful outer condition, merged', count() FROM (EXPLAIN actions = 1
-    SELECT a, cnt FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3)
-    WHERE rowNumberInAllBlocks() = 0
-) WHERE explain LIKE '%HAVING pre-filter%';
-
-SELECT 'stateful outer condition across a projection, merged', count() FROM (EXPLAIN actions = 1
-    SELECT a, d FROM (SELECT a, count() + 0 AS d FROM having_prefilter GROUP BY a HAVING count() > 3)
-    WHERE rowNumberInAllBlocks() = 0
 ) WHERE explain LIKE '%HAVING pre-filter%';
 
 -- These fields are not serialized, so a follower would run without them and EXPLAIN on the
