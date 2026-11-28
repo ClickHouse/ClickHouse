@@ -4,10 +4,14 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Common/ProfileEvents.h>
-#include <Common/ThreadGroupSwitcher.h>
-#include <Common/ThreadStatus.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryOracles/OracleSettings.h>
+#include <Interpreters/QueryOracles/OracleRegistry.h>
+#include <Interpreters/QueryOracles/OracleExec.h>
+#include <Interpreters/QueryOracles/OracleCompare.h>
+#include <Interpreters/QueryOracles/OracleGate.h>
+#include <Interpreters/QueryOracles/OracleFixture.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/misc.h>
@@ -24,6 +28,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpandedASTBudget.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/IndicesDescription.h>
+#include <functional>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageLog.h>
 #include <Storages/StorageMemory.h>
@@ -33,6 +40,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
@@ -54,13 +62,13 @@
 #include <Poco/String.h>
 
 #include <algorithm>
+#include <array>
 #include <unordered_set>
 
 
 namespace ProfileEvents
 {
 extern const Event ASTFuzzerOracleChecks;
-extern const Event ASTFuzzerOracleTLPAggregateChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -70,21 +78,13 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool ast_fuzzer_oracle;
-extern const SettingsBool enable_global_with_statement;
 extern const SettingsJoinStrictness join_default_strictness;
 extern const SettingsBool make_distributed_plan;
-extern const SettingsUInt64 max_expanded_ast_elements;
-extern const SettingsUInt64 max_parser_backtracks;
-extern const SettingsUInt64 max_parser_depth;
-extern const SettingsUInt64 max_query_size;
 }
 
 namespace ErrorCodes
 {
 extern const int AST_FUZZER_ORACLE_MISMATCH;
-extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
-extern const int TOO_MANY_ROWS;
-extern const int TOO_MANY_BYTES;
 }
 
 
@@ -227,12 +227,8 @@ const std::unordered_set<String> & nonDeterministicFunctions()
 /// Maximum formatted query length for oracle sub-queries.
 constexpr size_t MAX_ORACLE_QUERY_LENGTH = 10000;
 
-/// Maximum total output size from an oracle sub-query (bytes).
-constexpr size_t MAX_ORACLE_OUTPUT_SIZE = 10 * 1024 * 1024;
-
-/// Maximum row count for an oracle sub-query result. Caps memory before the
-/// post-execution size check in `executeAndCollect*` triggers.
-constexpr size_t MAX_ORACLE_RESULT_ROWS = 10'000'000;
+/// `MAX_ORACLE_OUTPUT_SIZE` and `MAX_ORACLE_RESULT_ROWS` live in QueryOracles/OracleSettings.h
+/// (shared with `oraclePinnedSettings`, which pins the matching result caps).
 
 /// Case-insensitive view of `nonDeterministicFunctions`. ClickHouse resolves
 /// aggregate (and scalar) function names case-insensitively and the parser
@@ -251,6 +247,10 @@ const std::unordered_set<String> & nonDeterministicFunctionsLower()
     return non_deterministic_functions_lower;
 }
 
+/// Aggregate-function combinator suffixes — shared with the fuzzer, see
+/// `aggregateCombinatorSuffixes` in `QueryFuzzer.h`.
+const Strings & combinator_suffixes = aggregateCombinatorSuffixes();
+
 /// Strip the LONGEST matching combinator suffix from `name`, returning false
 /// when nothing matched. Longest-match (rather than first-in-list) is what
 /// keeps overlapping combinators correct regardless of list order: e.g.
@@ -259,7 +259,7 @@ const std::unordered_set<String> & nonDeterministicFunctionsLower()
 bool stripLongestCombinatorSuffix(String & name)
 {
     const String * best = nullptr;
-    for (const auto & suffix : aggregateCombinatorSuffixes())
+    for (const auto & suffix : combinator_suffixes)
         if (name.size() > suffix.size() && name.ends_with(suffix)
             && (!best || suffix.size() > best->size()))
             best = &suffix;
@@ -299,12 +299,12 @@ String resolveAggregateAlias(const String & name)
 }
 
 /// True if `name`, after removing zero or more combinator suffixes, names an
-/// entry of `nonDeterministicFunctions` (matched case-insensitively).
+/// entry of `non_deterministic_functions` (matched case-insensitively).
 /// Membership must be tested at EVERY stripping stage, not only at the
 /// fixpoint: real aggregate names can themselves end in a combinator-looking
-/// word, e.g. `retentionStateOrNull` strips to `retentionState` (a set
-/// member), but one more iteration eats the literal `State` and produces
-/// `retention`, which the set does not contain.
+/// word, e.g. `groupUniqArrayOrNull` strips to `groupUniqArray` (a set
+/// member), but one more iteration eats the literal `Array` and produces
+/// `groupUniq`, which the set does not contain.
 bool namesUnsafeFunctionAfterStripping(String name)
 {
     while (true)
@@ -317,10 +317,13 @@ bool namesUnsafeFunctionAfterStripping(String name)
 }
 
 /// As above, but a name is also unsafe when the aggregate function it is an
-/// alias of is, or when it names an aggregate registered as order-dependent.
+/// alias of is.
 bool isOracleUnsafeFunctionName(String name)
 {
-    /// Window functions are registered as order-dependent too; their order comes from `OVER`.
+    /// Aggregates the registration marks `is_order_dependent` (e.g. `groupArraySample`,
+    /// `groupFormat`, `flameGraph`, `hierarchicalKMeans`) diverge between direct evaluation and
+    /// the State/Merge rewrite. Read that from the registration instead of maintaining a partial
+    /// name list; window-function registrations are excluded (they are screened separately).
     if (const auto properties = AggregateFunctionFactory::instance().tryGetProperties(name, NullsAction::EMPTY);
         properties && properties->is_order_dependent && !properties->is_window_function)
         return true;
@@ -345,24 +348,6 @@ bool isOracleUnsafeFunctionName(String name)
         if (!stripLongestCombinatorSuffix(name))
             return false;
     }
-}
-
-/// True if `name` resolves to a regular function that is not deterministic or that the backstop set lists,
-/// or to a user-defined function that is not deterministic.
-bool namesNonDeterministicRegularFunction(const String & name, const ContextPtr & context)
-{
-    if (const auto resolver = FunctionFactory::instance().tryGet(name, context))
-        if (!resolver->isDeterministic()
-            || nonDeterministicFunctionsLower().contains(Poco::toLower(name))
-            || nonDeterministicFunctionsLower().contains(Poco::toLower(resolver->getName())))
-            return true;
-    if (UserDefinedSQLFunctionFactory::instance().tryGet(name))
-        /// SQL UDF determinism is not introspectable — treat as non-deterministic.
-        return true;
-    if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(name, context))
-        if (!udf_exec->isDeterministic())
-            return true;
-    return false;
 }
 
 /// Calls `f` on each sub-AST of `ast` until a call returns true, and returns whether one did.
@@ -393,38 +378,18 @@ void forEachChild(const ASTPtr & ast, F && f)
     anyChild(ast, [&](const ASTPtr & child) { f(child); return false; });
 }
 
-/// A `{name:Identifier}` placeholder is an empty name part with an `ASTQueryParameter` child, substituted only
-/// when the query text is executed. Returns the name parts after substitution, or nothing if a value is missing.
-std::optional<Strings> substitutedNameParts(const ASTPtr & ast, const NameToNameMap & query_parameters)
-{
-    Strings parts = ast->as<ASTIdentifier &>().name_parts;
-    auto param = ast->children.begin();
-    for (auto & part : parts)
-    {
-        if (!part.empty())
-            continue;
-        if (param == ast->children.end())
-            return std::nullopt;
-        const auto it = query_parameters.find((*param++)->as<ASTQueryParameter &>().name);
-        if (it == query_parameters.end() || it->second.empty())
-            return std::nullopt;
-        part = it->second;
-    }
-    return parts;
-}
-
 /// Walk an AST tree and check whether any `ASTFunction` references something
 /// non-deterministic. The primary source of truth is `FunctionFactory` —
 /// every regular function exposes `isDeterministic`, so newly-added
 /// non-deterministic functions are caught automatically without needing to
-/// touch the local list. The static `nonDeterministicFunctions` set above
+/// touch the local list. The static `non_deterministic_functions` set above
 /// is the backstop for two cases `FunctionFactory` cannot reach:
 ///   1. Table functions (`file`, `url`, `s3`, `numbers`, ...) — registered in
 ///      `TableFunctionFactory`; would slip through as scalar calls otherwise.
 ///   2. Aggregate functions whose `State`/`Merge` rewrite legitimately
-///      diverges from direct evaluation (`quantile*`, `sum` on floats, ...):
-///      semantically deterministic but unsafe for our exact equality oracle.
-///      Order-dependent aggregates are read from their registration instead.
+///      diverges from direct evaluation (`any`, `topK`, `quantile*`, `sum` on
+///      floats, ...) — semantically deterministic but unsafe for our exact
+///      equality oracle.
 /// We strip aggregate combinator suffixes before lookup so e.g.
 /// `first_valueOrNull` resolves to `first_value` — the fuzzer routinely
 /// appends `*OrNull`/`*Distinct`/`*State` chains and neither
@@ -434,9 +399,30 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
     if (!ast)
         return false;
 
+    /// A query parameter (`{p:Identifier}`, `{v:UInt64}`) is substituted only at analysis time, so the
+    /// AST the oracles rewrite is not self-describing: an Identifier parameter can resolve to a
+    /// SELECT-list alias (e.g. one introduced by `* REPLACE (expr AS b)`), which the structural gates
+    /// cannot see and which a rewrite that drops the projection silently redefines. Skip such queries.
+    if (ast->as<ASTQueryParameter>())
+        return true;
+
     /// `SHUFFLE` returns the rows in random order, and with `LIMIT` a random subset of them.
     if (const auto * select = ast->as<ASTSelectQuery>(); select && select->shuffle)
         return true;
+
+    /// Virtual columns that expose the physical part layout (`_part`, `_part_offset`,
+    /// `_part_starting_offset`, `_part_granule_offset`, `_part_index`, `_part_uuid`,
+    /// `_part_data_version`, `_block_number`, `_block_offset`) change their values whenever a
+    /// background merge rewrites the parts between two reads, so two executions of the same query
+    /// legitimately differ. (`_partition_id` / `_partition_value` are per-row stable and stay allowed.)
+    if (const auto * ident = ast->as<ASTIdentifier>())
+    {
+        static const std::unordered_set<String> layout_virtual_columns = {
+            "_part", "_part_index", "_part_uuid", "_part_offset", "_part_starting_offset",
+            "_part_granule_offset", "_part_data_version", "_block_number", "_block_offset"};
+        if (layout_virtual_columns.contains(ident->shortName()))
+            return true;
+    }
 
     if (const auto * table_expr = ast->as<ASTTableExpression>())
     {
@@ -490,72 +476,28 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
             return true;
 
         for (const auto & name : {std::cref(func->name), std::cref(stripped)})
-            if (namesNonDeterministicRegularFunction(name.get(), context))
+        {
+            if (const auto resolver = FunctionFactory::instance().tryGet(name.get(), context))
+                if (!resolver->isDeterministic())
+                    return true;
+            if (UserDefinedSQLFunctionFactory::instance().tryGet(name.get()))
+                /// SQL UDF determinism is not introspectable — treat as non-deterministic.
                 return true;
+            if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(name.get(), context))
+                if (!udf_exec->isDeterministic())
+                    return true;
+        }
     }
 
-    /// A higher-order function accepts a function by its bare name instead of a lambda, e.g.
-    /// `arrayMap(generateUUIDv7, arr)`: the name is an `ASTIdentifier`, not an `ASTFunction`.
-    /// A column with the same name as a non-deterministic function only skips one more query, which is safe.
-    /// The fuzzer may also turn that name into a `{fuzz_param_N:Identifier}` placeholder: an unknown parameter
-    /// skips the query.
-    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && !identifier->compound())
+    for (const auto & child : ast->children)
     {
-        if (identifier->isParam())
-        {
-            const auto parts = substitutedNameParts(ast, context->getQueryParameters());
-            if (!parts || namesNonDeterministicRegularFunction(parts->front(), context))
-                return true;
-        }
-        else if (namesNonDeterministicRegularFunction(identifier->name(), context))
+        if (hasNonDeterministicFunctionsImpl(child, context))
             return true;
     }
-
-    /// `* APPLY(f)` keeps the function name outside of `children`.
-    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>(); apply && !apply->func_name.empty())
-    {
-        if (isOracleUnsafeFunctionName(apply->func_name))
-            return true;
-        for (const auto & name : {apply->func_name, stripAggregateCombinators(apply->func_name)})
-            if (namesNonDeterministicRegularFunction(name, context))
-                return true;
-    }
-
-    return anyChild(ast, [&](const ASTPtr & child) { return hasNonDeterministicFunctionsImpl(child, context); });
+    return false;
 }
 
-/// Split a string by newline into individual rows, ignoring trailing empty line.
-std::vector<String> splitIntoRows(const String & output)
-{
-    /// Split TabSeparated output into rows. ClickHouse always terminates a TSV
-    /// row with `\n`, so the canonical form is `<row1>\n<row2>\n...\n<rowN>\n`.
-    /// Strip exactly one trailing `\n` if present (it terminates the last row,
-    /// not a separator), then split the rest on `\n`. This produces the right
-    /// number of rows even when many of them are empty strings (e.g. unmatched
-    /// LEFT JOIN rows for a `String` right-side column come out as empty).
-    std::vector<String> rows;
-    if (output.empty())
-        return rows;
-
-    std::string_view sv{output};
-    if (sv.back() == '\n')
-        sv.remove_suffix(1);
-
-    size_t start = 0;
-    while (true)
-    {
-        size_t end = sv.find('\n', start);
-        if (end == std::string_view::npos)
-        {
-            rows.emplace_back(sv.substr(start));
-            break;
-        }
-        rows.emplace_back(sv.substr(start, end - start));
-        start = end + 1;
-    }
-
-    return rows;
-}
+/// (`splitIntoRows` moved to QueryOracles/OracleExec.cpp along with the execution helpers.)
 
 /// ARRAY JOIN multiplies rows (one input → many output), breaking partition identity.
 bool hasArrayJoin(const ASTSelectQuery & select)
@@ -583,9 +525,13 @@ bool hasArrayJoin(const ASTSelectQuery & select)
 /// correctly detects this divergence but the divergence is allowed, so we
 /// must skip these queries (issue #105743).
 /// Scan every slot of an ASTSelectQuery that can host a window function:
-/// SELECT list, QUALIFY clause, and named WINDOW definitions. The bare
-/// `hasWindowFunctionWithoutOrderBy(select.select())` we used previously
-/// missed `QUALIFY row_number() OVER () = 1` and `WINDOW w AS (...)` cases.
+/// SELECT list, QUALIFY clause, named WINDOW definitions, and the FROM clause.
+/// The bare `hasWindowFunctionWithoutOrderBy(select.select())` we used previously
+/// missed `QUALIFY row_number() OVER () = 1` and `WINDOW w AS (...)` cases, and
+/// scanning only the top-level SELECT list missed a window hidden in a FROM
+/// subquery or CTE such as `SELECT rn FROM (SELECT row_number() OVER () AS rn FROM t)`,
+/// which re-executes to a different row numbering just the same (`hasWindowFunctionWithoutOrderBy`
+/// recurses into children, so passing the FROM AST reaches nested SELECTs).
 bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast);
 bool hasWindowFunctionWithoutOrderByAnywhere(const ASTSelectQuery & select)
 {
@@ -595,11 +541,12 @@ bool hasWindowFunctionWithoutOrderByAnywhere(const ASTSelectQuery & select)
         return true;
     if (select.window() && hasWindowFunctionWithoutOrderBy(select.window()))
         return true;
+    if (select.tables() && hasWindowFunctionWithoutOrderBy(select.tables()))
+        return true;
     return false;
 }
 
 /// True if the subtree contains at least one column identifier.
-/// Not `anyChild`: an `APPLY` lambda always holds its own parameter, which is not a column.
 bool containsIdentifier(const ASTPtr & ast)
 {
     if (!ast)
@@ -641,7 +588,10 @@ bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast)
             return true;
         }
     }
-    return anyChild(ast, [](const ASTPtr & child) { return hasWindowFunctionWithoutOrderBy(child); });
+    for (const auto & child : ast->children)
+        if (hasWindowFunctionWithoutOrderBy(child))
+            return true;
+    return false;
 }
 
 /// Collects every alias defined anywhere in the subtree (e.g. `1025 AS x`
@@ -660,40 +610,22 @@ void collectAliases(const ASTPtr & ast, std::unordered_set<String> & out)
         out.insert(alias);
     if (const auto * replacement = ast->as<ASTColumnsReplaceTransformer::Replacement>())
         out.insert(replacement->name);
-    forEachChild(ast, [&](const ASTPtr & child) { collectAliases(child, out); });
+    for (const auto & child : ast->children)
+        collectAliases(child, out);
 }
 
-/// True if the subtree references any of the given names, as an identifier or as a function:
-/// an alias of a lambda is callable. A `{name:Identifier}` placeholder with an unknown value counts as a reference.
-bool referencesAnyAlias(const ASTPtr & ast, const std::unordered_set<String> & aliases, const NameToNameMap & query_parameters)
+/// True if the subtree references any of the given names as an identifier.
+bool referencesAnyAlias(const ASTPtr & ast, const std::unordered_set<String> & aliases)
 {
     if (!ast)
         return false;
     if (const auto * ident = ast->as<ASTIdentifier>())
-    {
-        if (!ident->isParam())
-        {
-            if (aliases.contains(ident->name()) || aliases.contains(ident->shortName()))
-                return true;
-        }
-        else
-        {
-            const auto parts = substitutedNameParts(ast, query_parameters);
-            if (!parts || aliases.contains(Poco::cat(String("."), parts->begin(), parts->end())) || aliases.contains(parts->back()))
-                return true;
-        }
-    }
-    else if (const auto * func = ast->as<ASTFunction>())
-    {
-        if (aliases.contains(func->name))
+        if (aliases.contains(ident->name()) || aliases.contains(ident->shortName()))
             return true;
-    }
-    else if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
-    {
-        if (aliases.contains(apply->func_name))
+    for (const auto & child : ast->children)
+        if (referencesAnyAlias(child, aliases))
             return true;
-    }
-    return anyChild(ast, [&](const ASTPtr & child) { return referencesAnyAlias(child, aliases, query_parameters); });
+    return false;
 }
 
 /// Settings that cap how much a query reads/produces, plus their overflow
@@ -703,52 +635,48 @@ bool referencesAnyAlias(const ASTPtr & ast, const std::unordered_set<String> & a
 /// at `max_rows_to_read`. A query carrying any of these inline (top level or
 /// in a subquery) cannot be compared; session-level leakage from a seed's
 /// `SET` is neutralized in `makeOracleContext`.
-const std::unordered_set<String> & truncatingSettings()
-{
-    static const std::unordered_set<String> truncating_settings = {
-        "max_rows_to_read", "max_bytes_to_read", "read_overflow_mode",
-        "max_rows_to_read_leaf", "max_bytes_to_read_leaf", "read_overflow_mode_leaf",
-        "max_rows_to_group_by", "group_by_overflow_mode",
-        "max_rows_to_sort", "max_bytes_to_sort", "sort_overflow_mode",
-        "max_result_rows", "max_result_bytes", "result_overflow_mode",
-        "max_rows_in_distinct", "max_bytes_in_distinct", "distinct_overflow_mode",
-        "max_rows_to_transfer", "max_bytes_to_transfer", "transfer_overflow_mode",
-        "max_rows_in_join", "max_bytes_in_join", "join_overflow_mode",
-        "max_rows_in_set", "max_bytes_in_set", "set_overflow_mode",
-        "max_execution_time", "max_execution_time_leaf", "timeout_overflow_mode", "timeout_overflow_mode_leaf",
-        "max_estimated_execution_time",
-        /// The `limit` / `offset` SETTINGS (distinct from LIMIT/OFFSET clauses)
-        /// apply a final LIMIT/OFFSET to every query result. That truncation is
-        /// not distributive over the oracle rewrites — the reference and the
-        /// partitioned UNION are limited/offset over differently-ordered results,
-        /// so they keep different row subsets (observed: `SET offset = 10` made a
-        /// single batch produce 174 TLP mismatches).
-        "limit", "offset",
-        /// Not truncation per se, but the same "results depend on which granules
-        /// the predicate prunes" effect: with exact mode off, skip indexes under
-        /// FINAL may keep stale row versions whose newer version lives in a
-        /// pruned granule — documented behaviour, not comparable across rewrites.
-        "use_skip_indexes_if_final", "use_skip_indexes_if_final_exact_mode",
-        /// Changes aggregate semantics asymmetrically across oracle rewrites:
-        /// `count()` over zero input rows becomes NULL while NoREC's `countIf`
-        /// aggregates every row and returns 0. Pinned off in `makeOracleContext`
-        /// for session leakage, but an inline `SETTINGS` clause survives in the
-        /// clones and overrides the pin, so gate it here too.
-        "aggregate_functions_null_for_empty",
-        /// Same asymmetry from the other direction: with this on, an aggregation
-        /// with no GROUP BY over an *empty* input returns ZERO rows instead of one
-        /// default row. NoREC's `count()` over an empty (always-false WHERE)
-        /// subquery then yields no row, while the `countIf` form over the
-        /// non-empty table yields one `0` row — a false mismatch. (This was the
-        /// cause of the long-unreproducible NoREC count()=NULL family, surfaced
-        /// once mismatch reproducers started carrying their active settings.)
-        "empty_result_for_aggregation_by_empty_set",
-        /// Appends an extremes block (blank separator + min/max rows) to every
-        /// result; the oracle's row collection would count those as data rows.
-        "extremes",
-    };
-    return truncating_settings;
-}
+const std::unordered_set<String> truncating_settings = {
+    "max_rows_to_read", "max_bytes_to_read", "read_overflow_mode",
+    "max_rows_to_read_leaf", "max_bytes_to_read_leaf", "read_overflow_mode_leaf",
+    "max_rows_to_group_by", "group_by_overflow_mode",
+    "max_rows_to_sort", "max_bytes_to_sort", "sort_overflow_mode",
+    "max_result_rows", "max_result_bytes", "result_overflow_mode",
+    "max_rows_in_distinct", "max_bytes_in_distinct", "distinct_overflow_mode",
+    "max_rows_to_transfer", "max_bytes_to_transfer", "transfer_overflow_mode",
+    "max_rows_in_join", "max_bytes_in_join", "join_overflow_mode",
+    "max_rows_in_set", "max_bytes_in_set", "set_overflow_mode",
+    "max_execution_time", "max_execution_time_leaf", "timeout_overflow_mode", "timeout_overflow_mode_leaf",
+    "max_estimated_execution_time",
+    /// The `limit` / `offset` SETTINGS (distinct from LIMIT/OFFSET clauses)
+    /// apply a final LIMIT/OFFSET to every query result. That truncation is
+    /// not distributive over the oracle rewrites — the reference and the
+    /// partitioned UNION are limited/offset over differently-ordered results,
+    /// so they keep different row subsets (observed: `SET offset = 10` made a
+    /// single batch produce 174 TLP mismatches).
+    "limit", "offset",
+    /// Not truncation per se, but the same "results depend on which granules
+    /// the predicate prunes" effect: with exact mode off, skip indexes under
+    /// FINAL may keep stale row versions whose newer version lives in a
+    /// pruned granule — documented behaviour, not comparable across rewrites.
+    "use_skip_indexes_if_final", "use_skip_indexes_if_final_exact_mode",
+    /// Changes aggregate semantics asymmetrically across oracle rewrites:
+    /// `count()` over zero input rows becomes NULL while NoREC's `countIf`
+    /// aggregates every row and returns 0. Pinned off in `makeOracleContext`
+    /// for session leakage, but an inline `SETTINGS` clause survives in the
+    /// clones and overrides the pin, so gate it here too.
+    "aggregate_functions_null_for_empty",
+    /// Same asymmetry from the other direction: with this on, an aggregation
+    /// with no GROUP BY over an *empty* input returns ZERO rows instead of one
+    /// default row. NoREC's `count()` over an empty (always-false WHERE)
+    /// subquery then yields no row, while the `countIf` form over the
+    /// non-empty table yields one `0` row — a false mismatch. (This was the
+    /// cause of the long-unreproducible NoREC count()=NULL family, surfaced
+    /// once mismatch reproducers started carrying their active settings.)
+    "empty_result_for_aggregation_by_empty_set",
+    /// Appends an extremes block (blank separator + min/max rows) to every
+    /// result; the oracle's row collection would count those as data rows.
+    "extremes",
+};
 
 bool hasTruncatingInlineSettings(const ASTPtr & ast)
 {
@@ -756,9 +684,12 @@ bool hasTruncatingInlineSettings(const ASTPtr & ast)
         return false;
     if (const auto * set_query = ast->as<ASTSetQuery>())
         for (const auto & change : set_query->changes)
-            if (truncatingSettings().contains(change.name))
+            if (truncating_settings.contains(change.name))
                 return true;
-    return anyChild(ast, [](const ASTPtr & child) { return hasTruncatingInlineSettings(child); });
+    for (const auto & child : ast->children)
+        if (hasTruncatingInlineSettings(child))
+            return true;
+    return false;
 }
 
 /// Settings whose uniform removal from both sides of an oracle comparison
@@ -769,25 +700,21 @@ bool hasTruncatingInlineSettings(const ASTPtr & ast)
 /// significant setting (`join_use_nulls`, `apply_mutations_on_fly`,
 /// `optimize_*`, `final`, ...) would make the oracle validate a different
 /// query than the one that actually succeeded. Anything not explicitly listed
-/// here (and not already rejected by `truncatingSettings`) causes the whole
+/// here (and not already rejected by `truncating_settings`) causes the whole
 /// query to be skipped — fail closed, since new settings appear all the time.
-const std::unordered_set<String> & strippableResourceSettings()
-{
-    static const std::unordered_set<String> strippable_resource_settings = {
-        "max_memory_usage", "max_memory_usage_for_user", "max_untracked_memory",
-        "max_bytes_before_external_group_by", "max_bytes_before_external_sort",
-        "max_bytes_ratio_before_external_group_by", "max_bytes_ratio_before_external_sort",
-        "max_threads", "max_insert_threads", "max_final_threads", "max_block_size",
-        "max_query_size", "max_ast_depth", "max_ast_elements", "max_expanded_ast_elements",
-        "max_parser_depth", "max_parser_backtracks", "max_execution_speed",
-        "log_comment", "log_queries", "log_query_threads", "log_processors_profiles",
-        "send_logs_level", "priority", "os_thread_priority",
-    };
-    return strippable_resource_settings;
-}
+const std::unordered_set<String> strippable_resource_settings = {
+    "max_memory_usage", "max_memory_usage_for_user", "max_untracked_memory",
+    "max_bytes_before_external_group_by", "max_bytes_before_external_sort",
+    "max_bytes_ratio_before_external_group_by", "max_bytes_ratio_before_external_sort",
+    "max_threads", "max_insert_threads", "max_final_threads", "max_block_size",
+    "max_query_size", "max_ast_depth", "max_ast_elements", "max_expanded_ast_elements",
+    "max_parser_depth", "max_parser_backtracks", "max_execution_speed",
+    "log_comment", "log_queries", "log_query_threads", "log_processors_profiles",
+    "send_logs_level", "priority", "os_thread_priority",
+};
 
 /// True if any inline `SETTINGS` clause (top level or nested) carries a
-/// setting outside `strippableResourceSettings`. Checked recursively for
+/// setting outside `strippable_resource_settings`. Checked recursively for
 /// symmetry with `hasTruncatingInlineSettings`: nested clauses are never
 /// stripped, but proving a nested semantic setting harmless would require
 /// per-oracle reasoning, so skip conservatively.
@@ -797,41 +724,12 @@ bool hasNonStrippableInlineSettings(const ASTPtr & ast)
         return false;
     if (const auto * set_query = ast->as<ASTSetQuery>())
         for (const auto & change : set_query->changes)
-            if (!strippableResourceSettings().contains(change.name))
+            if (!strippable_resource_settings.contains(change.name))
                 return true;
-    return anyChild(ast, [](const ASTPtr & child) { return hasNonStrippableInlineSettings(child); });
-}
-
-/// Nested SETTINGS clauses are preserved in oracle clones. In particular, a
-/// nested thread-count setting overrides the single-thread pin in
-/// `makeOracleContext`, reopening the nested-pipeline lifetime race which that
-/// pin is intended to avoid. The top-level clause is stripped uniformly, so it
-/// remains safe to allow there.
-bool hasNestedThreadSettings(const ASTPtr & ast, const ASTPtr & top_level_settings)
-{
-    if (!ast)
-        return false;
-    if (ast != top_level_settings)
-    {
-        if (const auto * set_query = ast->as<ASTSetQuery>())
-            for (const auto & change : set_query->changes)
-                if (change.name == "max_threads" || change.name == "max_insert_threads" || change.name == "max_final_threads")
-                    return true;
-    }
-    return anyChild(ast, [&](const ASTPtr & child) { return hasNestedThreadSettings(child, top_level_settings); });
-}
-
-/// True if `ast` is built only from literals and function calls, so it means the same in any query.
-bool isScopeFreeExpression(const ASTPtr & ast)
-{
-    if (ast->as<ASTLiteral>())
-        return true;
-    if (!ast->as<ASTFunction>() && !ast->as<ASTExpressionList>())
-        return false;
     for (const auto & child : ast->children)
-        if (!isScopeFreeExpression(child))
-            return false;
-    return true;
+        if (hasNonStrippableInlineSettings(child))
+            return true;
+    return false;
 }
 
 /// True if `clause` defines an alias that is referenced anywhere else in the
@@ -840,7 +738,7 @@ bool isScopeFreeExpression(const ASTPtr & ast)
 /// or HAVING entirely) silently rebinds those references — e.g. the fuzzer
 /// produces `SELECT (SELECT x) FROM t WHERE f(... AS x)`: with the WHERE
 /// present `x` is the alias, without it `x` is the table column.
-bool clauseDefinesAliasUsedElsewhere(const ASTSelectQuery & select, const ASTPtr & clause, const NameToNameMap & query_parameters)
+bool clauseDefinesAliasUsedElsewhere(const ASTSelectQuery & select, const ASTPtr & clause)
 {
     if (!clause)
         return false;
@@ -852,7 +750,7 @@ bool clauseDefinesAliasUsedElsewhere(const ASTSelectQuery & select, const ASTPtr
     {
         if (child == clause)
             continue;
-        if (referencesAnyAlias(child, aliases, query_parameters))
+        if (referencesAnyAlias(child, aliases))
             return true;
     }
     return false;
@@ -889,7 +787,10 @@ bool containsAsterisk(const ASTPtr & ast)
         return false;
     if (ast->as<ASTAsterisk>() || ast->as<ASTQualifiedAsterisk>())
         return true;
-    return anyChild(ast, [](const ASTPtr & child) { return containsAsterisk(child); });
+    for (const auto & child : ast->children)
+        if (containsAsterisk(child))
+            return true;
+    return false;
 }
 
 /// True if any ORDER BY element anywhere in the query uses `WITH FILL`.
@@ -905,19 +806,33 @@ bool hasWithFillAnywhere(const ASTPtr & ast)
     if (const auto * order_elem = ast->as<ASTOrderByElement>())
         if (order_elem->with_fill)
             return true;
-    return anyChild(ast, [](const ASTPtr & child) { return hasWithFillAnywhere(child); });
+    for (const auto & child : ast->children)
+        if (hasWithFillAnywhere(child))
+            return true;
+    return false;
 }
 
-/// True if any SELECT has `WITH TOTALS`, which is not distributive over a WHERE: a filter pushed below the
-/// totals step recomputes the totals over the filtered rows, and `UNION ALL` keeps one branch's totals only.
-bool hasWithTotalsAnywhere(const ASTPtr & ast)
+/// True if any SELECT anywhere in the query uses `GROUP BY ... WITH TOTALS`
+/// (also `ROLLUP` / `CUBE` / `GROUPING SETS`). These synthesise a subtotal /
+/// grand-total row that is a global aggregate, not a per-input-row value, so it
+/// is not distributive over the WHERE/HAVING partition split the metamorphic
+/// oracles perform: re-scanning the source in each partition recomputes the
+/// totals over a subset (or drops them), so the totals row legitimately differs.
+/// The per-oracle guards already reject a TOP-LEVEL `group_by_with_totals`, but a
+/// modifier hidden in a CTE or subquery (whose outer query the oracle rewrites)
+/// slips past them, so gate it recursively at the top of `check`.
+bool hasGroupByTotalsModifierAnywhere(const ASTPtr & ast)
 {
     if (!ast)
         return false;
     if (const auto * select = ast->as<ASTSelectQuery>())
-        if (select->group_by_with_totals)
+        if (select->group_by_with_totals || select->group_by_with_rollup
+            || select->group_by_with_cube || select->group_by_with_grouping_sets)
             return true;
-    return anyChild(ast, [](const ASTPtr & child) { return hasWithTotalsAnywhere(child); });
+    for (const auto & child : ast->children)
+        if (hasGroupByTotalsModifierAnywhere(child))
+            return true;
+    return false;
 }
 
 /// True if any SELECT keeps a subset of its rows chosen by position.
@@ -953,16 +868,24 @@ bool usesFinalAnywhere(const ASTPtr & ast)
     if (const auto * table_expr = ast->as<ASTTableExpression>())
         if (table_expr->final)
             return true;
-    return anyChild(ast, [](const ASTPtr & child) { return usesFinalAnywhere(child); });
+    for (const auto & child : ast->children)
+        if (usesFinalAnywhere(child))
+            return true;
+    return false;
 }
 
 /// ASOF JOIN tie-breaking among equal asof-column values is
 /// implementation-defined, so which right-side row a left row pairs with can
 /// change between plans — observed as a `Subquery wrap` false mismatch.
-/// `ANY` pairs with an arbitrary match (`ANY INNER` keeps one row per key), so it is plan-dependent too.
-/// `SEMI` takes the other side's columns from an arbitrary match, like `ANY`.
-/// A join written without a strictness gets `join_default_strictness`, or `ALL` if it is `LATERAL`.
 /// Checked recursively: such a join in any subquery taints the whole query.
+/// Joins whose result is not stable across plan rewrites: `ASOF` picks the
+/// latest matching row (tie-breaking is plan-dependent); `ANY` / old `RightAny`
+/// pick an arbitrary matching row from the right table; and `SEMI` takes the
+/// other side's columns from an arbitrary match, like `ANY`. Which row survives
+/// can differ between the reference and the rewrite even at a fixed setting.
+/// A join written without an explicit strictness takes `join_default_strictness`
+/// (unless it is `LATERAL` or a cross/comma join, which are `ALL`), so a plain
+/// `LEFT JOIN` under `SET join_default_strictness = 'ANY'` must be screened too.
 bool hasNonDeterministicJoinAnywhere(const ASTPtr & ast, JoinStrictness default_strictness)
 {
     if (!ast)
@@ -970,13 +893,17 @@ bool hasNonDeterministicJoinAnywhere(const ASTPtr & ast, JoinStrictness default_
     if (const auto * join = ast->as<ASTTableJoin>())
     {
         auto strictness = join->strictness;
-        if (strictness == JoinStrictness::Unspecified && !join->lateral && join->kind != JoinKind::Cross && join->kind != JoinKind::Comma)
+        if (strictness == JoinStrictness::Unspecified && !join->lateral
+            && join->kind != JoinKind::Cross && join->kind != JoinKind::Comma)
             strictness = default_strictness;
-        if (strictness == JoinStrictness::Asof || strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny
-            || strictness == JoinStrictness::Semi)
+        if (strictness == JoinStrictness::Asof || strictness == JoinStrictness::Any
+            || strictness == JoinStrictness::RightAny || strictness == JoinStrictness::Semi)
             return true;
     }
-    return anyChild(ast, [&](const ASTPtr & child) { return hasNonDeterministicJoinAnywhere(child, default_strictness); });
+    for (const auto & child : ast->children)
+        if (hasNonDeterministicJoinAnywhere(child, default_strictness))
+            return true;
+    return false;
 }
 
 /// True if the FROM clause uses a subquery that itself contains UNION ALL /
@@ -996,7 +923,10 @@ bool subtreeContainsSetOperation(const ASTPtr & ast)
             return true;
     if (ast->as<ASTSelectIntersectExceptQuery>())
         return true;
-    return anyChild(ast, [](const ASTPtr & child) { return subtreeContainsSetOperation(child); });
+    for (const auto & child : ast->children)
+        if (subtreeContainsSetOperation(child))
+            return true;
+    return false;
 }
 
 bool fromContainsUnionSubquery(const ASTSelectQuery & select)
@@ -1053,7 +983,10 @@ bool referencesSystemDatabaseAnywhere(const ASTPtr & ast, const String & current
         if (db == "system" || db == "INFORMATION_SCHEMA" || db == "information_schema")
             return true;
     }
-    return anyChild(ast, [&](const ASTPtr & child) { return referencesSystemDatabaseAnywhere(child, current_database); });
+    for (const auto & child : ast->children)
+        if (referencesSystemDatabaseAnywhere(child, current_database))
+            return true;
+    return false;
 }
 
 /// `current_database` resolves unqualified table names, same as in
@@ -1102,7 +1035,15 @@ bool referencesNonDeterministicDatabase(const ASTSelectQuery & select, const Str
 /// throws is treated conservatively as "distributed" (fail closed): we cannot
 /// prove the table is safe, so we skip the query rather than risk a false
 /// `AST_FUZZER_ORACLE_MISMATCH`.
-bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & context)
+/// Engines whose read is not stable across the oracle's repeated reads or plan
+/// rewrites: `Distributed` routes to remote shards (on the test clusters that
+/// all point at localhost a row is read once per shard, so reference vs rewrite
+/// can route/dedup differently), and `Buffer` splits rows between an in-memory
+/// buffer and the backing table with a background flush thread, so two reads
+/// can legitimately return different rows.
+const std::unordered_set<String> non_deterministic_table_engines = {"Distributed", "Buffer"};
+
+bool referencesNonDeterministicEngineAnywhere(const ASTPtr & ast, const ContextPtr & context)
 {
     if (!ast)
         return false;
@@ -1114,19 +1055,22 @@ bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & c
         try
         {
             auto storage = DatabaseCatalog::instance().tryGetTable({database, table_id->shortName()}, context);
-            if (storage && storage->getName() == "Distributed")
+            if (storage && non_deterministic_table_engines.contains(storage->getName()))
                 return true;
         }
         catch (...)
         {
             /// Ok: fail closed. If the table cannot be resolved we cannot prove it
-            /// is not `Distributed`, so treat it as distributed (unsafe) and skip
-            /// the query rather than risk a false oracle mismatch. Deliberately not
+            /// is not one of these engines, so treat it as unsafe and skip the
+            /// query rather than risk a false oracle mismatch. Deliberately not
             /// logged: this runs per-AST-node on a hot path.
             return true;
         }
     }
-    return anyChild(ast, [&](const ASTPtr & child) { return referencesDistributedTableAnywhere(child, context); });
+    for (const auto & child : ast->children)
+        if (referencesNonDeterministicEngineAnywhere(child, context))
+            return true;
+    return false;
 }
 
 constexpr size_t MAX_DEFINITION_SCREEN_DEPTH = 8;
@@ -1203,14 +1147,19 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                 if (row_policy && row_policy->expression)
                     definitions.push_back(row_policy->expression);
 
+                /// A stored definition (view body, column default, row policy) is expanded into the
+                /// query the oracle rewrites, so it must pass the same screens as the outer AST — the
+                /// outer AST only names the view/column, so checking it alone cannot compensate. A
+                /// non-strippable inline setting, an arbitrary-match join, or a WITH TOTALS modifier
+                /// hidden in a definition would otherwise survive expansion and defeat the
+                /// corresponding guard.
                 for (const auto & definition : definitions)
                     if (hasNonDeterministicFunctionsImpl(definition, context)
                         || hasNonDeterministicJoinAnywhere(definition, context->getSettingsRef()[Setting::join_default_strictness])
                         || hasNonStrippableInlineSettings(definition)
-                        || hasNestedThreadSettings(definition, nullptr)
-                        || hasWithTotalsAnywhere(definition)
+                        || hasGroupByTotalsModifierAnywhere(definition)
                         || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
-                        || referencesDistributedTableAnywhere(definition, context)
+                        || referencesNonDeterministicEngineAnywhere(definition, context)
                         || hasRowLimitInDistributedPlan(definition, context)
                         || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
                         return true;
@@ -1247,112 +1196,10 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
         }
     }
 
-    return anyChild(ast, [&](const ASTPtr & child) { return referencesUnscreenedDefinitionAnywhere(child, context, depth); });
-}
-
-void removeWithClauses(const ASTPtr & ast)
-{
-    if (auto * select = ast->as<ASTSelectQuery>())
-        select->setExpression(ASTSelectQuery::Expression::WITH, {});
     for (const auto & child : ast->children)
-        removeWithClauses(child);
-}
-
-/// A copy of `ast` in which every reference to a common table expression (and every `IN` operand naming
-/// a `WITH` alias) is replaced by its definition, as the query's own `WITH` processing does.
-/// The `WITH` clauses are then dropped, so a table read only through a `WITH` alias is not recorded.
-ASTPtr expandWithElements(const ASTPtr & ast, const ContextPtr & context)
-{
-    ASTPtr expanded = ast->clone();
-    const auto & settings = context->getSettingsRef();
-    if (settings[Setting::enable_global_with_statement])
-        ApplyWithGlobalVisitor::visit(expanded, settings[Setting::max_expanded_ast_elements]);
-    ExpandedASTBudget budget(settings[Setting::max_expanded_ast_elements], *expanded);
-    ApplyWithSubqueryVisitor::visit(expanded, context, budget);
-    removeWithClauses(expanded);
-    return expanded;
-}
-
-/// The aliases of the table expressions of one `FROM`, except an unqualified table aliased as its own name.
-/// A table name in that `FROM` resolves to such an alias before the database catalog.
-NameSet getTableExpressionAliases(const ASTTablesInSelectQuery & tables)
-{
-    NameSet aliases;
-    for (const auto & element : tables.children)
-    {
-        const auto * table_element = element->as<ASTTablesInSelectQueryElement>();
-        if (!table_element || !table_element->table_expression)
-            continue;
-        for (const auto & child : table_element->table_expression->children)
-        {
-            const String alias = child->tryGetAlias();
-            const auto * table_id = child->as<ASTTableIdentifier>();
-            if (!alias.empty() && !(table_id && !table_id->compound() && table_id->shortName() == alias))
-                aliases.insert(alias);
-        }
-    }
-    return aliases;
-}
-
-/// Appends each table a read of `ast` (an `expandWithElements` output) reaches, then a version of its data that changes with
-/// each committed write of rows: the active part names of a `MergeTree` table (immutable, never reused), the generation, first
-/// block number and row count of a `Memory` one, the file sizes of a `Log`, `TinyLog` or `StripeLog` one.
-/// Not recorded: other engines, `APPLY` members (not reached by the `WITH` expansion) and a name as an `IN` operand (may be a column).
-void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & parts, size_t depth = 0, const NameSet & from_aliases = {})
-{
-    if (!ast || depth > MAX_DEFINITION_SCREEN_DEPTH)
-        return;
-
-    if (const auto * table_id = ast->as<ASTTableIdentifier>();
-        table_id && (table_id->compound() || !from_aliases.contains(table_id->shortName())))
-    {
-        const StorageID resolved = context->tryResolveStorageID(StorageID{table_id->getDatabaseName(), table_id->shortName()});
-        if (auto storage = resolved ? DatabaseCatalog::instance().tryGetTable(resolved, context) : nullptr)
-        {
-            if (const auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load))
-            {
-                parts.push_back(storage->getStorageID().getNameForLogs());
-                for (const auto & part : merge_tree->getDataPartsVectorForInternalUsage(
-                         {MergeTreeData::DataPartState::Active},
-                         {MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch}))
-                    parts.push_back(part->name);
-            }
-            else if (const auto memory = castStorage<StorageMemory>(storage, DeferredTable::Load))
-            {
-                const auto metadata = memory->getInMemoryMetadataPtr(nullptr, /* bypass_metadata_cache = */ false);
-                const auto snapshot = memory->getStorageSnapshot(metadata, nullptr);
-                const auto & data = assert_cast<const StorageMemory::SnapshotData &>(*snapshot->data);
-                parts.push_back(storage->getStorageID().getNameForLogs());
-                parts.push_back(fmt::format("{}_{}_{}", data.generation, data.first_block_number, data.rows));
-            }
-            else if (const auto log_table = castStorage<StorageLog>(storage, DeferredTable::Load))
-            {
-                parts.push_back(storage->getStorageID().getNameForLogs());
-                parts.push_back(std::to_string(log_table->totalBytes(context).value_or(0)));
-            }
-            else if (const auto stripe_log_table = castStorage<StorageStripeLog>(storage, DeferredTable::Load))
-            {
-                parts.push_back(storage->getStorageID().getNameForLogs());
-                parts.push_back(std::to_string(stripe_log_table->totalBytes(context).value_or(0)));
-            }
-            else if (storage->getName() == "View")
-            {
-                const auto metadata = storage->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
-                collectReadParts(expandWithElements(metadata->getSelectQuery().inner_query, context), context, parts, depth + 1);
-            }
-        }
-    }
-
-    if (const auto * tables = ast->as<ASTTablesInSelectQuery>())
-    {
-        const NameSet aliases = getTableExpressionAliases(*tables);
-        for (const auto & child : ast->children)
-            collectReadParts(child, context, parts, depth, aliases);
-        return;
-    }
-
-    for (const auto & child : ast->children)
-        collectReadParts(child, context, parts, depth, from_aliases);
+        if (referencesUnscreenedDefinitionAnywhere(child, context, depth))
+            return true;
+    return false;
 }
 
 /// Safer replacement for `GetAggregatesVisitor` when scanning fuzzer-mutated
@@ -1404,26 +1251,23 @@ void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
     /// `checkTLPAggregate` rejects it because it is not a rewritable function.
     if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
     {
-        SafeAggregateScan member_scan;
-        forEachChild(ast, [&](const ASTPtr & child) { scanAggregatesSafe(child, member_scan); });
-        if (!member_scan.aggregates.empty()
-            || (!apply->func_name.empty() && AggregateFunctionFactory::instance().isAggregateFunctionName(apply->func_name)))
+        if (apply->lambda)
+        {
+            SafeAggregateScan lambda_scan;
+            scanAggregatesSafe(apply->lambda, lambda_scan);
+            if (!lambda_scan.aggregates.empty())
+                out.aggregates.push_back(ast);
+            out.window_functions.insert(
+                out.window_functions.end(), lambda_scan.window_functions.begin(), lambda_scan.window_functions.end());
+        }
+        else if (!apply->func_name.empty() && AggregateFunctionFactory::instance().isAggregateFunctionName(apply->func_name))
         {
             out.aggregates.push_back(ast);
         }
-        out.window_functions.insert(
-            out.window_functions.end(), member_scan.window_functions.begin(), member_scan.window_functions.end());
-        return;
     }
 
-    forEachChild(ast, [&](const ASTPtr & child) { scanAggregatesSafe(child, out); });
-}
-
-/// A sub-query runs on a thread group of its own context: code that takes the query context from the thread
-/// (e.g. distributed plan stage tasks) must see the oracle's settings, not the fuzzed query's.
-ThreadGroupSwitcher switchToThreadGroupOf(const ContextPtr & oracle_context)
-{
-    return ThreadGroupSwitcher(ThreadGroup::createForQuery(oracle_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
+    for (const auto & child : ast->children)
+        scanAggregatesSafe(child, out);
 }
 
 }
@@ -1595,175 +1439,27 @@ String QueryOracleChecker::formatAST(const ASTPtr & ast)
 }
 
 
-ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr & base_context)
-{
-    auto session_context = Context::createCopy(base_context);
-    session_context->makeSessionContext();
-
-    auto oracle_context = Context::createCopy(session_context);
-    oracle_context->makeQueryContext();
-    oracle_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
-    oracle_context->setSetting("ast_fuzzer_oracle", Field(false));
-    oracle_context->setSetting("max_execution_time", Field(UInt64(10)));
-    /// A seed query's `SET aggregate_functions_null_for_empty = 1` would leak
-    /// into oracle sub-queries and break NoREC: `count()` over zero input rows
-    /// becomes NULL while `countIf` still aggregates every row and returns 0.
-    /// Pin it off so both sides of every comparison use standard semantics.
-    oracle_context->setSetting("aggregate_functions_null_for_empty", Field(false));
-    /// See `truncatingSettings`: with this on, `count()` over an empty input
-    /// returns zero rows while the NoREC `countIf` form returns one `0` row.
-    oracle_context->setSetting("empty_result_for_aggregation_by_empty_set", Field(false));
-    /// Constraint-based optimization trusts `CONSTRAINT ... ASSUME ...`
-    /// without checking. When a table's data violates its ASSUME constraint
-    /// (the fuzz corpus has such tables, e.g. `constraint_test_*`), the
-    /// optimizer may simplify a predicate using the (false) assumption in one
-    /// rewrite form but evaluate the real data in another, so the reference
-    /// and rewrite legitimately disagree — optimizer-dependent by design, not
-    /// a bug. Evaluate real data consistently by pinning the constraint
-    /// optimizer (and the CNF conversion that feeds it) off.
-    oracle_context->setSetting("optimize_using_constraints", Field(false));
-    oracle_context->setSetting("convert_query_to_cnf", Field(false));
-    /// A hash join compares a `Dynamic` key with a non-`Dynamic` one by type, unlike `equals`,
-    /// so moving an equality between WHERE and the JOIN keys would change the result.
-    oracle_context->setSetting("allow_dynamic_type_in_join_keys", Field(false));
-    /// Neutralize session-leaked read/result caps (a seed's `SET
-    /// max_rows_to_read = N, read_overflow_mode = 'break'` would truncate
-    /// oracle sub-queries asymmetrically — see `truncatingSettings`).
-    /// `max_result_rows`/`max_result_bytes`/`result_overflow_mode` and
-    /// `max_execution_time` are pinned above/below to the oracle's own caps,
-    /// which throw rather than truncate.
-    for (const auto * cap : {"max_rows_to_read", "max_bytes_to_read",
-                             "max_rows_to_read_leaf", "max_bytes_to_read_leaf",
-                             "max_rows_to_group_by", "max_rows_to_sort", "max_bytes_to_sort",
-                             "max_rows_in_distinct", "max_bytes_in_distinct",
-                             "max_rows_to_transfer", "max_bytes_to_transfer",
-                             "max_rows_in_join", "max_bytes_in_join",
-                             "max_rows_in_set", "max_bytes_in_set",
-                             "max_estimated_execution_time",
-                             /// `limit`/`offset` settings: a final LIMIT/OFFSET
-                             /// on every result, non-distributive over rewrites.
-                             "limit", "offset"})
-        oracle_context->setSetting(cap, Field(UInt64(0)));
-    for (const auto * mode : {"read_overflow_mode", "read_overflow_mode_leaf",
-                              "group_by_overflow_mode", "sort_overflow_mode",
-                              "distinct_overflow_mode", "transfer_overflow_mode",
-                              "join_overflow_mode", "set_overflow_mode",
-                              "timeout_overflow_mode"})
-        oracle_context->setSetting(mode, String("throw"));
-    /// Session-leaked `SET use_skip_indexes_if_final = 1,
-    /// use_skip_indexes_if_final_exact_mode = 0` would make oracle
-    /// sub-queries keep stale FINAL row versions (see `truncatingSettings`).
-    oracle_context->setSetting("use_skip_indexes_if_final_exact_mode", Field(true));
-    /// A session-leaked `SET extremes = 1` would append extremes blocks to
-    /// every oracle sub-query result (counted as data rows).
-    oracle_context->setSetting("extremes", Field(false));
-    /// Cap result size so oracle sub-queries (especially TLP's UNION ALL of three
-    /// partitions) cannot allocate unbounded memory. We use `result_overflow_mode=throw`
-    /// — `break` would silently truncate the result before the cap fires, and the
-    /// caller's post-check on `output.size() > MAX_ORACLE_OUTPUT_SIZE` would then never
-    /// trip (the output sits at exactly the cap). The caller catches the resulting
-    /// `TOO_MANY_ROWS` / `TOO_MANY_BYTES` exception and treats the query as skipped.
-    oracle_context->setSetting("max_result_rows", Field(UInt64(MAX_ORACLE_RESULT_ROWS)));
-    oracle_context->setSetting("max_result_bytes", Field(UInt64(MAX_ORACLE_OUTPUT_SIZE)));
-    oracle_context->setSetting("result_overflow_mode", String("throw"));
-
-    /// Run oracle sub-queries single-threaded so the nested pipeline cannot have
-    /// background-pool workers running while the outer call site (this thread)
-    /// is tearing the pipeline down. TSan caught a heap-use-after-free on
-    /// `shared_ptr<FunctionToExecutableFunctionAdaptor>::__on_zero_shared` that
-    /// fired exactly when a global-pool worker was still in
-    /// `FilterTransform::doTransform → castColumn` for the nested oracle query
-    /// at the moment `executeQuery(...)` returned and started destroying the
-    /// pipeline. Constraining the nested execution to the caller thread closes
-    /// that race (worker tasks run inline, finish before the executor returns).
-    oracle_context->setSetting("max_threads", Field(UInt64(1)));
-    oracle_context->setSetting("max_insert_threads", Field(UInt64(1)));
-    oracle_context->setSetting("max_final_threads", Field(UInt64(1)));
-    oracle_context->setSetting("output_format_parallel_formatting", Field(false));
-
-    oracle_context->setCurrentQueryId("");
-    return oracle_context;
-}
-
+/// The execution + shaping implementations now live in QueryOracles/OracleExec. These remain as
+/// thin forwarders so the existing check* methods keep their current call sites; new oracles use
+/// OracleExec directly.
 
 std::optional<std::vector<String>>
 QueryOracleChecker::executeAndCollectSortedRows(const String & query, const ContextMutablePtr & context)
 {
-    auto oracle_context = makeOracleContext(context);
-    oracle_context->setDefaultFormat("TabSeparated");
-    recordReadParts(query, oracle_context);
-    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
-
-    /// Use the ReadBuffer/WriteBuffer executeQuery API — this is crash-safe because
-    /// ClickHouse handles all column serialization within the pipeline internally,
-    /// writing formatted text directly to the output buffer.
-    ReadBufferFromString istr(query);
-    WriteBufferFromOwnString ostr;
-
-    try
-    {
-        executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
-    }
-    catch (const Exception & e)
-    {
-        /// `result_overflow_mode=throw` makes oracle sub-queries that exceed
-        /// `max_result_rows` / `max_result_bytes` throw rather than silently
-        /// truncate. Catch the size-cap exceptions here and signal "skipped"
-        /// so the oracle never compares partial results.
-        if (e.code() == ErrorCodes::TOO_MANY_ROWS || e.code() == ErrorCodes::TOO_MANY_BYTES)
-            return std::nullopt;
-        throw;
-    }
-
-    String output = ostr.str();
-    if (output.size() > MAX_ORACLE_OUTPUT_SIZE)
-        return std::nullopt; /// Belt-and-braces: still cap the formatted output.
-
-    auto rows = splitIntoRows(output);
-    std::sort(rows.begin(), rows.end());
-    return rows;
+    return OracleExec::executeRows(query, context, ResultShape::SortedBag);
 }
 
 
 Field QueryOracleChecker::executeScalar(const String & query, const ContextMutablePtr & context)
 {
-    auto oracle_context = makeOracleContext(context);
-    recordReadParts(query, oracle_context);
-    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
-
-    auto result = executeQuery(query, oracle_context, QueryFlags{.internal = true});
-
-    if (!result.second.pipeline.initialized() || !result.second.pipeline.pulling())
-        return Field();
-
-    PullingPipelineExecutor executor(result.second.pipeline);
-    Block block;
-
-    Field scalar;
-    bool found = false;
-
-    while (executor.pull(block))
-    {
-        if (block.rows() > 0 && block.columns() > 0 && !found)
-        {
-            block.getByPosition(0).column->get(0, scalar);
-            found = true;
-        }
-    }
-
-    return scalar;
+    return OracleExec::executeScalar(query, context).value_or(Field());
 }
 
 
 std::optional<std::vector<String>>
 QueryOracleChecker::executeAndCollectSortedUniqueRows(const String & query, const ContextMutablePtr & context)
 {
-    auto rows_opt = executeAndCollectSortedRows(query, context);
-    if (!rows_opt)
-        return std::nullopt;
-    auto & rows = *rows_opt;
-    rows.erase(std::unique(rows.begin(), rows.end()), rows.end());
-    return rows_opt;
+    return OracleExec::executeRows(query, context, ResultShape::SortedSet);
 }
 
 
@@ -1772,60 +1468,7 @@ QueryOracleChecker::executeWithSettings(
     const String & query, const ContextMutablePtr & context,
     const std::vector<std::pair<String, Field>> & settings)
 {
-    auto oracle_context = makeOracleContext(context);
-    oracle_context->setDefaultFormat("TabSeparated");
-    for (const auto & [name, value] : settings)
-        oracle_context->setSetting(name, value);
-    recordReadParts(query, oracle_context);
-    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
-
-    ReadBufferFromString istr(query);
-    WriteBufferFromOwnString ostr;
-    try
-    {
-        executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::TOO_MANY_ROWS || e.code() == ErrorCodes::TOO_MANY_BYTES)
-            return std::nullopt;
-        throw;
-    }
-
-    String output = ostr.str();
-    if (output.size() > MAX_ORACLE_OUTPUT_SIZE)
-        return std::nullopt;
-
-    auto rows = splitIntoRows(output);
-    std::sort(rows.begin(), rows.end());
-    return rows;
-}
-
-
-void QueryOracleChecker::recordReadParts(const String & query, const ContextPtr & context)
-{
-    const auto & settings = context->getSettingsRef();
-    ParserQuery parser(query.data() + query.size());
-    const ASTPtr ast = parseQuery(
-        parser, query, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-
-    ASTPtr read_ast = expandWithElements(ast, context);
-    Strings parts;
-    collectReadParts(read_ast, context, parts);
-    read_parts.emplace_back(std::move(read_ast), std::move(parts));
-}
-
-
-bool QueryOracleChecker::readPartsChanged(const ContextPtr & context) const
-{
-    for (const auto & [read_ast, parts_before] : read_parts)
-    {
-        Strings parts;
-        collectReadParts(read_ast, context, parts);
-        if (parts != parts_before)
-            return true;
-    }
-    return false;
+    return OracleExec::executeRows(query, context, ResultShape::SortedBag, settings);
 }
 
 
@@ -1846,7 +1489,7 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
-    if (clauseDefinesAliasUsedElsewhere(select, select.where(), context->getQueryParameters()))
+    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
         return false;
 
     ASTPtr predicate = select.where()->clone();
@@ -1936,7 +1579,7 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
-    if (clauseDefinesAliasUsedElsewhere(select, select.where(), context->getQueryParameters()))
+    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
         return false;
 
     /// The `countIf` rewrite drops the SELECT list. If the predicate
@@ -1947,7 +1590,7 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
     {
         std::unordered_set<String> select_aliases;
         collectAliases(select.select(), select_aliases);
-        if (!select_aliases.empty() && referencesAnyAlias(select.where(), select_aliases, context->getQueryParameters()))
+        if (!select_aliases.empty() && referencesAnyAlias(select.where(), select_aliases))
             return false;
     }
 
@@ -2049,7 +1692,7 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
-    if (clauseDefinesAliasUsedElsewhere(select, select.where(), context->getQueryParameters()))
+    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
         return false;
 
     ASTPtr predicate = select.where()->clone();
@@ -2110,7 +1753,7 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
-    if (clauseDefinesAliasUsedElsewhere(select, select.where(), context->getQueryParameters()))
+    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
         return false;
 
     /// A non-injective projection (e.g. `SELECT g % 2 ... GROUP BY g`) can
@@ -2190,7 +1833,7 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
-    if (clauseDefinesAliasUsedElsewhere(select, select.having(), context->getQueryParameters()))
+    if (clauseDefinesAliasUsedElsewhere(select, select.having()))
         return false;
 
     ASTPtr having_pred = select.having()->clone();
@@ -2318,7 +1961,7 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
             throw;
         /// The variant query might fail with a different error — that's OK.
         LOG_TRACE(logger, "DQP oracle: variant query failed (expected): {}", e.message());
@@ -2350,7 +1993,7 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
-    if (clauseDefinesAliasUsedElsewhere(select, select.where(), context->getQueryParameters()))
+    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
         return false;
 
     /// Collect aggregate functions from the SELECT list.
@@ -2522,12 +2165,13 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
                 const auto * agg_func = aggregate_ast->as<ASTFunction>();
                 String alias = agg_to_alias[agg_func];
                 auto merge_func = makeASTFunction(agg_func->name + "Merge", make_intrusive<ASTIdentifier>(alias));
-                /// A `-Merge` function takes its parameters from its own call, not from the state.
+                /// A `-Merge` takes its parameters from its own call, not from the state. Without
+                /// the clone, `uniqUpTo(10)(x)` yields inner `uniqUpToState(10)(x)` but outer
+                /// `uniqUpToMerge(_s_0)` with the default threshold `5`: the state types differ, the
+                /// combinator throws, and the oracle silently skips — dropping parameterized-aggregate
+                /// TLP coverage. (Parameters are constants in the fuzzer's corpus, so no scope capture.)
                 if (agg_func->parameters)
                 {
-                    /// The outer query reads other columns, where an identifier or an asterisk means something else.
-                    if (!isScopeFreeExpression(agg_func->parameters))
-                        return false;
                     merge_func->parameters = agg_func->parameters->clone();
                     merge_func->children.push_back(merge_func->parameters);
                 }
@@ -2606,10 +2250,11 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
         return false;
 
     ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
-    /// Dedicated counter so a test can prove this specific oracle path ran —
-    /// with `ast_fuzzer_runs > 0` the mutated query may lose the aggregate
-    /// shape, so a plain "query succeeded" assertion proves nothing.
-    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleTLPAggregateChecks);
+    /// The dedicated per-oracle counter (`ASTFuzzerOracleTLPAggregateChecks`, and one
+    /// per oracle) is incremented uniformly by the OracleRegistry adapter when this
+    /// method returns true — see OracleRegistry.cpp. A test can prove this specific
+    /// oracle path ran because with `ast_fuzzer_runs > 0` a mutation may lose the
+    /// aggregate shape, so a plain "query succeeded" assertion proves nothing.
 
     LOG_TRACE(logger, "TLP Aggregate oracle: reference query: {}", ref_sql);
     LOG_TRACE(logger, "TLP Aggregate oracle: metamorphic query: {}", metamorphic_sql);
@@ -2907,6 +2552,554 @@ String formatChangedSettings(const ContextPtr & context)
 }
 }
 
+bool QueryOracleChecker::checkGroupByKeyPermutation(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// GROUP BY keys form a set, so permuting them cannot change the grouping and must yield the
+    /// identical result multiset. A divergence is a real multi-key grouping / aggregation bug
+    /// (e.g. two-level aggregation or aggregator key ordering that is sensitive to key order).
+    if (!select.groupBy())
+        return false;
+    /// `GROUP BY ALL` has no explicit key list to permute; the totals/subtotal modifiers are
+    /// order-sensitive (ROLLUP(a,b) != ROLLUP(b,a)). The global gate already rejects the
+    /// modifiers, but guard here too.
+    if (select.group_by_all || select.group_by_with_rollup || select.group_by_with_cube
+        || select.group_by_with_grouping_sets || select.group_by_with_totals)
+        return false;
+
+    auto & keys = select.groupBy()->children;
+    if (keys.size() < 2)
+        return false; /// nothing to permute
+
+    if (!isSafeForOracle(select))
+        return false;
+    if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+
+    /// Reference: the query with ORDER BY / LIMIT / SETTINGS stripped (multiset comparison).
+    auto ref_ast = select.clone();
+    stripOrderAndLimit(ref_ast->as<ASTSelectQuery &>());
+
+    /// Metamorphic: identical, but with the GROUP BY keys reversed.
+    auto perm_ast = ref_ast->clone();
+    {
+        auto & sel = perm_ast->as<ASTSelectQuery &>();
+        auto & perm_keys = sel.groupBy()->children;
+        std::reverse(perm_keys.begin(), perm_keys.end());
+    }
+
+    const String ref_sql = formatAST(ref_ast);
+    const String perm_sql = formatAST(perm_ast);
+    if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH || perm_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "GROUP BY key permutation oracle: reference: {}", ref_sql);
+    LOG_TRACE(logger, "GROUP BY key permutation oracle: permuted: {}", perm_sql);
+
+    auto ref_rows_opt = OracleExec::executeRows(ref_sql, context, ResultShape::SortedBag);
+    auto perm_rows_opt = OracleExec::executeRows(perm_sql, context, ResultShape::SortedBag);
+    if (!ref_rows_opt || !perm_rows_opt)
+        return false; /// output exceeded the result cap — skip rather than compare partial results
+
+    /// Both sides read the corpus table in separate executions; require the reference to
+    /// reproduce before trusting a mismatch (see the OracleExec::isStable stability rule).
+    if (!OracleExec::isStable(ref_sql, *ref_rows_opt, context, ResultShape::SortedBag))
+        return false;
+
+    if (!OracleCompare::equal(*ref_rows_opt, *perm_rows_opt))
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "GROUP BY key permutation oracle mismatch!\n"
+            "Reference query ({} rows): {}\n"
+            "Permuted-keys query ({} rows): {}\n{}",
+            ref_rows_opt->size(), ref_sql,
+            perm_rows_opt->size(), perm_sql,
+            OracleCompare::diffSummary(*ref_rows_opt, *perm_rows_opt));
+    }
+
+    LOG_TRACE(logger, "GROUP BY key permutation oracle passed ({} rows)", ref_rows_opt->size());
+    return true;
+}
+
+bool QueryOracleChecker::checkDistinctViaGroupBy(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// `SELECT DISTINCT <exprs> FROM ...` deduplicates the projected tuples; `SELECT <exprs>
+    /// FROM ... GROUP BY <exprs>` produces one row per distinct projected tuple — the same set.
+    /// The two run through different execution paths (DistinctStep vs the aggregator), so a
+    /// divergence is a real bug. Bespoke gate (isSafeForOracle rejects DISTINCT by design).
+    if (!select.distinct)
+        return false;
+    if (!select.select() || !select.tables())
+        return false;
+    /// DISTINCT combined with grouping/aggregation, or with row-limiting clauses that pick an
+    /// arbitrary subset, is out of scope.
+    if (select.groupBy() || select.having() || select.group_by_all || hasAggregates(select))
+        return false;
+    if (select.limitLength() || select.limitBy() || select.limitOffset()
+        || select.limitAfter() || select.limitUntil())
+        return false;
+    if (select.prewhere() || select.qualify())
+        return false;
+
+    /// A bare/qualified `*` becomes a context-sensitive GROUP BY `*` after the rewrite (the
+    /// global gate rejects asterisks in GROUP BY); keep them out.
+    for (const auto & expr : select.select()->children)
+        if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>())
+            return false;
+
+    if (hasArrayJoin(select) || hasPasteJoin(select) || expressionContainsArrayJoin(select))
+        return false;
+    if (referencesNonDeterministicDatabase(select))
+        return false;
+    {
+        SafeAggregateScan data;
+        scanAggregatesSafe(select.select(), data);
+        if (!data.window_functions.empty())
+            return false;
+    }
+    if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+
+    /// Reference: the DISTINCT query with ORDER BY / LIMIT / SETTINGS stripped.
+    auto ref_ast = select.clone();
+    stripOrderAndLimit(ref_ast->as<ASTSelectQuery &>());
+
+    /// Metamorphic: drop DISTINCT, GROUP BY the (alias-stripped) SELECT expressions.
+    auto gb_ast = ref_ast->clone();
+    {
+        auto & sel = gb_ast->as<ASTSelectQuery &>();
+        sel.distinct = false;
+        auto group_by = make_intrusive<ASTExpressionList>();
+        for (const auto & expr : sel.select()->children)
+        {
+            auto key = expr->clone();
+            key->setAlias(""); /// GROUP BY keys are the raw expressions, not `expr AS x`
+            group_by->children.push_back(std::move(key));
+        }
+        sel.setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_by));
+    }
+
+    const String ref_sql = formatAST(ref_ast);
+    const String gb_sql = formatAST(gb_ast);
+    if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH || gb_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "DISTINCT-via-GROUP-BY oracle: reference: {}", ref_sql);
+    LOG_TRACE(logger, "DISTINCT-via-GROUP-BY oracle: grouped: {}", gb_sql);
+
+    auto ref_rows_opt = OracleExec::executeRows(ref_sql, context, ResultShape::SortedBag);
+    auto gb_rows_opt = OracleExec::executeRows(gb_sql, context, ResultShape::SortedBag);
+    if (!ref_rows_opt || !gb_rows_opt)
+        return false;
+
+    if (!OracleExec::isStable(ref_sql, *ref_rows_opt, context, ResultShape::SortedBag))
+        return false;
+
+    if (!OracleCompare::equal(*ref_rows_opt, *gb_rows_opt))
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "DISTINCT-via-GROUP-BY oracle mismatch!\n"
+            "Reference query ({} rows): {}\n"
+            "Grouped query ({} rows): {}\n{}",
+            ref_rows_opt->size(), ref_sql,
+            gb_rows_opt->size(), gb_sql,
+            OracleCompare::diffSummary(*ref_rows_opt, *gb_rows_opt));
+    }
+
+    LOG_TRACE(logger, "DISTINCT-via-GROUP-BY oracle passed ({} rows)", ref_rows_opt->size());
+    return true;
+}
+
+bool QueryOracleChecker::checkPrewhereEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// On a single MergeTree-family table, PREWHERE is a transparent read-time optimization of
+    /// WHERE: `SELECT ... WHERE p` and `SELECT ... PREWHERE p` must return the identical multiset.
+    /// A divergence is a real PREWHERE bug. Bespoke gate (isSafeForOracle rejects PREWHERE and is
+    /// too strict here — we need a single physical table, which resolveSingleTableStorage gives us).
+    if (!select.where() || select.prewhere())
+        return false;
+
+    /// PREWHERE is only meaningful on a single MergeTree-family table (no JOIN / subquery / TF).
+    auto storage = resolveSingleTableStorage(select, context);
+    if (!storage || !storage->getName().ends_with("MergeTree"))
+        return false;
+
+    if (hasArrayJoin(select) || hasPasteJoin(select) || expressionContainsArrayJoin(select))
+        return false;
+    if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+    /// A WHERE that defines an alias used elsewhere would move that alias definition into PREWHERE,
+    /// changing scoping; skip such queries.
+    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
+        return false;
+    /// `stripOrderAndLimit` below deletes the range-limit clauses from both sides, so a limited
+    /// query would be validated as a different (unbounded) query than the one that ran; skip those.
+    /// An unordered window function is also permitted to renumber rows across the two executions.
+    if (select.limitLength() || select.limitBy() || select.limitOffset()
+        || select.limitAfter() || select.limitUntil())
+        return false;
+    if (hasWindowFunctionWithoutOrderByAnywhere(select))
+        return false;
+
+    /// Reference: the query as-is (WHERE p), ORDER BY / LIMIT / SETTINGS stripped.
+    auto ref_ast = select.clone();
+    stripOrderAndLimit(ref_ast->as<ASTSelectQuery &>());
+
+    /// Variant: move WHERE into PREWHERE.
+    auto pw_ast = ref_ast->clone();
+    {
+        auto & sel = pw_ast->as<ASTSelectQuery &>();
+        auto predicate = sel.where()->clone();
+        sel.setExpression(ASTSelectQuery::Expression::WHERE, {});
+        sel.setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(predicate));
+    }
+
+    const String ref_sql = formatAST(ref_ast);
+    const String pw_sql = formatAST(pw_ast);
+    if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH || pw_sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "PREWHERE-equivalence oracle: reference: {}", ref_sql);
+    LOG_TRACE(logger, "PREWHERE-equivalence oracle: prewhere: {}", pw_sql);
+
+    auto ref_rows_opt = OracleExec::executeRows(ref_sql, context, ResultShape::SortedBag);
+    auto pw_rows_opt = OracleExec::executeRows(pw_sql, context, ResultShape::SortedBag);
+    if (!ref_rows_opt || !pw_rows_opt)
+        return false;
+
+    if (!OracleExec::isStable(ref_sql, *ref_rows_opt, context, ResultShape::SortedBag))
+        return false;
+
+    if (!OracleCompare::equal(*ref_rows_opt, *pw_rows_opt))
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "PREWHERE-equivalence oracle mismatch!\n"
+            "Reference (WHERE) query ({} rows): {}\n"
+            "PREWHERE query ({} rows): {}\n{}",
+            ref_rows_opt->size(), ref_sql,
+            pw_rows_opt->size(), pw_sql,
+            OracleCompare::diffSummary(*ref_rows_opt, *pw_rows_opt));
+    }
+
+    LOG_TRACE(logger, "PREWHERE-equivalence oracle passed ({} rows)", ref_rows_opt->size());
+    return true;
+}
+
+namespace
+{
+
+/// True if `where` references a column that some secondary (skip) index of the table is built on;
+/// only then can `use_skip_indexes` change the read path.
+bool whereTouchesSkipIndexColumn(const ASTPtr & where, const IndicesDescription & indices)
+{
+    if (!where || indices.empty())
+        return false;
+    std::unordered_set<String> indexed;
+    for (const auto & index : indices)
+        for (const auto & column : index.column_names)
+            indexed.insert(column);
+    std::function<bool(const ASTPtr &)> walk = [&](const ASTPtr & node) -> bool
+    {
+        if (!node)
+            return false;
+        if (const auto * ident = node->as<ASTIdentifier>())
+            if (indexed.contains(ident->shortName()))
+                return true;
+        for (const auto & child : node->children)
+            if (walk(child))
+                return true;
+        return false;
+    };
+    return walk(where);
+}
+
+/// True if the subtree contains at least one function call (anything the expression JIT could compile).
+bool containsFunctionCall(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (ast->as<ASTFunction>())
+        return true;
+    for (const auto & child : ast->children)
+        if (containsFunctionCall(child))
+            return true;
+    return false;
+}
+
+/// True if the FROM clause has a JOIN or a subquery — the shapes where unused columns can arise.
+bool hasJoinOrSubquerySource(const ASTSelectQuery & select)
+{
+    if (!select.tables())
+        return false;
+    for (const auto & child : select.tables()->children)
+    {
+        const auto * elem = child->as<ASTTablesInSelectQueryElement>();
+        if (!elem)
+            continue;
+        if (elem->table_join)
+            return true;
+        if (const auto * te = elem->table_expression ? elem->table_expression->as<ASTTableExpression>() : nullptr)
+            if (te->subquery)
+                return true;
+    }
+    return false;
+}
+
+}
+
+bool QueryOracleChecker::checkSkipIndexEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// Skip (data-skipping) indexes only prune granules that cannot match; they must never change
+    /// the result. Running byte-identical SQL with `use_skip_indexes=0` vs `=1` must return the
+    /// identical multiset — a difference is a real granule-pruning bug. Both sides run the SAME
+    /// text (only the setting differs), so the usual structural gates that protect AST rewrites do
+    /// not apply; require a single MergeTree-family table and a WHERE (nothing to prune otherwise).
+    if (!select.where())
+        return false;
+
+    auto storage = resolveSingleTableStorage(select, context);
+    if (!storage || !storage->getName().ends_with("MergeTree"))
+        return false;
+
+    /// `use_skip_indexes` is only consulted when the table has a secondary index AND the predicate
+    /// touches an indexed column; otherwise both runs take the identical read path and the
+    /// comparison would be a no-op counted as a check.
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    if (!whereTouchesSkipIndexColumn(select.where(), metadata_snapshot->getSecondaryIndices()))
+        return false;
+
+    if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+    /// `stripOrderAndLimit` below deletes the range-limit clauses, so a limited query would be
+    /// validated as a different (unbounded) query than the one that ran; skip those. An unordered
+    /// window function is also permitted to renumber rows across the two executions.
+    if (select.limitLength() || select.limitBy() || select.limitOffset()
+        || select.limitAfter() || select.limitUntil())
+        return false;
+    if (hasWindowFunctionWithoutOrderByAnywhere(select))
+        return false;
+
+    /// Strip ORDER BY / LIMIT / SETTINGS (the last so the query cannot override our overlay) and
+    /// compare the row multiset.
+    auto q_ast = select.clone();
+    stripOrderAndLimit(q_ast->as<ASTSelectQuery &>());
+    const String sql = formatAST(q_ast);
+    if (sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "skip-index-equivalence oracle: {}", sql);
+
+    const std::vector<std::pair<String, Field>> off{{"use_skip_indexes", Field(UInt64(0))}};
+    const std::vector<std::pair<String, Field>> on{{"use_skip_indexes", Field(UInt64(1))}};
+
+    auto off_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, off);
+    auto on_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, on);
+    if (!off_rows_opt || !on_rows_opt)
+        return false;
+
+    if (!OracleExec::isStable(sql, *off_rows_opt, context, ResultShape::SortedBag, off))
+        return false;
+
+    if (!OracleCompare::equal(*off_rows_opt, *on_rows_opt))
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "skip-index-equivalence oracle mismatch!\n"
+            "use_skip_indexes=0 ({} rows) vs use_skip_indexes=1 ({} rows): {}\n{}",
+            off_rows_opt->size(), on_rows_opt->size(), sql,
+            OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt));
+    }
+
+    LOG_TRACE(logger, "skip-index-equivalence oracle passed ({} rows)", off_rows_opt->size());
+    return true;
+}
+
+bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, const ContextMutablePtr & context)
+{
+    /// Toggle one result-invariant optimizer/cache setting off vs on and require byte-identical SQL
+    /// to return the identical multiset. These settings are pure optimizations/caches that must
+    /// never change the result, so a divergence is a real bug. Both sides run the same text, so the
+    /// structural gates that protect AST rewrites do not apply — only determinism + read stability.
+    /// Settings already covered by checkDQP are intentionally NOT repeated here.
+    /// Each flip is only consulted on a specific query shape; comparing 0 vs 1 on a query that never
+    /// reaches the toggled code path is a no-op that must not be counted as a check. Settings whose
+    /// code path needs an ORDER BY or LIMIT (`read_in_order_use_virtual_row`,
+    /// `query_plan_optimize_lazy_materialization`, `compile_sort_description`,
+    /// `optimize_sorting_by_input_stream_properties`) are excluded outright: `stripOrderAndLimit`
+    /// removes exactly the clauses they act on, so they could never be exercised here.
+    if (!select.tables())
+        return false;
+    if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+    /// `stripOrderAndLimit` below deletes the range-limit clauses, so a limited query would be
+    /// validated as a different (unbounded) query than the one that ran; skip those. An unordered
+    /// window function is also permitted to renumber rows across the two executions.
+    if (select.limitLength() || select.limitBy() || select.limitOffset()
+        || select.limitAfter() || select.limitUntil())
+        return false;
+    if (hasWindowFunctionWithoutOrderByAnywhere(select))
+        return false;
+
+    const auto storage = resolveSingleTableStorage(select, context);
+    const bool merge_tree_scan = storage && storage->getName().ends_with("MergeTree");
+    const bool has_filter = select.where() || select.prewhere();
+    const bool has_functions = containsFunctionCall(select.select()) || containsFunctionCall(select.where())
+        || containsFunctionCall(select.prewhere()) || containsFunctionCall(select.having());
+
+    std::vector<std::string_view> flips;
+    /// Caches / read-time optimizations: need a condition over a MergeTree read.
+    if (has_filter && merge_tree_scan)
+        flips.push_back("use_query_condition_cache");
+    /// PREWHERE optimization: needs a WHERE that could be moved, over a MergeTree read.
+    if (select.where() && merge_tree_scan)
+        flips.push_back("query_plan_optimize_prewhere");
+    /// DISTINCT-in-order: needs a DistinctStep over an ordered MergeTree read.
+    if (select.distinct && merge_tree_scan)
+        flips.push_back("optimize_distinct_in_order");
+    /// Expression / aggregate JIT: need something to compile. `compile_aggregate_expressions`
+    /// only affects the compilation of aggregate *functions*, so a bare `GROUP BY` without an
+    /// aggregate (e.g. `SELECT a FROM t GROUP BY a`) must not arm it.
+    if (has_functions)
+        flips.push_back("compile_expressions");
+    if (hasAggregates(select))
+        flips.push_back("compile_aggregate_expressions");
+    /// Plan-shape optimizations: need filters / unused-column producers respectively.
+    if (has_filter)
+        flips.push_back("query_plan_merge_filters");
+    if (hasJoinOrSubquerySource(select))
+        flips.push_back("query_plan_remove_unused_columns");
+    if (flips.empty())
+        return false;
+
+    const std::string_view flip = flips[thread_local_rng() % flips.size()];
+
+    /// Strip ORDER BY / LIMIT / SETTINGS (so the query cannot override our overlay) and compare
+    /// the row multiset.
+    auto q_ast = select.clone();
+    stripOrderAndLimit(q_ast->as<ASTSelectQuery &>());
+    const String sql = formatAST(q_ast);
+    if (sql.size() > MAX_ORACLE_QUERY_LENGTH)
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "setting-flip-sweep oracle ({}): {}", flip, sql);
+
+    std::vector<std::pair<String, Field>> off{{String(flip), Field(UInt64(0))}};
+    std::vector<std::pair<String, Field>> on{{String(flip), Field(UInt64(1))}};
+    /// The JIT compile thresholds default to 3, so the first execution of a unique fuzzed query
+    /// never reaches compiled code and the on-side flip would be a no-op. Lower the matching
+    /// threshold on both sides (it is inert when the compile flag is off) so flipping the flag
+    /// actually exercises the compiled path it is meant to validate.
+    if (flip == "compile_expressions")
+    {
+        off.emplace_back("min_count_to_compile_expression", Field(UInt64(0)));
+        on.emplace_back("min_count_to_compile_expression", Field(UInt64(0)));
+    }
+    else if (flip == "compile_aggregate_expressions")
+    {
+        off.emplace_back("min_count_to_compile_aggregate_expression", Field(UInt64(0)));
+        on.emplace_back("min_count_to_compile_aggregate_expression", Field(UInt64(0)));
+    }
+
+    auto off_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, off);
+    auto on_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, on);
+    if (!off_rows_opt || !on_rows_opt)
+        return false;
+
+    if (!OracleExec::isStable(sql, *off_rows_opt, context, ResultShape::SortedBag, off))
+        return false;
+
+    if (!OracleCompare::equal(*off_rows_opt, *on_rows_opt))
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "setting-flip-sweep oracle mismatch!\n"
+            "{}=0 ({} rows) vs {}=1 ({} rows): {}\n{}",
+            flip, off_rows_opt->size(), flip, on_rows_opt->size(), sql,
+            OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt));
+    }
+
+    LOG_TRACE(logger, "setting-flip-sweep oracle passed ({}, {} rows)", flip, off_rows_opt->size());
+    return true;
+}
+
+bool QueryOracleChecker::checkCodecRoundtrip(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: ignores the fuzzed query and instead checks that codecs are lossless.
+    /// Identical data stored under CODEC(NONE) vs compression codecs must read back identical; a
+    /// difference is a real codec (de)compression bug. Rate-limited to keep fixture churn low.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("codec", context);
+    if (!fixture.valid())
+        return false;
+
+    const String plain = fixture.allocName("plain");
+    const String coded = fixture.allocName("coded");
+
+    if (!fixture.execute(
+            "CREATE TABLE " + plain + " (k UInt64 CODEC(NONE), i Int64 CODEC(NONE), f Float64 CODEC(NONE),"
+            " s String CODEC(NONE)) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute(
+            "CREATE TABLE " + coded + " (k UInt64, i Int64 CODEC(Delta, LZ4), f Float64 CODEC(Gorilla, ZSTD),"
+            " s String CODEC(ZSTD)) ENGINE = MergeTree ORDER BY k"))
+        return false;
+
+    /// Deterministic identical seed for both (INSERT ... SELECT FROM numbers; never rand/now).
+    const String seed = " SELECT number, toInt64(number) * 7 - 100, number * 0.5, toString(number % 97) FROM numbers(500)";
+    if (!fixture.execute("INSERT INTO " + plain + seed) || !fixture.execute("INSERT INTO " + coded + seed))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "codec round-trip oracle: {} (CODEC(NONE)) vs {} (codecs)", plain, coded);
+
+    /// Error-observing execution: a one-sided failure (the reference reads fine but the codec
+    /// table throws while compressing/decompressing) is itself the codec bug this oracle exists
+    /// to catch, so it must not be downgraded to a skip by the dispatch's catch-all.
+    auto plain_out = OracleExec::tryExecuteRows("SELECT * FROM " + plain, context, ResultShape::SortedBag);
+    auto coded_out = OracleExec::tryExecuteRows("SELECT * FROM " + coded, context, ResultShape::SortedBag);
+
+    /// The CODEC(NONE) reference read must itself succeed for any comparison to be meaningful; if
+    /// even the control overflows or fails there is nothing trustworthy to compare against — skip.
+    if (plain_out.overflow || plain_out.error_code || !plain_out.rows)
+        return false;
+    /// A coded-side overflow is not a bug (the data merely formatted larger) — skip.
+    if (coded_out.overflow)
+        return false;
+
+    if (coded_out.error_code || !coded_out.rows)
+    {
+        fixture.preserve(); /// keep the two tables for triage
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "codec round-trip oracle mismatch!\n"
+            "CODEC(NONE) table {} read {} rows, but codec table {} failed to read: {}",
+            plain, plain_out.rows->size(), coded, coded_out.error_message);
+    }
+
+    if (!OracleCompare::equal(*plain_out.rows, *coded_out.rows))
+    {
+        fixture.preserve(); /// keep the two tables for triage
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "codec round-trip oracle mismatch!\n"
+            "CODEC(NONE) table {} ({} rows) vs codec table {} ({} rows)\n{}",
+            plain, plain_out.rows->size(), coded, coded_out.rows->size(),
+            OracleCompare::diffSummary(*plain_out.rows, *coded_out.rows));
+    }
+
+    LOG_TRACE(logger, "codec round-trip oracle passed ({} rows)", plain_out.rows->size());
+    return true;
+}
+
 bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr & context)
 {
     /// The oracle runs after the fuzzed query finished, so the context's
@@ -2942,12 +3135,6 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         return false;
     }
 
-    if (hasNestedThreadSettings(query_ast, select->settings()))
-    {
-        LOG_TRACE(logger, "Oracle skip: query carries nested thread-count settings");
-        return false;
-    }
-
     /// An explicit `FORMAT ...` / `INTO OUTFILE` survives on the fuzzed AST
     /// (the fuzzer preserves `ASTQueryWithOutput::format_ast`), and
     /// `executeAndCollectSortedRows` relies on the default `TabSeparated` to
@@ -2966,7 +3153,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     if (hasNonDeterministicJoinAnywhere(query_ast, context->getSettingsRef()[Setting::join_default_strictness]))
     {
-        LOG_TRACE(logger, "Oracle skip: ASOF, ANY or SEMI JOIN (the matched row is plan-dependent)");
+        LOG_TRACE(logger, "Oracle skip: ASOF / ANY / SEMI JOIN (picks an arbitrary/plan-dependent matching row)");
         return false;
     }
 
@@ -2976,32 +3163,30 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         return false;
     }
 
+    if (hasGroupByTotalsModifierAnywhere(query_ast))
+    {
+        LOG_TRACE(logger, "Oracle skip: WITH TOTALS / ROLLUP / CUBE / GROUPING SETS (subtotal row is not distributive over partitions)");
+        return false;
+    }
+
     if (usesFinalAnywhere(query_ast))
     {
         LOG_TRACE(logger, "Oracle skip: FINAL (dedup is not distributive over WHERE partitions)");
         return false;
     }
 
-    if (hasWithTotalsAnywhere(query_ast))
+    /// Resolve each referenced table's engine (including tables hidden inside
+    /// subqueries / CTEs) and skip when any of them reads non-deterministically
+    /// across the oracle's repeated reads — see `non_deterministic_table_engines`.
+    if (referencesNonDeterministicEngineAnywhere(query_ast, context))
     {
-        LOG_TRACE(logger, "Oracle skip: WITH TOTALS (the totals row is not distributive over WHERE partitions)");
+        LOG_TRACE(logger, "Oracle skip: query reads from a Distributed or Buffer table");
         return false;
     }
 
     if (hasRowLimitInDistributedPlan(query_ast, context))
     {
         LOG_TRACE(logger, "Oracle skip: LIMIT/OFFSET in a query run as a distributed plan");
-        return false;
-    }
-
-    /// `Distributed` tables route to remote shards (here, test clusters whose
-    /// replicas all point at localhost), so a row is read once per shard and
-    /// the reference vs rewrite can route/dedup differently — the oracle can't
-    /// validate the result. Resolve each referenced table's engine (including
-    /// tables hidden inside subqueries / CTEs) and skip.
-    if (referencesDistributedTableAnywhere(query_ast, context))
-    {
-        LOG_TRACE(logger, "Oracle skip: query reads from a Distributed table");
         return false;
     }
 
@@ -3071,62 +3256,33 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     bool any_check_performed = false;
 
-    /// Run one oracle under a uniform guard: its own mismatch
-    /// (`AST_FUZZER_ORACLE_MISMATCH`) propagates and is annotated with the
-    /// reproduction settings by the outer handler below, and a disconnected
-    /// client (`QUERY_WAS_CANCELLED_BY_CLIENT`) stops the remaining oracles; any other execution
-    /// error means the rewrite was not comparable on this query (e.g. a
-    /// function the rewrite cannot analyse), so it is swallowed and the
-    /// remaining oracles still run. `name` reproduces the per-oracle log wording.
-    auto run_oracle = [&](std::string_view name, auto && check_fn)
-    {
-        read_parts.clear();
-        try
-        {
-            if (check_fn())
-                any_check_performed = true;
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            {
-                /// A merge, insert or mutation between the reads means they compared different data.
-                if (readPartsChanged(context))
-                {
-                    LOG_TRACE(logger, "{} oracle mismatch skipped: the data of a table it reads changed", name);
-                    return;
-                }
-                ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-                throw;
-            }
-            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
-                throw;
-            LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
-        }
-        catch (...)
-        {
-            LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, getCurrentExceptionMessage(false));
-        }
-    };
-
+    /// Dispatch over the ordered registry instead of a hand-written try/catch ladder, so
+    /// adding an oracle is one registry line. Each oracle's own mismatch
+    /// (`AST_FUZZER_ORACLE_MISMATCH`) propagates and is annotated with the reproduction
+    /// settings by the outer handler below; any other execution error means the rewrite
+    /// was not comparable on this query (e.g. a function the rewrite cannot analyse), so
+    /// it is swallowed and the remaining oracles still run.
     try
     {
-        run_oracle("TLP WHERE", [&] { return checkTLPWhere(*select, context); });
-        run_oracle("NoREC", [&] { return checkNoREC(*select, context); });
-        /// TLP Aggregate oracle (uses State/Merge combinators for any aggregate).
-        run_oracle("TLP Aggregate", [&] { return checkTLPAggregate(*select, context); });
-        /// TLP DISTINCT oracle (uses UNION DISTINCT instead of UNION ALL).
-        run_oracle("TLP DISTINCT", [&] { return checkTLPDistinct(*select, context); });
-        /// TLP GROUP BY oracle (set comparison for non-aggregate GROUP BY).
-        run_oracle("TLP GROUP BY", [&] { return checkTLPGroupBy(*select, context); });
-        /// TLP HAVING oracle (partitions on HAVING instead of WHERE).
-        run_oracle("TLP HAVING", [&] { return checkTLPHaving(*select, context); });
-        /// DQP oracle (differential query plans — same query, different optimizer settings).
-        run_oracle("DQP", [&] { return checkDQP(*select, context); });
-        /// Identity WHERE oracle (rewrites WHERE into equivalent forms — NOT(NOT p), p AND 1, p OR 0).
-        run_oracle("Identity WHERE", [&] { return checkIdentityWhere(*select, context); });
-        /// Subquery wrap oracle (wraps original as subquery and verifies identical result).
-        run_oracle("Subquery wrap", [&] { return checkSubqueryWrap(*select, context); });
+        for (const auto & oracle : OracleRegistry::instance().oracles())
+        {
+            const auto & name = oracle->traits().name;
+            try
+            {
+                if (oracle->run(*this, *select, context))
+                    any_check_performed = true;
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                    throw;
+                LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
+            }
+            catch (...)
+            {
+                LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, getCurrentExceptionMessage(false));
+            }
+        }
     }
     catch (Exception & e)
     {
