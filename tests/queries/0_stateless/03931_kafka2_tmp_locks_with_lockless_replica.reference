@@ -1,0 +1,13 @@
+Created topic.
+--- Act 1 done: full coverage with a permanently lockless replica ---
+--- Act 2 done: the fresh replica acquired partitions and consumes despite a stuck lockless replica ---
+--- Act 3 done: the same aged replica recovered via the demand handoff ---
+--- Consumed rows ---
+1	msg_1
+2	msg_2
+3	msg_3
+4	msg_4
+5	msg_5
+6	msg_6
+7	msg_7
+8	msg_8

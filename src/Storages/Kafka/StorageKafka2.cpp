@@ -301,12 +301,16 @@ bool StorageKafka2::activate()
             auto zookeeper = getZooKeeper();
 
             String is_active_path = fs::path(replica_path) / "is_active";
-            zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
+            String is_active_data = active_node_identifier + KeeperHandlingConsumer::DEMAND_AWARE_SUFFIX;
+            /// The bare identifier is what the previous version left behind after an upgrade.
+            zookeeper->deleteEphemeralNodeIfContentMatches(
+                is_active_path,
+                [this, &is_active_data](const String & content) { return content == is_active_data || content == active_node_identifier; });
 
             try
             {
                 /// Simultaneously declare that this replica is active, and update the host.
-                zookeeper->create(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral);
+                zookeeper->create(is_active_path, is_active_data, zkutil::CreateMode::Ephemeral);
             }
             catch (const Coordination::Exception & e)
             {
@@ -741,6 +745,11 @@ UInt64 StorageKafka2::getLocksRefreshPolls() const
 {
     /// Read per call rather than cached: the config reloader mutates this at runtime.
     return getContext()->getKafkaLocksRefreshPolls();
+}
+
+size_t StorageKafka2::getConsumerRescheduleMs() const
+{
+    return (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds();
 }
 
 size_t StorageKafka2::getSchemaRegistrySkipBytes() const
@@ -1418,7 +1427,8 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx,
         if (consumer->needsNewKeeper())
             consumer->setKeeper(getZooKeeperAndAssertActive());
 
-        if (const auto cannot_poll_reason = consumer->prepareToPoll(getLocksRefreshPolls()); cannot_poll_reason.has_value())
+        const size_t consumer_reschedule_ms = (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds();
+        if (const auto cannot_poll_reason = consumer->prepareToPoll(getLocksRefreshPolls(), consumer_reschedule_ms); cannot_poll_reason.has_value())
             return getStallKind(*cannot_poll_reason);
 
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);

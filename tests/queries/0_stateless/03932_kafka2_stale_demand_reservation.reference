@@ -1,0 +1,7 @@
+Created topic.
+--- Full coverage reached ---
+--- Demand published by a replica that stopped trying ---
+--- Fresh demand holds the reservation ---
+--- Stale demand stopped holding the reservation: full coverage returned ---
+--- First isolated read declared its own retry cadence ---
+--- Second isolated read after an idle gap declared its own retry cadence ---
