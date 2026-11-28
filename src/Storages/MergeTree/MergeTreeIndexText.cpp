@@ -27,6 +27,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
+#include <Interpreters/TreeRewriter.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -2511,15 +2512,17 @@ namespace
 {
 
 /// Rewrites `x = ''` / `x != ''` to `empty(x)` / `notEmpty(x)`, like `optimize_empty_string_comparisons` does in queries.
-void normalizeColumnExpression(ASTPtr & ast)
+/// Returns whether anything was rewritten.
+bool normalizeColumnExpression(ASTPtr & ast)
 {
+    bool rewritten = false;
     for (auto & child : ast->children)
-        normalizeColumnExpression(child);
+        rewritten |= normalizeColumnExpression(child);
 
     const auto * function = ast->as<ASTFunction>();
     if (!function || (function->name != "equals" && function->name != "notEquals")
         || !function->arguments || function->arguments->children.size() != 2)
-        return;
+        return rewritten;
 
     auto is_empty_string_literal = [](const ASTPtr & node)
     {
@@ -2535,9 +2538,10 @@ void normalizeColumnExpression(ASTPtr & ast)
     else if (is_empty_string_literal(arguments[0]))
         expression = arguments[1];
     else
-        return;
+        return rewritten;
 
     ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
+    return true;
 }
 
 /// Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not, so an index such as
@@ -2550,7 +2554,11 @@ std::optional<String> getNormalizedIndexColumnName(const IndexDescription & inde
         return {};
 
     ASTPtr normalized = index.expression_list_ast->children.front()->clone();
-    normalizeColumnExpression(normalized);
+    if (!normalizeColumnExpression(normalized))
+        return {};
+
+    /// `sample_block` and queries name the analyzed expression, e.g. with a constant `if` folded.
+    TreeRewriter(Context::getGlobalContextInstance()).analyze(normalized, index.expression->getRequiredColumnsWithTypes());
 
     String name = normalized->getColumnName();
     if (index.sample_block.has(name))

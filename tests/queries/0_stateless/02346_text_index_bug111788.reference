@@ -38,3 +38,13 @@ Name: idx
 Granules: 1/2
 Name: idx
 Granules: 1/2
+Index on an Array expression with a constant if and a preprocessor
+1
+1
+Name: idx
+Granules: 1/2
+Index on a String expression with a constant if and a preprocessor
+1
+1
+Name: idx
+Granules: 1/2

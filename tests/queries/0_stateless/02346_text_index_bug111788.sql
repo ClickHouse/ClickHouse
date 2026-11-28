@@ -170,3 +170,53 @@ SELECT trimLeft(explain) FROM (
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
 DROP TABLE tab;
+
+SELECT 'Index on an Array expression with a constant if and a preprocessor';
+
+CREATE TABLE tab
+(
+    arr Array(String),
+    INDEX idx arrayFilter(x -> if(1, x != '', 0), arr)
+        TYPE text(tokenizer = 'array', preprocessor = lower(arrayFilter(x -> x != '', arr)))
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 2;
+
+INSERT INTO tab VALUES (['Hello', '']), (['x']), (['y']), (['z']);
+
+SELECT count() FROM tab WHERE hasAnyTokens(arrayFilter(x -> if(1, x != '', 0), arr), ['hello']) SETTINGS optimize_empty_string_comparisons = 1;
+SELECT count() FROM tab WHERE hasAnyTokens(arrayFilter(x -> if(1, x != '', 0), arr), ['hello']) SETTINGS optimize_empty_string_comparisons = 0;
+
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE hasAnyTokens(arrayFilter(x -> if(1, x != '', 0), arr), ['hello'])
+    SETTINGS optimize_empty_string_comparisons = 1
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+
+DROP TABLE tab;
+
+SELECT 'Index on a String expression with a constant if and a preprocessor';
+
+CREATE TABLE tab
+(
+    s String,
+    INDEX idx if(1, if(s = '', 'abc', s), '')
+        TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(if(s = '', 'abc', s)))
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 2;
+
+INSERT INTO tab VALUES (''), ('X'), ('y'), ('z');
+
+SELECT count() FROM tab WHERE hasAllTokens(if(1, if(s = '', 'abc', s), ''), ['x']) SETTINGS optimize_empty_string_comparisons = 1;
+SELECT count() FROM tab WHERE hasAllTokens(if(1, if(s = '', 'abc', s), ''), ['x']) SETTINGS optimize_empty_string_comparisons = 0;
+
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE hasAllTokens(if(1, if(s = '', 'abc', s), ''), ['x'])
+    SETTINGS optimize_empty_string_comparisons = 1
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+
+DROP TABLE tab;
