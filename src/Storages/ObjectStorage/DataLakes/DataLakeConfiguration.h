@@ -220,6 +220,11 @@ public:
         return getMetadata()->supportsDelete();
     }
 
+    bool supportsTruncate() const override
+    {
+        return DataLakeMetadata::supportsTruncate();
+    }
+
     bool supportsParallelInsert() const override
     {
         return getMetadata()->supportsParallelInsert();

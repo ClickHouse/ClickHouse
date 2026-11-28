@@ -53,6 +53,14 @@ public:
 
     bool supportsDelete() const override;
 
+    bool supportsTruncate() const override;
+
+    void truncate(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr local_context,
+        TableExclusiveLockHolder &) override;
+
     bool optimize(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
