@@ -27,6 +27,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char rmt_cancel_removed_parts_check_pause_in_gap[];
+    extern const char rmt_part_check_thread_pause_in_stop[];
     extern const char check_table_inject_part_check_cancelled[];
 }
 
@@ -74,6 +75,8 @@ void ReplicatedMergeTreePartCheckThread::stop()
 
     std::lock_guard lock(start_stop_mutex);
     need_stop = true;
+    /// Used only by tests to hold the stop request between raising the flag and waiting for the running check.
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_part_check_thread_pause_in_stop);
     getTask()->deactivate();
 }
 
@@ -413,6 +416,17 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(
 
             zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true, part_name);
 
+            /// Once `need_stop` is observed, this check stays cancelled even if `start` resets the flag meanwhile.
+            /// `checkDataPart` stops reading a file in the middle on cancellation, so a check that resumed after
+            /// that would compare a checksum of a partially read file and report a healthy part as broken.
+            bool cancelled = false;
+            auto is_cancelled = [this, &cancelled]
+            {
+                if (need_stop)
+                    cancelled = true;
+                return cancelled;
+            };
+
             const auto & thread_events = CurrentThread::getProfileEvents();
             const auto direct_io_before = thread_events[ProfileEvents::CreatedReadBufferDirectIO];
             const auto direct_io_failed_before = thread_events[ProfileEvents::CreatedReadBufferDirectIOFailed];
@@ -421,7 +435,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(
                 part,
                 /* require_checksums */true,
                 is_broken_projection,
-                [this] { return need_stop.load(); },
+                is_cancelled,
                 throw_on_broken_projection);
 
             /// Empty checksums: the check stopped at a retryable error.
@@ -429,7 +443,8 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(
                 && thread_events[ProfileEvents::CreatedReadBufferDirectIO] > direct_io_before
                 && thread_events[ProfileEvents::CreatedReadBufferDirectIOFailed] == direct_io_failed_before;
 
-            bool cancelled = need_stop;
+            /// A stop requested after the last poll inside `checkDataPart` still cancels the check.
+            is_cancelled();
             fiu_do_on(FailPoints::check_table_inject_part_check_cancelled, { cancelled = true; });
             if (cancelled)
             {
