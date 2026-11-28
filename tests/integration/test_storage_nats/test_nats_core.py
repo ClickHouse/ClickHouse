@@ -333,7 +333,8 @@ def test_nats_materialized_view_with_subquery(nats_cluster):
 def test_nats_materialized_column(nats_cluster):
     instance.query(
         """
-        CREATE TABLE test.nats (key UInt64, value UInt64, value2 UInt64 MATERIALIZED value + 1)
+        CREATE TABLE test.nats (key UInt64, value UInt64, value2 UInt64 MATERIALIZED value + 1,
+                                _subject String MATERIALIZED concat('computed-', toString(key)))
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
                      nats_subjects = 'mvmaterialized',
@@ -342,7 +343,7 @@ def test_nats_materialized_column(nats_cluster):
         CREATE TABLE test.view1 (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
-        CREATE TABLE test.view2 (key UInt64, value UInt64, value2 UInt64)
+        CREATE TABLE test.view2 (key UInt64, value UInt64, value2 UInt64, subject String)
             ENGINE = MergeTree()
             ORDER BY key;
         """
@@ -354,7 +355,7 @@ def test_nats_materialized_column(nats_cluster):
         CREATE MATERIALIZED VIEW test.consumer1 TO test.view1 AS
             SELECT * FROM test.nats;
         CREATE MATERIALIZED VIEW test.consumer2 TO test.view2 AS
-            SELECT key, value, value2 FROM test.nats;
+            SELECT key, value, value2, _subject AS subject FROM test.nats;
         """
     )
     nats_helpers.wait_for_mv_attached_to_table(instance, "test.nats")
@@ -363,7 +364,9 @@ def test_nats_materialized_column(nats_cluster):
     asyncio.run(publish_messages(nats_cluster, "mvmaterialized", messages))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view1 ORDER BY key")
-    nats_helpers.wait_query_result(instance, "SELECT count() FROM test.view2 WHERE value2 = value + 1", 50)
+    nats_helpers.wait_query_result(
+        instance, "SELECT count() FROM test.view2 WHERE value2 = value + 1 AND subject = concat('computed-', toString(key))", 50
+    )
     assert int(instance.query("SELECT count() FROM test.view2")) == 50
 
 

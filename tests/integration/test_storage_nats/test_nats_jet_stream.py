@@ -547,7 +547,8 @@ def test_nats_materialized_column_direct_select(nats_cluster):
 
     instance.query(
         """
-        CREATE TABLE test.nats (key UInt64, value UInt64, value2 UInt64 MATERIALIZED value + 1)
+        CREATE TABLE test.nats (key UInt64, value UInt64, value2 UInt64 MATERIALIZED value + 1,
+                                _subject String MATERIALIZED concat('computed-', toString(key)))
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
                      nats_stream = 'test_stream',
@@ -564,7 +565,9 @@ def test_nats_materialized_column_direct_select(nats_cluster):
     nats_helpers.wait_for_table_is_ready(instance, "test.nats")
 
     asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 1, "value": 10})]))
-    assert TSV(instance.query("SELECT key, value2 FROM test.nats SETTINGS rabbitmq_max_wait_ms = 60000")) == TSV("1\t11")
+    assert TSV(instance.query("SELECT key, value2, _subject FROM test.nats SETTINGS rabbitmq_max_wait_ms = 60000")) == TSV(
+        "1\t11\tcomputed-1"
+    )
 
     instance.query(
         """
