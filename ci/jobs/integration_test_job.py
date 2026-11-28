@@ -144,6 +144,9 @@ MEMCG_OOM_KILL = re.compile(rb"oom_memcg=([^,\s]+),task_memcg=([^,\s]+)")
 # worker they ran 3 and left a fourth worker's memory unused.
 MAX_CPUS_PER_WORKER = 4
 MAX_MEM_PER_WORKER = 11
+# Median rss_anon of an ASan ClickHouse server or Keeper in this job's `/docker` OOM reports.
+# Enables the cluster start admission of `tests/integration/helpers/docker_memory_admission.py`.
+ASAN_DOCKER_MEMORY_PER_PROCESS = 13 * 1024**3 // 10
 # Flaky checks run with --dist=each, so every worker runs the full set
 # of changed modules concurrently (each with its own Docker cluster) instead of
 # splitting modules across workers. A worker's peak footprint is therefore much
@@ -1613,6 +1616,7 @@ def main():
     is_sequential = False
     is_targeted_check = False
     is_llvm_coverage = False
+    is_asan = False
     is_per_test_coverage = False
     llvm_profdata_cmd = None
 
@@ -1660,6 +1664,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
         elif any(build in to for build in ("amd_", "arm_")):
             if "amd_llvm_coverage" in to:
                 is_llvm_coverage = True
+            if "asan" in to:
+                is_asan = True
         elif to == "distributed plan":
             use_distributed_plan = True
         elif to == "db disk":
@@ -2067,6 +2073,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
             "COMPLIANCE_RESULT_FILE", os.path.join(temp_path, "promql_compliance_result.json")
         ),
     }
+    if (
+        is_asan
+        and os.environ.get("CI_DIND_REQUIRE_CGROUP_CONTAINMENT") == "1"
+        and (Path(DIND_CGROUP_ROOT) / "docker" / "memory.max").is_file()
+    ):
+        test_env["CLICKHOUSE_TESTS_DOCKER_MEMORY_PER_PROCESS"] = str(ASAN_DOCKER_MEMORY_PER_PROCESS)
     if is_per_test_coverage:
         # Read by tests/integration/helpers/cluster.py: every instance attributes its
         # coverage to the test module and the cluster dumps it here on shutdown.
