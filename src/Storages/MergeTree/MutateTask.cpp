@@ -65,6 +65,7 @@
 #include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 
@@ -946,6 +947,8 @@ static void splitAndModifyMutationCommands(
         NameSet mutated_columns;
         NameSet dropped_columns;
         NameSet extra_columns_for_indices_and_projections;
+        /// New name -> name in the part, for the columns renamed by the earlier commands of the batch.
+        UnorderedMapWithMemoryTracking<String, String> renamed_in_batch;
 
         if (clears_block_columns)
         {
@@ -964,6 +967,11 @@ static void splitAndModifyMutationCommands(
             /// Handled below, for both kinds of mutation.
             if (command.isClearOfBlockColumns(*metadata_snapshot))
                 continue;
+
+            if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                renamed_in_batch[command.rename_to] = command.column_name;
+            else if (command.type == MutationCommand::Type::DROP_COLUMN && !command.clear)
+                renamed_in_batch.erase(command.column_name);
 
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
@@ -1102,6 +1110,15 @@ static void splitAndModifyMutationCommands(
                             dropped_columns.emplace(command.column_name);
                     }
                 }
+            }
+            /// A column renamed earlier in the batch is stored under its old name.
+            else if (auto renamed = renamed_in_batch.find(command.column_name);
+                     command.type == MutationCommand::Type::DROP_COLUMN && command.clear && renamed != renamed_in_batch.end()
+                     && (part_columns.has(renamed->second) || part->getSerializationInfos().isMissingColumn(renamed->second)))
+            {
+                for_interpreter.push_back(command);
+                for_file_renames.push_back(command);
+                mutated_columns.emplace(command.column_name);
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
