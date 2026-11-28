@@ -388,7 +388,11 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
             auto elem = json_arr->getObject(i);
             if (!elem)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Map field during AST JSON deserialization", i);
-            map.push_back(readFieldFromObjectImpl(*elem, depth + 1));
+            Field entry = readFieldFromObjectImpl(*elem, depth + 1);
+            if (entry.getType() != Field::Types::Tuple || entry.safeGet<Tuple>().size() != 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Element at index {} in Map field is not a key-value tuple during AST JSON deserialization", i);
+            map.push_back(std::move(entry));
         }
         return Field(std::move(map));
     }
@@ -401,10 +405,10 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
             "Expected a string 'value' (Field dump) for field type '{}' during AST JSON deserialization", field_type);
     String dump_str = obj.getValue<String>("value");
 
-    /// `Field::restoreFromDump` recursively parses nested `Array_`/`Tuple_`/`Map_` dumps
-    /// without an internal depth limit, so a hostile JSON payload could trigger unbounded
-    /// recursion even when the JSON object itself is shallow. Reject overly deep payloads
-    /// against the same depth bound used for AST node construction.
+    /// `Field::restoreFromDump` recursively parses nested `Array_`/`Tuple_`/`Map_` dumps and stops
+    /// only when the native stack runs low, so a hostile JSON payload could recurse deeply even when
+    /// the JSON object itself is shallow. Reject overly deep payloads against the same deterministic
+    /// depth bound used for AST node construction.
     if (size_t max_depth = getJSONDeserializationMaxDepth();
         computeFieldDumpNestingDepth(dump_str) > max_depth)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
