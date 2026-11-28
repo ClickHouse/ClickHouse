@@ -1,6 +1,7 @@
 <test>
     <!-- CSS selectors over HTML with `extractHTMLOne` and `extractHTMLAll`, compared to `extractTextFromHTML`.
-         Synthetic shop pages of about 36 KB each: a header, 100 product cards, a footer and some scripts and styles. -->
+         Synthetic shop pages of about 36 KB each: a header, 100 product cards, a footer and some scripts and styles.
+         Curly braces are generated with `char`, because the test runner substitutes parameters in braces. -->
     <settings><max_threads>1</max_threads></settings>
 
     <create_query><![CDATA[
@@ -8,8 +9,8 @@ CREATE TABLE html ENGINE = Memory AS
 SELECT concat(
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Shop page ', toString(number), '</title>',
     '<meta property="og:image" content="https://example.com/img/', toString(number), '.png">',
-    '<script type="application/ld+json">{"@type": "ItemList", "n": ', toString(number), '}</script>',
-    '<style>.item > a { color: red } .price { font-weight: bold }</style></head><body>',
+    '<script type="application/ld+json">', char(123), '"@type": "ItemList", "n": ', toString(number), char(125), '</script>',
+    '<style>.item > a ', char(123), ' color: red ', char(125), ' .price ', char(123), ' font-weight: bold ', char(125), '</style></head><body>',
     '<header class="top"><nav><ul>', arrayStringConcat(arrayMap(i -> concat('<li><a href="/cat/', toString(i), '">Category ', toString(i), '</a>'), range(10))), '</ul></nav></header>',
     '<main id="content"><div class="list">',
     arrayStringConcat(arrayMap(i -> concat(

@@ -201,7 +201,7 @@ REGISTER_FUNCTION(ExtractHTML)
 The selector supports a subset of CSS selectors, compatible with `document.querySelector` in browsers:
 - type selectors and the universal selector: `div`, `*`;
 - identifiers and classes: `#main`, `.item`;
-- attribute selectors: `[href]`, `[lang=en]`, `[class~=item]`, `[lang|=en]`, `[href^=https]`, `[href$=".pdf"]`, `[href*=example]`, with an optional `i` flag for case-insensitive comparison: `[type=TEXT i]`;
+- attribute selectors: `[href]`, `[lang=en]`, `[class~=item]`, `[lang|=en]`, `[href^=https]`, `[href$=".pdf"]`, `[href*=example]`; values are compared case-sensitively, except for the attributes listed in the HTML standard as case-insensitive (like `type`, `rel`, `lang`, `method`), and this can be overridden with the flags `i` and `s`: `[title=hello i]`, `[type=text s]`;
 - combinators: descendant (`div p`), child (`ul > li`), next sibling (`h2 + p`), subsequent sibling (`h2 ~ p`);
 - pseudo-classes `:first-child`, `:nth-child(an+b)` (also `odd` and `even`), `:not(...)` with a list of compound selectors, `:root`;
 - selector lists: `h1, h2`.

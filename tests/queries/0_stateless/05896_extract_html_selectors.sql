@@ -33,6 +33,18 @@ SELECT extractHTMLAll('<p a=1 a=2>x</p>', 'p::attr(a)');
 SELECT extractHTMLOne('<a title="a > b" href="/x">link</a>', 'a');
 SELECT extractHTMLOne('<a href=/x/>link</a>', 'a');
 
+SELECT '-- case sensitivity of attribute values';
+SELECT extractHTMLAll('<input type="TEXT" value="1"><input type="text" value="2"><input type="radio" value="3">', 'input[type=text]::attr(value)');
+SELECT extractHTMLOne('<input type="TEXT" value="1">', 'input[type=text]::attr(value)');
+SELECT extractHTMLAll('<input type="TEXT" value="1"><input type="text" value="2"><input type="radio" value="3">', 'input:not([type=text])::attr(value)');
+SELECT extractHTMLAll('<input type="TEXT" value="1"><input type="text" value="2"><input type="radio" value="3">', 'input[type=text s]::attr(value)');
+SELECT extractHTMLAll('<input type="TEXT" value="1"><input type="text" value="2"><input type="radio" value="3">', 'input[type="text"S]::attr(value)');
+SELECT extractHTMLAll('<a rel="NOFOLLOW Noopener">1</a><a rel="nofollowx">2</a>', 'a[rel~=nofollow]::text');
+SELECT extractHTMLAll('<form method="POST">1</form><form method="get">2</form>', 'form[method^=po]::text');
+SELECT extractHTMLAll('<p title="Hello">1</p><p title="hello">2</p>', 'p[title=hello]::text');
+SELECT extractHTMLAll('<p title="Hello">1</p><p title="hello">2</p>', 'p[title="hello"i]::text');
+SELECT extractHTMLAll('<p id="A" class="X">1</p>', '#a, .x, [id=a], [class~=x]');
+
 SELECT '-- combinators';
 SELECT extractHTMLAll('<div><span>1</span><p><span>2</span></p></div><span>3</span>', 'div > span::text');
 SELECT extractHTMLAll('<div><span>1</span><p><span>2</span></p></div><span>3</span>', 'div span::text');

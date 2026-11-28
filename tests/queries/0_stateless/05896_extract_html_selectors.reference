@@ -13,7 +13,7 @@
 <p id="1a">x</p>
 -- attributes
 ['1','2','4']
-['1','2']
+['1','2','4']
 ['1','4']
 ['1']
 ['1']
@@ -28,6 +28,17 @@
 ['1']
 <a title="a > b" href="/x">link</a>
 <a href=/x/>link</a>
+-- case sensitivity of attribute values
+['1','2']
+1
+['3']
+['2']
+['2']
+['1']
+['1']
+['2']
+['1','2']
+[]
 -- combinators
 ['1']
 ['1','2']

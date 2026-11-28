@@ -64,6 +64,22 @@ inline bool isHTMLWhitespace(char c)
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
 }
 
+/// The attributes, whose values are compared ASCII case-insensitively in attribute selectors,
+/// unless the selector has the `s` flag: https://html.spec.whatwg.org/multipage/semantics-other.html#case-sensitivity-of-selectors
+/// The argument is in lowercase.
+bool isCaseInsensitiveAttribute(std::string_view name)
+{
+    static constexpr std::string_view attributes[] =
+    {
+        "accept", "accept-charset", "align", "alink", "axis", "bgcolor", "charset", "checked", "clear",
+        "codetype", "color", "compact", "declare", "defer", "dir", "direction", "disabled", "enctype",
+        "face", "frame", "hreflang", "http-equiv", "lang", "language", "link", "media", "method",
+        "multiple", "nohref", "noresize", "noshade", "nowrap", "readonly", "rel", "rev", "rules", "scope",
+        "scrolling", "selected", "shape", "target", "text", "type", "valign", "valuetype", "vlink",
+    };
+    return std::find(std::begin(attributes), std::end(attributes), name) != std::end(attributes);
+}
+
 }
 
 
@@ -368,13 +384,17 @@ private:
         }
 
         skipWhitespace();
-        if (checkChar('"') || checkChar('\''))
+        bool is_string = checkChar('"') || checkChar('\'');
+        if (is_string)
             condition.value = parseString();
         else
             condition.value = parseName();
 
+        /// By default, the values of some attributes are compared case-insensitively, as in HTML.
+        condition.case_insensitive = isCaseInsensitiveAttribute(condition.name);
+
         bool has_whitespace = skipWhitespace();
-        if (has_whitespace && pos < end && (*pos == 'i' || *pos == 'I' || *pos == 's' || *pos == 'S'))
+        if ((has_whitespace || is_string) && pos < end && (*pos == 'i' || *pos == 'I' || *pos == 's' || *pos == 'S'))
         {
             condition.case_insensitive = (*pos == 'i' || *pos == 'I');
             ++pos;
