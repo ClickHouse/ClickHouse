@@ -1,0 +1,12 @@
+--- a variable with _Unsigned = "True" is read as unsigned
+v	UInt16
+s	Int16
+65535	-1
+7	7
+65534	-2
+--- and its _FillValue is read as NULL
+v	Nullable(UInt16)
+s	Int16
+65535	-1
+7	7
+\N	-2

@@ -1,0 +1,10 @@
+--- strings without NULLs
+--- the columns with a zero byte have a _FillValue and no NULLs, the others are not Nullable
+s	Nullable(String)
+ns	Nullable(String)
+fs	Nullable(String)
+plain	String
+410042	410042	0001	AB
+410042	410042	0001	AB
+--- every byte occurs: nothing is left, no attribute
+String	256

@@ -1,0 +1,12 @@
+--- an unsigned int64 variable is read as UInt64
+v	UInt64
+s	Int64
+18446744073709551615	-1
+7	7
+18446744073709551614	-2
+--- and its _FillValue is read as NULL
+v	Nullable(UInt64)
+s	Int64
+18446744073709551615	-1
+7	7
+\N	-2
