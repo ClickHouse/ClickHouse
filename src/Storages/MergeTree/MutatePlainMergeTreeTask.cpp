@@ -28,6 +28,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char mt_mutate_task_pause_before_rename_part[];
+    extern const char mt_mutate_task_pause_before_merge_list[];
 }
 
 
@@ -44,6 +45,8 @@ void MutatePlainMergeTreeTask::onCompleted()
 
 void MutatePlainMergeTreeTask::prepare()
 {
+    FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_before_merge_list);
+
     future_part = merge_mutate_entry->future_part;
 
     merge_list_entry = storage.getContext()->getMergeList().insert(
