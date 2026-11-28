@@ -36,8 +36,9 @@ name Nullable(String)
 --- a single tuple element requested by name is a leaf read
 1
 \N
---- hinted read with every element missing still rejects: the null map is unrecoverable
-1
+--- hinted read with every element missing: the null map is read from a leaf
+(0)
+\N
 --- sibling formats infer the same shape from the same data
 ORC	1
 Arrow	1

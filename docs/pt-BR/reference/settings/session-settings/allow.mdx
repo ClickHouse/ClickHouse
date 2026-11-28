@@ -23,6 +23,16 @@ Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Habilita a agregação independente de partições em threads separadas quando a chave de particionamento é adequada à chave de `GROUP BY`. Isso é benéfico quando o número de partições é próximo do número de núcleos e as partições têm aproximadamente o mesmo tamanho. As heurísticas em `ReadFromMergeTree` desabilitam automaticamente a otimização para layouts desfavoráveis (poucas partições, muitas partições ou tamanhos de partição significativamente desbalanceados); consulte `force_aggregate_partitions_independently` para ignorar essas verificações.
 
+## allow_ai_functions {#allow_ai_functions}
+
+**aliases**: `allow_experimental_ai_functions`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "As funções de IA estão em Beta e habilitadas por padrão. Na época, a configuração se chamava `allow_experimental_ai_functions`, que agora é um alias dela. Mantém o padrão independentemente de `compatibility`."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nova configuração. Na época, a configuração se chamava `allow_experimental_ai_functions`, que agora é um alias dela."}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "1"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_ai_functions`."}]}]} />
+
+Permite o uso de funções de IA (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`, `aiEmbed`, `aiSimilarity`). Se estiver desabilitada, uma consulta que use essas funções lança uma exceção.
+
 ## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -149,18 +159,6 @@ Cloud default value: `1`.
 
 Se estiver definido como true, o usuário poderá executar consultas DDL.
 
-## allow_delta_kernel_rs {#allow_delta_kernel_rs}
-
-<BetaBadge />
-
-**Aliases**: `allow_experimental_delta_kernel_rs`
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Novo nome de `allow_experimental_delta_kernel_rs`, que deixou de ser experimental e é mantido como alias. O padrão permanece inalterado."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Nova configuração. Introduzida com o nome `allow_experimental_delta_kernel_rs`, que agora é seu alias; a linha é mantida com o nome canônico para preservar todo o histórico."}]}]} />
-
-Permite usar a implementação `delta-kernel-rs` para ler tabelas Delta Lake.
-
 ## allow_delta_lake_create_table {#allow_delta_lake_create_table}
 
 <ExperimentalBadge />
@@ -228,6 +226,18 @@ Desativar essa configuração recusa apenas as leituras: criar, anexar, remover 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Permite executar a função multiIf de forma colunar
+
+## allow_expire_snapshots {#allow_expire_snapshots}
+
+<ExperimentalBadge />
+
+**aliases**: `allow_experimental_expire_snapshots`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nova configuração."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para configuração `allow_experimental_expire_snapshots`."}]}]} />
+
+Permite executar o comando do Iceberg `ALTER TABLE ... EXECUTE expire_snapshots`.
 
 ## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
@@ -509,6 +519,14 @@ Permite que `ALTER TABLE ... REPLACE PARTITION ... FROM ...` remova silenciosame
 Por padrão, isso não é permitido: `REPLACE PARTITION` a partir de uma origem sem dados na partição solicitada gera uma exceção, porque, nesse caso, a operação efetivamente se torna um `DROP PARTITION` silencioso no destino (os dados do destino são removidos e nada os substitui), uma causa comum de perda acidental de dados (veja [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)).
 
 Ative essa configuração para restaurar o comportamento anterior, por exemplo, quando você usa intencionalmente uma partição de origem vazia para limpar dados no destino. Para uma remoção incondicional, prefira `ALTER TABLE ... DROP PARTITION ...`.
+
+## allow_reserved_column_names {#allow_reserved_column_names}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Rejeita colunas com o mesmo nome de uma coluna virtual de uma tabela MergeTree"}]}]} />
+
+Permite que uma coluna de uma tabela da família `MergeTree` tenha o nome de uma das colunas virtuais da tabela (por exemplo, `_part`, `_part_offset` ou `_table`) em `CREATE TABLE`, em `ATTACH TABLE` com definição completa e em `ALTER TABLE ... ADD COLUMN` e `RENAME COLUMN`. Uma coluna assim oculta a coluna virtual correspondente. Tabelas que já têm uma coluna desse tipo são carregadas independentemente desta configuração. Nomes de colunas virtuais persistentes são sempre rejeitados.
 
 ## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 

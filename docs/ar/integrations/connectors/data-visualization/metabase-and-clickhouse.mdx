@@ -20,20 +20,14 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
 Metabase هي أداة واجهة مستخدم سهلة الاستخدام ومفتوحة المصدر لطرح الأسئلة حول بياناتك. Metabase هو تطبيق Java يمكن تشغيله بسهولة عبر <a href="https://www.metabase.com/start/oss/jar" target="_blank">تنزيل ملف JAR</a> ثم تشغيله باستخدام `java -jar metabase.jar`. ويتصل Metabase بـ ClickHouse باستخدام برنامج تشغيل JDBC تقوم بتنزيله ووضعه في المجلد `plugins`:
 
-<div id="goal">
-  ## الهدف
-</div>
+## الهدف {#goal}
 
 في هذا الدليل، ستطرح بعض الأسئلة على بيانات ClickHouse باستخدام Metabase وتعرض الإجابات بصريًا. وستبدو إحدى هذه الإجابات كما يلي:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![تصور مخطط دائري في Metabase يعرض بيانات من ClickHouse](/images/integrations/data-visualization/metabase_08.webp)
-
-</Frame>
-
+  <Frame>
+    ![تصور مخطط دائري في Metabase يعرض بيانات من ClickHouse](/images/integrations/data-visualization/metabase_08.webp)
+  </Frame>
 </div>
 
 <p />
@@ -69,27 +63,19 @@ Metabase هي أداة واجهة مستخدم سهلة الاستخدام وم�
     3. إذا تم تثبيت برنامج التشغيل بنجاح، فسترى **ClickHouse** في القائمة المنسدلة الخاصة بـ **نوع قاعدة البيانات**:
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![اختيار قاعدة البيانات في Metabase مع ظهور ClickHouse كأحد الخيارات](/images/integrations/data-visualization/metabase_01.webp)
-
-       </Frame>
-
+         <Frame>
+           ![اختيار قاعدة البيانات في Metabase مع ظهور ClickHouse كأحد الخيارات](/images/integrations/data-visualization/metabase_01.webp)
+         </Frame>
        </div>
 
     4. امنح قاعدة البيانات **اسمًا معروضًا**، وهو إعداد في Metabase، لذا يمكنك استخدام أي اسم تريده.
 
-    5. أدخِل تفاصيل الاتصال لقاعدة بيانات ClickHouse. فعِّل اتصالًا آمنًا إذا كان ClickHouse server مُعدًّا لاستخدام SSL. على سبيل المثال:
+    5. أدخِل تفاصيل الاتصال لقاعدة بيانات ClickHouse. فعِّل اتصالًا آمنًا إذا كان ClickHouse server مُعدًّا لاستخدام SSL. على سبيل المثال:
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![نموذج تفاصيل الاتصال في Metabase لقاعدة بيانات ClickHouse](/images/integrations/data-visualization/metabase_02.webp)
-
-       </Frame>
-
+         <Frame>
+           ![نموذج تفاصيل الاتصال في Metabase لقاعدة بيانات ClickHouse](/images/integrations/data-visualization/metabase_02.webp)
+         </Frame>
        </div>
 
     6. انقر على زر **حفظ**، وسيقوم Metabase بفحص قاعدة البيانات بحثًا عن الجداول.
@@ -101,25 +87,17 @@ Metabase هي أداة واجهة مستخدم سهلة الاستخدام وم�
     2. في الزاوية العلوية اليمنى، انقر على قائمة **+ New** وستلاحظ أنه يمكنك طرح أسئلة وتشغيل استعلامات SQL وإنشاء لوحة المعلومات:
 
        <div className="ch-image-sm">
-
-       <Frame>
-
-       ![قائمة New في Metabase تعرض خيارات إنشاء أسئلة واستعلامات SQL ولوحات معلومات](/images/integrations/data-visualization/metabase_03.webp)
-
-       </Frame>
-
+         <Frame>
+           ![قائمة New في Metabase تعرض خيارات إنشاء أسئلة واستعلامات SQL ولوحات معلومات](/images/integrations/data-visualization/metabase_03.webp)
+         </Frame>
        </div>
 
     3. على سبيل المثال، إليك استعلام SQL يعمل على table باسم `uk_price_paid` ويُرجع متوسط السعر المدفوع حسب السنة من 1995 إلى 2022:
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![محرر SQL في Metabase يعرض استعلامًا على بيانات UK price paid](/images/integrations/data-visualization/metabase_04.webp)
-
-       </Frame>
-
+         <Frame>
+           ![محرر SQL في Metabase يعرض استعلامًا على بيانات UK price paid](/images/integrations/data-visualization/metabase_04.webp)
+         </Frame>
        </div>
   </Step>
 
@@ -127,43 +105,31 @@ Metabase هي أداة واجهة مستخدم سهلة الاستخدام وم�
     1. انقر على **+ New** واختر **Question**. لاحظ أنه يمكنك إنشاء سؤال بدءًا من database وtable. على سبيل المثال، يُطرح السؤال التالي على table باسم `uk_price_paid` في قاعدة البيانات `default`. إليك سؤالًا بسيطًا يحسب متوسط السعر حسب البلدة ضمن مقاطعة Greater Manchester:
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![واجهة منشئ الأسئلة في Metabase مع بيانات أسعار UK](/images/integrations/data-visualization/metabase_06.webp)
-
-       </Frame>
-
+         <Frame>
+           ![واجهة منشئ الأسئلة في Metabase مع بيانات أسعار UK](/images/integrations/data-visualization/metabase_06.webp)
+         </Frame>
        </div>
 
     2. انقر على زر **Visualize** لعرض النتائج في شكل table.
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![تصور في Metabase يعرض نتائج جدولية لمتوسط الأسعار حسب البلدة](/images/integrations/data-visualization/metabase_07.webp)
-
-       </Frame>
-
+         <Frame>
+           ![تصور في Metabase يعرض نتائج جدولية لمتوسط الأسعار حسب البلدة](/images/integrations/data-visualization/metabase_07.webp)
+         </Frame>
        </div>
 
     3. أسفل النتائج، انقر على زر **تصور** لتغيير التصور إلى مخطط شريطي (أو أي خيار آخر متاح):
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![تصور مخطط دائري في Metabase لمتوسط الأسعار حسب البلدة في Greater Manchester](/images/integrations/data-visualization/metabase_08.webp)
-
-       </Frame>
-
+         <Frame>
+           ![تصور مخطط دائري في Metabase لمتوسط الأسعار حسب البلدة في Greater Manchester](/images/integrations/data-visualization/metabase_08.webp)
+         </Frame>
        </div>
   </Step>
 </Steps>
 
 <div id="learn-more">
-  ## تعرّف على المزيد
+  ## تعرّف على المزيد {#learn-more}
 </div>
 
 يمكنك العثور على مزيد من المعلومات حول Metabase وكيفية إنشاء لوحات المعلومات من خلال <a href="https://www.metabase.com/docs/latest/" target="_blank">الاطلاع على وثائق Metabase</a>.
