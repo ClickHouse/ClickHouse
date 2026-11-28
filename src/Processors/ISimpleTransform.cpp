@@ -98,6 +98,8 @@ void ISimpleTransform::work()
     try
     {
         transform(input_data.chunk, output_data.chunk);
+        if (remove_special_representations)
+            removeSpecialColumnRepresentationsKeepingBytes(output_data.chunk);
     }
     catch (DB::Exception &)
     {

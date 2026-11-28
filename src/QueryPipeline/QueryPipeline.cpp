@@ -12,12 +12,14 @@
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/LimitRangeTransform.h>
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/FractionalLimitTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/ResizeProcessor.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/DelayedSource.h>
@@ -631,6 +633,31 @@ static void addMaterializing(OutputPort *& output, Processors & processors, bool
     output = &materializing_ptr->getOutputPort();
 }
 
+/// The streams of a pulling pipeline end in a resize to its single output: convert in the transform ending each of them, where they run in parallel.
+static void removeSpecialRepresentationsBeforeResize(OutputPort & output)
+{
+    IProcessor * processor = &output.getProcessor();
+    while (typeid_cast<LimitsCheckingTransform *>(processor))
+    {
+        auto & input = processor->getInputs().front();
+        if (!input.isConnected())
+            return;
+        processor = &input.getOutputPort().getProcessor();
+    }
+
+    if (!typeid_cast<ResizeProcessor *>(processor) || processor->getInputs().size() < 2 || processor->getOutputs().size() != 1)
+        return;
+
+    for (auto & input : processor->getInputs())
+    {
+        if (!input.isConnected())
+            continue;
+
+        if (auto * transform = dynamic_cast<ISimpleTransform *>(&input.getOutputPort().getProcessor()))
+            transform->setRemoveSpecialRepresentations();
+    }
+}
+
 void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
 {
     if (!pulling())
@@ -639,6 +666,8 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     if (format->expectMaterializedColumns())
     {
         bool remove_special_column_representations = !format->supportsSpecialSerializationKinds();
+        if (remove_special_column_representations)
+            removeSpecialRepresentationsBeforeResize(*output);
         addMaterializing(output, *processors, remove_special_column_representations);
         addMaterializing(totals, *processors, remove_special_column_representations);
         addMaterializing(extremes, *processors, remove_special_column_representations);

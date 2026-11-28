@@ -53,6 +53,12 @@ public:
     OutputPort & getOutputPort() { return output; }
 
     void setInputNotNeededAfterRead(bool value) { set_input_not_needed_after_read = value; }
+
+    /// Remove `Sparse` and `Replicated` representations from the output chunks.
+    void setRemoveSpecialRepresentations() { remove_special_representations = true; }
+
+private:
+    bool remove_special_representations = false;
 };
 
 }

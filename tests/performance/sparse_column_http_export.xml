@@ -1,0 +1,31 @@
+<test>
+    <!-- Export of a table stored with sparse columns over HTTP, to formats that need full columns.
+         Shell queries: the SQL queries of this harness use the native protocol, which keeps sparse columns. -->
+    <create_query>
+        CREATE TABLE sparse_http_export
+        (
+            id UInt64,
+            u1 UInt64, u2 UInt64, u3 UInt64, u4 UInt64, u5 UInt64, u6 UInt64, u7 UInt64, u8 UInt64, u9 UInt64, u10 UInt64,
+            u11 UInt64, u12 UInt64, u13 UInt64, u14 UInt64, u15 UInt64, u16 UInt64, u17 UInt64, u18 UInt64, u19 UInt64, u20 UInt64,
+            f1 Float64, f2 Float64, f3 Float64, f4 Float64, f5 Float64,
+            s1 String, s2 String, s3 String, s4 String, s5 String
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9
+    </create_query>
+
+    <fill_query>
+        INSERT INTO sparse_http_export (id, u1, s1)
+        SELECT number, number % 100 = 0 ? number : 0, number % 100 = 0 ? toString(number) : '' FROM numbers(20000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE sparse_http_export FINAL</fill_query>
+
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}" --data-binary "SELECT * FROM sparse_http_export FORMAT Null" -o /dev/null
+    ]]></query>
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}" --data-binary "SELECT * FROM sparse_http_export WHERE id < 2000000 FORMAT Parquet" -o /dev/null
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS sparse_http_export</drop_query>
+</test>

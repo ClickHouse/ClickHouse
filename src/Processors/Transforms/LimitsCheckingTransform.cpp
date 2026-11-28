@@ -12,11 +12,18 @@ namespace ErrorCodes
 }
 
 
+static size_t resultBytes(const Chunk & chunk)
+{
+    if (const auto info = chunk.getChunkInfos().get<ChunkBytesBeforeConversion>())
+        return info->bytes;
+    return chunk.bytes();
+}
+
 void ProcessorProfileInfo::update(const Chunk & block)
 {
     ++blocks;
     rows += block.getNumRows();
-    bytes += block.bytes();
+    bytes += resultBytes(block);
 }
 
 LimitsCheckingTransform::LimitsCheckingTransform(SharedHeader header_, StreamLocalLimits limits_)
@@ -70,7 +77,7 @@ void LimitsCheckingTransform::checkQuota(Chunk & chunk)
             quota->usedForQuery(
                 normalized_query_hash,
                 {{QuotaType::RESULT_ROWS, chunk.getNumRows()},
-                 {QuotaType::RESULT_BYTES, chunk.bytes()},
+                 {QuotaType::RESULT_BYTES, resultBytes(chunk)},
                  {QuotaType::EXECUTION_TIME, total_elapsed - prev_elapsed}});
             prev_elapsed = total_elapsed;
             break;
