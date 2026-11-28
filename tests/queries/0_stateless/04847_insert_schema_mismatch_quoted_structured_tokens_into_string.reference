@@ -1,0 +1,18 @@
+-- CustomSeparated, Quoted rule: an array token for a String column is a genuine structure mismatch
+explanation present
+-- CustomSeparated, Quoted rule: a tuple token for a String column is a genuine structure mismatch
+explanation present
+-- CustomSeparated, Quoted rule: a map token for a String column is a genuine structure mismatch
+explanation present
+-- CustomSeparated, Quoted rule: a bool token for a String column is a genuine structure mismatch
+explanation present
+-- CustomSeparated, Quoted rule: a quoted date for a String column is valid (no false positive)
+explanation missing
+-- CustomSeparated, Escaped rule: an array-shaped raw field for a String column is valid (no false positive)
+explanation missing
+-- Regexp, Quoted rule: an array token for a String column is a genuine structure mismatch
+explanation present
+-- MySQLDump: an array token for a String column is a genuine structure mismatch
+explanation present
+-- MySQLDump: a quoted date for a String column is valid (no false positive)
+explanation missing

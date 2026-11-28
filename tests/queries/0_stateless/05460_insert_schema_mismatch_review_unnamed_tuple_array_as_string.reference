@@ -1,0 +1,7 @@
+-- Arrays read as strings, objects not: a heterogeneous array is valid for the String column
+(CANNOT_PARSE_INPUT_ASSERTION_FAILED)
+explanation missing
+inserted
+-- Objects read as strings, arrays not: a heterogeneous array is a structure mismatch
+(CANNOT_PARSE_QUOTED_STRING)
+explanation present

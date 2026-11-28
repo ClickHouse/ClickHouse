@@ -1,0 +1,6 @@
+-- Form: a string value for a Bool column is not a structure mismatch
+explanation missing
+-- Form: a string value for an Array column is not a structure mismatch
+explanation missing
+-- Form: text for a numeric column is still a genuine structure mismatch
+explanation present

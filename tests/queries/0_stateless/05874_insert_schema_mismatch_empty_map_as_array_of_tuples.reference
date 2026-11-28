@@ -1,0 +1,10 @@
+-- an empty map, the sibling column fails
+explanation missing
+-- the successful control
+{}	1
+-- an empty map at a nested path, the sibling column fails
+explanation missing
+explanation missing
+-- a non-empty array that is not an array of pairs is still explained
+explanation present
+explanation present

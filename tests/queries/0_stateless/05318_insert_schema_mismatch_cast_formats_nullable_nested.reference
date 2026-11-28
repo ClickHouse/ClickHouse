@@ -1,0 +1,4 @@
+-- Native, the NULL literal is valid text for a Nullable(Tuple) column
+explanation missing
+-- Native, text that is not a valid Tuple is a mismatch also for a Nullable(Tuple) column
+explanation present

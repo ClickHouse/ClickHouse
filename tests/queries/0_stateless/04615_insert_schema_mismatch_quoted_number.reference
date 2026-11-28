@@ -1,0 +1,6 @@
+-- JSONEachRow, quoted numeric string is valid for a numeric column; only the second column fails (no false positive)
+explanation missing
+-- JSONEachRow, genuinely non-numeric string for a numeric column is still explained
+explanation present
+-- clickhouse-local, CSV, quoted numeric string is valid for a numeric column; only the second column fails (no false positive)
+explanation missing

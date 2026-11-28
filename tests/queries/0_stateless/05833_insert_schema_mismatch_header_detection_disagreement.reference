@@ -1,0 +1,10 @@
+-- input_format_csv_detect_header = 1, fractional value in the second row
+explanation missing
+-- input_format_csv_detect_header = 1, valid control
+ok
+-- input_format_csv_detect_header = 0, fractional value in the second row
+explanation missing
+-- input_format_csv_detect_header = 0, valid control
+ok
+-- a header that the parser detects as well, with a real structure mismatch
+explanation present

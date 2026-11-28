@@ -1,0 +1,6 @@
+-- JSONEachRow, quoted string into Bool (genuine mismatch)
+insert failed as expected
+explanation present
+-- JSONEachRow, boolean token into Bool plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing

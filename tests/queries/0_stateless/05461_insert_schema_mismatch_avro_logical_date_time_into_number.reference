@@ -1,0 +1,15 @@
+-- (d UInt8, t Int64, u UUID): only u is invalid
+parse error as expected
+explanation missing
+-- (d UInt8, t Int64, u UUID): a valid u is read
+1	5000	00000000-0000-0000-0000-000000000001
+-- (d Float64, t UInt64, u UUID): only u is invalid
+parse error as expected
+explanation missing
+-- (d Float64, t UInt64, u UUID): a valid u is read
+1	5000	00000000-0000-0000-0000-000000000001
+-- (d Int32, t Decimal64(0), u UUID): only u is invalid
+parse error as expected
+explanation missing
+-- (d Int32, t Decimal64(0), u UUID): a valid u is read
+1	5000	00000000-0000-0000-0000-000000000001

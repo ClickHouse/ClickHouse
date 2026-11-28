@@ -1,0 +1,6 @@
+-- JSONEachRow via the client, genuine structure mismatch
+explanation present
+-- JSONEachRow, columns reordered relative to the table, still a genuine mismatch
+explanation present
+-- JSONEachRow, valid UUID string but a fractional value for a UInt8 column (no false positive)
+explanation missing

@@ -1,0 +1,14 @@
+-- CustomSeparated, Quoted rule: a bare number for a String column is a genuine structure mismatch
+explanation present
+-- CustomSeparated, Quoted rule: a quoted value for a String column is valid (no false positive)
+explanation missing
+-- CustomSeparated, Quoted rule: a quoted number for a String column is valid (no false positive)
+explanation missing
+-- Regexp, Quoted rule: a bare number for a String column is a genuine structure mismatch
+explanation present
+-- Regexp, Quoted rule: a quoted value for a String column is valid (no false positive)
+explanation missing
+-- CustomSeparated, JSON rule: an array token for a String column is a genuine structure mismatch when input_format_json_read_arrays_as_strings = 0
+explanation present
+-- CustomSeparated, JSON rule: an array token for a String column is valid when input_format_json_read_arrays_as_strings = 1 (no false positive)
+explanation missing

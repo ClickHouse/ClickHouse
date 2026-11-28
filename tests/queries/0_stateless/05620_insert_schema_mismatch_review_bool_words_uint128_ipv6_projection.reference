@@ -1,0 +1,17 @@
+-- TSV: a Bool word form next to an invalid sibling, and the successful control
+error explanation missing
+ok explanation missing
+-- CSV: an unquoted Bool word form next to an invalid sibling, and the successful control
+error explanation missing
+ok explanation missing
+-- TSV: a value that is not a Bool text is still a mismatch
+error explanation present
+-- JSONEachRow: a string token for a Bool column is still a mismatch
+error explanation present
+-- Native: a UInt128 column for an IPv6 column next to an invalid sibling, and the successful control
+error explanation missing
+ok explanation missing
+-- Native: a UInt64 column for an IPv6 column fails the cast (not a parse error)
+error explanation missing
+-- Parquet: a large unused column is not decoded for the diagnostic
+CANNOT_PARSE_UUID

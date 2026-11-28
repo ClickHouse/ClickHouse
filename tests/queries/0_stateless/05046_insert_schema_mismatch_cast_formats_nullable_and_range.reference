@@ -1,0 +1,12 @@
+-- Native, numeric text that the destination type cannot represent is a mismatch
+explanation present
+-- Native, the same numeric text is valid for a signed destination (clean insert)
+explanation missing
+-- Native, non-numeric text for a Nullable numeric column casts to NULL and is not a mismatch
+explanation missing
+-- Native, non-numeric text for a plain numeric column stays a mismatch
+explanation present
+-- Native, text that is not a valid Bool is a mismatch also for a Nullable(Bool) column
+explanation present
+-- Native, the NULL literal is valid text for a Nullable(Bool) column
+explanation missing
