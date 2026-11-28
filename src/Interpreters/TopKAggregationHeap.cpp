@@ -120,7 +120,7 @@ struct TopKRejectedKeyCache
             UInt32 hits = 0;
             for (; row < chunk_end; ++row)
             {
-                const size_t offset = offsets[row - 1];
+                const size_t offset = offsets[static_cast<ssize_t>(row) - 1];
                 const std::string_view key(chars + offset, offsets[row] - offset);
                 if (key.size() > max_key_size)
                 {
