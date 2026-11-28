@@ -657,16 +657,27 @@ DatabasePtr tryGetOverlaySource(const String & name)
     return database;
 }
 
+/// Whether the caller can see the table of the source database, i.e. has `SHOW_TABLES` on it.
+bool isSourceTableVisible(const String & source, const String & table_name, const ContextPtr & context)
+{
+    return context->getAccess()->isGranted(AccessType::SHOW_TABLES, source, table_name);
+}
+
+/// The caller's filter narrowed to the tables of the source that the caller can see. A source waits for the tables
+/// that pass its filter to load and reports a load failure to the caller, so an invisible table is excluded here, not after.
+IDatabase::FilterByNameFunction sourceFilter(const String & source, const IDatabase::FilterByNameFunction & filter_by_table_name, const ContextPtr & context)
+{
+    return [source, filter_by_table_name, context](const String & table_name)
+    {
+        return isSourceTableVisible(source, table_name, context) && (!filter_by_table_name || filter_by_table_name(table_name));
+    };
+}
+
 }
 
 DatabaseOverlayReadOnly::DatabaseOverlayReadOnly(const String & name_, Strings source_databases_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), source_databases(std::move(source_databases_))
 {
-}
-
-bool DatabaseOverlayReadOnly::isSourceTableVisible(const String & source, const String & table_name, const ContextPtr & context_)
-{
-    return context_->getAccess()->isGranted(AccessType::SHOW_TABLES, source, table_name);
 }
 
 String DatabaseOverlayReadOnly::findSourceDatabase(const String & table_name, ContextPtr context_) const
@@ -715,8 +726,10 @@ DatabaseTablesIteratorPtr DatabaseOverlayReadOnly::getTablesIteratorWithHint(
         auto database = tryGetOverlaySource(source);
         if (!database)
             continue;
-        for (auto it = database->getTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, tables_filter); it->isValid(); it->next())
+        auto source_filter = sourceFilter(source, filter_by_table_name, context_);
+        for (auto it = database->getTablesIteratorWithHint(context_, source_filter, skip_not_loaded, tables_filter); it->isValid(); it->next())
         {
+            /// Re-checked in case the source ignored the filter.
             const String & name = it->name();
             if (isSourceTableVisible(source, name, context_) && seen.insert(name).second)
                 tables.emplace(name, std::make_shared<StorageAlias>(StorageID(getDatabaseName(), name), getContext(), source, name));
@@ -742,8 +755,10 @@ std::vector<LightWeightTableDetails> DatabaseOverlayReadOnly::getLightweightTabl
         auto database = tryGetOverlaySource(source);
         if (!database)
             continue;
-        for (auto & table : database->getLightweightTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, tables_filter))
+        auto source_filter = sourceFilter(source, filter_by_table_name, context_);
+        for (auto & table : database->getLightweightTablesIteratorWithHint(context_, source_filter, skip_not_loaded, tables_filter))
         {
+            /// Re-checked in case the source ignored the filter.
             if (isSourceTableVisible(source, table.name, context_) && seen.insert(table.name).second)
                 result.push_back(std::move(table));
         }
