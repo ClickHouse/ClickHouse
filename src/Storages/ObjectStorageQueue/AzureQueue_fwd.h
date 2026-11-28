@@ -2,6 +2,7 @@
 #include <Core/Types.h>
 #include <Core/Field.h>
 #include <Common/maskURIPassword.h>
+#include <Common/quoteString.h>
 #include <optional>
 
 namespace AzureQueue
@@ -24,7 +25,7 @@ inline std::unordered_map<String, ValueMaskingFunc> settingsToHide()
             if (!value.tryGet<std::string>(masked_value))
                 return {};
             DB::maskAzureConnectionStringSecrets(masked_value);
-            return fmt::format("'{}'", masked_value);
+            return DB::quoteString(masked_value);
         }},
     };
 }
