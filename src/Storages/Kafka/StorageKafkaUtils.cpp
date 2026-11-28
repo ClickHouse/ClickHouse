@@ -1273,6 +1273,38 @@ bool checkDependencies(const StorageID & table_id, const ContextPtr & context)
     return !DatabaseCatalog::instance().getReadyDependentViews(table_id, context).empty();
 }
 
+std::vector<StoragePtr> getStreamingViews(const StorageID & table_id, const ContextPtr & context)
+{
+    auto & catalog = DatabaseCatalog::instance();
+    auto pending = catalog.getReadyDependentViews(table_id, context);
+    std::vector<StoragePtr> views;
+    while (!pending.empty())
+    {
+        const StorageID view_id = std::move(pending.back());
+        pending.pop_back();
+        auto view = catalog.tryGetTable(view_id, context);
+        if (!view || std::ranges::contains(views, view))
+            continue;
+        if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get()))
+            std::ranges::copy(catalog.getDependentViews(materialized_view->getTargetTableId()), std::back_inserter(pending));
+        views.push_back(std::move(view));
+    }
+    return views;
+}
+
+bool viewsChanged(const StorageID & table_id, const ContextPtr & context, const std::vector<StoragePtr> & views)
+{
+    const auto current = getStreamingViews(table_id, context);
+    return current.size() != views.size()
+        || !std::ranges::all_of(current, [&](const StoragePtr & view) { return std::ranges::contains(views, view); });
+}
+
+bool offsetResetReadsFromBeginning(const cppkafka::Configuration & consumer_config)
+{
+    const auto policy = consumer_config.get("auto.offset.reset");
+    return policy == "smallest" || policy == "earliest" || policy == "beginning";
+}
+
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
     VirtualColumnsDescription desc;

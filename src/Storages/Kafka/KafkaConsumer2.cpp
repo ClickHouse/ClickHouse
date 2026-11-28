@@ -75,6 +75,8 @@ void KafkaConsumer2::createConsumer(cppkafka::Configuration consumer_config)
     if (consumer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KafkaConsumer2::createConsumer called when consumer already exists");
 
+    offset_reset_reads_from_beginning = StorageKafkaUtils::offsetResetReadsFromBeginning(consumer_config);
+
     if (consumer_config.get("statistics.interval.ms") != "0")
     {
         consumer_config.set_stats_callback(

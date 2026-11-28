@@ -58,6 +58,8 @@ public:
     /// whole block is redelivered even if `kafka_commit_every_batch` committed part of it mid-block.
     void rewindToLastCommitted();
 
+    bool offsetResetReadsFromBeginning() const { return offset_reset_reads_from_beginning; }
+
     /// Called once the in-flight block has reached its durable boundary (committed after the insert), so
     /// the next block tracks a fresh start. See `block_start_offsets`.
     void cleanBlockStartOffsets() { block_start_offsets.clear(); }
@@ -142,6 +144,7 @@ private:
     StalledStatus stalled_status = NO_MESSAGES_RETURNED;
 
     bool intermediate_commit = true;
+    bool offset_reset_reads_from_beginning = true;
     size_t waited_for_assignment = 0;
 
     const std::atomic<bool> & stopped;

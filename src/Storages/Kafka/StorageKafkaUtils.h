@@ -7,6 +7,7 @@
 #include <Core/StreamingHandleErrorMode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 #include <boost/circular_buffer.hpp>
 #include <cppkafka/configuration.h>
@@ -100,6 +101,18 @@ size_t eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandl
 SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const String & schema_name);
 
 bool checkDependencies(const StorageID & table_id, const ContextPtr& context);
+
+/// The resolvable views a streaming insert into `table_id` reaches: the ready dependent views and, through each
+/// materialized view's target table, their views. Empty while the dependent views are not ready. `context` must not
+/// be a query context: its storage cache keeps resolving a name to the table it first resolved to.
+std::vector<StoragePtr> getStreamingViews(const StorageID & table_id, const ContextPtr & context);
+
+/// True if getStreamingViews(table_id, context) returns other storage objects than `views`. Holding `views` stops an
+/// `Atomic` database from re-attaching one of them under the same UUID.
+bool viewsChanged(const StorageID & table_id, const ContextPtr & context, const std::vector<StoragePtr> & views);
+
+/// Whether `auto.offset.reset` starts a partition without a committed offset at its beginning.
+bool offsetResetReadsFromBeginning(const cppkafka::Configuration & consumer_config);
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 

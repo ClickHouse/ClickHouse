@@ -10,6 +10,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/Kafka/KafkaConsumer.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 
@@ -47,7 +48,8 @@ KafkaSource::KafkaSource(
     LoggerPtr log_,
     size_t max_block_size_,
     bool commit_in_suffix_,
-    std::optional<UInt64> cancel_epoch_)
+    std::optional<UInt64> cancel_epoch_,
+    std::optional<std::vector<StoragePtr>> streaming_views_)
     : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -60,6 +62,7 @@ KafkaSource::KafkaSource(
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
     , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
+    , streaming_views(std::move(streaming_views_))
 {
 }
 
@@ -181,6 +184,9 @@ Chunk KafkaSource::generateImpl()
     const Field table_name = storage_id.getTableName();
 
     bool cancelled = false;
+    bool consumed_any = false;
+    /// With another `auto.offset.reset`, a rewind restarts a partition without a valid committed offset at its end.
+    const bool check_views = streaming_views.has_value() && consumer->offsetResetReadsFromBeginning();
 
     while (true)
     {
@@ -194,6 +200,8 @@ Chunk KafkaSource::generateImpl()
         exception_message.reset();
         is_dead_letter = false;
 
+        /// The first message may come from the batch `subscribe()` polled; later, `consume()` polls when the batch is used up.
+        const bool new_batch = !consumed_any || !consumer->hasMorePolledMessages();
         if (auto buf = consumer->consume())
         {
             /// The cancel may have arrived while consume() was blocked polling; check again so the
@@ -201,6 +209,13 @@ Chunk KafkaSource::generateImpl()
             if (storage.isConsumeCancelRequested(cancel_epoch))
             {
                 cancelled = true;
+                break;
+            }
+            consumed_any = true;
+            if (new_batch && check_views
+                && StorageKafkaUtils::viewsChanged(storage_id, context->getGlobalContext(), *streaming_views))
+            {
+                ended_on_views_change = true;
                 break;
             }
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
@@ -333,8 +348,10 @@ Chunk KafkaSource::generateImpl()
         }
     }
 
-    if (cancelled || storage.isConsumeCancelRequested(cancel_epoch))
+    if (cancelled || ended_on_views_change || storage.isConsumeCancelRequested(cancel_epoch))
     {
+        if (ended_on_views_change)
+            LOG_TRACE(log, "Dependent views changed since the streaming cycle started, rewinding the block");
         try
         {
             consumer->rewindToLastCommitted();
