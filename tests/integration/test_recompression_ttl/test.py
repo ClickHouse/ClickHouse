@@ -102,6 +102,8 @@ def test_recompression_simple(started_cluster):
         == "ZSTD(10)\n"
     )
 
+    node1.query("DROP TABLE IF EXISTS table_for_recompression SYNC")
+
 
 def test_recompression_multiple_ttls(started_cluster):
     name = generate_random_name()
@@ -164,6 +166,8 @@ def test_recompression_multiple_ttls(started_cluster):
         == "['d + toIntervalSecond(10)','d + toIntervalSecond(15)','d + toIntervalSecond(5)']\n"
     )
 
+    node2.query("DROP TABLE IF EXISTS table_for_recompression SYNC")
+
 
 def test_recompression_replicated(started_cluster):
     name = generate_random_name()
@@ -171,7 +175,7 @@ def test_recompression_replicated(started_cluster):
         node.query(
             f"CREATE TABLE {name} (d DateTime, key UInt64, data String) \
         ENGINE ReplicatedMergeTree('/test/{name}', '{i + 1}') ORDER BY tuple() \
-        TTL d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(13)) SETTINGS merge_with_recompression_ttl_timeout = 0, default_compression_codec = 'LZ4'"
+        TTL d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(13)) SETTINGS merge_with_recompression_ttl_timeout = 0, default_compression_codec = 'LZ4', max_postpone_time_for_waiting_ms = 0"
         )
 
     node1.query(f"INSERT INTO {name} VALUES (now(), 1, '1')")
@@ -204,3 +208,6 @@ def test_recompression_replicated(started_cluster):
 
     assert codec1 == "ZSTD(13)"
     assert codec2 == "ZSTD(13)"
+
+    for node in [node1, node2]:
+        node.query("DROP TABLE IF EXISTS recompression_replicated SYNC")
