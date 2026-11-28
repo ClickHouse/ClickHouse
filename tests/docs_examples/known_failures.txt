@@ -90,6 +90,7 @@ Function/nowInBlock64#0                   unstable  # the output is not the same
 Function/obfuscateQuery#0                 unstable  # the output is not the same on every run
 Function/obfuscateQuery#1                 unstable  # the output is not the same on every run
 Function/parseDateTime64BestEffort#0      unstable  # the output is not the same on every run
+Function/planToASCII#0                    output  # the response holds the timings of the run that recorded it
 Function/rand#0                           unstable  # the output is not the same on every run
 Function/rand64#0                         unstable  # the output is not the same on every run
 Function/randBernoulli#0                  unstable  # the output is random and sometimes equals the documented one
