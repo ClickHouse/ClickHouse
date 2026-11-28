@@ -7,6 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The bundled musl shifts the clocks by `MUSL_CLOCK_REALTIME_OFFSET` and `MUSL_CLOCK_MONOTONIC_OFFSET` seconds.
 # About 16 years ahead: past 2038-01-19, where a signed 32-bit `time_t` overflows.
 OFFSET=500000000
+# The test may run under a shifted clock itself.
+unset MUSL_CLOCK_REALTIME_OFFSET MUSL_CLOCK_MONOTONIC_OFFSET
 
 echo "now"
 real=$($CLICKHOUSE_LOCAL -q "SELECT toUnixTimestamp(now())")
