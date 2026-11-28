@@ -76,4 +76,8 @@ using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
 /// A column matcher (`*`, `COLUMNS(...)`) has no meaning in a per-row predicate either. Reject it too.
 void checkRowPolicyFilterExpression(const ASTPtr & expression);
 
+/// Parses a stored filter under the default limits, as RowPolicyCache and entity loading do.
+/// The error does not quote the filter, which may hold secrets.
+ASTPtr parseRowPolicyFilter(const String & policy_name, RowPolicyFilterType filter_type, const String & filter);
+
 }

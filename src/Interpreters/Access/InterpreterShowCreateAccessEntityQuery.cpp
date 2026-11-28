@@ -13,8 +13,6 @@
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/parseQuery.h>
 #include <Access/AccessControl.h>
 #include <Access/EnabledQuota.h>
 #include <Access/Quota.h>
@@ -26,7 +24,6 @@
 #include <Access/MaskingPolicy.h>
 #include <Columns/ColumnString.h>
 #include <Common/StringUtils.h>
-#include <Core/Defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -218,8 +215,7 @@ namespace
             const auto & filter = policy.filters[static_cast<size_t>(type)];
             if (!filter.empty())
             {
-                ParserExpression parser;
-                ASTPtr expr = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+                ASTPtr expr = parseRowPolicyFilter(policy.getName(), type, filter);
                 query->filters.emplace_back(type, std::move(expr));
             }
         }

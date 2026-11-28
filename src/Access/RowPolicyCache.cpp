@@ -2,8 +2,7 @@
 #include <Access/AccessControl.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/RowPolicy.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/parseQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -13,7 +12,6 @@
 #include <Common/quoteString.h>
 #include <base/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
-#include <Core/Defines.h>
 
 
 namespace ProfileEvents
@@ -95,8 +93,7 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
         /// Try to parse the filter.
         try
         {
-            ParserExpression parser;
-            parsed_filters[filter_type_i] = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            parsed_filters[filter_type_i] = parseRowPolicyFilter(policy->getName(), filter_type, filter);
         }
         catch (...)
         {
@@ -104,6 +101,8 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
                 getLogger("RowPolicy"),
                 String("Could not parse the condition ") + toString(filter_type) + " of row policy "
                     + backQuote(policy->getName()));
+            /// The policy still applies, so it allows no rows rather than all of them.
+            parsed_filters[filter_type_i] = make_intrusive<ASTLiteral>(false);
         }
     }
 }
