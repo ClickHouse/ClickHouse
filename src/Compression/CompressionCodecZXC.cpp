@@ -20,7 +20,6 @@
 #include <memory>
 #include <mutex>
 #include <new>
-#include <vector>
 
 #include <zxc.h>
 
@@ -28,29 +27,35 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int ILLEGAL_CODEC_PARAMETER;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
 
 /// zxc contexts are carved in workspaces allocated here (static context API) instead of per call,
-/// and idle ones are pooled process-wide by block size and CPU, as for `ZSTD`.
+/// and idle ones are pooled process-wide.
 
 constexpr std::align_val_t workspace_alignment{64}; /// zxc requires a cache-line aligned workspace.
-constexpr size_t num_block_sizes = ZXC_BLOCK_SIZE_MAX_LOG2 - ZXC_BLOCK_SIZE_MIN_LOG2 + 1;
 
-/// Larger compression contexts (levels 6 and 7 on big blocks) are not pooled.
-constexpr size_t max_pooled_compression_workspace = 4_MiB;
+/// Largest zxc block size written; a larger input is split into several zxc blocks. A context thus never takes more memory
+/// than with the one-shot API used before, which always took the default block size.
+constexpr size_t max_block_size = ZXC_BLOCK_SIZE_DEFAULT;
+static_assert(std::has_single_bit(max_block_size) && max_block_size >= ZXC_BLOCK_SIZE_MIN && max_block_size <= ZXC_BLOCK_SIZE_MAX);
 
-/// Smallest valid zxc block size holding the whole input. The decoder reads it from the frame header.
+/// No context with a larger workspace is pooled. This leaves out only levels 6 and 7 on large blocks.
+constexpr size_t max_pooled_workspace = 2_MiB;
+
+constexpr size_t num_pooled_block_sizes = std::countr_zero(max_block_size) - ZXC_BLOCK_SIZE_MIN_LOG2 + 1;
+
+/// Smallest zxc block size holding the whole input, up to `max_block_size`. The decoder reads it from the frame header.
 size_t blockSizeFor(UInt32 source_size)
 {
-    return std::clamp<size_t>(std::bit_ceil(static_cast<size_t>(source_size)), ZXC_BLOCK_SIZE_MIN, ZXC_BLOCK_SIZE_MAX);
+    return std::clamp<size_t>(std::bit_ceil(static_cast<size_t>(source_size)), ZXC_BLOCK_SIZE_MIN, max_block_size);
 }
 
 bool isValidBlockSize(size_t block_size)
@@ -58,25 +63,39 @@ bool isValidBlockSize(size_t block_size)
     return std::has_single_bit(block_size) && block_size >= ZXC_BLOCK_SIZE_MIN && block_size <= ZXC_BLOCK_SIZE_MAX;
 }
 
+/// Data written by other versions may use larger blocks; their contexts are not pooled.
+bool isPooledBlockSize(size_t block_size)
+{
+    return isValidBlockSize(block_size) && block_size <= max_block_size;
+}
+
 size_t blockSizeIndex(size_t block_size)
 {
-    chassert(isValidBlockSize(block_size));
+    chassert(isPooledBlockSize(block_size));
     return static_cast<size_t>(std::countr_zero(block_size)) - ZXC_BLOCK_SIZE_MIN_LOG2;
+}
+
+/// zxc returns 0 for parameters it does not support.
+size_t checkWorkspaceSize(size_t size, size_t block_size)
+{
+    if (size == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported parameters for a ZXC context with blocks of {} bytes", block_size);
+    return size;
 }
 
 class Workspace
 {
 public:
-    explicit Workspace(size_t size_) : size(size_), data(::operator new(size_ ? size_ : 1, workspace_alignment)) {}
-    ~Workspace() { ::operator delete(data, size ? size : 1, workspace_alignment); }
+    explicit Workspace(size_t size_) : size(size_), data(::operator new(size_, workspace_alignment)) {}
+    ~Workspace() { ::operator delete(data, size, workspace_alignment); }
 
     Workspace(const Workspace &) = delete;
     Workspace & operator=(const Workspace &) = delete;
 
-    void * get() const { return data; }
-    size_t bytes() const { return size; }
+    [[nodiscard]] void * get() const { return data; }
+    [[nodiscard]] size_t bytes() const { return size; }
 
-    Int64 trackedSize() const { return ::Memory::getActualAllocationSize(size ? size : 1, workspace_alignment); }
+    [[nodiscard]] Int64 trackedSize() const { return ::Memory::getActualAllocationSize(size, workspace_alignment); }
 
 private:
     const size_t size;
@@ -85,22 +104,25 @@ private:
 
 struct CompressionContext
 {
+    /// From `ZXC_LEVEL_DENSITY`, a level needs the optimal-parser scratch that lower levels do not carve,
+    /// so the two tiers are pooled apart. Levels within a tier share the same workspace.
+    static constexpr size_t num_pool_indices = num_pooled_block_sizes * 2;
+    static size_t poolIndexFor(size_t block_size, int level) { return blockSizeIndex(block_size) * 2 + (level >= ZXC_LEVEL_DENSITY); }
+
     CompressionContext(size_t block_size_, int level_)
         : block_size(block_size_)
         , carved_level(level_)
         , current_level(level_)
-        , workspace(zxc_static_cctx_workspace_size(block_size_, level_))
+        , workspace(checkWorkspaceSize(zxc_static_cctx_workspace_size(block_size_, level_), block_size_))
         , cctx(zxc_init_static_cctx(workspace.get(), workspace.bytes(), block_size_, level_))
     {
         if (!cctx)
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cannot create a ZXC compression context for blocks of {} bytes at level {}", block_size, carved_level);
     }
 
-    /// A workspace carved below `ZXC_LEVEL_DENSITY` lacks the optimal-parser scratch.
-    bool canCompressAt(int level) const { return level < ZXC_LEVEL_DENSITY || carved_level >= ZXC_LEVEL_DENSITY; }
-
-    Int64 trackedSize() const { return ::Memory::getActualAllocationSize(sizeof(*this)) + workspace.trackedSize(); }
+    [[nodiscard]] size_t poolIndex() const { return poolIndexFor(block_size, carved_level); }
+    [[nodiscard]] Int64 trackedSize() const { return ::Memory::getActualAllocationSize(sizeof(*this)) + workspace.trackedSize(); }
 
     const size_t block_size;
     const int carved_level;
@@ -108,95 +130,159 @@ struct CompressionContext
     Workspace workspace;
     /// Points inside `workspace`.
     zxc_cctx * const cctx;
+    /// Next idle context in the same pool.
+    CompressionContext * next = nullptr;
 };
 
 struct DecompressionContext
 {
+    static constexpr size_t num_pool_indices = num_pooled_block_sizes;
+    static size_t poolIndexFor(size_t block_size) { return blockSizeIndex(block_size); }
+
     explicit DecompressionContext(size_t block_size_)
         : block_size(block_size_)
-        , workspace(zxc_static_dctx_workspace_size(block_size_))
+        , workspace(checkWorkspaceSize(zxc_static_dctx_workspace_size(block_size_), block_size_))
         , dctx(zxc_init_static_dctx(workspace.get(), workspace.bytes(), block_size_))
     {
         if (!dctx)
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot create a ZXC decompression context for blocks of {} bytes", block_size);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create a ZXC decompression context for blocks of {} bytes", block_size);
     }
+
+    [[nodiscard]] size_t poolIndex() const { return poolIndexFor(block_size); }
+    [[nodiscard]] Int64 trackedSize() const { return ::Memory::getActualAllocationSize(sizeof(*this)) + workspace.trackedSize(); }
 
     const size_t block_size;
     Workspace workspace;
     /// Points inside `workspace`.
     zxc_dctx * const dctx;
+    /// Next idle context in the same pool.
+    DecompressionContext * next = nullptr;
 };
 
-/// Server-owned pools of idle contexts by block size and CPU; `take` also looks in other CPUs' pools.
+/// Server-owned pools of idle contexts: one per CPU for each pool index. Idle contexts take at most two maximal pooled
+/// workspaces per usable core in all. Pools are intrusive lists, so that returning a context never allocates.
 template <typename Context>
 class ContextPools
 {
 public:
-    static std::unique_ptr<Context> take(size_t block_size)
+    /// An idle context from the pool of the current CPU, or else of another CPU (threads roam over CPUs), or nullptr.
+    static std::unique_ptr<Context> take(size_t index)
     {
-        auto & pools = poolsFor(block_size);
-        if (pools.num_idle.load(std::memory_order_relaxed) == 0)
-            return nullptr;
-
-        ServerOwnedMemoryScope server_owned;
-        const size_t current = currentPool();
-        for (size_t i = 0; i < numPools(); ++i)
+        auto & state = getState();
+        auto & of_index = state.of_index[index];
+        const size_t num_cpus = numCPUs();
+        const size_t current = currentCPU();
+        for (size_t i = 0; i < num_cpus && of_index.num_idle.load(std::memory_order_relaxed) > 0; ++i)
         {
-            auto & pool = pools.pools[(current + i) % numPools()];
-            std::lock_guard lock(pool.mutex);
-            if (!pool.idle.empty())
+            auto & pool = of_index.pools[(current + i) % num_cpus];
+            Context * context = nullptr;
             {
-                auto context = std::move(pool.idle.back());
-                pool.idle.pop_back();
-                --pools.num_idle;
-                return context;
+                std::lock_guard lock(pool.mutex);
+                context = pool.head;
+                if (context)
+                {
+                    pool.head = context->next;
+                    --of_index.num_idle;
+                }
+            }
+            if (context)
+            {
+                context->next = nullptr;
+                state.idle_bytes.fetch_sub(context->trackedSize(), std::memory_order_relaxed);
+                return std::unique_ptr<Context>(context);
             }
         }
         return nullptr;
     }
 
-    static void put(std::unique_ptr<Context> context)
+    /// Moves `context` into the pool of the current CPU, unless it is too large or does not fit in the budget:
+    /// then it stays with the caller and false is returned.
+    static bool tryPut(std::unique_ptr<Context> & context)
     {
-        auto & pools = poolsFor(context->block_size);
-        ServerOwnedMemoryScope server_owned;
-        auto & pool = pools.pools[currentPool()];
+        if (!isPooledBlockSize(context->block_size) || context->workspace.bytes() > max_pooled_workspace)
+            return false;
+
+        auto & state = getState();
+        const size_t index = context->poolIndex();
+        auto & of_index = state.of_index[index];
+        const Int64 size = context->trackedSize();
+        while (!tryReserve(state, size))
+        {
+            /// The budget is held by contexts of other pool indices only: the workload has changed, so make room for this one.
+            if (of_index.num_idle.load(std::memory_order_relaxed) > 0 || !evictOther(index))
+                return false;
+        }
+
+        auto & pool = of_index.pools[currentCPU()];
         std::lock_guard lock(pool.mutex);
-        pool.idle.push_back(std::move(context));
-        ++pools.num_idle;
+        context->next = pool.head;
+        pool.head = context.release();
+        ++of_index.num_idle;
+        return true;
     }
 
 private:
     struct Pool
     {
         std::mutex mutex;
-        std::vector<std::unique_ptr<Context>> idle; /// STYLE_CHECK_ALLOW_STD_CONTAINERS: process-wide, not charged to a query
+        Context * head = nullptr;
     };
 
-    struct PoolsOfBlockSize
+    struct PoolsOfIndex
     {
         std::atomic<size_t> num_idle = 0;
         std::unique_ptr<Pool[]> pools;
     };
 
-    static size_t numPools()
+    struct State
     {
-        static const size_t num_pools = PerCPU::getNumPossibleCPUs();
-        return num_pools;
+        PoolsOfIndex of_index[Context::num_pool_indices];
+        std::atomic<Int64> idle_bytes = 0;
+    };
+
+    static size_t numCPUs()
+    {
+        static const size_t num_cpus = PerCPU::getNumPossibleCPUs();
+        return num_cpus;
     }
 
-    static size_t currentPool() { return static_cast<size_t>(PerCPU::getCurrentCPU()) % numPools(); }
+    static size_t currentCPU() { return static_cast<size_t>(PerCPU::getCurrentCPU()) % numCPUs(); }
 
-    static PoolsOfBlockSize & poolsFor(size_t block_size)
+    static State & getState()
     {
-        static PoolsOfBlockSize * all = []
+        static State * state = []
         {
             ServerOwnedMemoryScope server_owned;
-            auto * res = new PoolsOfBlockSize[num_block_sizes];
-            for (size_t i = 0; i < num_block_sizes; ++i)
-                res[i].pools = std::make_unique<Pool[]>(numPools());
+            auto * res = new State;
+            for (auto & of_index : res->of_index)
+                of_index.pools = std::make_unique<Pool[]>(numCPUs());
             return res;
         }();
-        return all[blockSizeIndex(block_size)];
+        return *state;
+    }
+
+    static bool tryReserve(State & state, Int64 size)
+    {
+        const Int64 budget = static_cast<Int64>(2 * getNumberOfCPUCoresToUse() * max_pooled_workspace);
+        if (state.idle_bytes.fetch_add(size, std::memory_order_relaxed) + size <= budget)
+            return true;
+        state.idle_bytes.fetch_sub(size, std::memory_order_relaxed);
+        return false;
+    }
+
+    /// Frees an idle context of another pool index; false if there is none.
+    static bool evictOther(size_t index)
+    {
+        for (size_t i = 1; i < Context::num_pool_indices; ++i)
+        {
+            if (auto victim = take((index + i) % Context::num_pool_indices))
+            {
+                ServerOwnedMemoryScope server_owned;
+                victim.reset();
+                return true;
+            }
+        }
+        return false;
     }
 };
 
@@ -206,12 +292,6 @@ void chargeQuery(Int64 bytes)
     std::ignore = bytes > 0 ? CurrentMemoryTracker::allocNoThrow(bytes) : CurrentMemoryTracker::free(-bytes);
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
     total_memory_tracker.adjustWithUntrackedMemory(-bytes);
-}
-
-/// At most two pooled contexts per usable core and direction.
-bool tooManyContexts(size_t num_contexts)
-{
-    return num_contexts > 2 * getNumberOfCPUCoresToUse();
 }
 
 }
@@ -232,53 +312,43 @@ UInt32 CompressionCodecZXC::getMaxCompressedDataSize(UInt32 uncompressed_size) c
     return static_cast<UInt32>(zxc_compress_bound(uncompressed_size));
 }
 
+UInt32 CompressionCodecZXC::getAdditionalSizeAtTheEndOfBuffer() const
+{
+    /// zxc decodes straight into `dest` only with `ZXC_DECOMPRESS_TAIL_PAD` bytes of room past the data for its wild copies,
+    /// otherwise through its scratch buffer and a copy. This also covers its 32-byte over-reads past the compressed input.
+    return static_cast<UInt32>(zxc_decompress_block_bound(0));
+}
+
 UInt32 CompressionCodecZXC::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    static std::atomic<size_t> num_contexts = 0;
+    using Pools = ContextPools<CompressionContext>;
     /// Returning a context to its pool must not throw `MEMORY_LIMIT_EXCEEDED`.
     LockMemoryExceptionInThread lock(VariableContext::Global);
 
     const size_t block_size = blockSizeFor(source_size);
-    auto context = ContextPools<CompressionContext>::take(block_size);
-    if (context && !context->canCompressAt(level))
-    {
-        ServerOwnedMemoryScope server_owned;
-        context.reset();
-        --num_contexts;
-    }
-
+    auto context = Pools::take(CompressionContext::poolIndexFor(block_size, level));
     if (context)
         chargeQuery(context->trackedSize());
     else
-    {
         context = std::make_unique<CompressionContext>(block_size, level);
-        ++num_contexts;
-    }
 
     /// No zxc checksum: ClickHouse checksums compressed blocks itself.
-    int rc = ZXC_OK;
+    int64_t compressed_size = ZXC_OK;
     if (context->current_level != level)
     {
-        rc = zxc_cctx_set_param(context->cctx, ZXC_C_LEVEL, level);
-        if (rc == ZXC_OK)
+        compressed_size = zxc_cctx_set_param(context->cctx, ZXC_C_LEVEL, level);
+        if (compressed_size == ZXC_OK)
             context->current_level = level;
     }
-
-    int64_t compressed_size = rc;
-    if (rc == ZXC_OK)
+    if (compressed_size == ZXC_OK)
         compressed_size = zxc_compress_cctx(context->cctx, source, source_size, dest, zxc_compress_bound(source_size));
 
-    /// Release the context before throwing.
-    if (tooManyContexts(num_contexts) || context->workspace.bytes() > max_pooled_compression_workspace)
-    {
-        context.reset();
-        --num_contexts;
-    }
+    /// Release the context before throwing. A pooled context is no longer charged to the query.
+    const Int64 context_size = context->trackedSize();
+    if (Pools::tryPut(context))
+        chargeQuery(-context_size);
     else
-    {
-        chargeQuery(-context->trackedSize());
-        ContextPools<CompressionContext>::put(std::move(context));
-    }
+        context.reset();
 
     if (compressed_size < 0)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZXC codec at level {}: {}",
@@ -289,9 +359,7 @@ UInt32 CompressionCodecZXC::doCompressData(const char * source, UInt32 source_si
 
 UInt32 CompressionCodecZXC::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    static std::atomic<size_t> num_contexts = 0;
-    /// Decompression contexts are server-owned, as for `ZSTD`.
-    ServerOwnedMemoryScope server_owned;
+    using Pools = ContextPools<DecompressionContext>;
     LockMemoryExceptionInThread lock(VariableContext::Global);
 
     /// A static context accepts only its own block size.
@@ -301,22 +369,25 @@ UInt32 CompressionCodecZXC::doDecompressData(const char * source, UInt32 source_
     if (!isValidBlockSize(info.block_size))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZXC-encoded data: invalid block size {}", info.block_size);
 
-    auto context = ContextPools<DecompressionContext>::take(info.block_size);
+    std::unique_ptr<DecompressionContext> context;
+    if (isPooledBlockSize(info.block_size))
+        context = Pools::take(DecompressionContext::poolIndexFor(info.block_size));
     if (!context)
     {
+        /// Decompression contexts are server-owned for their whole life.
+        ServerOwnedMemoryScope server_owned;
         context = std::make_unique<DecompressionContext>(info.block_size);
-        ++num_contexts;
     }
 
-    int64_t decompressed_size = zxc_decompress_dctx(context->dctx, source, source_size, dest, uncompressed_size);
+    /// Callers reserve `getAdditionalSizeAtTheEndOfBuffer` bytes past `dest`.
+    const int64_t decompressed_size = zxc_decompress_dctx(context->dctx, source, source_size, dest,
+        static_cast<size_t>(uncompressed_size) + getAdditionalSizeAtTheEndOfBuffer());
 
-    if (tooManyContexts(num_contexts))
+    if (!Pools::tryPut(context))
     {
+        ServerOwnedMemoryScope server_owned;
         context.reset();
-        --num_contexts;
     }
-    else
-        ContextPools<DecompressionContext>::put(std::move(context));
 
     if (decompressed_size < 0)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZXC-encoded data: {}",
