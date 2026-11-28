@@ -20,7 +20,7 @@ Grâce à la prise en charge d’ACME, ClickHouse peut obtenir et renouveler aut
 Le chiffrement TLS protège les données en transit entre les clients et les serveurs ClickHouse, empêchant l’interception de requêtes et de résultats sensibles.
 
 <div id="overview">
-  ## Vue d’ensemble
+  ## Vue d’ensemble {#overview}
 </div>
 
 Le protocole ACME définit un processus de renouvellement automatique des certificats avec des services comme [Let&#39;s Encrypt](https://letsencrypt.org/) ou [ZeroSSL](https://zerossl.com/). En bref, ClickHouse, en tant que demandeur de certificat, doit prouver qu’il contrôle le domaine au moyen de types de challenge prédéfinis afin d’obtenir un certificat.
@@ -48,7 +48,7 @@ Dans le bloc `acme`, nous définissons `email` pour la création du compte et ac
 Après cela, il ne nous reste plus qu&#39;à fournir une liste de domaines.
 
 <div id="current-limitations">
-  ### Limitations actuelles
+  ### Limitations actuelles {#current-limitations}
 </div>
 
 * Seul le challenge de type `HTTP-01` est pris en charge.
@@ -56,7 +56,7 @@ Après cela, il ne nous reste plus qu&#39;à fournir une liste de domaines.
 * La limitation du nombre de requêtes n&#39;est pas prise en charge.
 
 <div id="configuration-parameters">
-  ## Paramètres de configuration
+  ## Paramètres de configuration {#configuration-parameters}
 </div>
 
 Options de configuration disponibles dans la section `acme` :
@@ -74,11 +74,11 @@ Options de configuration disponibles dans la section `acme` :
 Notez que, par défaut, la configuration utilise le répertoire de production de Let’s Encrypt. Pour éviter d’atteindre le quota de requêtes en raison d’une probable erreur de configuration, il est recommandé de tester d’abord le processus d’émission des certificats avec le [répertoire de préproduction](https://letsencrypt.org/docs/staging-environment/).
 
 <div id="administration">
-  # Administration
+  # Administration {#administration}
 </div>
 
 <div id="initial-deployment">
-  ## Déploiement initial
+  ## Déploiement initial {#initial-deployment}
 </div>
 
 Lors de l’activation du client ACME sur un cluster comportant plusieurs répliques, des précautions supplémentaires sont nécessaires lors de l’émission initiale du certificat.
@@ -92,7 +92,7 @@ S’il n’est pas possible d’acheminer le trafic vers une seule réplique, un
 Une fois le certificat initial délivré ou importé, le renouvellement du certificat ne nécessite pas de traitement particulier, car toutes les répliques exécuteront déjà le client ACME et partageront leur état via Keeper.
 
 <div id="keeper-data-structure">
-  ## Structure des données de Keeper
+  ## Structure des données de Keeper {#keeper-data-structure}
 </div>
 
 ```text
@@ -107,7 +107,7 @@ Une fois le certificat initial délivré ou importé, le renouvellement du certi
 ```
 
 <div id="migrating-from-other-acme-clients">
-  ## Migration depuis d&#39;autres clients ACME
+  ## Migration depuis d&#39;autres clients ACME {#migrating-from-other-acme-clients}
 </div>
 
 Il est possible de migrer le certificat TLS et la clé actuels vers Keeper pour simplifier la migration.

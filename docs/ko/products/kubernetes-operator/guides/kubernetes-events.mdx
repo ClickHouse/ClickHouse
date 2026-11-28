@@ -28,9 +28,7 @@ PersistentVolumeClaim 또는 version-probe Job). 그 외 이벤트는 클러스�
   지속적으로 보존되는 감사 추적용 기록은 아닙니다.
 </Note>
 
-<div id="viewing-events">
-  ## 이벤트 확인
-</div>
+## 이벤트 확인 {#viewing-events}
 
 가장 빠르게 확인하는 방법은 사용자 지정 리소스에 대해 `kubectl describe`를 실행하는 것이며, 그러면 하단에
 가장 최근의 이벤트가 표시됩니다:
@@ -62,17 +60,13 @@ kubectl -n $NS get events --watch
 `ClickHouseCluster` 이벤트(`clickhouse-controller`)와 `KeeperCluster` 이벤트
 (`keeper-controller`)를 구분할 수 있습니다.
 
-<div id="event-reasons">
-  ## 이벤트 Reason 참고
-</div>
+## 이벤트 Reason 참고 {#event-reasons}
 
 연산자는 설명하는 내용에 따라 분류된 고정된 Reason 집합을 발생시킵니다. `Normal`
 이벤트는 예상된 진행 상황을 나타내고, `Warning` 이벤트는 실패 또는
 사용자가 조치해야 하는 상태를 나타냅니다.
 
-<div id="resource-lifecycle">
-  ### 리소스 수명 주기
-</div>
+### 리소스 수명 주기 {#resource-lifecycle}
 
 리컨실리에이션 중 오퍼레이터가 자신이 관리하는 리소스를 적용하지 못하면 `ClickHouseCluster`와 `KeeperCluster` 모두에서 이 이벤트가 발생합니다.
 
@@ -82,9 +76,7 @@ kubectl -n $NS get events --watch
 | `FailedUpdate` | Warning | 오퍼레이터가 리소스를 업데이트하지 못했습니다.                                                                  |
 | `FailedDelete` | Warning | 오퍼레이터가 리컨실리에이션 또는 축소 중에 자신이 관리하는 리소스를 삭제하지 못했습니다.                                          |
 
-<div id="cluster-readiness">
-  ### 클러스터 준비 상태
-</div>
+### 클러스터 준비 상태 {#cluster-readiness}
 
 클러스터가 준비 상태 경계를 넘을 때 두 Kind 모두에서 발생합니다.
 
@@ -93,9 +85,7 @@ kubectl -n $NS get events --watch
 | `ClusterReady`    | Normal  | 클러스터가 준비 상태가 되었습니다. 즉, 각 ClickHouse 세그먼트에 Ready 상태인 레플리카가 최소 1개 이상 있거나, Keeper 쿼럼에 리더와 충분한 수의 팔로워가 있습니다(또는 단일 독립형 레플리카가 실행 중입니다). |
 | `ClusterNotReady` | Warning | 클러스터가 준비 상태를 벗어났습니다. 즉, ClickHouse 세그먼트에 Ready 상태인 레플리카가 더 이상 없거나, Keeper 쿼럼이 리더를 잃었거나 팔로워가 너무 많이 사라졌습니다.                         |
 
-<div id="scaling">
-  ### 스케일링
-</div>
+### 스케일링 {#scaling}
 
 오퍼레이터가 레플리카 수를 변경할 때 `KeeperCluster`에서 발생하는 이벤트입니다.
 
@@ -114,9 +104,7 @@ kubectl -n $NS get events --watch
   막은 제약 조건이 명시됩니다.
 </Note>
 
-<div id="external-secret">
-  ### 외부 시크릿
-</div>
+### 외부 시크릿 {#external-secret}
 
 클러스터가 오퍼레이터에서 사용할 수 없는 외부 시크릿을 참조할 때 `ClickHouseCluster`에 대해 이 이벤트가 발생합니다. 자세한 내용은
 [구성 가이드](/ko/products/kubernetes-operator/guides/configuration)의 External Secret 기능을 참조하십시오.
@@ -126,9 +114,7 @@ kubectl -n $NS get events --watch
 | `ExternalSecretNotFound` | Warning | 참조된 시크릿이 클러스터의 네임스페이스에 존재하지 않습니다.                |
 | `ExternalSecretInvalid`  | Warning | 시크릿은 존재하지만 필수 키가 누락되어 있습니다(`Observe` 정책에서만 보고됨). |
 
-<div id="version-checks">
-  ### 버전 확인
-</div>
+### 버전 확인 {#version-checks}
 
 `ClickHouseCluster` 및 `KeeperCluster`의 버전 확인에서 발생합니다.
 `VersionProbeFailed`는 ClickHouse 버전 프로브 Job에만 해당합니다.
@@ -139,16 +125,14 @@ kubectl -n $NS get events --watch
 | `VersionDiverge`          | 경고 | 레플리카에서 감지된 버전이 오퍼레이터가 cluster에 대해 감지한 버전과 다릅니다. 롤링 업데이트 중에는 억제됩니다.                                                          |
 | `VersionUpgradeAvailable` | 경고 | 구성된 upgrade channel에서 더 새로운 버전을 사용할 수 있거나, 실행 중인 버전이 해당 채널에 없거나, 지원이 종료된 상태입니다. 오퍼레이터는 자체적으로 업그레이드하지 않으며, 이 이벤트는 알림만 제공합니다. |
 
-<div id="clickhouse-warnings">
-  ### ClickHouse 서버 경고
-</div>
+### ClickHouse 서버 경고 {#clickhouse-warnings}
 
-| Reason              | Type    | Meaning                                                   |
+| 사유              | 유형    | Meaning                                                   |
 | ------------------- | ------- | --------------------------------------------------------- |
-| `ClickHouseWarning` | Warning | ClickHouse 서버 자체에서 보고되며 `system.warnings`에서 다시 게시된 경고입니다. |
+| `ClickHouseWarning` | 경고 | ClickHouse 서버 자체에서 보고되며 `system.warnings`에서 다시 게시된 경고입니다. |
 
-마지막 Reason은 성격이 다릅니다. 이는 오퍼레이터 자체의 동작을 설명하는 것이 아닙니다. 각
-준비된 레플리카에서 오퍼레이터는 주기적으로 서버의
+마지막 사유는 성격이 다릅니다. 이는 연산자 자체의 동작을 설명하는 것이 아닙니다. 연결할 수 있는
+각 레플리카에서 연산자는 주기적으로 서버의
 [`system.warnings`](https://clickhouse.com/docs/operations/system-tables/system_warnings) 테이블을 조회하고,
 각 행을 해당 행이 나온 레플리카 이름을 접두사로 붙여 클러스터의 `Warning` 이벤트로 다시 게시합니다.
 이렇게 하면 ClickHouse 자체의 구성 및 런타임 경고(더 이상 사용되지 않는 설정, 낮은 제한값, 안전하지 않은 옵션)를 각 레플리카에 대해
@@ -159,9 +143,7 @@ kubectl -n $NS get events \
   --field-selector reason=ClickHouseWarning,involvedObject.name=<name>
 ```
 
-<div id="events-vs-metrics">
-  ## 이벤트, 메트릭 및 조건
-</div>
+## 이벤트, 메트릭 및 조건 {#events-vs-metrics}
 
 연산자는 관측성을 위해 3가지 수단을 제공합니다. 각각 가장 적합한 용도에 맞게 사용하십시오:
 
@@ -174,9 +156,7 @@ kubectl -n $NS get events \
 
 `Warning` 이벤트와 `False` 조건은 같은 문제를 서로 다른 두 관점에서 설명하는 경우가 많습니다. 이벤트는 발생 시점과 메시지를 포착하고, 조건은 해소될 때까지 해당 상태를 반영합니다.
 
-<div id="troubleshooting">
-  ## 이벤트로 문제 해결하기
-</div>
+## 이벤트로 문제 해결하기 {#troubleshooting}
 
 몇 가지 일반적인 신호와 그 의미는 다음과 같습니다.
 
@@ -195,9 +175,7 @@ kubectl -n $NS get events \
 * **`ClickHouseWarning`** — 문제는 연산자가 아니라 ClickHouse 내부에 있습니다.
   메시지는 `system.warnings`의 행을 보듯이 해석하십시오.
 
-<div id="related-guides">
-  ## 관련 가이드
-</div>
+## 관련 가이드 {#related-guides}
 
 * [operator 모니터링](/ko/products/kubernetes-operator/guides/monitoring) — 메트릭과 상태 프로브로, 이벤트와 달리 지속적으로 확인할 수 있는 신호입니다.
 * [스케일링](/ko/products/kubernetes-operator/guides/scaling) — `HorizontalScaleBlocked`가 무엇을 보호하는지, 그리고 Keeper quorum이 스케일링을 어떻게 제한하는지 설명합니다.

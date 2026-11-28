@@ -161,6 +161,11 @@ public:
     /// See ReadFromFormatInfo::map_columns_read_by_keys. A format may ignore it and read the whole maps.
     virtual void setMapColumnsReadByOneSide(const NameSet & /*by_keys*/, const NameSet & /*by_values*/) {}
 
+    /// The approximate number of bytes per row that the caller adds to every chunk of this format after reading it, e.g. the
+    /// constant columns that the schema transform of a data lake materializes. A format that bounds the size of its chunks
+    /// by the memory limit counts them too. Must be called before the first read.
+    virtual void setBytesPerRowAddedAfterReading(size_t /*bytes*/) {}
+
     /// `FormatFilterInfo::column_mapper`, for a format whose creator does not receive the `FormatFilterInfo`.
     virtual void setColumnMapper(const ColumnMapperPtr & /*column_mapper*/) {}
 

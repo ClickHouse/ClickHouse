@@ -1,0 +1,16 @@
+<test iceberg="0">
+    <!-- Not on Iceberg tables: `UInt8` widened to `Int32` does not take the 1-byte `GROUP BY` key path. -->
+    <create_query>CREATE TABLE group_by_uint8_key (k UInt8, s UInt8, v UInt32) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO group_by_uint8_key SELECT intHash32(number) % 16, intDiv(number, 100000) % 256, toUInt32(number) FROM numbers_mt(160000000)</fill_query>
+
+    <query>SELECT k, sum(v) FROM group_by_uint8_key GROUP BY k FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT k, min(v), max(v) FROM group_by_uint8_key GROUP BY k FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT k, avg(v) FROM group_by_uint8_key GROUP BY k FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT k, any(v), anyLast(v) FROM group_by_uint8_key GROUP BY k FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT k, argMax(v, v) FROM group_by_uint8_key GROUP BY k FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT k, deltaSum(v) FROM group_by_uint8_key GROUP BY k FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT s, sum(v) FROM group_by_uint8_key GROUP BY s FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT s, any(v), anyLast(v) FROM group_by_uint8_key GROUP BY s FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS group_by_uint8_key</drop_query>
+</test>

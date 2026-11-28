@@ -1,0 +1,32 @@
+rows 40 preceding 30 following, block size 7	2017	0	0	0	0	0	0	0	0	0
+rows 40 preceding 30 following, block size 333	2017	0	0	0	0	0	0	0	0	0
+rows 40 preceding 30 following, block size 65505	2017	0	0	0	0	0	0	0	0	0
+rows 300 preceding 290 following, block size 7	2017	0	0	0	0	0	0	0	0	0
+rows 300 preceding 290 following, block size 333	2017	0	0	0	0	0	0	0	0	0
+rows 300 preceding 290 following, block size 65505	2017	0	0	0	0	0	0	0	0	0
+rows current row unbounded following, block size 7	2017	0	0	0	0	0	0	0	0	0
+rows current row unbounded following, block size 333	2017	0	0	0	0	0	0	0	0	0
+rows current row unbounded following, block size 65505	2017	0	0	0	0	0	0	0	0	0
+rows 5 following 400 following, block size 7	2017	0	0	0	0	0	0	0	0	0
+rows 5 following 400 following, block size 333	2017	0	0	0	0	0	0	0	0	0
+rows 5 following 400 following, block size 65505	2017	0	0	0	0	0	0	0	0	0
+rows 600 preceding 100 preceding, block size 7	2017	0	0	0	0	0	0	0	0	0
+rows 600 preceding 100 preceding, block size 333	2017	0	0	0	0	0	0	0	0	0
+rows 600 preceding 100 preceding, block size 65505	2017	0	0	0	0	0	0	0	0	0
+range 100 preceding 30 following, block size 7	2017	0	0	0	0	0	0	0
+range 100 preceding 30 following, block size 333	2017	0	0	0	0	0	0	0
+range 100 preceding 30 following, block size 65505	2017	0	0	0	0	0	0	0
+range current row unbounded following, block size 7	2017	0	0	0	0	0	0	0
+range current row unbounded following, block size 333	2017	0	0	0	0	0	0	0
+range current row unbounded following, block size 65505	2017	0	0	0	0	0	0	0
+groups 50 preceding 20 following, block size 7	2017	0	0	0	0	0	0	0
+groups 50 preceding 20 following, block size 333	2017	0	0	0	0	0	0	0
+groups 50 preceding 20 following, block size 65505	2017	0	0	0	0	0	0	0
+series current row unbounded following, block size 1000	140000	0	0	0
+series current row unbounded following	140000	0	0	0
+series current row unbounded following, default setting	140000	0	0	0
+series 5000 preceding 4999 following, block size 1000	140000	0	0	0
+series 5000 preceding 4999 following	140000	0	0	0
+series 5000 preceding 4999 following, default setting	140000	0	0	0
+floats, block size 7	2017	0	0	0
+floats, block size 65505	2017	0	0	0

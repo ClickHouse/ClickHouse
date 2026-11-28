@@ -46,6 +46,11 @@ static StreamDisjointnessProperty makeHashPartitionedProperty(const Block & head
 
 static bool partitionDeterminedByKeys(const StreamDisjointnessProperty & property, const Names & keys)
 {
+    /// Table partitions can separate `-0.` and `0.`, which are the same key. Hash partitioning replaces negative
+    /// zeros before hashing (see `ScatterByPartitionTransform`), so it keeps them together.
+    if (property.reading && partitionKeyCanDistinguishSignedZeros(property.partition_key_actions))
+        return false;
+
     return isPartitionKeyFunctionOfKeys(
         property.partition_key_actions, property.partition_key_actions.getOutputs(), property.column_actions, keys);
 }

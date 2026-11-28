@@ -2,18 +2,14 @@
 slug: /cloud/managed-postgres/monitoring/notifications
 sidebarTitle: 'Notificações'
 title: 'Notificações do ClickHouse Managed Postgres'
-description: 'Notificações do Console Cloud para serviços do ClickHouse Managed Postgres'
-keywords: ['managed postgres', 'notificações', 'alertas', 'armazenamento', 'uso de disco', 'defasagem de réplica', 'replicação']
-doc_type: 'guia'
+description: 'Notificações do Console do Cloud para serviços do ClickHouse Managed Postgres'
+keywords: ['managed postgres', 'notificações', 'alertas', 'armazenamento', 'uso de disco', 'atraso da réplica', 'replicação', 'failover', 'switchover']
+doc_type: 'guide'
 ---
-
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-notifications-beta" />
 
 O ClickHouse Cloud envia notificações quando um serviço Managed Postgres
 requer atenção. As notificações são entregues pelo
-[sistema de notificações do Cloud Console](/pt-BR/products/cloud/features/monitoring/notifications):
+[sistema de notificações do Console do Cloud](/pt-BR/products/cloud/features/monitoring/notifications):
 a caixa de entrada do console, e-mail e Slack, e podem ser personalizadas para cada
 notificação na seção **Postgres** da página de configurações de
 notificações. A seção é exibida para organizações com serviços Managed Postgres.
@@ -23,7 +19,9 @@ notificações. A seção é exibida para organizações com serviços Managed P
 | Notificar quando                                                     | Condição específica do alerta                                                                                                                                                          | Canais de notificação padrão | Etapas de resolução                                                                                                                                                                                                                                                                                                                                                                                        |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | O uso de armazenamento do Postgres ultrapassar o limite de 85%       | Quando o uso de armazenamento de um serviço Managed Postgres atingir 85% da capacidade. A notificação será acionada apenas uma vez por dia.                                            | UI, e-mail                   | O armazenamento é escalado automaticamente quando o uso atinge 90% (breve indisponibilidade durante a transição). Nenhuma ação é necessária, a menos que o escalonamento automático já tenha atingido o limite.                                                                                                                                                                                            |
-| A defasagem da réplica do Postgres ultrapassar o limite de 5 minutos | Quando a defasagem de replicação em um standby de alta disponibilidade ou em uma réplica de leitura permanecer acima de 5 minutos. A notificação será acionada apenas uma vez por dia. | UI, e-mail                   | No caso de um standby, a prontidão para failover fica reduzida até que ele se atualize; no caso de uma réplica de leitura, as leituras podem retornar dados desatualizados. Normalmente a defasagem se resolve sozinha assim que a carga de escrita diminui. Se ela continuar aumentando, verifique a CPU, a memória e o disco da réplica no dashboard de monitoramento ou entre em contato com o suporte. |
+| O atraso da réplica do Postgres ultrapassar o limite de 5 minutos | Quando a defasagem de replicação em um standby de alta disponibilidade ou em uma réplica de leitura permanecer acima de 5 minutos. A notificação será acionada apenas uma vez por dia. | UI, e-mail                   | No caso de um standby, a prontidão para failover fica reduzida até que ele se atualize; no caso de uma réplica de leitura, as leituras podem retornar dados desatualizados. Normalmente a defasagem se resolve sozinha assim que a carga de escrita diminui. Se ela continuar aumentando, verifique a CPU, a memória e o disco da réplica no dashboard de monitoramento ou entre em contato com o suporte. |
+| Switchover planejado concluído                                       | Quando um standby é promovido a primário durante uma manutenção ou uma alteração de configuração em um serviço Managed Postgres.                                                       | UI                           | As conexões foram interrompidas brevemente. Sua string de conexão não foi alterada e nenhuma ação é necessária. Consulte [Tratamento de falhas](/pt-BR/products/managed-postgres/high-availability#handling-failures).                                                                                                                                                                                           |
+| Failover não planejado concluído                                     | Quando o primário fica indisponível e um standby é promovido a primário em um serviço Managed Postgres.                                                                                | UI, e-mail                   | As conexões foram interrompidas enquanto um standby era promovido, normalmente por alguns minutos. Sua string de conexão não foi alterada e nenhuma ação é necessária. Consulte [Tratamento de falhas](/pt-BR/products/managed-postgres/high-availability#handling-failures).                                                                                                                                    |
 
 ## Páginas relacionadas {#related}
 
