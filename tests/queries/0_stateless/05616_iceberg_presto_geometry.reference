@@ -1,0 +1,24 @@
+geometry_data_type_read
+geom	Geometry					
+LineString	LINESTRING(0 0,10 10,20 20)
+MultiLineString	MULTILINESTRING((0 0,5 5),(10 10,20 20))
+MultiPoint	MULTIPOINT((0 0),(10 20),(30 40))
+MultiPolygon	MULTIPOLYGON(((0 0,4 0,4 4,0 4,0 0)),((5 5,9 5,9 9,5 9,5 5)))
+Point	POINT(10 20)
+Polygon	POLYGON((0 0,10 0,10 10,0 10,0 0))
+2
+geometry_array
+geom	Array(Geometry)					
+3	LINESTRING(0 0,10 10,20 20)	MULTILINESTRING((0 0,5 5),(10 10,20 20))	MultiPoint	MULTIPOINT((0 0),(10 20),(30 40))
+3	LINESTRING(0 0,10 10,20 20)	POINT(10 20)	Polygon	POLYGON((0 0,10 0,10 10,0 10,0 0))
+geometry_map
+name	Nullable(String)					
+mapgeometry	Map(String, Geometry)					
+Property Alpha	POINT(-122.4194 37.7749)	POLYGON((0 0,10 0,10 10,0 10,0 0))	['center','boundary']
+37.7749
+geometry_row
+num	Nullable(Int32)					
+name	Nullable(String)					
+geometryrow	Tuple(\n    geom1 Geometry,\n    geom2 Geometry,\n    flag Nullable(Bool))					
+1	FirstPoint	POINT(1 2)	LINESTRING(0 0,1 1,2 2)	true
+2	SecondShape	POLYGON((0 0,4 0,4 4,0 4,0 0))	MULTIPOINT((1 1),(2 2),(3 3))	false

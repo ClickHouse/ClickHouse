@@ -1,0 +1,77 @@
+id	Int32					
+data	Dynamic					
+10
+all rows
+1	{"active":true,"age":30,"user":"alice"}
+2	{"age":25,"tags":["admin","dev"],"user":"bob"}
+3	{"active":true,"age":35,"score":99.5,"user":"charlie"}
+4	{"age":28,"scores":[95,87,92],"user":"diana"}
+5	{"active":false,"age":42,"role":"manager","user":"reve"}
+6	{"age":25,"tags":["admin","dev"],"user":"bob"}
+7	{"age":28,"scores":[95,87,92],"user":"diana"}
+8	\N
+9	\N
+10	\N
+8	\N
+9	\N
+10	\N
+fields
+1	alice	30	true
+2	bob	25	\N
+3	charlie	35	true
+4	diana	28	\N
+5	reve	42	false
+6	bob	25	\N
+7	diana	28	\N
+8	\N	\N	\N
+9	\N	\N	\N
+10	\N	\N	\N
+1	alice	\N	\N
+2	bob	['admin','dev']	\N
+3	charlie	\N	\N
+4	diana	\N	[95,87,92]
+5	reve	\N	\N
+6	bob	['admin','dev']	\N
+7	diana	\N	[95,87,92]
+8	\N	\N	\N
+9	\N	\N	\N
+10	\N	\N	\N
+unnest
+2	bob	admin
+2	bob	dev
+6	bob	admin
+6	bob	dev
+4	diana	87
+4	diana	92
+4	diana	95
+7	diana	87
+7	diana	92
+7	diana	95
+filters
+1
+3
+5
+1	alice
+3	charlie
+aggregation
+alice	1
+bob	2
+charlie	1
+diana	2
+reve	1
+\N	3
+alice	30	30	30
+bob	25	25	25
+charlie	35	35	35
+diana	28	28	28
+reve	42	42	42
+\N	\N	\N	\N
+bob	2
+diana	2
+\N	3
+5	5
+joins
+2	bob	6	bob
+4	diana	7	diana
+2	bob	6	bob	25
+4	diana	7	diana	28
