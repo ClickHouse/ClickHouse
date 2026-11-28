@@ -175,6 +175,11 @@ MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_
 {
     if (patch_part.mode != PatchMode::Join)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch with mode Join, got {}", patch_part.mode);
+
+    auto structure = range_reader.getSampleBlock().cloneEmpty();
+    if (!patch_part.perform_alter_conversions)
+        fixPatchBlockTypes(structure, *reader);
+    block_structure_key = structure.getNamesAndTypesList().toString();
 }
 
 static MinMaxStat getResultBlockStat(const Block & result_block, const String & column_name)
@@ -258,7 +263,7 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
     };
 
     filterReadRanges(ranges, ranges_to_read);
-    patch_read_result->entries = patch_join_cache->getEntries(patch_part.part->getPartName(), ranges_to_read, std::move(block_reader));
+    patch_read_result->entries = patch_join_cache->getEntries(patch_part.part->getPartName(), block_structure_key, ranges_to_read, std::move(block_reader));
     results.push_back(std::move(patch_read_result));
     return results;
 }
