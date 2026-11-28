@@ -29,7 +29,7 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 -- The window argument is a non-trivial expression on purpose: it keeps the window above the gather, so
 -- the fragment below the gather is the const-keyed sort. A plain `uniq(v)` is pushed below the gather
 -- instead and does not build the failing shape.
-SELECT 'constant key', count() FROM
+SELECT 'constant key', sum(roll) FROM
 (
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
@@ -50,7 +50,7 @@ WHERE explain ILIKE '%GatherExchange (sorted by (''c''_String ASC))%'
 SETTINGS make_distributed_plan = 0;
 
 -- Constants wrapped in LowCardinality and Nullable reach the same shape.
-SELECT 'constant key, LowCardinality', count() FROM
+SELECT 'constant key, LowCardinality', sum(roll) FROM
 (
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY toLowCardinality('c') ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
@@ -58,7 +58,7 @@ SELECT 'constant key, LowCardinality', count() FROM
 )
 SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
-SELECT 'constant key, Nullable', count() FROM
+SELECT 'constant key, Nullable', sum(roll) FROM
 (
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY toNullable('c') ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
@@ -69,7 +69,7 @@ SETTINGS distributed_plan_fallback_to_local_execution = 0;
 -- A function that returns its argument column verbatim keeps the key constant, so the description is
 -- still all-constant after the const-strip. `materialize` is the opposite case: it converts to a full
 -- column, the strip keeps the key, and the sort really sorts, so that shape never reached the merge.
-SELECT 'constant key behind identity', count() FROM
+SELECT 'constant key behind identity', sum(roll) FROM
 (
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY identity('c') ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
@@ -77,7 +77,7 @@ SELECT 'constant key behind identity', count() FROM
 )
 SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
-SELECT 'materialized key is not constant', count() FROM
+SELECT 'materialized key is not constant', sum(roll) FROM
 (
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY materialize('c') ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
@@ -87,7 +87,7 @@ SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- Controls. A real column key, and a mixed key whose second component is a column, both order rows and
 -- must keep using the merge; they passed before the fix and must keep passing.
-SELECT 'column key', count() FROM
+SELECT 'column key', sum(roll) FROM
 (
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY a ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
@@ -106,7 +106,7 @@ SELECT 'column gather is column-sorted', count() > 0 FROM
 WHERE explain ILIKE '%GatherExchange (sorted by (a ASC))%'
 SETTINGS make_distributed_plan = 0;
 
-SELECT 'mixed key', count() FROM
+SELECT 'mixed key', sum(roll) FROM
 (
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c', a ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll

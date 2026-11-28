@@ -84,7 +84,7 @@ SELECT '-- Named collection missing model (and none in map)';
 SELECT aiGenerate('hi', map('credentials', 'ai_no_model')); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- Model supplied via the parameter map resolves';
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_no_model', 'model', 'test-model')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiGenerate(x, map('credentials', 'ai_no_model', 'model', 'test-model')) AS result FROM tab);
 
 DROP NAMED COLLECTION ai_no_model;
 
@@ -98,7 +98,7 @@ CREATE NAMED COLLECTION ai_no_api_key AS
     model = 'test-model';
 
 SELECT '-- Named collection without api_key resolves';
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_no_api_key')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiGenerate(x, map('credentials', 'ai_no_api_key')) AS result FROM tab);
 
 -- Force the no-key path through provider construction and an actual HTTP request:
 -- `localhost:1` refuses the connection, `ai_function_throw_on_error = 0` swallows it,
@@ -176,7 +176,7 @@ DROP TABLE IF EXISTS _03300_null_input;
 -- =============================================================================
 
 SELECT '-- Empty string input accepted';
-SELECT count() FROM (SELECT aiGenerate(x) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiGenerate(x) AS result FROM tab);
 
 -- =============================================================================
 -- 10. Unknown provider name
@@ -219,7 +219,7 @@ CREATE NAMED COLLECTION ai_anthropic AS
     api_key = 'fake-key';
 
 SELECT '-- Anthropic provider resolves';
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_anthropic')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiGenerate(x, map('credentials', 'ai_anthropic')) AS result FROM tab);
 
 -- aiEmbed needs a `model`-free collection (it takes `model` as a positional argument).
 DROP NAMED COLLECTION IF EXISTS ai_anthropic_embed;
@@ -240,13 +240,13 @@ DROP NAMED COLLECTION ai_anthropic_embed;
 -- =============================================================================
 
 SELECT '-- Custom system prompt via map';
-SELECT count() FROM (SELECT aiGenerate(x, map('system_prompt', 'You are a pirate')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiGenerate(x, map('system_prompt', 'You are a pirate')) AS result FROM tab);
 
 SELECT '-- Temperature via map';
-SELECT count() FROM (SELECT aiGenerate(x, map('temperature', '0.5')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiGenerate(x, map('temperature', '0.5')) AS result FROM tab);
 
 SELECT '-- max_tokens and model via map';
-SELECT count() FROM (SELECT aiGenerate(x, map('max_tokens', '128', 'model', 'other-model')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiGenerate(x, map('max_tokens', '128', 'model', 'other-model')) AS result FROM tab);
 
 SELECT '-- Unknown parameter key rejected';
 SELECT aiGenerate('hi', map('bogus', '1')); -- { serverError BAD_ARGUMENTS }
@@ -335,10 +335,10 @@ SELECT '-- aiClassify: return type';
 SELECT toTypeName(aiClassify('', ['a', 'b', 'c']));
 
 SELECT '-- aiClassify: empty input executes';
-SELECT count() FROM (SELECT aiClassify(x, ['a', 'b']) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiClassify(x, ['a', 'b']) AS result FROM tab);
 
 SELECT '-- aiClassify: with temperature';
-SELECT count() FROM (SELECT aiClassify(x, ['a', 'b'], map('temperature', '0.0')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiClassify(x, ['a', 'b'], map('temperature', '0.0')) AS result FROM tab);
 
 -- =============================================================================
 -- 14b. aiFilter
@@ -387,10 +387,10 @@ DROP TABLE IF EXISTS _03300_ret_filter_null;
 DROP TABLE IF EXISTS _03300_filter_null_in;
 
 SELECT '-- aiFilter: empty input executes';
-SELECT count() FROM (SELECT aiFilter(x, 'is a greeting') AS result FROM tab);
+SELECT count(result) FROM (SELECT aiFilter(x, 'is a greeting') AS result FROM tab);
 
 SELECT '-- aiFilter: with temperature';
-SELECT count() FROM (SELECT aiFilter(x, 'is a greeting', map('temperature', '0.0')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiFilter(x, 'is a greeting', map('temperature', '0.0')) AS result FROM tab);
 
 -- =============================================================================
 -- 15. aiExtract
@@ -413,7 +413,7 @@ SELECT '-- aiExtract: return type';
 SELECT toTypeName(aiExtract('', 'main topic'));
 
 SELECT '-- aiExtract: JSON schema mode accepted';
-SELECT count() FROM (SELECT aiExtract(x, '{"topic":"main topic","sentiment":"pos/neg"}') AS result FROM tab);
+SELECT count(result) FROM (SELECT aiExtract(x, '{"topic":"main topic","sentiment":"pos/neg"}') AS result FROM tab);
 
 SELECT '-- aiExtract: malformed JSON schema';
 SELECT aiExtract('hi', '{invalid'); -- { serverError BAD_ARGUMENTS }
@@ -433,7 +433,7 @@ SELECT aiExtract('hi', '   {invalid'); -- { serverError BAD_ARGUMENTS }
 SELECT aiExtract('hi', '\n\t {invalid'); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- aiExtract: with temperature';
-SELECT count() FROM (SELECT aiExtract(x, 'main topic', map('temperature', '0.0')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiExtract(x, 'main topic', map('temperature', '0.0')) AS result FROM tab);
 
 -- =============================================================================
 -- 16. aiTranslate
@@ -460,7 +460,7 @@ SELECT '-- aiTranslate: return type';
 SELECT toTypeName(aiTranslate('', 'French'));
 
 SELECT '-- aiTranslate: with instructions and temperature';
-SELECT count() FROM (SELECT aiTranslate(x, 'French', map('instructions', 'keep proper nouns', 'temperature', '0.3')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiTranslate(x, 'French', map('instructions', 'keep proper nouns', 'temperature', '0.3')) AS result FROM tab);
 
 -- =============================================================================
 -- 17. aiRedact
@@ -487,14 +487,14 @@ SELECT aiRedact(x, [1, 2, 3]) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMEN
 
 -- An empty category list is valid and falls back to the default PII categories.
 SELECT '-- aiRedact: empty categories array accepted (default categories)';
-SELECT count() FROM (SELECT aiRedact(x, []) AS result FROM tab);
-SELECT count() FROM (SELECT aiRedact(x, CAST([], 'Array(String)')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiRedact(x, []) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiRedact(x, CAST([], 'Array(String)')) AS result FROM tab);
 
 SELECT '-- aiRedact: return type';
 SELECT toTypeName(aiRedact('', ['email']));
 
 SELECT '-- aiRedact: with replacement and temperature';
-SELECT count() FROM (SELECT aiRedact(x, ['email'], map('replacement', '***', 'temperature', '0.0')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiRedact(x, ['email'], map('replacement', '***', 'temperature', '0.0')) AS result FROM tab);
 
 -- =============================================================================
 -- 18. aiEmbed
@@ -536,7 +536,7 @@ SELECT '-- aiEmbed: model in the named collection is rejected';
 SELECT aiEmbed('hi', 'test-model', map('credentials', 'ai_credentials')); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- aiEmbed: model supplied as a positional argument resolves';
-SELECT count() FROM (SELECT aiEmbed(x, 'test-model', map('credentials', 'ai_embed_credentials')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiEmbed(x, 'test-model', map('credentials', 'ai_embed_credentials')) AS result FROM tab);
 
 SELECT '-- aiEmbed: return type';
 SELECT toTypeName(aiEmbed('', 'test-model'));
@@ -545,10 +545,10 @@ SELECT '-- aiEmbed: return type with dimensions';
 SELECT toTypeName(aiEmbed('', 'test-model', map('dimensions', '256')));
 
 SELECT '-- aiEmbed: empty input executes';
-SELECT count() FROM (SELECT aiEmbed(x, 'test-model') AS result FROM tab);
+SELECT count(result) FROM (SELECT aiEmbed(x, 'test-model') AS result FROM tab);
 
 SELECT '-- aiEmbed: empty input with dimensions';
-SELECT count() FROM (SELECT aiEmbed(x, 'test-model', map('dimensions', '128')) AS result FROM tab);
+SELECT count(result) FROM (SELECT aiEmbed(x, 'test-model', map('dimensions', '128')) AS result FROM tab);
 
 -- `dimensions` is a row-independent constant, so an out-of-range value must fail
 -- the query even when the source has zero rows.
@@ -638,7 +638,7 @@ DROP TABLE IF EXISTS _03300_ret_similarity_null;
 DROP TABLE IF EXISTS _03300_similarity_null_in;
 
 SELECT '-- aiSimilarity: empty input executes';
-SELECT count() FROM (SELECT aiSimilarity(x, x, 'test-model') AS result FROM tab);
+SELECT count(result) FROM (SELECT aiSimilarity(x, x, 'test-model') AS result FROM tab);
 
 -- `dimensions` is a row-independent constant, so an out-of-range value must fail
 -- the query even when the source has zero rows.

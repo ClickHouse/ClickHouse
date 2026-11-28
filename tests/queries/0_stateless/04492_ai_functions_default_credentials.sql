@@ -39,7 +39,7 @@ SELECT aiEmbed('hi', 'embed-model'); -- { serverError BAD_ARGUMENTS }
 SET ai_function_text_default_credentials = 'ai_text_nc';
 
 SELECT '-- Text default set: aiGenerate resolves via default';
-SELECT count() FROM (SELECT aiGenerate(x) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiGenerate(x) AS r FROM tab);
 
 SELECT '-- Text default does not leak into aiEmbed';
 SELECT aiEmbed('hi', 'embed-model'); -- { serverError BAD_ARGUMENTS }
@@ -50,20 +50,20 @@ SET ai_function_embedding_default_credentials = 'ai_embed_nc';
 
 -- aiEmbed requires `model` as a positional argument; credentials still come from the default setting.
 SELECT '-- Embedding default set: aiEmbed resolves via default';
-SELECT count() FROM (SELECT aiEmbed(x, 'embed-model') AS r FROM tab);
+SELECT count(r) FROM (SELECT aiEmbed(x, 'embed-model') AS r FROM tab);
 
 SELECT '-- Embedding default does not leak into text functions';
 SELECT aiGenerate('hi'); -- { serverError BAD_ARGUMENTS }
 
 -- The per-call `credentials` map key overrides the default (and works with no default set).
 SELECT '-- Map credentials override with no text default';
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_text_nc')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiGenerate(x, map('credentials', 'ai_text_nc')) AS r FROM tab);
 
 -- Map credentials override wins over a set default. `ai_embed_nc` has no `model`, so aiGenerate
 -- passes it in the map.
 SET ai_function_text_default_credentials = 'ai_text_nc';
 SELECT '-- Map credentials override wins over default';
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_embed_nc', 'model', 'embed-model')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiGenerate(x, map('credentials', 'ai_embed_nc', 'model', 'embed-model')) AS r FROM tab);
 
 -- =============================================================================
 -- Cleanup

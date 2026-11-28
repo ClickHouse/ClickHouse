@@ -17,14 +17,19 @@ INSERT INTO t_commit_order SELECT number FROM numbers(16);
 OPTIMIZE TABLE t_commit_order FINAL;
 SYSTEM STOP MERGES t_commit_order;
 INSERT INTO t_commit_order SELECT number FROM numbers(16);
+-- A subquery over a view keeps the unused column `a`, so the table and projection headers differ.
+-- With parallel replicas a view is read through a different plan, where the headers match.
+CREATE VIEW v_commit_order AS SELECT a, _block_number AS block FROM t_commit_order;
 
-SELECT count() FROM (SELECT a FROM t_commit_order WHERE _block_number <= 255)
-SETTINGS optimize_use_projections = 1, query_plan_remove_unused_columns = 0, log_comment = 'normal_projection_rejected_keeps_parent_parts';
+SELECT count() FROM (SELECT a FROM v_commit_order WHERE block <= 255)
+SETTINGS optimize_use_projections = 1, query_plan_remove_unused_columns = 0, enable_parallel_replicas = 0,
+    log_comment = 'normal_projection_rejected_keeps_parent_parts';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT projections FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = 'normal_projection_rejected_keeps_parent_parts' AND type = 'QueryFinish';
 
+DROP VIEW v_commit_order;
 DROP TABLE t_commit_order;
 
 DROP TABLE IF EXISTS t_normal;
@@ -47,8 +52,10 @@ SYSTEM STOP MERGES t_partial;
 INSERT INTO t_partial SELECT number, number % 10 FROM numbers(100);
 ALTER TABLE t_partial ADD PROJECTION p (SELECT * ORDER BY b);
 INSERT INTO t_partial SELECT number, number % 10 FROM numbers(100);
+CREATE VIEW v_partial AS SELECT a, b FROM t_partial;
 
-SELECT count() FROM (SELECT a FROM t_partial WHERE b = 5)
-SETTINGS optimize_use_projections = 1, query_plan_remove_unused_columns = 0;
+SELECT count() FROM (SELECT a FROM v_partial WHERE b = 5)
+SETTINGS optimize_use_projections = 1, query_plan_remove_unused_columns = 0, enable_parallel_replicas = 0;
 
+DROP VIEW v_partial;
 DROP TABLE t_partial;
