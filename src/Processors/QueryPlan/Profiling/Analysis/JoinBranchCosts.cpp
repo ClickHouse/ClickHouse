@@ -21,7 +21,7 @@ bool sameCluster(const StepAnalyzer & lhs, const StepAnalyzer & rhs)
 JoinBranchCosts::JoinBranchCosts(const PlanAnalysisSnapshot & plan_snapshot, const CardinalityByJoinStep & cardinality_by_join_step)
 {
     /// The joins of each node's subtree, carried up as the post-order walk retires its children.
-    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<const StepAnalyzer *>> joins_below;
+    UnorderedMapWithMemoryTracking<UInt64, VectorWithMemoryTracking<const StepAnalyzer *>> joins_below;
 
     for (const auto * node : plan_snapshot.stepsInPostOrder())
     {
@@ -65,7 +65,7 @@ JoinBranchCosts::JoinBranchCosts(const PlanAnalysisSnapshot & plan_snapshot, con
     }
 }
 
-std::optional<UInt64> JoinBranchCosts::getBranchCost(const String & step_id) const
+std::optional<UInt64> JoinBranchCosts::getBranchCost(UInt64 step_id) const
 {
     if (const auto it = cost_by_join_step.find(step_id); it != cost_by_join_step.end())
         return it->second;

@@ -444,6 +444,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 total_memory_profiler_step;
     extern const ServerSettingsDouble total_memory_tracker_sample_probability;
     extern const ServerSettingsBool throw_on_unknown_workload;
+    extern const ServerSettingsBool workloads_respect_server_cpu_limit;
+    extern const ServerSettingsBool workloads_respect_server_memory_limit;
+    extern const ServerSettingsBool implicit_default_workload;
     extern const ServerSettingsBool cpu_slot_preemption;
     extern const ServerSettingsUInt64 cpu_slot_quantum_ns;
     extern const ServerSettingsUInt64 cpu_slot_preemption_timeout_ms;
@@ -3133,7 +3136,29 @@ try
             }
 
             /// Load WORKLOADs and RESOURCEs.
-            global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
+            std::exception_ptr workload_entities_exception;
+            try
+            {
+                global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
+            }
+            catch (...)
+            {
+                if (initial_loading)
+                    throw;
+                workload_entities_exception = std::current_exception();
+            }
+
+            {
+                ImplicitWorkloadEntitiesConfig implicit_entities_config;
+                implicit_entities_config.respect_cpu_limit = new_server_settings[ServerSetting::workloads_respect_server_cpu_limit];
+                implicit_entities_config.respect_memory_limit = new_server_settings[ServerSetting::workloads_respect_server_memory_limit];
+                implicit_entities_config.implicit_default_workload = new_server_settings[ServerSetting::implicit_default_workload];
+                if (implicit_entities_config.respect_cpu_limit && concurrent_threads_soft_limit != UnlimitedSlots)
+                    implicit_entities_config.cpu_slots = static_cast<Int64>(concurrent_threads_soft_limit);
+                if (implicit_entities_config.respect_memory_limit && max_server_memory_usage != 0)
+                    implicit_entities_config.memory_bytes = static_cast<Int64>(max_server_memory_usage);
+                global_context->getWorkloadEntityStoragePtr()->updateImplicitEntities(implicit_entities_config);
+            }
 
             if (!initial_loading)
             {
@@ -3273,6 +3298,9 @@ try
 
             /// Must be the last.
             latest_config = reload_config;
+
+            if (workload_entities_exception)
+                std::rethrow_exception(workload_entities_exception);
         });
 
     const auto listen_hosts = getListenHosts(config());
