@@ -3,6 +3,8 @@
 #include <Common/ThreadGroupSwitcher.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxnCommit.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Interpreters/TransactionManager.h>
@@ -20,6 +22,7 @@ namespace DB
 
 namespace FailPoints
 {
+    extern const char unique_key_merge_pause_before_commit[];
     extern const char mt_merge_task_pause_before_transaction_commit[];
 }
 
@@ -98,6 +101,14 @@ void MergePlainMergeTreeTask::prepare()
     future_part = merge_mutate_entry->future_part;
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
+    /// Reads and commits under its own transaction, which replaces the one a background merge was selected under.
+    if (metadata_snapshot->hasUniqueKey())
+    {
+        const MergeTreeTransactionPtr query_txn = txn_holder.getTransaction() ? nullptr : txn;
+        txn_holder = beginUniqueKeyTransaction(query_txn, "OPTIMIZE", future_part->parts);
+        txn = txn_holder.getTransaction();
+    }
+
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
@@ -147,9 +158,27 @@ void MergePlainMergeTreeTask::finish()
     new_part = merge_task->takeResultPart();
     new_part->getDataPartStorage().commitTransaction();
 
-    MergeTreeData::Transaction transaction(storage, txn.get());
-    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
-    transaction.commit();
+    if (metadata_snapshot->hasUniqueKey())
+    {
+        /// Holds open the window between the merge's snapshot and its commit, where a kill is a late one.
+        FailPointInjection::pauseFailPoint(FailPoints::unique_key_merge_pause_before_commit);
+
+        UniqueKeyTxnCommit::merge(
+            storage,
+            {.transaction = txn_holder,
+            .source_parts = future_part->parts,
+            .merged_part = new_part,
+            .read_snapshot = merge_task->getDeleteBitmapSnapshot(),
+            .merged_part_offsets = merge_task->getUniqueKeyMergedPartOffsets()});
+        /// Committed or rolled back already, so the commit below is the stock path's alone.
+        txn_holder = {};
+    }
+    else
+    {
+        MergeTreeData::Transaction transaction(storage, txn.get());
+        storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
+        transaction.commit();
+    }
 
     ThreadFuzzer::maybeInjectSleep();
     ThreadFuzzer::maybeInjectMemoryLimitException();

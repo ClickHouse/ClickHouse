@@ -25,6 +25,7 @@
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeCheckpoint.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapSnapshot.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
@@ -188,6 +189,19 @@ public:
 
     void cancel() noexcept;
 
+    /// The snapshot the merge read its sources' delete bitmaps at.
+    [[nodiscard]] const DeleteBitmapSnapshot & getDeleteBitmapSnapshot() const
+    {
+        chassert(global_ctx->delete_bitmap_snapshot);
+        return *global_ctx->delete_bitmap_snapshot;
+    }
+    /// Where each source row landed in the merged part; built for every unique-key merge.
+    [[nodiscard]] const MergedPartOffsets & getUniqueKeyMergedPartOffsets() const
+    {
+        chassert(global_ctx->merged_part_offsets);
+        return *global_ctx->merged_part_offsets;
+    }
+
 private:
     struct IStage;
     using StagePtr = std::shared_ptr<IStage>;
@@ -318,6 +332,9 @@ private:
 
         /// Text indexes are rebuilt for the resulting part instead of being merged.
         bool rebuild_text_indexes{false};
+
+        bool is_unique_key_merge{false};
+        DeleteBitmapSnapshotPtr delete_bitmap_snapshot;
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;

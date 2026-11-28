@@ -2064,6 +2064,9 @@ protected:
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
         const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts, const DeleteBitmapSnapshot * uk_read_snapshot = nullptr) const;
 
+    /// Throws for an OPTIMIZE a UNIQUE KEY table does not run: on a table with TTL, or DEDUPLICATE.
+    static void checkUniqueKeyOptimizeIsPossible(const StorageInMemoryMetadata & metadata, bool deduplicate);
+
     static decltype(auto) getStateModifier(DataPartState state)
     {
         return [state] (const DataPartPtr & part) { part->setState(state); };
@@ -2439,6 +2442,7 @@ protected:
 
 private:
     DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(CSN snapshot_csn) const;
+    DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(const MergeTreeTransactionPtr & txn) const;
 
     /// A writable `table_disk` disk holds the data of one table, which owns its root until the instance is destroyed.
     void acquireTableDiskRoots();

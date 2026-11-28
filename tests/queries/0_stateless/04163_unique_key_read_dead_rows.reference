@@ -25,5 +25,11 @@ token_search	1
 token_search	3
 plain_scan	1
 plain_scan	3
+token_search_after_merge	1
+token_search_after_merge	3
+token_search_after_merge	4
+token_search_after_merge	6
+zeta_after_merge	5
+zeta_after_merge	6
 dplan_fallback	1	a
 dplan_fallback	3	c

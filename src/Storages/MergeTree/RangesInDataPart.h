@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
 #include <deque>
@@ -123,6 +124,10 @@ struct RangesInDataPart
 
     /// Offset ranges from parent part, used during projection index reading.
     PartOffsetRanges parent_ranges;
+
+    /// Rows a merge drops from this source part (`MergeTreeSequentialSource`). A query read
+    /// resolves its bitmaps through the storage snapshot instead.
+    ConstDeleteBitmapPtr delete_bitmap;
 
     RangesInDataPart(
         const DataPartPtr & data_part_,

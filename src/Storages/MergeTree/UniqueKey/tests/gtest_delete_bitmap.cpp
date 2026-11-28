@@ -44,7 +44,7 @@ namespace
 /// ---------- primitive ----------
 ///
 /// One smoke test gates the wrapper layer; the rest of the suite exercises
-/// our own logic: `buildKeepFilterRange`, `rangeCardinality`, the dynamic-width
+/// our own logic: `clearInFilter`, `rangeCardinality`, the dynamic-width
 /// upgrade, serialize/deserialize invariants, and filename helpers.
 
 TEST(DeleteBitmapTest, WrapperSmoke)
@@ -115,6 +115,40 @@ TEST(DeleteBitmapTest, RangeCardinalityRangeAboveUInt32MaxIsZeroInNarrowMode)
 
     /// Range straddling the ceiling still includes row `UInt32::max`.
     EXPECT_EQ(bm.rangeCardinality(kMax, kMax + 100), 1u);
+}
+
+TEST(DeleteBitmapTest, RangeCardinalityAcrossContainers)
+{
+    /// One container each: sparse, dense, empty, then a contiguous stretch.
+    constexpr UInt64 span = DeleteBitmap::CONTAINER_ROWS;
+    DeleteBitmap bm;
+    for (UInt64 row = 0; row < span; row += 1000)
+        bm.add(row);
+    for (UInt64 row = span; row < 2 * span; row += 2)
+        bm.add(row);
+    for (UInt64 row = 3 * span + 100; row < 3 * span + 5000; ++row)
+        bm.add(row);
+    const auto rows = bm.toVector();
+
+    const auto expected = [&](UInt64 begin, UInt64 end)
+    {
+        return static_cast<size_t>(std::lower_bound(rows.begin(), rows.end(), end) - std::lower_bound(rows.begin(), rows.end(), begin));
+    };
+
+    EXPECT_EQ(bm.rangeCardinality(span - 1, span + 1), 1u);
+    EXPECT_EQ(bm.rangeCardinality(2 * span, 3 * span), 0u);
+    EXPECT_EQ(bm.rangeCardinality(0, 4 * span), rows.size());
+
+    std::mt19937_64 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+    std::uniform_int_distribution<UInt64> pick(0, 4 * span);
+    for (size_t i = 0; i < 10000; ++i)
+    {
+        UInt64 begin = pick(rng);
+        UInt64 end = pick(rng);
+        if (begin > end)
+            std::swap(begin, end);
+        ASSERT_EQ(bm.rangeCardinality(begin, end), expected(begin, end)) << "[" << begin << ", " << end << ")";
+    }
 }
 
 /// ---------- 32 → 64-bit auto-upgrade ----------
@@ -595,52 +629,6 @@ TEST(DeleteBitmapInspectTest, FlippedBodyByteIsCorruptNotThrowing)
     EXPECT_TRUE(info.magic_ok);
     EXPECT_FALSE(info.crc_ok);
     EXPECT_NE(info.crc_stored, info.crc_computed);
-}
-
-/// ---------- buildKeepFilter / buildKeepFilterRange ----------
-
-TEST(DeleteBitmapTest, KeepFilterRangeOverEmptyBitmapKeepsEverything)
-{
-    DeleteBitmap bm;
-    std::vector<UInt8> keep(5, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/10, keep.size(), keep.data()), 5u);
-    EXPECT_EQ(keep, (std::vector<UInt8>{1, 1, 1, 1, 1}));
-
-    /// An empty range is a no-op, not a read of `out_keep`.
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/0, 0, nullptr), 0u);
-}
-
-TEST(DeleteBitmapTest, KeepFilterRangeIsOffsetByBegin)
-{
-    DeleteBitmap bm;
-    bm.addMany({11, 13});
-
-    /// Rows 10..14, so the deleted ones land at indices 1 and 3 of the mask.
-    std::vector<UInt8> keep(5, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/10, keep.size(), keep.data()), 3u);
-    EXPECT_EQ(keep, (std::vector<UInt8>{1, 0, 1, 0, 1}));
-
-    /// A range entirely past the set rows keeps all of them.
-    std::vector<UInt8> after(3, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/20, after.size(), after.data()), 3u);
-    EXPECT_EQ(after, (std::vector<UInt8>{1, 1, 1}));
-}
-
-TEST(DeleteBitmapTest, KeepFilterRangeOnWideRepresentation)
-{
-    /// Above `UInt32` the bitmap switches representation, and the range walk has its own overload
-    /// per width -- a mis-dispatch would answer for the truncated row number instead.
-    constexpr UInt64 kAboveU32 = static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 5;
-    DeleteBitmap bm;
-    bm.addMany({kAboveU32, kAboveU32 + 2});
-
-    std::vector<UInt8> keep(4, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(kAboveU32, keep.size(), keep.data()), 2u);
-    EXPECT_EQ(keep, (std::vector<UInt8>{0, 1, 0, 1}));
-
-    /// The truncated row numbers are not deleted, so the narrow window is untouched.
-    std::vector<UInt8> narrow(6, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/0, narrow.size(), narrow.data()), 6u);
 }
 
 /// ---------- clearInFilter ----------
