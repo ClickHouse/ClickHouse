@@ -4,6 +4,8 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 
+#include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <random>
@@ -16,22 +18,14 @@
 namespace
 {
 
-/// Enables the grouped growth regardless of `CLICKHOUSE_TWO_LEVEL_GROUPED`.
+/// The default constructor enables the grouped growth regardless of `CLICKHOUSE_TWO_LEVEL_GROUPED`.
+/// The inherited constructors (the size hint and the conversion from a single-level table) read the knob, as in production.
 template <typename Base>
 struct Grouped : Base
 {
     using Base::Base;
 
     Grouped() { this->grouped_growth = true; }
-
-    template <typename Source>
-    requires(!std::is_arithmetic_v<Source>)
-    explicit Grouped(const Source & src, bool) : Base()
-    {
-        this->grouped_growth = true;
-        for (auto it = src.begin(); it != src.end(); ++it)
-            this->insert(it->getValue());
-    }
 
     bool bucketInArena(size_t bucket) { return this->isBucketInArena(bucket); }
     [[nodiscard]] bool bucketAtFillLimit(size_t bucket) const { return this->isBucketAtFillLimit(bucket); }
@@ -130,21 +124,99 @@ TEST(TwoLevelHashTableGrouped, Set)
     checkSameBufferSize(set);
 }
 
-TEST(TwoLevelHashTableGrouped, ConvertFromSingleLevelAndSizeHint)
+namespace
 {
+
+void require(bool condition, const char * what)
+{
+    if (!condition)
+    {
+        std::cerr << "Check failed: " << what << std::endl;
+        std::_Exit(1);
+    }
+}
+
+/// Runs in a fresh process, so that `CLICKHOUSE_TWO_LEVEL_GROUPED` is read for the first time here.
+[[noreturn]] void checkProductionConstructors()
+{
+    setenv("CLICKHOUSE_TWO_LEVEL_GROUPED", "1", 1); // NOLINT(concurrency-mt-unsafe)
+    require(twoLevelHashTableGroupedGrowthEnabled(), "the knob enables the grouped growth");
+
     auto keys = randomKeys(200'000, 2);
     HashMap<UInt64, UInt64> single_level;
     for (UInt64 key : keys)
-        single_level[key] = key * 3;
+        single_level[key] = key * 3 + 1;
+    require(single_level.has(0), "the source has the zero key");
 
-    /// The converting constructor of `TwoLevelHashTable` reads the knob, so check the same path through `insert`.
-    auto map = std::make_unique<Map>(single_level, true);
-    ASSERT_EQ(map->size(), single_level.size());
-    for (auto it = single_level.begin(); it != single_level.end(); ++it)
-        ASSERT_EQ(map->find(it->getKey())->getMapped(), it->getKey() * 3);
+    auto all_in_arena = [](Map & map)
+    {
+        for (size_t i = 0; i < Map::NUM_BUCKETS; ++i)
+            if (!map.bucketInArena(i) || map.impls[i].getBufferSizeInCells() != map.impls[0].getBufferSizeInCells())
+                return false;
+        return true;
+    };
 
-    auto with_hint = std::make_unique<Map>(1'000'000);
-    ASSERT_EQ(with_hint->size(), 0);
+    /// The converting constructor, as in `AggregatedDataVariants::convertToTwoLevel`.
+    {
+        auto map = std::make_unique<Map>(single_level);
+        require(map->size() == single_level.size(), "the converted table has all keys");
+        for (auto it = single_level.begin(); it != single_level.end(); ++it)
+        {
+            const auto * cell = map->find(it->getKey());
+            require(cell && cell->getMapped() == it->getKey() * 3 + 1, "the converted table has the same values");
+        }
+        const auto * zero = map->find(0);
+        require(zero && zero->getMapped() == 1, "the converted table has the zero key");
+        require(map->find(keys.size() * 4 + 1) == nullptr, "the converted table has no extra keys");
+
+        size_t iterated = 0;
+        for (auto it = map->begin(); it != map->end(); ++it)
+            ++iterated;
+        require(iterated == single_level.size(), "the iteration over the converted table visits every key once");
+        require(all_in_arena(*map), "the buckets of the converted table are in the shared area and have the same size");
+
+        /// The table keeps growing together after the conversion.
+        for (UInt64 key = 1; key <= 2'000'000; ++key)
+            (*map)[(1ULL << 40) + key] = key;
+        require(map->size() == single_level.size() + 2'000'000, "the converted table accepts new keys");
+        require(all_in_arena(*map), "the buckets are still in the shared area after more inserts");
+        require(map->find(0)->getMapped() == 1, "the zero key survives the growth");
+    }
+
+    /// The constructor with a size hint.
+    {
+        const size_t default_cells = std::make_unique<Map>()->impls[0].getBufferSizeInCells();
+
+        auto map = std::make_unique<Map>(1'000'000);
+        require(map->empty(), "the table with a size hint is empty");
+        require(all_in_arena(*map), "the size hint preallocates the buckets in the shared area");
+        const size_t cells = map->impls[0].getBufferSizeInCells();
+        require(cells > default_cells, "the size hint preallocates more than the initial size");
+        for (auto it = single_level.begin(); it != single_level.end(); ++it)
+            (*map)[it->getKey()] = it->getMapped();
+        require(map->size() == single_level.size(), "the preallocated table has all keys");
+        for (auto it = single_level.begin(); it != single_level.end(); ++it)
+        {
+            const auto * cell = map->find(it->getKey());
+            require(cell && cell->getMapped() == it->getKey() * 3 + 1, "the preallocated table has the same values");
+        }
+        /// 200 thousand keys fit into the buckets preallocated for a million.
+        require(map->impls[0].getBufferSizeInCells() == cells, "the preallocated buckets did not grow");
+        require(all_in_arena(*map), "the preallocated buckets stay in the shared area");
+    }
+
+    std::_Exit(0);
+}
+
+}
+
+/// `AggregatedDataVariants::convertToTwoLevel` and the initialization from a size hint construct the table
+/// with these constructors, and they read `CLICKHOUSE_TWO_LEVEL_GROUPED`.
+TEST(TwoLevelHashTableGroupedDeathTest, ConvertFromSingleLevelAndSizeHint)
+{
+    /// The `threadsafe` style re-executes the test binary, so the variable is read for the first time in the child.
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_EXIT(checkProductionConstructors(), ::testing::ExitedWithCode(0), ".*");
 }
 
 TEST(TwoLevelHashTableGrouped, BucketsLeaveTheArena)
