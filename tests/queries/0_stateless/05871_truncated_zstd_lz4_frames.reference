@@ -1,0 +1,10 @@
+zstd: complete frame	100000	4999950000
+zstd: empty input	0	0
+zstd: empty frame	0	0
+zstd: concatenated frames	6	15
+zstd: large output	3200000	1
+lz4: complete frame	100000	4999950000
+lz4: empty input	0	0
+lz4: empty frame	0	0
+lz4: concatenated frames	6	15
+lz4: large output	3200000	1

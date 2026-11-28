@@ -70,6 +70,8 @@ bool ZstdInflatingReadBuffer::nextImpl()
                 getExceptionEntryWithFileName(*in));
         }
 
+        at_frame_boundary = ret == 0 || (input.size == 0 && at_frame_boundary);
+
         /// Check that something has changed after decompress (input or output position)
         chassert(output.pos > 0 || in->position() < in->buffer().begin() + input.pos || in->available() == 0);
 
@@ -80,7 +82,15 @@ bool ZstdInflatingReadBuffer::nextImpl()
         /// If end of file is reached, fill eof variable and return true if there is some data in buffer, otherwise return false
         if (in->eof())
         {
-            eof_flag = true;
+            /// A partially filled output buffer means the decoder has drained its buffered output.
+            if (!at_frame_boundary && output.pos < output.size)
+            {
+                throw Exception(
+                    ErrorCodes::ZSTD_DECODER_FAILED,
+                    "ZSTD stream decoding failed: unexpected end of file{}",
+                    getExceptionEntryWithFileName(*in));
+            }
+            eof_flag = at_frame_boundary;
             return !working_buffer.empty();
         }
         /// It is possible, that input buffer is not at eof yet, but nothing was decompressed in current iteration.
