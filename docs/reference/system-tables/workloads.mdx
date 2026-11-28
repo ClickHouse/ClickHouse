@@ -16,7 +16,8 @@ Contains information for [workloads](/concepts/features/configuration/server-con
 
 - `name` ([String](/reference/data-types/string)) — The name of the workload.
 - `parent` ([String](/reference/data-types/string)) — The name of the parent workload.
-- `create_query` ([String](/reference/data-types/string)) — CREATE query of the workload.
+- `create_query` ([String](/reference/data-types/string)) — CREATE query of the workload. For an implicit workload (`source` = `implicit`), including the root workload with the empty name, it describes the workload and cannot be executed.
+- `source` ([String](/reference/data-types/string)) — The name of the storage that defines the workload: `configuration` for the server configuration, `disk` or `keeper` for SQL, `implicit` for workloads created implicitly by the server.
 
 ## Example {#example}
 

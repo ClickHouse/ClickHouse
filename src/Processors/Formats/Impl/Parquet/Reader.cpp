@@ -1,7 +1,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/logger_useful.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Allocator.h>
@@ -32,6 +32,7 @@
 #include <Common/SipHash.h>
 #include <Common/findExtreme.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
@@ -440,6 +441,7 @@ std::shared_ptr<const FileFooter> Reader::readFileFooter(Prefetcher & prefetcher
     deserializeFileMetaDataWithoutColumnChunks(
         footer->metadata, footer->serialized.data(), footer->serialized.size(), footer->column_chunk_offsets);
     checkSchemaElementEnums(footer->metadata);
+    checkSchemaTree(footer->metadata);
     return footer;
 }
 
@@ -1208,35 +1210,6 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
     {
         all_spatial_filters = extractSpatialFilters(*format_filter_info->filter_actions_dag, extended_sample_block);
 
-        /// Collect all leaf column paths from the Parquet schema.
-        /// Used below to guard covering.bbox injection: a bbox path from GeoParquet metadata
-        /// might not exist in the actual file schema (stale/malformed metadata). Without this
-        /// check, SchemaConverter throws THERE_IS_NO_COLUMN for the injected column when
-        /// input_format_parquet_allow_missing_columns = 0, turning a readable file into an exception.
-        UnorderedSetWithMemoryTracking<String> schema_leaf_paths;
-        {
-            const auto & schema = file_metadata().schema;
-            if (schema.size() >= 2 && schema.at(0).num_children > 0)
-            {
-                size_t schema_idx = 1;
-                std::function<void(const String &)> dfs = [&](const String & parent)
-                {
-                    if (schema_idx >= schema.size())
-                        return;
-                    const auto & elem = schema.at(schema_idx++);
-                    String path = parent.empty() ? String(elem.name) : parent + "." + elem.name;
-                    bool is_primitive = !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
-                    if (is_primitive)
-                        schema_leaf_paths.insert(path);
-                    else
-                        for (int i = 0; i < elem.num_children; ++i)
-                            dfs(path);
-                };
-                for (int i = 0; i < schema.at(0).num_children; ++i)
-                    dfs({});
-            }
-        }
-
         auto float64 = std::make_shared<DataTypeFloat64>();
         for (const auto & sf : all_spatial_filters)
         {
@@ -1255,13 +1228,13 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
                 &bbox_cov.xmin_column, &bbox_cov.ymin_column,
                 &bbox_cov.xmax_column, &bbox_cov.ymax_column};
 
-            /// Skip injection if any bbox column is absent from the actual file schema. Checked
-            /// against raw parquet-side paths, matching `schema_leaf_paths` (built from the file's
-            /// own schema). Falls back to geostats pruning; avoids THERE_IS_NO_COLUMN when
+            /// Skip injection if any bbox column is absent from the actual file schema (stale or
+            /// malformed GeoParquet metadata). Checked against raw parquet-side paths. Falls back to
+            /// geostats pruning; avoids THERE_IS_NO_COLUMN when
             /// input_format_parquet_allow_missing_columns = 0 with stale metadata.
             bool all_bbox_in_schema = true;
             for (const String * col : raw_bbox_col_ptrs)
-                if (!schema_leaf_paths.contains(*col))
+                if (!schemaHasLeaf(file_metadata(), *col))
                 { all_bbox_in_schema = false; break; }
             if (!all_bbox_in_schema)
             {
@@ -2942,7 +2915,7 @@ struct DictionaryValueHashes
 /// which case the dictionary can't be used for filtering).
 static std::optional<DictionaryValueHashes> hashDictionaryValues(
     const parq::FileMetaData & file_metadata, const ReadOptions & options,
-    Reader::ColumnChunk & column, const Reader::PrimitiveColumnInfo & column_info,
+    Reader::ColumnChunk & column, const Reader::PrimitiveColumnInfo & column_info, const IDataType & output_block_type,
     const PruningMemoryReservation & reservation, size_t & held_pruning_bytes)
 {
     held_pruning_bytes = 0;
@@ -3055,11 +3028,11 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
     {
         if (options.format.null_as_default)
         {
-            /// Under `input_format_null_as_default`, null values are decoded as the type's default
+            /// Under `input_format_null_as_default`, null values are decoded as the requested type's default
             /// value, which is not in the dictionary; without accounting for it we'd wrongly skip a
             /// row group whose nulls match the queried default (e.g. `WHERE x = 0` over an optional
             /// column read as non-nullable `UInt64`). So add the default value's hash.
-            auto default_hash = parquetTryHashField(column_info.output_type->getDefault(), schema_element);
+            auto default_hash = parquetTryHashField(output_block_type.getDefault(), schema_element);
             /// If the default value can't be hashed, we can't rule out a match.
             if (!default_hash.has_value())
                 return std::nullopt;
@@ -3146,7 +3119,9 @@ bool Reader::DictionaryLookup::findAnyHash(const VectorWithMemoryTracking<uint64
 {
     if (!computed)
     {
-        value_hashes = hashDictionaryValues(reader.file_metadata(), reader.options, column, column_info, reservation, reserved_bytes);
+        value_hashes = hashDictionaryValues(
+            reader.file_metadata(), reader.options, column, column_info,
+            *reader.extended_sample_block_data_types.at(column_info.idx_in_output_block), reservation, reserved_bytes);
         computed = true;
     }
     /// If the dictionary values couldn't be hashed (e.g. the value set didn't fit the pruning budget),
@@ -3523,7 +3498,9 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         /// When the size of the decoded strings of a column is not known, a whole chunk is not risked: the dictionary
         /// of such a column is decoded in advance (see `ColumnChunk::decode_dictionary_early`), unless it does not
         /// fit the memory budget of the reader either.
-        double bytes_per_row = 0;
+        /// The columns that the caller adds to every chunk after the reader (e.g. the `initial-default` of a field
+        /// that the file does not have, materialized by the schema transform of the source) are counted too.
+        double bytes_per_row = static_cast<double>(options.bytes_per_row_added_after_reading);
         bool size_unknown = false;
         for (size_t i = 0; i < primitive_columns.size(); ++i)
         {
@@ -5107,7 +5084,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     if (output_info.is_missing_column)
     {
         res = output_info.output_type->createColumn();
-        res->insertManyDefaults(num_rows);
+        output_info.output_type->insertManyDefaultsInto(*res, num_rows);
 
         if (output_info.idx_in_output_block.has_value() &&
             /// If block_missing_values is enabled (not empty), and this column is not prewhere-only
@@ -5124,26 +5101,11 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         && *output_info.idx_in_output_block < row_subgroup.block_missing_values.getNumColumns())
         row_subgroup.block_missing_values.setBits(*output_info.idx_in_output_block, num_rows);
 
-    /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
-    /// we assemble the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using
-    /// the group null map. Every leaf shares the same def-level null map (the subtree is
-    /// all-REQUIRED), which decodePrimitiveColumn moved into `group_null_map` on each leaf before
-    /// any leaf-level Nullable wrapping could consume it. Take it from the first leaf. Dispatch on
-    /// the unwrapped type.
-    MutableColumnPtr nullable_group_null_map;
-    if (output_info.nullable_group)
-    {
-        ColumnSubchunk & first_leaf = row_subgroup.columns.at(output_info.primitive_start);
-        if (first_leaf.group_null_map)
-            nullable_group_null_map = IColumn::mutate(std::move(first_leaf.group_null_map));
-        else
-            /// No struct-level nulls (all rows defined): all-non-null map.
-            nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
-    }
-
     /// Nullable wraps the type of a physically nullable tuple group and of a variant read as `Nullable(JSON)`.
     TypeIndex kind = removeNullable(output_info.input_type)->getColumnType();
 
+    /// Rows of a primitive column whose values are not data: NULLs filled with defaults, or rows of a NULL struct around the leaf.
+    ColumnPtr rows_without_values;
     if (output_info.is_primitive)
     {
         /// Primitive column.
@@ -5159,7 +5121,10 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map.get()).getData();
             row_subgroup.block_missing_values.setBitsFromNullMap(*output_info.idx_in_output_block, null_map);
         }
-        subchunk.null_map.reset();
+        if (subchunk.null_map)
+            rows_without_values = std::move(subchunk.null_map);
+        else if (subchunk.group_null_map)
+            rows_without_values = subchunk.group_null_map->getPtr();
     }
     else if (kind == TypeIndex::Array)
     {
@@ -5214,7 +5179,18 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
     if (output_info.nullable_group)
     {
-        /// Wrap the assembled ColumnTuple in ColumnNullable using the reconstructed group null map.
+        /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
+        /// we assemble the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using
+        /// the group null map. Every leaf shares the same def-level null map (the subtree is
+        /// all-REQUIRED), which decodePrimitiveColumn moved into `group_null_map` on each leaf before
+        /// any leaf-level Nullable wrapping could consume it. Take it from the first leaf.
+        ColumnSubchunk & first_leaf = row_subgroup.columns.at(output_info.primitive_start);
+        MutableColumnPtr nullable_group_null_map;
+        if (first_leaf.group_null_map)
+            nullable_group_null_map = IColumn::mutate(std::move(first_leaf.group_null_map));
+        else
+            /// No struct-level nulls (all rows defined): all-non-null map.
+            nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
         chassert(nullable_group_null_map->size() == res->size());
         res = ColumnNullable::create(std::move(res), std::move(nullable_group_null_map));
     }
@@ -5223,10 +5199,14 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
     if (output_info.needs_cast)
     {
-        auto col = castColumn(
-            {std::move(res), output_info.input_type, output_info.name}, output_info.output_type);
-        chassert(col->use_count() == 1);
-        res = IColumn::mutate(std::move(col));
+        ColumnWithTypeAndName column{std::move(res), output_info.input_type, output_info.name};
+        const auto * null_map = rows_without_values ? &assert_cast<const ColumnUInt8 &>(*rows_without_values).getData() : nullptr;
+        if (null_map && !memoryIsZero(null_map->data(), 0, null_map->size()))
+            castColumnToRequestedType(column, output_info.output_type, *null_map);
+        else
+            column.column = castColumn(column, output_info.output_type);
+        chassert(column.column->use_count() == 1);
+        res = IColumn::mutate(std::move(column.column));
     }
 
     return res;
@@ -5635,7 +5615,7 @@ void Reader::addToColumnsCacheWrite(
     auto entry = makeColumnsCacheEntry();
     {
         /// The rest of the entry is the server's from the start, see `makeColumnsCacheEntry`.
-        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        ServerOwnedMemoryScope not_charged_to_query_or_user;
         entry->part_name = cache_options.file_path;
         entry->column_name = extended_sample_block.getByPosition(idx_in_output_block).name;
     }

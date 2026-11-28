@@ -75,6 +75,10 @@ public:
     [[nodiscard]] const ColumnNameToFieldId & getStorageColumnEncoding() const { return storage_encoding; }
     [[nodiscard]] const FieldIdToColumnName & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
 
+    /// Reserved Iceberg field ids (https://iceberg.apache.org/spec/#reserved-field-ids) are in no schema: a data file field
+    /// with one is read under its own name.
+    static bool isReservedIcebergFieldId(Int64 field_id);
+
     /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString,
     /// so a writer preserving that distinction (ORC/Avro string vs binary) consults this.
     /// hasIcebergStringInfo() lets a field-id-only mapper fall back to the default, not force binary.
@@ -154,8 +158,8 @@ public:
     /// The path of the struct, list or map that has the field `path`, empty for a top-level field.
     [[nodiscard]] String getIcebergParentPath(const String & path) const;
     /// The field of the storage encoding that is the subcolumn path `path` or has it as a subcolumn (the longest such prefix,
-    /// reached from the top level through structs only), empty if none.
-    [[nodiscard]] String getIcebergFieldPath(const String & path) const;
+    /// reached from `root`, the top level or a struct under a list or map, through structs only), empty if none.
+    [[nodiscard]] String getIcebergFieldPath(const String & path, const String & root = {}) const;
 
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     [[nodiscard]] std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;

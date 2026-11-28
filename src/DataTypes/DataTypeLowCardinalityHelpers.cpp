@@ -251,7 +251,8 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
 
     if (const auto * from_tuple_type = typeid_cast<const DataTypeTuple *>(from_type.get()))
     {
-        if (const auto * to_tuple_type = typeid_cast<const DataTypeTuple *>(to_type.get()))
+        if (const auto * to_tuple_type = typeid_cast<const DataTypeTuple *>(to_type.get());
+            to_tuple_type && to_tuple_type->getElements().size() == from_tuple_type->getElements().size())
         {
             const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get());
             if (!column_tuple)

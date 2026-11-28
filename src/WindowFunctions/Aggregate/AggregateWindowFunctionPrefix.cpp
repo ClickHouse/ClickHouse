@@ -1,5 +1,5 @@
 #include <WindowFunctions/Aggregate/AggregateWindowFunctionPrefix.h>
-#include <WindowFunctions/Aggregate/AggregateState.h>
+#include <WindowFunctions/Aggregate/AggregationState.h>
 
 #include <Columns/IColumn.h>
 #include <Interpreters/WindowDescription.h>
@@ -47,7 +47,7 @@ public:
     }
 
 private:
-    AggregateState state;
+    AggregationState state;
     Int64 covered_end = 0;
 };
 

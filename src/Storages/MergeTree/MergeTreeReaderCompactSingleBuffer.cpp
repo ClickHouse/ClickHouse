@@ -4,10 +4,16 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <algorithm>
 #include <limits>
 #include <numeric>
+
+namespace ProfileEvents
+{
+    extern const Event RuntimeDataflowStatisticsInputNanoseconds;
+}
 
 namespace DB
 {
@@ -42,6 +48,18 @@ catch (...)
     }
 
     throw;
+}
+
+void MergeTreeReaderCompactSingleBuffer::registerReadRanges()
+{
+    if (!read_ranges_registry || ranges_read.empty())
+        return;
+
+    ProfileEventTimeIncrement<Time::Nanoseconds> watch(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds);
+    if (!read_ranges)
+        read_ranges = &read_ranges_registry->getReadRanges(
+            data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
+    read_ranges_registry->registerRanges(*read_ranges, ranges_read);
 }
 
 void MergeTreeReaderCompactSingleBuffer::readGranule(
@@ -134,6 +152,8 @@ try
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
     stream->updateReadRequestMap(read_request_map);
+    if (read_ranges_registry)
+        stream->setRangesReadSink(&ranges_read);
 
     initialized = true;
 }

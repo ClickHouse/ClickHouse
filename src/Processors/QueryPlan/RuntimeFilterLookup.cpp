@@ -10,6 +10,7 @@
 #include <vector>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
@@ -293,11 +294,12 @@ namespace
 {
 
 /// Whether `equals` can answer differently from the bitwise comparison a hash table performs on keys:
-/// NaN is not equal to itself, and -0.0 is equal to 0.0. A JSON column counts as a whole, because a
-/// float can appear on a path discovered while reading, which is not among the type's static children.
+/// NaN is not equal to itself, -0.0 is equal to 0.0, and a `Nothing` element makes a tuple comparison NULL.
+/// A JSON column counts as a whole, because a float can appear on a path discovered while reading,
+/// which is not among the type's static children.
 bool equalsCanDisagreeWithHashTable(const IDataType & type)
 {
-    return anyInTypeTree(type, [](const IDataType & nested) { return isFloat(nested) || isObject(nested); });
+    return anyInTypeTree(type, [](const IDataType & nested) { return isFloat(nested) || isObject(nested) || isNothing(nested); });
 }
 
 /// The JOIN compares the bytes, while `Set` converts a key to a `Bool` member type, turning every nonzero byte into 1.
@@ -332,8 +334,13 @@ void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_co
 }
 
 template <typename ProcessBatch>
-void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch && process_batch, size_t first_row = 0)
+void forEachColumnHashBatch(const IColumn & original_column, UInt64 seed, ProcessBatch && process_batch, size_t first_row = 0)
 {
+    /// The join matches `-0.` and `0.` as equal keys, so the Bloom filter has to hash them identically,
+    /// both when inserting and when probing.
+    const ColumnPtr normalized_column = replaceNegativeZeros(original_column);
+    const IColumn & column = normalized_column ? *normalized_column : original_column;
+
     const size_t row_count = column.size();
     if (row_count <= first_row)
         return;

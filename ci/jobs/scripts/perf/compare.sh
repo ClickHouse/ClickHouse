@@ -1198,8 +1198,9 @@ parallel -v -j "$(nproc --all)" --joblog ${confirm_dir}/parallel-log.txt --null 
     || echo "confirm_changes: some rerun stats failed to compute, those queries keep their original verdict"
 
 # Give step 5 (and the dashboard check, which applies the same rule) one row per
-# query, copied from one placement: with all three measured, a row on the side
-# of the two-of-three majority of step 5's rule, the farthest from its
+# query, copied from one placement: with all three measured, a placement where
+# the change vanished (clearing neither threshold of step 5's rule), else a row
+# on the side of the two-of-three majority of that rule, the farthest from its
 # thresholds; otherwise placement 0's row. No row keeps the original verdict.
 for placement in $(seq 0 $(( placements_done - 1 )))
 do
@@ -1224,6 +1225,9 @@ create view placement_verdicts as
         sign(diff_rerun) = sign(diff)
             and abs(diff_rerun) > changed_threshold
             and abs(diff_rerun) >= stat_threshold_rerun reproduced,
+        not (sign(diff_rerun) = sign(diff)
+            and (abs(diff_rerun) > changed_threshold
+                or abs(diff_rerun) >= stat_threshold_rerun)) vanished,
         if(sign(diff_rerun) = sign(diff),
             least(abs(diff_rerun) - changed_threshold, abs(diff_rerun) - stat_threshold_rerun),
             -inf) margin
@@ -1235,6 +1239,7 @@ create view selected_placements as
     select test, query_index,
         arraySort(groupArray((placement, diff_rerun, stat_threshold_rerun, reproduced))) placements,
         multiIf(count() < 3, 0,
+            countIf(vanished) > 0, argMinIf(placement, margin, vanished),
             countIf(reproduced) >= 2, argMaxIf(placement, margin, reproduced),
             argMinIf(placement, margin, not reproduced)) selected_placement
     from placement_verdicts
