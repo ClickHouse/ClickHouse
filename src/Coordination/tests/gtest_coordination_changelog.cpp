@@ -41,6 +41,8 @@ namespace ErrorCodes
 
 namespace CoordinationSetting
 {
+    extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
+    extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
     extern const CoordinationSettingsUInt64 log_readahead_commit_window_bytes;
 }
 }
@@ -1270,6 +1272,101 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestReadAfterBrokenTruncate3)
 
     EXPECT_EQ(changelog_reader.size(), 20);
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
+}
+
+namespace
+{
+
+/// A log disk whose detach of a changelog file never removes the source file: the rename is reported
+/// unsupported (so `removeExistingLogs` copies into `detached/` through `moveFileBetweenDisks`), and the
+/// delete of the original `changelog_*` file always throws. Temporaries (`tmp_*`) and the `detached/`
+/// copy are left alone, so the copy itself still succeeds and only the source removal fails.
+class DetachFailingDisk : public DB::DiskLocal
+{
+public:
+    using DB::DiskLocal::DiskLocal;
+
+    static bool isLiveChangelog(const String & path)
+    {
+        const auto name = fs::path(path).filename().string();
+        return name.starts_with("changelog_") && path.find("detached") == String::npos;
+    }
+
+    void moveFile(const String & from_path, const String & to_path) override
+    {
+        if (isLiveChangelog(from_path))
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Injected: rename unsupported for {}", from_path);
+        DB::DiskLocal::moveFile(from_path, to_path);
+    }
+
+    void removeFile(const String & path) override
+    {
+        if (isLiveChangelog(path))
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Injected: cannot remove source changelog {}", path);
+        DB::DiskLocal::removeFile(path);
+    }
+
+    void removeFileIfExists(const String & path) override
+    {
+        if (isLiveChangelog(path))
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Injected: cannot remove source changelog {}", path);
+        DB::DiskLocal::removeFileIfExists(path);
+    }
+};
+
+}
+
+/// Regression for issue #133725: when detaching changelogs after a broken tail fails to remove the
+/// source file, `removeExistingLogs` must keep the changelog registered and fail, so that new entries
+/// are not written over a range a forgotten stale file still covers (which a restart would replay).
+///
+/// Not parameterized by compression: only the uncompressed read reaches `removeAllLogsAfter` for a
+/// broken middle segment; the compressed read stops earlier on a gap check and never attempts the detach.
+TEST(CoordinationChangelogDetach, FailedDetachKeepsChangelogRegistered)
+{
+    static const fs::path log_folder{"./logs"};
+    ChangelogDirTest test(log_folder);
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    /// Exhaust the move retries immediately, so a failed detach returns at once instead of after the
+    /// default 100 retries spaced one second apart.
+    (*settings)[DB::CoordinationSetting::disk_move_retries_during_init] = 1;
+    (*settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 0;
+    auto keeper_context = makeKeeperContext(/*use_lsmt_storage=*/false, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    auto disk = std::make_shared<DetachFailingDisk>("LogDisk", log_folder.generic_string());
+    keeper_context->setLogDisk(disk);
+
+    const DB::LogFileSettings log_settings{.force_sync = true, .compress_logs = false, .rotate_interval = 5};
+    {
+        DB::KeeperLogStore changelog(log_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, keeper_context);
+        changelog.init(0, 0);
+        for (size_t i = 0; i < 35; ++i)
+        {
+            auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 1) * 10);
+            changelog.append(entry);
+        }
+        changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
+    }
+
+    /// Break the tail of a middle segment so reading stops there and the later segments become
+    /// "logs after a broken entry" that removeAllLogsAfter detaches.
+    DB::WriteBufferFromFile plain_buf(
+        "./logs/changelog_11_15.bin", DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+    plain_buf.truncate(plain_buf.size() - 30);
+    plain_buf.finalize();
+
+    const std::string trailing = "./logs/changelog_16_20.bin";
+    ASSERT_TRUE(fs::exists(trailing));
+
+    DB::KeeperLogStore changelog_reader(log_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, keeper_context);
+
+    /// The detach of the trailing segments fails at the source-removal step. Before the fix, init
+    /// swallowed that failure and erased the changelog, so it returned leaving the stale file on disk
+    /// (a restart would replay it); now init must fail and leave the file registered.
+    ASSERT_THROW(changelog_reader.init(0, 0), DB::Exception);
+    EXPECT_TRUE(fs::exists(trailing));
 }
 
 TEST_P(CoordinationTestWithCompression, ChangelogTestMixedLogTypes)
