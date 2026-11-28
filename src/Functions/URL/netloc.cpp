@@ -70,37 +70,35 @@ struct ExtractNetloc
         /// Now pos points to the first byte after scheme (if there is).
 
         bool has_identification = false;
+        bool has_open_bracket = false;
         Pos hostname_end = end;
-        Pos question_mark_pos = end;
-        Pos slash_pos = end;
         Pos start_of_host = pos;
         for (; pos < end; ++pos)
         {
             switch (*pos) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case '/':
-                    if (has_identification)
-                        return std::string_view(start_of_host, pos - start_of_host);
-                    else
-                        slash_pos = pos;
-                    break;
                 case '?':
-                    if (has_identification)
-                        return std::string_view(start_of_host, pos - start_of_host);
-                    else
-                        question_mark_pos = pos;
-                    break;
                 case '#':
                     return std::string_view(start_of_host, pos - start_of_host);
                 case '@': /// foo:bar@example.ru
                     has_identification = true;
                     hostname_end = end;
                     break;
+                case '[': /// Start of an RFC3986 IP-literal (bracketed IPv6) host. Zone IDs use '%25' inside it.
+                    if (pos == start_of_host || (pos > data && pos[-1] == '@'))
+                        has_open_bracket = true;
+                    break;
+                case ']':
+                    has_open_bracket = false;
+                    break;
                 case ';':
                 case '=':
                 case '&':
                 case '~':
                 case '%':
+                    if (has_open_bracket)
+                        break; /// sub-delims are part of the IP-literal (e.g. RFC3986 zone ID '[fe80::a%25en1]'), not a host terminator.
                     /// Symbols above are sub-delims in RFC3986 and should be
                     /// allowed for userinfo (named identification here).
                     ///
@@ -110,7 +108,8 @@ struct ExtractNetloc
                     /// registered).
                     if (!has_identification)
                     {
-                        hostname_end = pos;
+                        if (hostname_end == end)
+                            hostname_end = pos;
                         break;
                     }
                     [[fallthrough]];
@@ -123,17 +122,15 @@ struct ExtractNetloc
                 case '|':
                 case '\\':
                 case '^':
-                case '[':
-                case ']':
                     return pos > start_of_host
-                        ? std::string_view(start_of_host, std::min({pos, question_mark_pos, slash_pos}) - start_of_host)
+                        ? std::string_view(start_of_host, std::min(pos, hostname_end) - start_of_host)
                         : std::string_view();
             }
         }
 
         if (has_identification)
             return std::string_view(start_of_host, pos - start_of_host);
-        return std::string_view(start_of_host, std::min({pos, question_mark_pos, slash_pos, hostname_end}) - start_of_host);
+        return std::string_view(start_of_host, std::min(pos, hostname_end) - start_of_host);
     }
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
