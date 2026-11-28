@@ -3,7 +3,6 @@
 -- the same value on both sides. This must hold even with single_join_prefer_left_table = 0.
 
 -- This is a property of the analyzer; the old analyzer resolves ambiguity differently.
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

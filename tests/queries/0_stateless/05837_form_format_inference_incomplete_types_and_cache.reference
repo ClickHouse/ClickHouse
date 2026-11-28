@@ -1,0 +1,9 @@
+Nullable(String)	\\N
+Nullable(String)	\\N
+String	NULL
+String	[NULL]
+a	String					
+b	Array(Int64)					
+a	String					
+b	String					
+text	[NULL,42]

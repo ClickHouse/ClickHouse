@@ -1,0 +1,124 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-06-05
+title: 'デモデイズ - 2026-06-05'
+sidebarTitle: '2026-06-05'
+description: '2026-06-05 の ClickStack デモデー'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+## 分割トレースビューと拡張トレースビュー {#split-trace-view-and-extended-trace-view}
+
+*デモ担当者: [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/L4sduqf3CR8" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+トレースパネルに分割ビューモードが追加されました。タイムライン上のスパンを順にクリックすると、詳細パネルは従来のように選択したスパンの下に開くのではなく、右側でその場で更新されます。そのため、個々のスパンを掘り下げている間も、タイムライン全体を常に表示しておけます。
+
+さらに、拡張トレースビューに展開すれば、スクロールとズームに対応した全幅のタイムラインを表示できます。両パネルはそれぞれ独立して開閉できるため、現在の位置を見失うことなく、全体の概要とスパンの詳細な検査を手軽に切り替えられます。
+
+**関連するプルリクエスト:** [#2402](https://github.com/hyperdxio/hyperdx/pull/2402) feat: trace panel inline split detail
+
+## ログソースレベルの必須フィルタ {#source-level-required-filters}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/RcAl8Sl5GFM" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ログソースで必須フィルタを宣言できるようになりました。宣言した必須フィルタは、そのログソースを使用するすべてのダッシュボードに自動的に表示されます。ログソースを参照するダッシュボードごとに同じフィルタを手動で追加しなくても、ClickStack が要件を検出してフィルタをダッシュボードレベルに引き上げます。このフィルタが適用されるのは、実際にそのログソースを使用しているタイルのみです。
+
+別のフィルタ値が必要な場合は、個々のタイルでダッシュボードレベルの値をオーバーライドできます。また、必須フィルタはチャートエディタのプレビューにも反映されるため、フィルタを除去せずにクエリを検証できます。SQL ベースのチャートでは、必須ソースフィルターを SQL フィルタマクロと組み合わせて利用できます。さらに、ダッシュボード間の関連付けを設定する際には、ClickStack が必須ソースフィルターを関連付けパラメータの候補として自動的に追加します。
+
+## Y 軸をデータに合わせる {#fit-y-axis-to-data}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cNiGHy1OqhU" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+折れ線グラフに新しい表示設定「Y 軸をデータに合わせる」が追加されました。デフォルトでは Y 軸の起点がゼロに固定されているため、値が大きく変動がわずかな場合は表示範囲が圧縮され、トレンドがひと目では読み取れなくなります。
+
+このオプションを有効にすると、Y 軸の範囲が実際のデータの範囲に基づいて動的に算出されます。そのため、軸の上限と下限を手動で設定しなくても、値の大きい系列の変動を確認できます。
+
+**関連するプルリクエスト:** [#2417](https://github.com/hyperdxio/hyperdx/pull/2417) feat(charts): add &#39;Y 軸をデータに合わせる&#39; display setting for line charts
+
+## 異常アラート {#anomaly-alerts}
+
+*デモ担当者: [@fleon](https://github.com/fleon)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aAgN3ZlQz8M" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Himanshu は、z スコア検出を用いた異常ベースのアラート機能の開発状況を紹介しました。固定のしきい値を使う代わりに、想定される平均から標準偏差いくつ分外れたらアラートをトリガーするかを設定します。季節性ウィンドウ (毎時または毎日) によってベースラインの算出方法が決まります。また、アラートエディターでは発火していたはずのウィンドウがハイライト表示されるため、保存前に感度を調整できます。
+
+これは、しきい値アラートによくある「どの数値を設定すべきか分からない」という課題を解決するものです。z スコアを調整すると、アラートが発生しうるウィンドウがリアルタイムで更新されるため、過剰なノイズを出さずに本当のスパイクを捉えるしきい値を現実的に見つけられます。アラートのスコープは、値が想定範囲を上回った場合にのみ発火するよう限定でき (下回った場合は発火しない) 、さらに出現回数の設定により、条件が複数の連続したデータ点で満たされた場合にのみ発火させることもできます。この機能は現在開発中で、現時点ではベースラインを移動平均で算出していますが、指数移動平均への対応も予定されています。
+
+## APIおよびAIエージェント向けの設定をよりわかりやすく {#clearer-configuration-for-api-and-ai-agents}
+
+*デモ担当者: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/gpQA-Vso1XI" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack の設定に専用の「API and Agents」タブが追加され、APIキーと MCP 接続のセットアップを 1 か所でまとめて行えるようになりました。Claude、Cursor、OpenCode 向けのワンクリックボタンを使えば、接続コマンドを手動で組み立てる必要はありません。たとえば Cursor ボタンをクリックすると、適切なインストールコマンドが入力された状態で端末が開きます。OpenCode ユーザー向けには、コピーしてそのまま貼り付けられるシステムプロンプトのスニペットが用意されています。その他の MCPクライアントは、汎用の JSON 設定オプションで設定できます。
+
+**関連 プルリクエスト:** [#2407](https://github.com/hyperdxio/hyperdx/pull/2407) feat(team-settings): connect your AI assistant
+
+## Number チャートの色選択 {#color-selection-for-number-charts}
+
+*デモ担当者: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qsZ-I6FEsNw" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+数値タイルで、静的なカラーピッカーと条件付きカラールールの両方が使えるようになりました。チャートのパレットも更新され、&quot;color-1&quot; や &quot;color-10&quot; ではなく &quot;blue&quot; や &quot;gray&quot; といった人間が読める色名で表示されるようになったため、どの色を選択しているのかがはるかにわかりやすくなりました。
+
+条件付きカラーリングでは、順序付けされたしきい値ルールを定義できます。たとえば、目標値未満なら緑、警告範囲内なら琥珀色、クリティカルなしきい値を超えたら赤、といった設定が可能です。これにより、数値タイルをダッシュボード上のステータスインジケーターとして実用的に活用できるようになります。特に、エラー率や P99 レイテンシーなど、数値を読まなくても一目で状態を把握したいメトリクスに効果的です。
+
+**関連するプルリクエスト:** [#2386](https://github.com/hyperdxio/hyperdx/pull/2386) 数値タイルの条件付きカラールール (順序付けされたしきい値)、[#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): 数値タイルの静的カラーピッカー
+
+## スキーマ移行 {#schema-migrations}
+
+*デモ担当者: [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qVV8vQqctfM" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack の設定に スキーマ移行 タブ (Enterprise) が追加され、データスキーマに対する DDL 変更をバージョン管理しながら制御された形で適用できるようになりました。移行を作成してバージョン番号を付けると、バックグラウンドジョブがそれを検出し、再試行ロジックと厳密な順序制御のもとで実行します。ある移行が失敗した場合、それに依存する後続の移行は、失敗した移行が解決または削除されるまで実行されません。
+
+このバージョン管理の仕組みにより、ClickHouse は ClickStack Cloud のチームに対し、手動での ALTER TABLE 作業を必要とせずにマネージドなスキーマ最適化をプッシュできるようになります。チームは保留中の移行を確認し、各自のペースでブロックを解除できます。フェーズ 1 では追加的な変更のみを対象とし、主キーの変更はフェーズ 2 で対応する予定です。
+
+## すぐに使えるブラウザー RUM ダッシュボード {#out-of-the-box-browser-rum-dashboards}
+
+*デモ担当者: [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Kmq9qwTnObw" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack に、Web パフォーマンスメトリクス一式を網羅した構築済みのブラウザー RUM ダッシュボードが同梱されるようになりました。このダッシュボードには、ページビュー数と P90 ロード時間を示すパフォーマンス概要に加え、LCP、INP、CLS の Web Vitals が含まれます。Web Vitals には段階的なしきい値が設定されているため、各メトリクスが「良好」「要改善」「不良」のいずれに該当するかをひと目で確認できます。
+
+その他のセクションでは、ページビュー数の推移、ロングタスク、デバイス別の内訳、表示が遅いページ、エラーの多いセッションの上位、JavaScript エラー率、API の失敗を確認できます。カスタム行アクションを使えば、任意のテーブル行をクリックして、関連するセッションやトレースデータにドリルスルーできます。ページ上部のフィルタでは、サービス、環境、サービスバージョン、ページ単位でデータを絞り込めます。国によるフィルタリングは現在対応中で、ブラウザー SDK が地理データを送信できるよう改善されるのを待っている状態です。
+
+**関連するプルリクエスト:** [#2413](https://github.com/hyperdxio/hyperdx/pull/2413) feat: add Browser RUM dashboard template
+
+## 連動するダッシュボードフィルタ {#dependent-dashboard-filters}
+
+*デモ担当者: [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/nTnBmZ-MvFg" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ダッシュボードフィルタ同士を連動させられるようになりました。あるフィルタで値を選択すると、下流のフィルタで選択できるオプションが自動的に絞り込まれます。この機能を最初に採用したのはKubernetesダッシュボードです。ポッドを選択すると、デプロイメントとノードのドロップダウンには、クラスター全体のすべてのオプションではなく、そのポッドに関連する値のみが表示されるようになりました。
+
+これにより、データが空になるようなフィルタの組み合わせが提示されることはなくなります。この機能は、現在Kubernetesダッシュボードテンプレートで利用できます。

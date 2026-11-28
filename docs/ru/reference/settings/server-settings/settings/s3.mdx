@@ -12,56 +12,63 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки задают конфигурацию сервера ClickHouse и автоматически сгенерированы на основе исходного кода ClickHouse.
 
-<div id="s3_allow_server_credentials_for_system_table_disks">
-  ## s3_allow_server_credentials_for_system_table_disks
-</div>
+## s3_allow_server_credentials_for_system_table_disks {#s3_allow_server_credentials_for_system_table_disks}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
-Разрешает динамическому `disk(type = s3, ...)` таблицы в базе данных `system` использовать собственные S3-учетные данные сервера (ambient),
+Разрешает динамическому `disk(type = s3, ...)` таблицы в базе данных `system` использовать собственные S3-учетные данные Сервера (ambient),
 выводя его из-под ограничения `s3_allow_server_credentials_in_user_queries`. Это предназначено для
-внутренней инфраструктуры сервера, которая выгружает системные таблицы в S3 с использованием identity сервера (подключаемой
-cloud operator к базе данных `system`). В отличие от настройки сеанса, это настройка уровня сервера, поэтому
-исключение также действует, когда таблица повторно загружается из metadata при перезапуске. Она ограничена базой данных `system`,
+внутренней инфраструктуры Сервера, которая выгружает системные таблицы в S3 с использованием идентичности Сервера (подключаемой
+cloud operator к базе данных `system`). В отличие от настройки сеанса, это настройка уровня Сервера, поэтому
+исключение также действует, когда таблица повторно загружается из метаданных при перезапуске. Она ограничена базой данных `system`,
 в которой обычные пользователи не могут создавать таблицы, поэтому это не ослабляет ограничение для пользовательских запросов.
 
-<div id="s3_credentials_provider_max_cache_size">
-  ## s3_credentials_provider_max_cache_size
-</div>
+Точно так же настройка действует для динамического `disk(type = azure_blob_storage, ...)`: такой диск может использовать собственную
+идентичность Сервера в Azure (workload идентичность AKS или управляемое удостоверение машины), несмотря на
+`s3_allow_server_credentials_in_user_queries`.
+
+Также доступна под псевдонимом `allow_server_credentials_for_system_table_disks`, поскольку распространяется и на Azure.
+
+## s3_credentials_provider_max_cache_size {#s3_credentials_provider_max_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />Максимальное количество провайдеров учетных данных S3, которые можно сохранить в кэше
 
-<div id="s3_load_table_anonymously_if_credentials_restricted">
-  ## s3_load_table_anonymously_if_credentials_restricted
-</div>
+## s3_load_table_anonymously_if_credentials_restricted {#s3_load_table_anonymously_if_credentials_restricted}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-Определяет, что происходит, когда постоянная table `S3` или `S3Queue`, динамический `disk(type = s3, ...)` или
-database `DataLakeCatalog` (Glue, BigLake) загружается из существующих metadata (при запуске server или `RESTORE`), и
-по его определению должны использоваться собственные S3/Cloud учётные данные server из окружения (ambient), которые запрещены для user
+Определяет, что происходит, когда постоянная таблица `S3` или `S3Queue`, динамический `disk(type = s3, ...)` или
+база данных `DataLakeCatalog` (Glue, BigLake) загружается из существующих метаданных (при запуске Сервера или `RESTORE`), и
+по его определению должны использоваться собственные S3/Cloud учётные данные Сервера из окружения (ambient), которые запрещены для user
 queries параметром `s3_allow_server_credentials_in_user_queries`.
 
-Когда параметр включен (по умолчанию), объект загружается без этих учётных данных вместо прерывания запуска: table
-`S3`/`S3Queue` или динамический S3-диск создаётся с анонимным S3 client, а database `DataLakeCatalog`
-остаётся с недоступным catalog. Server запускается, но объект остаётся недоступным (его requests
+Когда параметр включен (по умолчанию), объект загружается без этих учётных данных вместо прерывания запуска: таблица
+`S3`/`S3Queue` или динамический S3-диск создаётся с анонимным S3 Client, а база данных `DataLakeCatalog`
+остаётся с недоступным catalog. Сервер запускается, но объект остаётся недоступным (его requests
 к private бакету отклоняются либо catalog сообщает явную error), пока его учётные данные снова не начнут разрешаться в
-допустимый source. Он никогда незаметно не получает обратно identity server. Это позволяет одному такому объекту —
+допустимый source. Он никогда незаметно не получает обратно идентичность Сервера. Это позволяет одному такому объекту —
 например, созданному в более старой version до появления этого ограничения, или объекту, чья named collection была
-позже повторно привязана к `use_environment_credentials = 1`, — не прерывать запуск server.
+позже повторно привязана к `use_environment_credentials = 1`, — не прерывать запуск Сервера.
 
-Когда параметр отключен, загрузка такого объекта завершается с error, что может помешать запуску server. Используйте это только
-если вы предпочитаете жёсткий сбой, а не молча недоступную table, disk или database catalog.
+Для Azure параметр действует аналогично: постоянная таблица `AzureBlobStorage` или `AzureQueue` либо таблица на динамическом
+`disk(type = azure_blob_storage, ...)`, определение которой предполагает аутентификацию с собственной Azure-идентичностью Сервера
+(workload идентичность AKS или управляемое удостоверение машины), загружается при запуске Сервера с клиентом без
+учётных данных. `RESTORE` создаёт таблицы Azure так же, как `CREATE`, поэтому в этом случае такая таблица отклоняется. Таблица на
+таком динамическом диске Azure загружается, только если при её загрузке ничего не читается из Azure, — например, пустая таблица `MergeTree`
+с локальными метаданными; таблица с частями данных или диск с метаданными `plain_rewritable` всё равно могут не загрузиться,
+поскольку эти запросы также отклоняются. На динамический диск Azure, созданный с
+`s3_allow_server_credentials_in_user_queries`, параметр не влияет: такой диск сохраняет идентичность Сервера.
 
-<div id="s3_max_redirects">
-  ## s3_max_redirects
-</div>
+Когда параметр отключен, загрузка такого объекта завершается с error, что может помешать запуску Сервера. Используйте это только
+если вы предпочитаете жёсткий сбой, а не молча недоступную таблицу, диск или базу данных catalog.
+
+Также доступен под псевдонимом `load_table_anonymously_if_credentials_restricted`, поскольку применяется и к Azure.
+
+## s3_max_redirects {#s3_max_redirects}
 
 <SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />Максимально допустимое количество переходов при перенаправлении S3.
 
-<div id="s3_retry_attempts">
-  ## s3_retry_attempts
-</div>
+## s3_retry_attempts {#s3_retry_attempts}
 
 <SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />Настройка для Aws::Client::RetryStrategy: Aws::Client самостоятельно выполняет повторные попытки; 0 означает, что повторные попытки не выполняются
 

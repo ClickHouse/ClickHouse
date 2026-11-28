@@ -5,7 +5,6 @@
 -- `^.*(\d)` is the idiomatic "last digit" pattern.
 -- The haystack has to come from a column: a fully constant argument is folded before the rewrite.
 
-SET enable_analyzer = 1;
 SET optimize_rewrite_regexp_functions = 1;
 
 SELECT extract(h, '^.*(\\d)'), extract(h, '^.*(\\d+)'), extract(h, '^.*([a-z])') FROM (SELECT 'a1b2c3' AS h);

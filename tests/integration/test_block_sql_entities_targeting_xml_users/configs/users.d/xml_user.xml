@@ -1,0 +1,36 @@
+<clickhouse>
+    <users>
+        <!-- XML-defined user that SQL-created quotas and policies must not be able to target. -->
+        <xml-internal>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>0</access_management>
+            <!-- Grants must live in XML because SQL `GRANT ... TO xml-internal` would update a read-only user. -->
+            <grants>
+                <query>GRANT SELECT ON *.*</query>
+            </grants>
+        </xml-internal>
+
+        <!-- default has access management so it can run the CREATE QUOTA / CREATE POLICY commands in the test. -->
+        <default>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+            <show_named_collections>1</show_named_collections>
+            <show_named_collections_secrets>1</show_named_collections_secrets>
+        </default>
+    </users>
+    <roles>
+        <!-- XML-defined role targeted by a SQL policy in test_targeting_xml_role_is_allowed. -->
+        <xml_role/>
+    </roles>
+</clickhouse>

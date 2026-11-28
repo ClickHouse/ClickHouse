@@ -9,16 +9,6 @@
 namespace DB
 {
 
-namespace
-{
-
-bool isDateOrDateTime(const IDataType & type)
-{
-    return isDate(type) || isDateTime(type) || isDateTime64(type);
-}
-
-}
-
 class FunctionMonthName final : public IFunction
 {
 public:
@@ -32,30 +22,26 @@ public:
         : function_resolver(FunctionFactory::instance().get("dateName", std::move(context_)))
         {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"datetime", isDateOrDateTime, nullptr, "Date or DateTime"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-        return std::make_shared<DataTypeString>();
+        /// Legacy `isDateOrDateTime` matched only Date / DateTime / DateTime64 — not Date32.
+        return "(Date | DateTime | DateTime64) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(
+    [[nodiscard]] ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count) const override

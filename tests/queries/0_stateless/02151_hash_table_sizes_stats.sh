@@ -47,6 +47,8 @@ run_query() {
     -- The adaptive aggregator ignores the size hint when it engages, and this test measures
     -- exactly the hint-driven preallocation, so it has to stay on the baseline path.
     SET enable_adaptive_aggregator = 0;
+    -- With parallel replicas the aggregation runs on the replicas, not in the query that is checked.
+    SET enable_parallel_replicas = 0;
     $query"
 }
 

@@ -5,7 +5,6 @@
 -- The optimal bushy plan (L1JOINL2JOINL3) JOIN (R1JOINR2JOINR3) is found by DPhyp/DPsize.
 -- All three algorithms must return the same query result.
 
-SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';

@@ -4,11 +4,12 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Executors/Runtime/ExecutingGraph.h>
+#include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Sinks/NullSink.h>
 
 using namespace DB;
+using namespace DB::Runtime::V1;
 
 namespace DB::ErrorCodes
 {
@@ -75,9 +76,10 @@ TEST(ExecutingGraphFailedExpansion, LaterExpansionBailsOutInsteadOfLogicalError)
     processors->push_back(first);
     processors->push_back(second);
 
-    ExecutingGraph graph(processors, /* profile_processors_ = */ false);
+    ExecutingGraph graph(processors, /*profile_processors_=*/ false, /*memory_reservation_=*/ nullptr);
     ExecutingGraph::Queue queue;
     ExecutingGraph::Queue async_queue;
+    ExecutingGraph::UpdateNodeBuffers buffers;
 
     /// The initialization prepares both childless expanders and expands the first of them; recording
     /// its new sink fails. The expander's output is connected to that sink by then.
@@ -99,6 +101,6 @@ TEST(ExecutingGraphFailedExpansion, LaterExpansionBailsOutInsteadOfLogicalError)
     auto & not_expanded = first->expanded ? *second : *first;
 
     /// The other expansion must not walk the inconsistent graph; the query is being cancelled anyway.
-    EXPECT_EQ(graph.updateNode(not_expanded, queue, async_queue), ExecutingGraph::UpdateNodeStatus::Cancelled);
+    EXPECT_EQ(graph.updateNode(not_expanded, queue, async_queue, buffers), ExecutingGraph::UpdateNodeStatus::Cancelled);
     EXPECT_TRUE(queue.empty());
 }

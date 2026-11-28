@@ -1,0 +1,86 @@
+<!--
+    `GROUP BY` spilled to disk and in memory on `hits_100m_single` (100 M rows) and `hits_10m_single` (10 M rows): `UInt64`
+    and string keys with 0.6-18 M groups, a `uniq` state per group. Spilling is forced by `max_bytes_before_external_group_by`;
+    the host-dependent `max_bytes_ratio_before_external_group_by` is off. The in-memory `GROUP BY URL` runs on 10 M rows only.
+    `GROUP BY UserID` spills at 50 MB, far below its 0.6 GB: nearer to it, the adaptive aggregator left a backlog of varying
+    size to a single-threaded drain at the merge, and the runs varied by 20%.
+    The setup runs every timed query once and checks its groups and values against a scan without `GROUP BY` (number of
+    keys, row count, the key hashes weighted by count or sum), `uniq` against the same `GROUP BY` in memory, and whether it
+    spilled in `system.query_log`.
+    Per server and invocation: no table data written; temporary spill files of up to 1.9 GB per query, about 21 GB in
+    total; no S3.
+-->
+<test run_all_queries="1" max_query_seconds="90">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <max_bytes_before_external_group_by>0</max_bytes_before_external_group_by>
+    <max_bytes_ratio_before_external_group_by>0</max_bytes_ratio_before_external_group_by>
+</settings>
+
+<create_query>CREATE TABLE external_aggregation_hits_mark ENGINE = Memory AS SELECT now64(6) AS t</create_query>
+
+<fill_query>SELECT throwIf(count() != 100000000) FROM hits_100m_single</fill_query>
+<fill_query>SELECT throwIf(count() != 10000000) FROM hits_10m_single</fill_query>
+<fill_query>
+    SELECT throwIf((count(), sum(c), sum(cityHash64(UserID) * c)) != (SELECT uniqExact(UserID), count(), sum(cityHash64(UserID)) FROM hits_100m_single))
+    FROM (SELECT UserID, count() AS c FROM hits_100m_single GROUP BY UserID)
+    SETTINGS max_bytes_before_external_group_by = 50000000, log_comment = 'external_aggregation_hits.q0'
+</fill_query>
+<fill_query>
+    SELECT throwIf((count(), sum(c), sum(cityHash64(UserID) * c)) != (SELECT uniqExact(UserID), count(), sum(cityHash64(UserID)) FROM hits_100m_single))
+    FROM (SELECT UserID, count() AS c FROM hits_100m_single GROUP BY UserID)
+    SETTINGS log_comment = 'external_aggregation_hits.q1'
+</fill_query>
+<fill_query>
+    SELECT throwIf((count(), sum(c), sum(cityHash64(URL) * c)) != (SELECT uniqExact(URL), count(), sum(cityHash64(URL)) FROM hits_100m_single))
+    FROM (SELECT URL, count() AS c FROM hits_100m_single GROUP BY URL)
+    SETTINGS max_bytes_before_external_group_by = 1000000000, log_comment = 'external_aggregation_hits.q2'
+</fill_query>
+<fill_query>
+    SELECT throwIf(
+        (count(), sum(cityHash64(CounterID, RegionID) * s))
+            != (SELECT uniqExact(CounterID, RegionID), sum(cityHash64(CounterID, RegionID) * ResolutionWidth) FROM hits_100m_single)
+        OR sum(cityHash64(CounterID, RegionID, u)) != (
+            SELECT sum(cityHash64(CounterID, RegionID, u))
+            FROM (SELECT CounterID, RegionID, uniq(UserID) AS u FROM hits_100m_single GROUP BY CounterID, RegionID SETTINGS max_bytes_before_external_group_by = 0)))
+    FROM (SELECT CounterID, RegionID, uniq(UserID) AS u, sum(ResolutionWidth) AS s FROM hits_100m_single GROUP BY CounterID, RegionID)
+    SETTINGS max_bytes_before_external_group_by = 100000000, log_comment = 'external_aggregation_hits.q3'
+</fill_query>
+<fill_query>
+    SELECT throwIf((count(), sum(c), sum(cityHash64(URL) * c)) != (SELECT uniqExact(URL), count(), sum(cityHash64(URL)) FROM hits_10m_single))
+    FROM (SELECT URL, count() AS c FROM hits_10m_single GROUP BY URL)
+    SETTINGS log_comment = 'external_aggregation_hits.q4'
+</fill_query>
+<fill_query>
+    SELECT throwIf((count(), sum(c), sum(cityHash64(URL) * c)) != (SELECT uniqExact(URL), count(), sum(cityHash64(URL)) FROM hits_10m_single))
+    FROM (SELECT URL, count() AS c FROM hits_10m_single GROUP BY URL)
+    SETTINGS max_bytes_before_external_group_by = 200000000, log_comment = 'external_aggregation_hits.q5'
+</fill_query>
+<fill_query>SYSTEM FLUSH LOGS</fill_query>
+<fill_query>
+    SELECT throwIf(groupArray((log_comment, ProfileEvents['ExternalAggregationWritePart'] > 0)) != [
+            ('external_aggregation_hits.q0', 1), ('external_aggregation_hits.q1', 0), ('external_aggregation_hits.q2', 1),
+            ('external_aggregation_hits.q3', 1), ('external_aggregation_hits.q4', 0), ('external_aggregation_hits.q5', 1)],
+        'the setup runs of the measured queries are not in query_log, or their spills differ')
+    FROM
+    (
+        SELECT log_comment, ProfileEvents FROM system.query_log
+        WHERE type = 'QueryFinish' AND log_comment LIKE 'external_aggregation_hits.q%'
+            AND query_start_time_microseconds >= (SELECT t FROM external_aggregation_hits_mark)
+        ORDER BY event_time_microseconds
+    )
+</fill_query>
+
+<query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID FORMAT Null SETTINGS max_bytes_before_external_group_by = 50000000</query>
+<query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID FORMAT Null</query>
+<query>SELECT URL, count() FROM hits_100m_single GROUP BY URL FORMAT Null SETTINGS max_bytes_before_external_group_by = 1000000000</query>
+<query>SELECT CounterID, RegionID, uniq(UserID), sum(ResolutionWidth) FROM hits_100m_single GROUP BY CounterID, RegionID FORMAT Null SETTINGS max_bytes_before_external_group_by = 100000000</query>
+<query>SELECT URL, count() FROM hits_10m_single GROUP BY URL FORMAT Null</query>
+<query>SELECT URL, count() FROM hits_10m_single GROUP BY URL FORMAT Null SETTINGS max_bytes_before_external_group_by = 200000000</query>
+
+<drop_query>DROP TABLE IF EXISTS external_aggregation_hits_mark SYNC</drop_query>
+
+</test>

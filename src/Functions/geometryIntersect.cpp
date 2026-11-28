@@ -82,24 +82,24 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeometryIntersect>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         checkGeometryIntersectArgument(arguments[0], getName());
         checkGeometryIntersectArgument(arguments[1], getName());
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnUInt8::create();
@@ -117,22 +117,19 @@ public:
                 using LeftConverter = typename LeftConverterType::Type;
                 using RightConverter = typename RightConverterType::Type;
 
-                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
-                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
+                CorrectedGeometries<LeftConverter> first(arguments[0].column);
+                CorrectedGeometries<RightConverter> second(arguments[1].column);
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    boost::geometry::correct(first[i]);
-                    boost::geometry::correct(second[i]);
-
-                    res_data.emplace_back(boost::geometry::intersects(first[i], second[i]));
+                    res_data.emplace_back(boost::geometry::intersects(first.get(i), second.get(i)));
                 }
             });
 
         return res_column;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 };
 
 

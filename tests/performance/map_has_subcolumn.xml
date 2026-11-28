@@ -3,7 +3,6 @@
          keep the predicate identical and toggle only optimize_functions_to_subcolumns, so the
          comparison exposes both elapsed time and ProfileEvents read_bytes/read_compressed_bytes. -->
     <settings>
-        <enable_analyzer>1</enable_analyzer>
         <max_insert_threads>4</max_insert_threads>
         <use_query_condition_cache>0</use_query_condition_cache>
     </settings>

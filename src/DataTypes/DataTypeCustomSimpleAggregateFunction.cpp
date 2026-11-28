@@ -174,12 +174,38 @@ String DataTypeCustomSimpleAggregateFunction::getFunctionName() const
     return function->getName();
 }
 
+DataTypeCustomDescPtr DataTypeCustomSimpleAggregateFunction::rederiveFor(
+    const DataTypePtr &, const RewriteNestedFn & rewrite_nested) const
+{
+    /// This name keeps its own copy of the argument types, and both the printed name and the binary
+    /// type encoding are built from that copy rather than from the storage type. It has to go through
+    /// the same rewrite as the storage type: for an aggregate state below a wrapper, announcing the
+    /// copy untouched would name one state version while the payload is written with another.
+    DataTypes new_argument_types = argument_types;
+    for (auto & argument_type : new_argument_types)
+    {
+        auto rewritten = rewrite_nested(argument_type);
+        if (!rewritten)
+            return nullptr;
+        argument_type = std::move(rewritten);
+    }
+
+    return std::make_unique<DataTypeCustomDesc>(
+        std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, new_argument_types, parameters));
+}
+
 DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters)
 {
     auto custom_desc = std::make_unique<DataTypeCustomDesc>(
         std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, argument_types, parameters));
 
     return DataTypeFactory::instance().getCustom(std::move(custom_desc));
+}
+
+bool isSimpleAggregateFunctionOfBool(const IDataType & type)
+{
+    const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type.getCustomName());
+    return simple && isBool(simple->getArgumentsDataTypes().front()) && isBool(simple->getFunction()->getResultType());
 }
 
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)

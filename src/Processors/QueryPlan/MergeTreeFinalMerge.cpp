@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/Exception.h>
 #include <Core/Settings.h>
@@ -74,7 +75,7 @@ void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation, /*remove_zero_rows=*/ false);
             }
 
             case MergeTreeData::MergingParams::Aggregating:
@@ -149,7 +150,7 @@ namespace
 SortDescription buildFinalSortDescription(const StorageMetadataPtr & metadata_snapshot, const Settings & settings)
 {
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
+    auto reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     sort_description.compile_sort_description = settings[Setting::compile_sort_description];
     sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
@@ -186,7 +187,7 @@ Pipe buildFullFinalMergePipe(
 }
 
 Pipe buildDistributedFinalPipe(
-    const std::vector<DistributedReadBucket> & lanes,
+    const VectorWithMemoryTracking<DistributedReadBucket> & lanes,
     const StorageMetadataPtr & metadata_snapshot,
     MergeTreeData::MergingParams merging_params,
     size_t max_block_size_rows,

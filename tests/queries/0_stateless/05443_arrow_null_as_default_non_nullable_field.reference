@@ -1,0 +1,33 @@
+Arrow
+1	a	x	[1,0]	(1)
+3	c	x	[]	(0)
+42	default	none	[]	(0)
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+1	a	x	Nullable(String)
+3	c	x	Nullable(String)
+\N	\N	\N	Nullable(String)
+[('x'),(NULL),('x')]
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+ArrowStream
+1	a	x	[1,0]	(1)
+3	c	x	[]	(0)
+42	default	none	[]	(0)
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+1	a	x	Nullable(String)
+3	c	x	Nullable(String)
+\N	\N	\N	Nullable(String)
+[('x'),(NULL),('x')]
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+Batches
+[0]
+[1,2]
+[7]
+[1,2]
+[7]
+[NULL]
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+Rejected
+declared non-nullable but its FieldNode reports 1 nulls
+declared non-nullable but its FieldNode reports 1 nulls
+declared non-nullable but its FieldNode reports 1 nulls
+declared non-nullable but its FieldNode reports 1 nulls

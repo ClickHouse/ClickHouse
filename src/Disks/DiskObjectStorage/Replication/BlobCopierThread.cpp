@@ -109,6 +109,7 @@ std::vector<std::shared_ptr<ThreadPoolCallbackRunnerLocal<bool>::Task>> schedule
     std::vector<std::shared_ptr<ThreadPoolCallbackRunnerLocal<bool>::Task>> running_replications;
     try
     {
+        running_replications.reserve(blobs_to_replicate.size());
         for (const auto & [blob, from_location, to_location] : blobs_to_replicate)
             running_replications.push_back(replication_tasks_runner.enqueueAndGiveOwnership([&blob, &from_location, &to_location, &object_storages, &read_settings, &write_settings, &log]()
             {
@@ -221,6 +222,12 @@ void BlobCopierThread::startup()
 {
     started = true;
 
+    if (!metadata_storage->hasMissingBlobsQueue())
+    {
+        LOG_INFO(log, "Execution is not needed: the metadata storage has nothing to replicate");
+        return;
+    }
+
     if (enabled)
     {
         LOG_INFO(log, "Execution started");
@@ -236,6 +243,10 @@ void BlobCopierThread::shutdown()
 
 void BlobCopierThread::triggerAndWait()
 {
+    /// The task is never scheduled for such a storage, so waiting for a round to finish would never return.
+    if (!metadata_storage->hasMissingBlobsQueue())
+        return;
+
     if (!started || !enabled)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Blobs replication was not enabled for disk {}", disk_name);
 
@@ -261,7 +272,7 @@ void BlobCopierThread::applyNewSettings(const Poco::Util::AbstractConfiguration 
 
     LOG_INFO(log, "Applying new settings: Enabled: {}, Started: {}", enabled.load(), started.load());
 
-    if (enabled && started)
+    if (enabled && started && metadata_storage->hasMissingBlobsQueue())
         task->activateAndSchedule();
     else
         task->deactivate();

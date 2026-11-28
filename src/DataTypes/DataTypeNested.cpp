@@ -32,6 +32,22 @@ String DataTypeNestedCustomName::getName() const
     return s.str();
 }
 
+DataTypeCustomDescPtr DataTypeNestedCustomName::rederiveFor(const DataTypePtr & rebuilt, const RewriteNestedFn &) const
+{
+    /// `Nested` semantics - `isNested`, subcolumn resolution, the printed name - all key off this
+    /// custom name, so it has to follow the rebuilt `Array(Tuple(...))` rather than be dropped.
+    const auto * array = typeid_cast<const DataTypeArray *>(rebuilt.get());
+    if (!array)
+        return nullptr;
+
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(array->getNestedType().get());
+    if (!tuple)
+        return nullptr;
+
+    return std::make_unique<DataTypeCustomDesc>(
+        std::make_unique<DataTypeNestedCustomName>(tuple->getElements(), tuple->getElementNames()));
+}
+
 static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
@@ -65,7 +81,7 @@ void registerDataTypeNested(DataTypeFactory & factory)
             .description = R"DOCS_MD(
 ## Nested(name1 Type1, Name2 Type2, ...) {#nestedname1-type1-name2-type2-}
 
-A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../../sql-reference/statements/create/table.md) query. Each table row can correspond to any number of rows in a nested data structure.
+A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](/reference/statements/create/table) query. Each table row can correspond to any number of rows in a nested data structure.
 
 <Tip title="Avoid using dots in column names">
 Column names containing dots, columns sharing a common dot-prefix, and columns with the `Array` type can each be interpreted as part of a flattened Nested structure when `flatten_nested = 1` (the default). This can cause unexpected array-length validation on inserts and renaming restrictions.

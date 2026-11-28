@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes corresponden a la configuración del servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="allow_feature_tier">
-  ## allow_feature_tier
-</div>
+## allow_feature_tier {#allow_feature_tier}
 
 <SettingsInfoBlock type="UInt32" default_value="0" changeable_without_restart="Yes" />
 
@@ -27,6 +25,14 @@ Controla si el usuario puede cambiar configuraciones relacionadas con los distin
 
 Esto equivale a aplicar una restricción readonly a todas las funcionalidades `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA`.
 
+Se rechaza una sentencia que afecta a un usuario, un rol o un perfil de configuración cuando asigna a una configuración de este tipo un valor distinto
+del vigente en la sesión que la ejecuta. También se rechaza cuando modifica una configuración de este tipo para algún usuario, incluso
+sin mencionar ninguna configuración: al conceder o revocar un rol que incluya una, asignar un perfil de configuración,
+eliminar un rol o un perfil, o eliminar una sobrescritura por omisión. Un usuario definido mediante SQL no puede iniciar sesión si su propia configuración o
+la de sus roles contiene un valor de este tipo. Nunca se rechazan las configuraciones que el propio servidor aplica mediante
+el archivo de configuración ni los usuarios definidos en él. La configuración `compatibility` mantiene una
+configuración de un nivel deshabilitado en su valor predeterminado, en lugar de aplicar el valor predeterminado de la versión anterior.
+
 <Note>
   Un valor de `0` significa que se pueden cambiar todas las configuraciones.
 </Note>
@@ -36,15 +42,11 @@ Esto equivale a aplicar una restricción readonly a todas las funcionalidades `E
   que fijaba `2` para permitir solo configuraciones de producción debe usar `3`.
 </Note>
 
-<div id="allow_impersonate_user">
-  ## allow_impersonate_user
-</div>
+## allow_impersonate_user {#allow_impersonate_user}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Habilita o deshabilita la funcionalidad IMPERSONATE (EXECUTE AS target&#95;user). Esta configuración está obsoleta.
 
-<div id="allow_implicit_no_password">
-  ## allow_implicit_no_password
-</div>
+## allow_implicit_no_password {#allow_implicit_no_password}
 
 Prohíbe crear un usuario sin contraseña, a menos que se especifique explícitamente &#39;IDENTIFIED WITH no&#95;password&#39;.
 
@@ -54,9 +56,7 @@ Prohíbe crear un usuario sin contraseña, a menos que se especifique explícita
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-<div id="allow_no_password">
-  ## allow_no_password
-</div>
+## allow_no_password {#allow_no_password}
 
 Indica si se permite o no el tipo de contraseña no segura `no_password`.
 
@@ -66,9 +66,7 @@ Indica si se permite o no el tipo de contraseña no segura `no_password`.
 <allow_no_password>1</allow_no_password>
 ```
 
-<div id="allow_plaintext_password">
-  ## allow_plaintext_password
-</div>
+## allow_plaintext_password {#allow_plaintext_password}
 
 Indica si se permiten o no los tipos de contraseña en texto plano (inseguros).
 
@@ -78,9 +76,7 @@ Indica si se permiten o no los tipos de contraseña en texto plano (inseguros).
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-<div id="allow_use_jemalloc_memory">
-  ## allow_use_jemalloc_memory
-</div>
+## allow_use_jemalloc_memory {#allow_use_jemalloc_memory}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Permite usar la memoria de jemalloc.
 

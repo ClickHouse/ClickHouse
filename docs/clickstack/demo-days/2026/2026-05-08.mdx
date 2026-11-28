@@ -15,7 +15,7 @@ keywords: ['ClickStack', 'Demo days']
 <iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 </Frame>
 
-Webhook URLs and headers often carry credentials in plain sight. A Slack webhook URL has the secret token in the path, and an HTTP webhook usually needs an Authorization header to authenticate. Until this release, HyperDX's internal API for listing and editing webhooks was returning all of that material back on every request, which meant any authenticated team member could read the secrets just by hitting the API.
+Webhook URLs and headers often carry credentials in plain sight. A Slack webhook URL has the secret token in the path, and an HTTP webhook usually needs an Authorization header to authenticate. Until this release, ClickStack UI's internal API for listing and editing webhooks was returning all of that material back on every request, which meant any authenticated team member could read the secrets just by hitting the API.
 
 This change applies the same redaction pattern the public API already used. Webhook URLs come back with the path replaced by `****`, so the Slack token (or any other key embedded in the path) never leaves the server. Headers are redacted by default too, since we have no reliable way to tell which ones carry secrets, so all values are replaced with `****` and only the header names are visible.
 
@@ -51,6 +51,6 @@ This was a hackathon experiment that introduced three IDE-inspired themes to the
 
 The PR ended up closed rather than merged. The team is moving toward ClickUI, which currently supports a single theme, and maintaining several parallel sets of tokens would create ongoing work, especially once you start checking contrast properly across each combination. The decision was to hold off until ClickUI itself supports multi-theming.
 
-We felt one piece of design logic from the experiment was worth keeping in mind for whenever this comes back. The first iteration recoloured the HyperDX logo per theme, which lost the brand. The cleaner approach: a light theme shows the dark logo, a dark theme shows the light logo, and the green HyperDX wordmark itself stays untouched.
+We felt one piece of design logic from the experiment was worth keeping in mind for whenever this comes back. The first iteration recoloured the ClickStack UI logo per theme, which lost the brand. The cleaner approach: a light theme shows the dark logo, a dark theme shows the light logo, and the green ClickStack UI wordmark itself stays untouched.
 
 **Related PRs:** [#2191](https://github.com/hyperdxio/hyperdx/pull/2191) feat: add IDE-inspired themes (Nord, Catppuccin, One Dark)

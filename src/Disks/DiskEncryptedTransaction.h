@@ -9,24 +9,17 @@
 #include <Disks/DiskCommitTransactionOptions.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/FileEncryptionKeys.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
 
-namespace FileEncryption { enum class Algorithm : uint8_t; }
-
-struct DiskEncryptedSettings
+/// The keys of the disk (see FileEncryption::Keys) plus the disk they wrap.
+struct DiskEncryptedSettings : FileEncryption::Keys
 {
     DiskPtr wrapped_disk;
     String disk_path;
-    String current_key;
-    UInt128 current_key_fingerprint{};
-    FileEncryption::Algorithm current_algorithm{};
-    std::unordered_map<UInt128 /* fingerprint */, String /* key */> all_keys;
-
-    /// Returns an encryption key found by its fingerprint.
-    String findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
 };
 
 
@@ -211,13 +204,6 @@ public:
         delegate_transaction->setLastModified(wrapped_path, timestamp);
     }
 
-    /// Just chmod.
-    void chmod(const String & path, mode_t mode) override
-    {
-        auto wrapped_path = wrappedPath(path);
-        delegate_transaction->chmod(wrapped_path, mode);
-    }
-
     /// Set file at `path` as read-only.
     void setReadOnly(const std::string & path) override
     {
@@ -239,7 +225,7 @@ public:
         delegate_transaction->writeFileUsingBlobWritingFunction(wrapped_path, mode, std::move(write_blob_function));
     }
 
-    std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
+    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
         const String & path,
         size_t buf_size,
         WriteMode mode,
@@ -264,7 +250,7 @@ private:
         WriteMode mode,
         const WriteSettings & settings);
 
-    String wrappedPath(const String & path) const
+    [[nodiscard]] String wrappedPath(const String & path) const
     {
         return wrappedPath(disk_path, path);
     }

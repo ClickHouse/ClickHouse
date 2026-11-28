@@ -22,14 +22,14 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayFlattenedLength>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     /// Only the offsets of the argument are read, so lazy evaluation would cost more than the function itself, same as for `length`.
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isArray(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected Array",
@@ -38,12 +38,12 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /** Only the offsets of the argument column are needed: descend to the innermost level the same way as
           * `arrayFlatten` does, by selecting elements of the deeper offsets by values of the ancestor offsets,
@@ -72,7 +72,7 @@ public:
             const IColumn::Offsets & nested_offsets = nested_col->getOffsets();
 
             for (size_t i = 0; i < input_rows_count; ++i)
-                flat_offsets[i] = nested_offsets[(*offsets)[i] - 1];    /// -1 array subscript is Ok, see PaddedPODArray
+                flat_offsets[i] = nested_offsets[static_cast<ssize_t>((*offsets)[i]) - 1];    /// -1 array subscript is Ok, see PaddedPODArray
 
             offsets = &flat_offsets;
             data = &nested_col->getData();
@@ -82,7 +82,7 @@ public:
         ColumnUInt64::Container & result_data = result_column->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
-            result_data[i] = (*offsets)[i] - (*offsets)[i - 1];    /// -1 array subscript is Ok, see PaddedPODArray
+            result_data[i] = (*offsets)[i] - (*offsets)[static_cast<ssize_t>(i) - 1];    /// -1 array subscript is Ok, see PaddedPODArray
 
         return result_column;
     }
@@ -92,13 +92,13 @@ public:
 REGISTER_FUNCTION(ArrayFlattenedLength)
 {
     FunctionDocumentation::Description description = R"(
-Returns the total number of elements of a multidimensional array, as if it was flattened with the [`arrayFlatten`](/sql-reference/functions/array-functions#arrayFlatten) function.
+Returns the total number of elements of a multidimensional array, as if it was flattened with the [`arrayFlatten`](/reference/functions/regular-functions/array-functions#arrayFlatten) function.
 
 Function:
 
 - Applies to any depth of nested arrays.
-- Is equivalent to [`length`](/sql-reference/functions/array-functions#length) for arrays that are already flat.
-- Follows only `Array` nesting. The elements are counted at the first level that is not an array, so elements of a nested [`Map`](/sql-reference/data-types/map), [`Tuple`](/sql-reference/data-types/tuple), [`Dynamic`](/sql-reference/data-types/dynamic) or [`Variant`](/sql-reference/data-types/variant) are not counted individually, even when they hold arrays themselves.
+- Is equivalent to [`length`](/reference/functions/regular-functions/array-functions#length) for arrays that are already flat.
+- Follows only `Array` nesting. The elements are counted at the first level that is not an array, so elements of a nested [`Map`](/reference/data-types/map), [`Tuple`](/reference/data-types/tuple), [`Dynamic`](/reference/data-types/dynamic) or [`Variant`](/reference/data-types/variant) are not counted individually, even when they hold arrays themselves.
 
 This is the equivalent of `cardinality` in PostgreSQL, whereas in ClickHouse `cardinality` is an alias of `length` and counts only the elements of the outermost array.
 )";

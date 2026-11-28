@@ -3,6 +3,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/JemallocCacheAllocator.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Common/CacheBase.h>
 
@@ -18,6 +20,7 @@ namespace DB
 {
 
 
+/// Made with `makeServerOwned`.
 struct UncompressedCacheCell
 {
     Memory<JemallocCacheAllocator> data;

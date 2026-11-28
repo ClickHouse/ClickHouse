@@ -1,0 +1,6 @@
+-- both functions expect exactly one argument
+-- absent expects an instant vector, absent_over_time expects a range vector
+-- an empty evaluation range produces no rows
+-- absent of vector(<scalar>) is empty
+-- absent of an always-empty instant vector is the synthetic series with the value 1
+[]	1

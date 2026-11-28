@@ -1,0 +1,11 @@
+(id >= 16 AND id < 32 OR id = 100) AND x = 5	3	3	19
+id < 4 OR x = 5	13	13	66
+NOT (id < 4 AND x = 5)	128	128	128
+2
+1
+id = 0 AND x = 257	1	1	510
+id = 0 AND x = 257	1	1	2
+(id >= 8 AND id < 16 AND x = 257) OR (id >= 24 AND id < 28 AND x = 1)	12	12	28
+(id >= 8 AND id < 16 AND x = 257) OR (id >= 24 AND id < 28 AND x = 1)	12	12	14
+32
+1

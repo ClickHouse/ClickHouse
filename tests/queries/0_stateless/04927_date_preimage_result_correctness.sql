@@ -8,12 +8,12 @@ INSERT INTO t_date_preimage_mixed VALUES ('1970-01-02 12:00:00');
 SELECT 'mixed rhs analyzer off', count()
 FROM t_date_preimage_mixed
 WHERE toDate(ts) = toDateTime(1, 'UTC')
-SETTINGS enable_analyzer = 1, optimize_time_filter_with_preimage = 0;
+SETTINGS optimize_time_filter_with_preimage = 0;
 
 SELECT 'mixed rhs analyzer on', count()
 FROM t_date_preimage_mixed
 WHERE toDate(ts) = toDateTime(1, 'UTC')
-SETTINGS enable_analyzer = 1, optimize_time_filter_with_preimage = 1;
+SETTINGS optimize_time_filter_with_preimage = 1;
 
 DROP TABLE t_date_preimage_mixed;
 
@@ -25,12 +25,12 @@ INSERT INTO t_date_preimage_skipped_day VALUES ('2011-12-30'), ('2011-12-31');
 SELECT 'skipped day analyzer off', arraySort(groupArray(toString(d)))
 FROM t_date_preimage_skipped_day
 WHERE toStartOfDay(d) = toDateTime('2011-12-31 00:00:00', 'Pacific/Apia')
-SETTINGS enable_analyzer = 1, optimize_time_filter_with_preimage = 0, session_timezone = 'Pacific/Apia';
+SETTINGS optimize_time_filter_with_preimage = 0, session_timezone = 'Pacific/Apia';
 
 SELECT 'skipped day analyzer on', arraySort(groupArray(toString(d)))
 FROM t_date_preimage_skipped_day
 WHERE toStartOfDay(d) = toDateTime('2011-12-31 00:00:00', 'Pacific/Apia')
-SETTINGS enable_analyzer = 1, optimize_time_filter_with_preimage = 1, session_timezone = 'Pacific/Apia';
+SETTINGS optimize_time_filter_with_preimage = 1, session_timezone = 'Pacific/Apia';
 
 DROP TABLE t_date_preimage_skipped_day;
 
@@ -42,7 +42,7 @@ INSERT INTO t_date_preimage_wrapped VALUES ('1970-01-02 12:00:00');
 SELECT 'lowcardinality rhs analyzer', count()
 FROM t_date_preimage_wrapped
 WHERE toDate(ts) = toLowCardinality(toDateTime(1, 'UTC'))
-SETTINGS enable_analyzer = 1, optimize_time_filter_with_preimage = 1;
+SETTINGS optimize_time_filter_with_preimage = 1;
 
 DROP TABLE t_date_preimage_wrapped;
 
@@ -54,12 +54,12 @@ INSERT INTO t_date_preimage_lower_edge VALUES (0, '1970-01-01'), (54000, '1970-0
 SELECT 'datetime lower edge analyzer', count()
 FROM t_date_preimage_lower_edge
 WHERE toStartOfDay(ts) = toDateTime(54000, 'UTC')
-SETTINGS enable_analyzer = 1, optimize_time_filter_with_preimage = 1;
+SETTINGS optimize_time_filter_with_preimage = 1;
 
 SELECT 'date lower edge analyzer', arraySort(groupArray(toString(d)))
 FROM t_date_preimage_lower_edge
 WHERE toStartOfDay(d) = toDateTime(54000, 'UTC')
-SETTINGS enable_analyzer = 1, optimize_time_filter_with_preimage = 1, session_timezone = 'Asia/Tokyo';
+SETTINGS optimize_time_filter_with_preimage = 1, session_timezone = 'Asia/Tokyo';
 
 DROP TABLE t_date_preimage_lower_edge;
 
@@ -72,21 +72,21 @@ INSERT INTO t_date_preimage_implicit_tz VALUES (toDateTime('2026-02-01 05:00:00'
 SELECT 'implicit tz month not optimized', count()
 FROM t_date_preimage_implicit_tz
 WHERE toStartOfMonth(ts) = toDate('2026-02-01')
-SETTINGS enable_analyzer = 1, optimize_time_filter_with_preimage = 0, session_timezone = 'Asia/Tokyo';
+SETTINGS optimize_time_filter_with_preimage = 0, session_timezone = 'Asia/Tokyo';
 
 SELECT 'implicit tz month optimized', count()
 FROM t_date_preimage_implicit_tz
 WHERE toStartOfMonth(ts) = toDate('2026-02-01')
-SETTINGS enable_analyzer = 1, optimize_time_filter_with_preimage = 1, session_timezone = 'Asia/Tokyo';
+SETTINGS optimize_time_filter_with_preimage = 1, session_timezone = 'Asia/Tokyo';
 
 SELECT 'implicit tz day not optimized', count()
 FROM t_date_preimage_implicit_tz
 WHERE toStartOfDay(ts) = toDateTime(1769871600, 'UTC')
-SETTINGS enable_analyzer = 1, optimize_time_filter_with_preimage = 0, session_timezone = 'Asia/Tokyo';
+SETTINGS optimize_time_filter_with_preimage = 0, session_timezone = 'Asia/Tokyo';
 
 SELECT 'implicit tz day optimized', count()
 FROM t_date_preimage_implicit_tz
 WHERE toStartOfDay(ts) = toDateTime(1769871600, 'UTC')
-SETTINGS enable_analyzer = 1, optimize_time_filter_with_preimage = 1, session_timezone = 'Asia/Tokyo';
+SETTINGS optimize_time_filter_with_preimage = 1, session_timezone = 'Asia/Tokyo';
 
 DROP TABLE t_date_preimage_implicit_tz;

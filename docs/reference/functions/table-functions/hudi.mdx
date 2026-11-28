@@ -39,6 +39,10 @@ A table with the specified structure for reading data in the specified Hudi tabl
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_etag` — The etag of the file. Type: `LowCardinality(String)`. If the etag is unknown, the value is `NULL`.
 
+## Limitations {#limitations}
+
+Merge-on-Read is not implemented: the log files of a Merge-on-Read table are not read. Reading a table whose latest file slices have log files, that is changes written after the last compaction, therefore throws `NOT_IMPLEMENTED` instead of returning the values from before those changes. Schema inference throws for such a table too. Copy-on-Write tables and Merge-on-Read tables without such log files, for example right after a compaction in Hudi, are read as usual.
+
 ## Related {#related}
 
 - [Hudi engine](/reference/engines/table-engines/integrations/hudi)

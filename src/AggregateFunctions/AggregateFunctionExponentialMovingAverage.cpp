@@ -43,9 +43,6 @@ public:
         return "exponentialMovingAverage";
     }
 
-    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
-    bool shouldPrintParametersWithTypes() const override { return true; }
-
     static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeNumber<Float64>>();
@@ -241,8 +238,8 @@ ORDER BY time ASC
                         "Both arguments for aggregate function {} must have numeric type, got {}", name, type->getName());
             return std::make_shared<AggregateFunctionExponentialMovingAverage>(argument_types, params);
         },
-        documentation
-    });
+        documentation,
+        {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 }
 
 }

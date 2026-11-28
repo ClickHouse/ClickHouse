@@ -2,6 +2,8 @@
 #include <Common/UTF8Helpers.h>
 #include <Poco/Unicode.h>
 
+#include <array>
+
 namespace DB
 {
 
@@ -46,8 +48,8 @@ bool initFirstCharacter(
     }
     else
     {
-        uint32_t first_l_u32 = Poco::Unicode::toLower(*first_u32);
-        uint32_t first_u_u32 = Poco::Unicode::toUpper(*first_u32);
+        uint32_t first_l_u32 = utf8CaseFold(*first_u32);
+        uint32_t first_u_u32 = utf8CaseUpper(*first_u32);
 
         size_t length_l = UTF8::convertCodePointToUTF8(first_l_u32, reinterpret_cast<char *>(l_seq), sizeof(l_seq));
         size_t length_u = UTF8::convertCodePointToUTF8(first_u_u32, reinterpret_cast<char *>(u_seq), sizeof(u_seq));
@@ -92,8 +94,8 @@ bool buildCacheBytes(
 
         if (c_u32)
         {
-            int c_l_u32 = Poco::Unicode::toLower(*c_u32);
-            int c_u_u32 = Poco::Unicode::toUpper(*c_u32);
+            int c_l_u32 = utf8CaseFold(*c_u32);
+            int c_u_u32 = utf8CaseUpper(*c_u32);
 
             size_t dst_l_len = UTF8::convertCodePointToUTF8(c_l_u32, reinterpret_cast<char *>(l_seq), sizeof(l_seq));
             size_t dst_u_len = UTF8::convertCodePointToUTF8(c_u_u32, reinterpret_cast<char *>(u_seq), sizeof(u_seq));
@@ -133,15 +135,25 @@ bool buildCacheBytes(
 }
 #endif
 
-/// Shared: trivial byte-by-byte UTF-8 case-insensitive comparison.
-inline ALWAYS_INLINE bool compareTrivialUTF8(
-    const UInt8 * haystack_pos,
-    const UInt8 * haystack_end,
-    const uint8_t * needle_pos,
-    const uint8_t * needle_end)
+/// Shared: trivial code point by code point UTF-8 case-insensitive comparison.
+/// Returns the end of the matched haystack part, or `nullptr` if the needle is not fully matched.
+inline ALWAYS_INLINE const UInt8 *
+compareTrivialUTF8End(const UInt8 * haystack_pos, const UInt8 * haystack_end, const uint8_t * needle_pos, const uint8_t * needle_end)
 {
     while (haystack_pos < haystack_end && needle_pos < needle_end)
     {
+        /// Two ASCII bytes fold by plain lowercasing, no need to decode them.
+        if (*haystack_pos < 0x80 && *needle_pos < 0x80)
+        {
+            const auto lower = [](UInt8 c) -> UInt8 { return (c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c; };
+            if (lower(*haystack_pos) != lower(*needle_pos))
+                return nullptr;
+
+            ++haystack_pos;
+            ++needle_pos;
+            continue;
+        }
+
         auto haystack_code_point
             = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(haystack_pos), haystack_end - haystack_pos);
         auto needle_code_point
@@ -149,19 +161,55 @@ inline ALWAYS_INLINE bool compareTrivialUTF8(
 
         /// Invalid UTF-8, should not compare equals
         if (!haystack_code_point || !needle_code_point)
-            return false;
+            return nullptr;
 
-        if (Poco::Unicode::toLower(*haystack_code_point) != Poco::Unicode::toLower(*needle_code_point))
-            return false;
+        if (utf8CaseFold(*haystack_code_point) != utf8CaseFold(*needle_code_point))
+            return nullptr;
 
         haystack_pos += UTF8::seqLength(*haystack_pos);
         needle_pos += UTF8::seqLength(*needle_pos);
     }
 
-    return needle_pos == needle_end;
+    return needle_pos == needle_end ? haystack_pos : nullptr;
+}
+
+inline ALWAYS_INLINE bool
+compareTrivialUTF8(const UInt8 * haystack_pos, const UInt8 * haystack_end, const uint8_t * needle_pos, const uint8_t * needle_end)
+{
+    return compareTrivialUTF8End(haystack_pos, haystack_end, needle_pos, needle_end) != nullptr;
 }
 
 } // anonymous namespace
+
+namespace UTF8
+{
+
+bool isASCIIReachableByCaseFolding(char c)
+{
+    /// Derived from `utf8CaseFold` rather than hardcoded, so it cannot drift from the folding it describes.
+    static const std::array<bool, 128> reachable = []
+    {
+        std::array<bool, 128> result{};
+        for (int code_point = 0x80; code_point <= 0x10FFFF; ++code_point)
+        {
+            const int folded = utf8CaseFold(code_point);
+            if (folded >= 0x80)
+                continue;
+
+            result[folded] = true;
+            /// The needle character is folded too, so the other case is equally unsafe.
+            const int other_case = Poco::Unicode::toUpper(folded);
+            if (other_case < 0x80)
+                result[other_case] = true;
+        }
+        return result;
+    }();
+
+    const auto index = static_cast<unsigned char>(c);
+    return index < 0x80 && reachable[index];
+}
+
+}
 
 namespace TargetSpecific::Default
 {
@@ -238,6 +286,20 @@ bool UTF8CaseInsensitiveSearcherImpl::compare(const UInt8 * /*haystack*/, const 
     }
 
     return false;
+}
+
+const UInt8 * UTF8CaseInsensitiveSearcherImpl::matchEnd(const UInt8 * pos, const UInt8 * haystack_end) const
+{
+    if (needle == needle_end)
+        return pos;
+
+    if (pos >= haystack_end)
+        return nullptr;
+
+    if (*pos == l || *pos == u)
+        return compareTrivialUTF8End(pos + first_needle_symbol_is_ascii, haystack_end, needle + first_needle_symbol_is_ascii, needle_end);
+
+    return nullptr;
 }
 
 const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, const UInt8 * const haystack_end) const

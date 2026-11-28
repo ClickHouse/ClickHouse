@@ -1,5 +1,5 @@
 #pragma once
 
 #if !defined(USE_MUSL)
-void checkHarmfulEnvironmentVariables(char ** argv);
+void checkHarmfulEnvironment(char ** argv);
 #endif

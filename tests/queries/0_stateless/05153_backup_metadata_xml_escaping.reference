@@ -1,0 +1,6 @@
+backup_id	6
+base_backup	10
+utf8_id	10
+control_char_nul	rejected
+control_char_vtab	rejected
+carriage_return	rejected

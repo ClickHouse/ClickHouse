@@ -1,4 +1,3 @@
--- Tags: no-darwin
 -- Distributed parallel FINAL via primary-key-range layers must equal local FINAL for the merging engines
 -- with extra state columns -- aggregate states (AggregatingMergeTree) and sign + version
 -- (VersionedCollapsingMergeTree) -- and must distribute the read, not fall back to a serial read.
@@ -14,7 +13,7 @@ INSERT INTO t_agg SELECT number, sumState(toUInt64(number)), maxState(toUInt64(n
 INSERT INTO t_agg SELECT number, sumState(toUInt64(number + 1)), maxState(toUInt64(number + 1)) FROM numbers(80000) GROUP BY number;
 
 SELECT 'Aggregating local', count(), sum(finalizeAggregation(s)), sum(finalizeAggregation(m)) FROM t_agg FINAL SETTINGS make_distributed_plan = 0;
-SELECT 'Aggregating distributed', count(), sum(finalizeAggregation(s)), sum(finalizeAggregation(m)) FROM t_agg FINAL SETTINGS make_distributed_plan = 1;
+SELECT 'Aggregating distributed', count(), sum(finalizeAggregation(s)), sum(finalizeAggregation(m)) FROM t_agg FINAL SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT 'Aggregating read distributes', countIf(explain LIKE '%ReadFromDistributedPlanSource%') > 0
 FROM (EXPLAIN PIPELINE SELECT k FROM t_agg FINAL SETTINGS make_distributed_plan = 1);
 
@@ -30,7 +29,7 @@ INSERT INTO t_vc SELECT number, number, -1, 1 FROM numbers(40000);
 INSERT INTO t_vc SELECT number, number + 100, 1, 2 FROM numbers(40000);
 
 SELECT 'Versioned local', count(), sum(v) FROM t_vc FINAL SETTINGS make_distributed_plan = 0;
-SELECT 'Versioned distributed', count(), sum(v) FROM t_vc FINAL SETTINGS make_distributed_plan = 1;
+SELECT 'Versioned distributed', count(), sum(v) FROM t_vc FINAL SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT 'Versioned read distributes', countIf(explain LIKE '%ReadFromDistributedPlanSource%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, v FROM t_vc FINAL SETTINGS make_distributed_plan = 1);
 

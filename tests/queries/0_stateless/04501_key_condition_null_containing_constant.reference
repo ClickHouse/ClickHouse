@@ -1,0 +1,6 @@
+a = map('name', NULL, '', NULL)	0	0	1
+a = map('a', 'b', 'c', NULL)	0	0	1
+a != map('a', NULL)	1	1	1
+a IN (map('a', NULL), map('a', 'b'))	1	1	1
+a = map('name', NULL)	0	0	1
+a = map('a', 'b')	1	1	1

@@ -21,7 +21,6 @@ struct Settings;
 struct ExpressionActionsChain;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
 struct ASTTableJoin;
 class IJoin;
@@ -144,24 +143,17 @@ public:
     PreparedSetsPtr & getPreparedSets() { return prepared_sets; }
 
     /// Get intermediates for tests
-    const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
+    [[nodiscard]] const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
 
     /// A list of windows for window functions.
-    const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
+    [[nodiscard]] const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
 
     void makeWindowDescriptionFromAST(
         const Context & context,
         const WindowDescriptions & existing_descriptions,
-        AggregateFunctionPtr aggregate_function,
         WindowDescription & desc,
         const IAST * ast);
     void makeWindowDescriptions(ActionsDAG & actions);
-
-    /** Checks if subquery is not a plain StorageSet.
-      * Because while making set we will read data from StorageSet which is not allowed.
-      * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
-      */
-    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
 
 protected:
     ExpressionAnalyzer(
@@ -181,10 +173,10 @@ protected:
     TreeRewriterResultPtr syntax;
     bool is_create_parameterized_view;
 
-    const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
-    const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
-    const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
-    const ASTs & aggregates() const { return syntax->aggregates; }
+    [[nodiscard]] const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
+    [[nodiscard]] const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
+    [[nodiscard]] const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
+    [[nodiscard]] const ASTs & aggregates() const { return syntax->aggregates; }
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables(bool do_global, bool is_explain);
 
@@ -210,14 +202,14 @@ protected:
     void analyzeAggregation(ActionsDAG & temp_actions);
     void makeAggregateDescriptions(ActionsDAG & actions, AggregateDescriptions & descriptions);
 
-    const ASTSelectQuery * getSelectQuery() const;
+    [[nodiscard]] const ASTSelectQuery * getSelectQuery() const;
 
-    bool isRemoteStorage() const;
+    [[nodiscard]] bool isRemoteStorage() const;
 
     NamesAndTypesList getColumnsAfterArrayJoin(ActionsDAG & actions, const NamesAndTypesList & src_columns);
     NamesAndTypesList analyzeJoin(ActionsDAG & actions, const NamesAndTypesList & src_columns);
 
-    AggregationKeysInfo getAggregationKeysInfo() const noexcept
+    [[nodiscard]] AggregationKeysInfo getAggregationKeysInfo() const noexcept
     {
       return { aggregation_keys, aggregation_keys_indexes_list, group_by_kind };
     }
@@ -228,7 +220,7 @@ class SelectQueryExpressionAnalyzer;
 /// Result of SelectQueryExpressionAnalyzer: expressions for InterpreterSelectQuery
 struct ExpressionAnalysisResult
 {
-    std::string dump() const;
+    [[nodiscard]] std::string dump() const;
 
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     bool first_stage = false;
@@ -247,9 +239,6 @@ struct ExpressionAnalysisResult
 
     String where_column_name;
     bool remove_where_filter = false;
-    bool optimize_read_in_order = false;
-    bool optimize_aggregation_in_order = false;
-    bool join_has_delayed_stream = false;
 
     bool use_grouping_set_key = false;
 
@@ -285,10 +274,6 @@ struct ExpressionAnalysisResult
     FilterDAGInfoPtr row_policy_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
-    /// Actions by every element of ORDER BY
-    ManyExpressionActions order_by_elements_actions;
-    ManyExpressionActions group_by_elements_actions;
-
     ExpressionAnalysisResult() = default;
 
     ExpressionAnalysisResult(
@@ -303,13 +288,13 @@ struct ExpressionAnalysisResult
         const Block & source_header);
 
     /// Filter for row-level security.
-    bool hasRowPolicyFilter() const { return row_policy_info.get(); }
+    [[nodiscard]] bool hasRowPolicyFilter() const { return row_policy_info.get(); }
 
-    bool hasJoin() const { return join.get(); }
-    bool hasPrewhere() const { return prewhere_info.get(); }
-    bool hasWhere() const { return before_where.get(); }
-    bool hasHaving() const { return before_having.get(); }
-    bool hasLimitBy() const { return before_limit_by.get(); }
+    [[nodiscard]] bool hasJoin() const { return join.get(); }
+    [[nodiscard]] bool hasPrewhere() const { return prewhere_info.get(); }
+    [[nodiscard]] bool hasWhere() const { return before_where.get(); }
+    [[nodiscard]] bool hasHaving() const { return before_having.get(); }
+    [[nodiscard]] bool hasLimitBy() const { return before_limit_by.get(); }
 
     void removeExtraColumns() const;
     void checkActions() const;
@@ -352,10 +337,10 @@ public:
     }
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
-    bool hasAggregation() const { return has_aggregation; }
-    bool hasWindow() const { return !syntax->window_function_asts.empty(); }
+    [[nodiscard]] bool hasAggregation() const { return has_aggregation; }
+    [[nodiscard]] bool hasWindow() const { return !syntax->window_function_asts.empty(); }
     bool hasGlobalSubqueries() { return has_global_subqueries; }
-    bool hasTableJoin() const { return syntax->ast_join; }
+    [[nodiscard]] bool hasTableJoin() const { return syntax->ast_join; }
 
     /// When there is only one group in GROUPING SETS
     /// it is a special case that is equal to GROUP BY, i.e.:
@@ -365,17 +350,17 @@ public:
     /// But it is rewritten by GroupingSetsRewriterVisitor to GROUP BY,
     /// so instead of aggregation_keys_list.size() > 1,
     /// !aggregation_keys_list.empty() can be used.
-    bool useGroupingSetKey() const { return !aggregation_keys_list.empty(); }
+    [[nodiscard]] bool useGroupingSetKey() const { return !aggregation_keys_list.empty(); }
 
-    const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
-    bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
-    const NamesAndTypesLists & aggregationKeysList() const { return aggregation_keys_list; }
-    const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
+    [[nodiscard]] const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
+    [[nodiscard]] bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
+    [[nodiscard]] const NamesAndTypesLists & aggregationKeysList() const { return aggregation_keys_list; }
+    [[nodiscard]] const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     std::unique_ptr<QueryPlan> getJoinedPlan();
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
-    const TemporaryTablesMapping & getExternalTables() const { return external_tables; }
+    [[nodiscard]] const TemporaryTablesMapping & getExternalTables() const { return external_tables; }
 
     ActionsAndProjectInputsFlagPtr simpleSelectActions();
 
@@ -395,7 +380,7 @@ private:
         const ColumnsWithTypeAndName & left_columns,
         std::optional<ActionsDAG> & left_convert_actions);
 
-    const ASTSelectQuery * getAggregatingQuery() const;
+    [[nodiscard]] const ASTSelectQuery * getAggregatingQuery() const;
 
     /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
       *
@@ -420,7 +405,7 @@ private:
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     ActionsAndProjectInputsFlagPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
-    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
+    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void validateGroupByKeyType(const DataTypePtr & key_type) const;
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
@@ -433,7 +418,7 @@ private:
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     ///  appendSelect
-    ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
+    ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types);
     void validateOrderByKeyType(const DataTypePtr & key_type) const;
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     bool appendLimitRange(ExpressionActionsChain & chain, bool only_types);

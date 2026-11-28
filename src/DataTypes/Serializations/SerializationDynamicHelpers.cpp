@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationDynamicHelpers.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesNumber.h>

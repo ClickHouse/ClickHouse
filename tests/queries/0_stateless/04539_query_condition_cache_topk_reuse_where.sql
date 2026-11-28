@@ -14,7 +14,6 @@
 -- genuine read-side reuse from a query that simply fails to write a new entry, so it stays
 -- green even if the `topk_reuse_predicate_only_hash` lookup is removed.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;
@@ -58,20 +57,14 @@ ORDER BY event_time_microseconds;
 SELECT '--- TopK still returns the planted row';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5;
 
--- Here the filter root is a two-conjunct `and` holding no internal TopK node, so the predicate-only
--- lookup has nothing to strip and must hash the whole root: that is the key a plain
--- `SELECT ... WHERE a AND b` writes.
 SELECT '--- Forward, multi-conjunct: the TopK read reuses an entry primed by a two-conjunct WHERE';
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
--- Prime the cache with a plain WHERE. First touch of this predicate: cache miss, all granules read.
 SELECT v1 FROM tab WHERE v2 = 10000 AND v1 < 1000000 FORMAT Null SETTINGS log_comment = '04539_fwd_multi_prime';
--- TopK read of the same predicate: reuses the predicate-only entry, so it hits and drops granules.
 SELECT v1 FROM tab WHERE v2 = 10000 AND v1 < 1000000 ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04539_fwd_multi_topk';
 
 SYSTEM FLUSH LOGS query_log;
 
--- Columns: (any QCC hit), (granules skipped). Expected: prime = 0 0, topk-reuse = 1 1.
 SELECT
     log_comment,
     ProfileEvents['QueryConditionCacheHits'] > 0,

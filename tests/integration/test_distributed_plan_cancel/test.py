@@ -40,7 +40,8 @@ DISTRIBUTED_SETTINGS = (
     "enable_parallel_replicas = 0, "
     "distributed_plan_default_shuffle_join_bucket_count = 2, "
     "distributed_plan_default_reader_bucket_count = 2, "
-    "distributed_plan_max_rows_to_broadcast = 0"
+    "distributed_plan_max_rows_to_broadcast = 0, "
+    "distributed_plan_fallback_to_local_execution = 0"
 )
 
 

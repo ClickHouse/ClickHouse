@@ -2,9 +2,11 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
@@ -16,24 +18,34 @@ namespace
         static constexpr auto name = "toJSONString";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToJSONString>(context); }
 
-        explicit FunctionToJSONString(ContextPtr context) : format_settings(getFormatSettings(context)) {}
+        explicit FunctionToJSONString(ContextPtr context)
+            : format_settings(getFormatSettings(context))
+            , format_settings_hash(getFormatSettingsHash(context->getSettingsRef()))
+        {
+        }
 
-        String getName() const override { return name; }
+        [[nodiscard]] String getName() const override { return name; }
 
-        size_t getNumberOfArguments() const override { return 1; }
+        /// The captured settings decide the text produced for the same value, see `IFunctionBase::updateHash`.
+        void updateHash(SipHash & hash) const override { hash.update(format_settings_hash); }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return std::make_shared<DataTypeString>(); }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        [[nodiscard]] String getSignatureString() const override
+        {
+            return "(Any) -> String";
+        }
+
+        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeString>();
         }
 
-        bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        ColumnPtr
+        [[nodiscard]] ColumnPtr
         executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
         {
             auto res = ColumnString::create();
@@ -56,6 +68,8 @@ namespace
     private:
         /// Affects only subset of part of settings related to json.
         const FormatSettings format_settings;
+        /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).
+        const UInt64 format_settings_hash;
     };
 }
 

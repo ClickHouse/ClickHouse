@@ -1,4 +1,4 @@
 bruteforce reads a surviving granule mate
 1
-rescoring row filter excludes the granule mate
-0
+the same answer with the index
+[0,2,4]

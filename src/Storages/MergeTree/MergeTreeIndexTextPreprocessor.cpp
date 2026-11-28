@@ -192,6 +192,11 @@ ASTPtr MergeTreeIndexTextPreprocessor::getExpressionAST(const String & col_name)
     return result;
 }
 
+ActionsDAG MergeTreeIndexTextPreprocessor::getActionsDAGForColumn(const String & col_name, const DataTypePtr & col_type) const
+{
+    return buildActionsDAGFromAST(getExpressionAST(col_name), {{col_name, col_type}});
+}
+
 String MergeTreeIndexTextPreprocessor::processConstant(const String & input) const
 {
     if (actions_for_constant.getActions().empty())

@@ -5,6 +5,7 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -21,29 +22,33 @@ def started_cluster():
         cluster.shutdown()
 
 
+def create_and_drop(name):
+    table_uuid = str(uuid.uuid1())
+    logging.info(f"{name} uuid: {table_uuid}")
+    node.query(
+        f"CREATE TABLE {name} UUID '{table_uuid}' (id Int32) ENGINE = MergeTree() ORDER BY id;"
+    )
+    node.query(f"DROP TABLE {name};")
+    return table_uuid
+
+
 def test_undrop_drop_and_undrop_loop(started_cluster):
-    uuid_list = []
+    # Dropped first, so that its 20 s delay runs out while the other tables are undropped.
+    expired_uuid = create_and_drop("test_undrop_expired")
+    in_drop_queue = (
+        f"SELECT count() FROM system.dropped_tables WHERE uuid = '{expired_uuid}'"
+    )
+    assert node.query(in_drop_queue) == "1\n"
 
-    for i in range(4):
-        table_uuid = uuid.uuid1().__str__()
-        uuid_list.append(table_uuid)
-        logging.info(f"table_uuid: {table_uuid}")
+    # Each table is undropped 0, 5 and 10 seconds after its own DROP.
+    for i, delay in enumerate([0, 5, 10]):
+        table_uuid = create_and_drop(f"test_undrop_{i}")
+        time.sleep(delay)
+        node.query(f"UNDROP TABLE test_undrop_{i} UUID '{table_uuid}';")
 
-        node.query(
-            f"CREATE TABLE test_undrop_{i} UUID '{table_uuid}' (id Int32) ENGINE = MergeTree() ORDER BY id;"
-        )
-
-        node.query(f"DROP TABLE test_undrop_{i};")
-
-    for i in range(4):
-        if (
-            i >= 3
-        ):  # First 3 tables are undropped after 0, 5 and 10 seconds. Fourth is undropped after 21 seconds
-            time.sleep(6)
-            error = node.query_and_get_error(
-                f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';"
-            )
-            assert "UNKNOWN_TABLE" in error
-        else:
-            node.query(f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';")
-            time.sleep(5)
+    # A table removed from the drop queue cannot be undropped.
+    assert_eq_with_retry(node, in_drop_queue, "0", retry_count=120, sleep_time=0.5)
+    error = node.query_and_get_error(
+        f"UNDROP TABLE test_undrop_expired UUID '{expired_uuid}';"
+    )
+    assert "UNKNOWN_TABLE" in error

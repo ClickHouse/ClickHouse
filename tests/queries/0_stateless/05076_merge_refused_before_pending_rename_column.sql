@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- Tag no-parallel: uses the server-global failpoint mt_select_parts_to_mutate_no_free_threads
 
 -- A merge writes its result with the column names of the current metadata, so it materializes a
@@ -17,8 +17,6 @@
 -- earlier mutation - and neither does `MATERIALIZE COLUMN x, RENAME COLUMN d TO d1`, because
 -- `MATERIALIZE COLUMN` is not a metadata alter: `InterpreterAlterQuery` puts it in a segment of its
 -- own that registers first, and the rename then waits for it.
-
-set allow_experimental_dynamic_type = 1;
 
 drop table if exists t_merge_refused_before_pending_rename;
 

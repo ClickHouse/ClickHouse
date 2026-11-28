@@ -3,7 +3,6 @@
 -- { echoOn }
 
 SET enable_nullable_tuple_type = 1;
-SET enable_analyzer = 1;
 SET transform_null_in = 0;
 SELECT CAST(NULL, 'Nullable(Int32)') IN [NULL, 1];
 \N
@@ -256,17 +255,17 @@ SELECT CAST((1, 2), 'Nullable(Tuple(Int64, Int64))') IN (NULL, (1, 2));
 SELECT CAST((1, 2), 'Nullable(Tuple(Int64, Int64))') IN (NULL, (1, 2)) ORDER BY ALL;
 1
 SELECT CAST((NULL, 3), 'Nullable(Tuple(Nullable(Int32), Int32))') IN [(NULL, 3), (1, 3), NULL];
-0
+1
 SELECT CAST((NULL, 3), 'Nullable(Tuple(Nullable(Int32), Int32))') IN [(NULL, 3), (1, 3), NULL] ORDER BY ALL;
-0
+1
 SELECT CAST(NULL, 'Nullable(Tuple(Nullable(Int32), Int32))') IN [(NULL, 3), (1, 3), NULL];
 \N
 SELECT CAST(NULL, 'Nullable(Tuple(Nullable(Int32), Int32))') IN [(NULL, 3), (1, 3), NULL] ORDER BY ALL;
 \N
 SELECT CAST((NULL, 3), 'Nullable(Tuple(Nullable(Int32), Int32))') IN ((NULL, 3), (1, 3), NULL);
-0
+1
 SELECT CAST((NULL, 3), 'Nullable(Tuple(Nullable(Int32), Int32))') IN ((NULL, 3), (1, 3), NULL) ORDER BY ALL;
-0
+1
 SELECT CAST(NULL, 'Nullable(Tuple(Nullable(Int32), Int32))') IN ((NULL, 3), (1, 3), NULL);
 \N
 SELECT CAST(NULL, 'Nullable(Tuple(Nullable(Int32), Int32))') IN ((NULL, 3), (1, 3), NULL) ORDER BY ALL;

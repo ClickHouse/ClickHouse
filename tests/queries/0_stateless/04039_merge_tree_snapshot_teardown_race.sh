@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-flaky-check
+# Tags: long, no-flaky-check, no-msan
 #  - no-flaky-check: near the 600s cap on amd_msan; the rerun count
 #    does not affect the snapshot-teardown race this test exercises.
 
@@ -31,7 +31,7 @@ function wait_for_reading()
     local timeout="${1:-60}"
     local start=$EPOCHSECONDS
 
-    while true; do
+    while clickhouse_test_time_left; do
         local read_rows
         read_rows=$(run_query "SELECT read_rows FROM system.processes WHERE query_id = '${query_id}'" || echo "")
         if [ -n "$read_rows" ] && [ "$read_rows" -gt 0 ] 2>/dev/null; then

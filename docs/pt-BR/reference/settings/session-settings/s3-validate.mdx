@@ -13,19 +13,15 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="s3_validate_etag_on_read">
-  ## s3_validate_etag_on_read
-</div>
+## s3_validate_etag_on_read {#s3_validate_etag_on_read}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Nova configuração para detectar sobrescritas simultâneas in-place de objetos S3\/GCS durante uma leitura, validando o ETag da resposta GET em relação ao ETag listado. previous_value=false, portanto a `compatibility` com versões anteriores à 26.7 restaura o comportamento preexistente (sem validação)."}]}]} />
 
-Ao ler um objeto do S3 (ou de um armazenamento compatível com S3, como o GCS), verifica se cada solicitação GET retorna o mesmo ETag observado quando o objeto foi listado. A leitura de um único arquivo emite muitas solicitações GET por faixa; se o objeto for sobrescrito in-place entre elas (por exemplo, por um processo externo reescrevendo uma chave fixa), os dados lidos podem acabar sendo montados a partir de duas gerações diferentes do objeto e se manifestar como um checksum corrompido ou um erro de análise. Quando uma divergência é detectada, a leitura falha com `S3_OBJECT_CHANGED_DURING_READ` em vez de retornar dados inconsistentes. Desative apenas para cargas de trabalho que leem intencionalmente objetos que estão sendo sobrescritos e podem tolerar leituras inconsistentes.
+Ao ler um objeto do S3 (ou de um armazenamento compatível com S3, como o GCS), verifica se cada requisição GET retorna o mesmo ETag observado quando o objeto foi listado. A leitura de um único arquivo emite muitas requisições GET por faixa; se o objeto for sobrescrito in-place entre elas (por exemplo, por um processo externo reescrevendo uma chave fixa), os dados lidos podem acabar sendo montados a partir de duas gerações diferentes do objeto e se manifestar como um checksum corrompido ou um erro de análise. Quando uma divergência é detectada, a leitura falha com `S3_OBJECT_CHANGED_DURING_READ` em vez de retornar dados inconsistentes. Desative apenas para cargas de trabalho que leem intencionalmente objetos que estão sendo sobrescritos e podem tolerar leituras inconsistentes. Não se aplica aos arquivos de tabelas Iceberg lidos sem uma requisição de metadados do objeto (manifestos e arquivos de dados Parquet e ORC lidos por meio de uma tabela), que nunca são sobrescritos.
 
-<div id="s3_validate_request_settings">
-  ## s3_validate_request_settings
-</div>
+## s3_validate_request_settings {#s3_validate_request_settings}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

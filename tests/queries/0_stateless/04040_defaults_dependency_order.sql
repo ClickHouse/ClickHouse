@@ -66,7 +66,7 @@ INSERT INTO test_tuple_elem FORMAT JSONEachRow
 SELECT * FROM test_tuple_elem ORDER BY a;
 DROP TABLE test_tuple_elem;
 
-SELECT 'test_tuple_elem2: Bug, expected to have same result as test_tuple_elem, but missed dependency of b on a subcolumn:';
+SELECT 'test_tuple_elem2';
 DROP TABLE IF EXISTS test_tuple_elem2;
 CREATE TABLE test_tuple_elem2 (
     a Tuple(x Int32, y Int32) DEFAULT (1, 2),

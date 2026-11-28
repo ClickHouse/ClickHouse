@@ -44,7 +44,7 @@ inferred_query="CREATE TABLE dst ENGINE = Memory AS SELECT * FROM t0 WHERE y IN 
 explicit_query="CREATE TABLE dst_explicit (y Int) ENGINE = Memory AS SELECT y FROM t0 WHERE y IN (SELECT y FROM t1 WHERE y IN (SELECT y FROM t2 WHERE y < 2))"
 
 # The temporary-table fix is analyzer-independent, but force the analyzer on for a deterministic profile.
-client=(${CLICKHOUSE_CLIENT} --enable_analyzer 1 --user "${user}" --password "${user}")
+client=(${CLICKHOUSE_CLIENT} --user "${user}" --password "${user}")
 
 check_denied()
 {

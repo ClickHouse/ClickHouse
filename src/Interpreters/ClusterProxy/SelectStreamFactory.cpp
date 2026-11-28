@@ -4,7 +4,9 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -13,6 +15,7 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -21,6 +24,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -40,6 +44,7 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsUInt64 distributed_group_by_no_merge;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace ErrorCodes
@@ -67,50 +72,55 @@ SelectStreamFactory::SelectStreamFactory(
 
 void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
-    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     ContextPtr context,
-    std::vector<QueryPlanPtr> & local_plans,
+    QueryPlanPtrs & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker)
 {
-    createForShardImpl(
-        shard_info,
-        query_ast,
-        {},
-        main_table,
-        table_func_ptr,
-        std::move(context),
-        local_plans,
-        remote_shards,
-        shard_count,
-        parallel_replicas_enabled,
-        std::move(shard_filter_generator),
-        unavailable_shard_tracker);
-}
-
-void SelectStreamFactory::createForShardImpl(
-    const Cluster::ShardInfo & shard_info,
-    const ASTPtr & query_ast,
-    const QueryTreeNodePtr & query_tree,
-    const StorageID & main_table,
-    const ASTPtr & table_func_ptr,
-    ContextPtr context,
-    std::vector<QueryPlanPtr> & local_plans,
-    Shards & remote_shards,
-    UInt32 shard_count,
-    bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator,
-    const UnavailableShardTrackerPtr & unavailable_shard_tracker) const
-{
-    auto emplace_local_stream = [&]()
+    if (query.tree != query_tree)
     {
+        /// Convert grouping function specializations (e.g. __groupingForGroupingSets -> grouping)
+        /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
+        /// Use a clone to keep the original query_tree with specialized functions intact,
+        /// since it is reused later for getSampleBlock / plan building.
+        auto query_tree_for_ast = query_tree->clone();
+        removeGroupingFunctionSpecializations(query_tree_for_ast);
+
+        query = {.tree = query_tree, .ast = queryNodeToDistributedSelectQuery(query_tree_for_ast), .header = {}, .planner_context = {}};
+    }
+
+    ContextPtr context_without_parallel_replicas;
+
+    /// `local_storage` is the table the local plan will read, null when it is not resolved.
+    auto emplace_local_stream = [&](const StoragePtr & local_storage)
+    {
+        /// A local plan does not go through `ReadFromRemote`, so nothing sets `cluster_for_parallel_replicas`
+        /// to this hop's cluster and the read would be scoped by another one. Keep parallel replicas only
+        /// for a nested `Distributed`, which sets up its own cluster. A `View` over a `Distributed` is left
+        /// out: it reads without parallel replicas, as it did before.
+        auto local_context = context;
+        if (context->canUseTaskBasedParallelReplicas()
+            && !castStorage<StorageDistributed>(local_storage, DeferredTable::Load))
+        {
+            if (!context_without_parallel_replicas)
+            {
+                auto mutable_context = Context::createCopy(context);
+                Settings settings_without_parallel_replicas = mutable_context->getSettingsCopy();
+                settings_without_parallel_replicas[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+                mutable_context->setSettings(settings_without_parallel_replicas);
+                context_without_parallel_replicas = std::move(mutable_context);
+            }
+            local_context = context_without_parallel_replicas;
+        }
+
         local_plans.emplace_back(createLocalPlan(
-            query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count));
+            query.ast->clone(), *header, local_context, processed_stage, shard_info.shard_num, shard_count));
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
@@ -127,13 +137,18 @@ void SelectStreamFactory::createForShardImpl(
         if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
-                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
+                query.ast->clone(), *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
 
             shard_header = query_plan->getCurrentHeader();
         }
         else
         {
-            std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+            /// The same for all shards with this query tree, so do not plan the query again for each of them.
+            if (!query.header)
+                std::tie(query.header, query.planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+
+            shard_header = query.header;
+            planner_context = query.planner_context;
         }
 
         /// Strip initiator-only settings from the query text forwarded to the shard. The AST carries them
@@ -141,8 +156,8 @@ void SelectStreamFactory::createForShardImpl(
         /// which `queryNodeToDistributedSelectQuery` (`QueryNode::toAST`) materializes into the SELECT's
         /// `SETTINGS`. They are irrelevant to the remote query and can trip `UNKNOWN_SETTING` on an older
         /// shard during a rolling upgrade; the inter-server settings packet is stripped separately in
-        /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped `query_ast`.
-        auto forwarded_query = query_ast->clone();
+        /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped query.
+        auto forwarded_query = query.ast->clone();
         stripInitiatorOnlySettingsFromQuery(forwarded_query);
 
         remote_shards.emplace_back(Shard{
@@ -205,17 +220,17 @@ void SelectStreamFactory::createForShardImpl(
                     unavailable_shard_tracker->onShardSkipped();
             }
             else
-                emplace_local_stream();  /// Let it fail the usual way.
+                emplace_local_stream(main_table_storage);  /// Let it fail the usual way.
 
             return;
         }
 
-        const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(main_table_storage.get());
+        const auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(main_table_storage, DeferredTable::Load).get();
 
         if (!replicated_storage)
         {
             /// Table is not replicated, use local server.
-            emplace_local_stream();
+            emplace_local_stream(main_table_storage);
             return;
         }
 
@@ -223,7 +238,7 @@ void SelectStreamFactory::createForShardImpl(
 
         if (!max_allowed_delay)
         {
-            emplace_local_stream();
+            emplace_local_stream(main_table_storage);
             return;
         }
 
@@ -231,7 +246,7 @@ void SelectStreamFactory::createForShardImpl(
 
         if (local_delay < max_allowed_delay)
         {
-            emplace_local_stream();
+            emplace_local_stream(main_table_storage);
             return;
         }
 
@@ -258,7 +273,7 @@ void SelectStreamFactory::createForShardImpl(
         if (!shard_info.hasRemoteConnections())
         {
             /// There are no remote replicas but we are allowed to fall back to stale local replica.
-            emplace_local_stream();
+            emplace_local_stream(main_table_storage);
             return;
         }
 
@@ -268,41 +283,6 @@ void SelectStreamFactory::createForShardImpl(
     }
     else
         emplace_remote_stream();
-}
-
-void SelectStreamFactory::createForShard(
-    const Cluster::ShardInfo & shard_info,
-    const QueryTreeNodePtr & query_tree,
-    const StorageID & main_table,
-    const ASTPtr & table_func_ptr,
-    ContextPtr context,
-    std::vector<QueryPlanPtr> & local_plans,
-    Shards & remote_shards,
-    UInt32 shard_count,
-    bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator,
-    const UnavailableShardTrackerPtr & unavailable_shard_tracker)
-{
-    /// Convert grouping function specializations (e.g. __groupingForGroupingSets -> grouping)
-    /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
-    /// Use a clone to keep the original query_tree with specialized functions intact,
-    /// since it is reused later for getSampleBlock / plan building.
-    auto query_tree_for_ast = query_tree->clone();
-    removeGroupingFunctionSpecializations(query_tree_for_ast);
-
-    createForShardImpl(
-        shard_info,
-        queryNodeToDistributedSelectQuery(query_tree_for_ast),
-        query_tree,
-        main_table,
-        table_func_ptr,
-        std::move(context),
-        local_plans,
-        remote_shards,
-        shard_count,
-        parallel_replicas_enabled,
-        std::move(shard_filter_generator),
-        unavailable_shard_tracker);
 }
 
 

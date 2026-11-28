@@ -1,0 +1,14 @@
+-- a negative boundary value whose fraction is still representable is neither rejected nor clamped
+1
+-- and it survives the other overflow modes unchanged
+1
+1
+-- saturate clamps a below-range value to the minimum tick, not to the minimum whole second
+1	1	1
+-- a value below the minimum tick is still rejected
+-- at a scale where the calendar minimum fits, the bound is the calendar minimum
+1	1
+-- numeric casts to Time honor date_time_overflow_behavior as the setting description says
+999:59:59
+999:59:59
+999:59:59

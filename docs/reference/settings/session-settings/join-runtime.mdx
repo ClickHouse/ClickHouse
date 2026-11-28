@@ -51,7 +51,7 @@ Number of blocks that are skipped before trying to dynamically re-enable a runti
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "10000"},{"label": "The JOIN runtime filters became a Production tier feature."}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "10000"},{"label": "New setting"}]}]}/>
 
-Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded it switches to bloom filter.
+Maximum number of elements in runtime filter that are stored as is in a set. When this threshold is exceeded, it switches to a dense bitset for (U)Int8 and (U)Int16 keys, and to a bloom filter otherwise.
 
 ## join_runtime_filter_from_fixed_hash_table {#join_runtime_filter_from_fixed_hash_table}
 
