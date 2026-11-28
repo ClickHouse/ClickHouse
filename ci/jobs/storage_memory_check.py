@@ -8,7 +8,9 @@ pass is measured.
 """
 
 import glob
+import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -44,20 +46,54 @@ def find_heap_profile(profiles_dir: Path, prefix: str, checkpoint: str) -> str:
     return matches[0]
 
 
+def read_raw_heap_bytes(path: str) -> int:
+    """Read exact live bytes, retaining every stack and checking the heap total."""
+    total = None
+    stack_total = 0
+    awaiting_stack = False
+    with open(path) as profile:
+        if profile.readline().strip() != "heap_v2/1":
+            raise ValueError(f"Expected an unsampled jemalloc heap profile in {path}")
+        for line in profile:
+            if line.startswith("@ "):
+                if awaiting_stack:
+                    raise ValueError(f"Missing stack total in {path}")
+                awaiting_stack = True
+            elif line.lstrip().startswith("t*:"):
+                match = re.fullmatch(
+                    r"\s*t\*:\s+\d+:\s+(\d+)\s+\[\d+:\s+\d+\]\s*", line
+                )
+                if not match:
+                    raise ValueError(f"Malformed allocation total in {path}")
+                value = int(match[1])
+                if awaiting_stack and total is not None:
+                    stack_total += value
+                    awaiting_stack = False
+                elif total is None and not awaiting_stack:
+                    total = value
+                else:
+                    raise ValueError(f"Unexpected allocation total in {path}")
+    if total is None or awaiting_stack or total != stack_total:
+        raise ValueError(f"Heap header and stack totals do not match in {path}")
+    return total
+
+
 def run_scenarios(
     binary_path: str,
     version: str,
     scenarios: list[Path],
     extra_args: tuple[str, ...] = (),
 ) -> dict:
-    profiles_dir = Path(TEMP_DIR) / f"storage-memory-{version}-profiles"
-    data_dir = Path(TEMP_DIR) / f"storage-memory-{version}-data"
+    # Equal path lengths avoid a size-class bias in retained path strings.
+    profile_namespace = version.ljust(len("master"), "_")
+    profiles_dir = Path(TEMP_DIR) / f"storage-memory-{profile_namespace}-profiles"
+    data_dir = Path(TEMP_DIR) / f"storage-memory-{profile_namespace}-data"
     for path in (profiles_dir, data_dir):
         if path.exists():
             shutil.rmtree(path)
         path.mkdir(parents=True)
 
-    prefix = f"{version}_"
+    prefix = f"{profile_namespace}_"
     args = [
         binary_path,
         "storage_memory_profiler",
@@ -74,7 +110,8 @@ def run_scenarios(
 
     env = os.environ.copy()
     malloc_conf = (
-        "prof:true,prof_active:true,prof_thread_active_init:true,lg_prof_sample:0"
+        "prof:true,prof_active:true,prof_thread_active_init:true,"
+        "lg_prof_sample:0,prof_unbias:false"
     )
     env["JE_MALLOC_CONF"] = malloc_conf
     env["MALLOC_CONF"] = malloc_conf
@@ -125,13 +162,15 @@ def run_scenarios(
         heap_files.extend(
             find_heap_profile(profiles_dir, prefix, label) for label in expected_labels
         )
-    except RuntimeError as ex:
+        raw_heap_bytes = [read_raw_heap_bytes(path) for path in heap_files]
+    except (OSError, RuntimeError, ValueError) as ex:
         return {"error": str(ex)}
 
     return {
         "error": None,
         "checkpoints": checkpoints,
         "heap_files": heap_files,
+        "raw_heap_bytes": dict(zip(["start", *expected_labels], raw_heap_bytes)),
         "profiles_dir": str(profiles_dir),
         "data_dir": str(data_dir),
         "stdout": completed.stdout,
@@ -216,6 +255,37 @@ def main():
         return
     setup_results.append(Result(name="Run storage scenarios", status=Result.Status.OK))
 
+    raw_summary = {}
+    raw_info = [
+        "Raw jemalloc live bytes, with no allocation-stack exclusions; informational only.",
+        "Retained changes can include initialization, caches, and residual storage state.",
+    ]
+    for version, run in (("master", master_run), ("PR", pr_run)):
+        values = list(run["raw_heap_bytes"].values())
+        startup = values[0]
+        retained_first = values[len(scenarios)] - startup
+        retained_second = values[-1] - values[len(scenarios)]
+        raw_summary[version] = {
+            "startup_live_bytes": startup,
+            "first_pass_retained_change_bytes": retained_first,
+            "second_pass_retained_change_bytes": retained_second,
+            "checkpoints": run["raw_heap_bytes"],
+        }
+        raw_info.append(
+            f"{version}: startup={startup:,} B, "
+            f"first-pass retained change={retained_first:+,} B, "
+            f"second-pass retained change={retained_second:+,} B"
+        )
+    raw_report_path = f"{TEMP_DIR}/storage_memory_raw_checkpoints.json"
+    Path(raw_report_path).write_text(json.dumps(raw_summary, indent=2) + "\n")
+    setup_results.append(
+        Result(
+            name="Record raw storage memory",
+            status=Result.Status.OK,
+            info="\n".join(raw_info),
+        )
+    )
+
     # Drop the first pass, keeping its last checkpoint as the baseline.
     master_heap_files = master_run["heap_files"][len(scenarios) :]
     pr_heap_files = pr_run["heap_files"][len(scenarios) :]
@@ -239,24 +309,41 @@ SELECT count()
 FROM async_no_cache
 WHERE value = 42
 SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 1, max_threads = 1;
+
+ALTER TABLE async_no_cache ADD PROJECTION by_value (SELECT * ORDER BY value);
+ALTER TABLE async_no_cache MATERIALIZE PROJECTION by_value SETTINGS mutations_sync = 2;
 """.strip()
     )
     async_no_cache_run = run_scenarios(
         pr_binary,
         "pr-async-no-cache",
         [async_no_cache_scenario],
-        extra_args=("--no-mark-caches",),
+        # Exercise the profiler's controlled-worker setup on the PR binary only;
+        # the downloaded master binary may not support this option yet.
+        extra_args=(
+            "--no-mark-caches",
+            "--background-pool-size",
+            "1",
+            "--max-threads",
+            "1",
+        ),
     )
     if async_no_cache_run["error"]:
         setup_results.append(
             make_error_result(
-                "Run async marks without caches", async_no_cache_run["error"]
+                "Run async marks and mutations with one worker",
+                async_no_cache_run["error"],
             )
         )
-        Result.create_from(results=setup_results, stopwatch=stopwatch).complete_job()
+        Result.create_from(
+            results=setup_results, stopwatch=stopwatch, files=[raw_report_path]
+        ).complete_job()
         return
     setup_results.append(
-        Result(name="Run async marks without caches", status=Result.Status.OK)
+        Result(
+            name="Run async marks and mutations with one worker",
+            status=Result.Status.OK,
+        )
     )
     cleanup_heap_profiles(async_no_cache_run["profiles_dir"])
     shutil.rmtree(async_no_cache_run["data_dir"])
@@ -270,7 +357,9 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
                 info="See job log",
             )
         )
-        Result.create_from(results=setup_results, stopwatch=stopwatch).complete_job()
+        Result.create_from(
+            results=setup_results, stopwatch=stopwatch, files=[raw_report_path]
+        ).complete_job()
         return
     if not batch_symbolize(pr_binary, pr_heap_files, timeout=1800):
         setup_results.append(
@@ -280,7 +369,9 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
                 info="See job log",
             )
         )
-        Result.create_from(results=setup_results, stopwatch=stopwatch).complete_job()
+        Result.create_from(
+            results=setup_results, stopwatch=stopwatch, files=[raw_report_path]
+        ).complete_job()
         return
     setup_results.append(Result(name="Batch symbolization", status=Result.Status.OK))
 
@@ -420,7 +511,7 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
     Result.create_from(
         results=setup_results,
         stopwatch=stopwatch,
-        files=[report_path],
+        files=[report_path, raw_report_path],
     ).complete_job()
 
 
