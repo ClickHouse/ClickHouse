@@ -100,7 +100,9 @@ void ASTCreateMaskingPolicyQuery::formatImpl(WriteBuffer & ostr, const FormatSet
     if (where_condition)
         formatWhereCondition(where_condition, ostr, settings);
 
-    if (roles && (!roles->empty() || alter))
+    /// A missing `TO` clause means `ALL` for `CREATE` and `ATTACH` (see `ParserCreateMaskingPolicy`),
+    /// so an empty set must be formatted explicitly as `TO NONE`.
+    if (roles)
         formatToRoles(*roles, ostr, settings);
 
     if (priority != 0)
