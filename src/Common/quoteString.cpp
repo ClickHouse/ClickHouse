@@ -81,6 +81,17 @@ String backQuoteIfNeed(std::string_view x)
 }
 
 
+String backQuoteIfNeedInTypeName(std::string_view x)
+{
+    String res(2 + x.size(), '\0');
+    {
+        WriteBufferFromString wb(res);
+        writeProbablyBackQuotedStringInTypeName(x, wb);
+    }
+    return res;
+}
+
+
 String backQuoteIfNotBareWord(std::string_view x)
 {
     bool is_bare_word = !x.empty() && isValidIdentifierBegin(x[0]) && std::all_of(x.begin() + 1, x.end(), isWordCharASCII);

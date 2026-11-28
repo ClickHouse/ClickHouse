@@ -24,7 +24,7 @@ String DataTypeNestedCustomName::getName() const
         if (i != 0)
             s << ", ";
 
-        s << backQuoteIfNeed(names[i]) << ' ';
+        s << backQuoteIfNeedInTypeName(names[i]) << ' ';
         s << elems[i]->getName();
     }
     s << ")";
