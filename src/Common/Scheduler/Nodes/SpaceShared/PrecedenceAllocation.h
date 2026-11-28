@@ -25,10 +25,12 @@ public:
     void approveDecrease() override;
     void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override;
     void updateMinMaxAllocated(ResourceCost new_value) override;
+    void updateAdmissionQueueing(bool new_value) override;
 
 private:
     bool setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child);
     bool setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease, bool detach_child);
+    bool selectIncrease(); /// Selects `increase_child` and `increase`. Returns true iff `increase` changed
     void syncReclaimableMembership(ISpaceSharedNode & from_child, bool detach_child);
 
     /// Ordering by precedence. Used for both running and increasing children for consistent ordering.

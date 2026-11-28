@@ -27,7 +27,7 @@ public:
     ~AllocationQueue() override;
 
     std::string_view getTypeName() const override;
-    void insertAllocation(ResourceAllocation & allocation, ResourceCost initial_size) override;
+    bool insertAllocation(ResourceAllocation & allocation, ResourceCost initial_size) override;
     void increaseAllocation(ResourceAllocation & allocation, ResourceCost increase_size) override;
     void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) override;
     void setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total) override;
@@ -45,6 +45,7 @@ public:
     void removeChild(ISchedulerNode *) override;
     ISchedulerNode * getChild(const String &) override;
     void updateMinMaxAllocated(ResourceCost new_value) override;
+    void updateAdmissionQueueing(bool new_value) override;
     std::pair<UInt64, Int64> getQueueLengthAndSize();
     void updateQueueLimit(Int64 value);
 

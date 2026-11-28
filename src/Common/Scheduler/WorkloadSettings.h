@@ -61,6 +61,11 @@ struct WorkloadSettings
     /// `max_memory_to_spill_ratio * max_memory`. `unlimited` means no soft limit (spilling disabled).
     Int64 max_memory_before_spill = unlimited;
 
+    /// Admission threshold: while the workload's allocated memory is above it, new queries wait in the queue.
+    /// Computed as the minimum of the absolute `max_memory_before_queue` and `max_memory_to_queue_ratio * max_memory`.
+    /// `unlimited` means new queries never wait for it.
+    Int64 max_memory_before_queue = unlimited;
+
     // Throttler (time-shared resource)
     [[nodiscard]] bool hasThrottler(CostUnit unit) const;
     [[nodiscard]] Float64 getThrottlerMaxSpeed(CostUnit unit) const;
@@ -79,6 +84,7 @@ struct WorkloadSettings
     [[nodiscard]] bool hasAllocationLimit(CostUnit unit) const;
     [[nodiscard]] Int64 getAllocationLimit(CostUnit unit) const;
     [[nodiscard]] Int64 getSoftAllocationLimit(CostUnit unit) const; // Soft limit (spill threshold); `unlimited` = disabled
+    [[nodiscard]] Int64 getAdmissionAllocationLimit(CostUnit unit) const; // Admission threshold; `unlimited` = disabled
 
     // Should be called after default constructor
     void initFromChanges(const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {}, bool throw_on_unknown_setting = true);

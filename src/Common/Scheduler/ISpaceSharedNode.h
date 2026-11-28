@@ -29,7 +29,8 @@ namespace DB
 ///      Its contribution to node `reclaimable` is `max(0, min(reclaimable, allocated) - reclaiming)`.
 ///      `reclaiming` can exceed `allocated` until a request is settled.
 ///  - Spilling never blocks the increase chain. Only the hard limit (`AllocationLimit::max_allocated`)
-///      can null out `increase`; a soft-limit breach merely issues a `spillAllocation` signal.
+///      and the admission threshold (new allocations only) can null out `increase`; a soft-limit breach
+///      merely issues a `spillAllocation` signal.
 ///  - Spill victim selection (`selectAllocationToSpill`) touches at most one root-to-leaf path — no more
 ///      scheduling nodes than the existing kill path (`selectAllocationToKill`).
 ///  - Fail-close: if nothing on the chosen path is reclaimable, no spill is issued and the hard limit
@@ -61,6 +62,14 @@ public:
     /// Updates min_max_allocated and recursively propagates to children.
     /// Called when a child is attached or when AllocationLimit::max_allocated changes.
     virtual void updateMinMaxAllocated(ResourceCost new_value) = 0;
+
+    /// True iff a parent `AllocationLimit` has an admission threshold. Then every new allocation, including
+    /// a zero-size one, waits in the queue for admission, and increases of running allocations go first.
+    bool admission_queueing = false;
+
+    /// Updates `admission_queueing` and recursively propagates to children.
+    /// Called when a child is attached or when `AllocationLimit::admission_limit` changes.
+    virtual void updateAdmissionQueueing(bool new_value) = 0;
 
     struct Update
     {

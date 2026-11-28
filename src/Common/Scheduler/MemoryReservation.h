@@ -57,7 +57,7 @@ private:
 ///
 /// The `workload` setting resolves (via `WorkloadResourceManager`) to a `ResourceLink` naming that
 /// workload's `AllocationQueue`. A reservation's life: construct (`insertAllocation`; blocks until
-/// admitted when `reserve_memory > 0`), sync (`syncWithMemoryTracker` issues at most one increase or
+/// admitted when `reserve_memory > 0` or the workload has an admission threshold), sync (`syncWithMemoryTracker` issues at most one increase or
 /// decrease per call; may be killed under pressure), destruct (`removeAllocation`, wait for removal).
 /// Requests bubble up to the root and are approved on the scheduler thread; the scheduler-side nodes
 /// (`AllocationLimit`, `Fair`/`PrecedenceAllocation`, `AllocationQueue`) form one `ISpaceSharedNode`
@@ -66,7 +66,8 @@ private:
 struct MemoryReservation : public ResourceAllocation
 {
 public:
-    // Blocks until the reservation is admitted iff reserved_size > 0. `admission_deadline_` is an absolute
+    // Blocks until the reservation is admitted iff it is pending (reserved_size > 0 or the workload has
+    // an admission threshold, see `IAllocationQueue::insertAllocation`). `admission_deadline_` is an absolute
     // steady_clock deadline shared with the query slot so the whole admission phase uses one budget; on
     // expiry the still-pending allocation is canceled and a `MEMORY_RESERVATION_ACQUISITION_TIMEOUT`
     // exception is thrown. `time_point::max()` means no timeout.
@@ -142,6 +143,7 @@ private:
     std::exception_ptr kill_reason;
     std::exception_ptr fail_reason;
     bool removed = false;
+    bool admission_approved = false; // the scheduler has approved the first increase (the admission of a pending reservation)
     ResourceCost allocated_size = 0; // equals ResourceAllocation::allocated, which is private and controlled by the scheduler
     ResourceCost actual_size = 0; // real size of the resource used by the allocation
     ResourceCost enqueued_demand = 0; // amount added to demand_increment when increase was enqueued

@@ -66,23 +66,21 @@ MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, Reso
         demand_increment.add(enqueued_demand);
     }
 
-    queue.insertAllocation(*this, reserved_size);
-
-    if (reserved_size > 0)
+    if (queue.insertAllocation(*this, reserved_size))
     {
         bool admitted = false;
         bool timed_out = false;
         {
             std::unique_lock lock(mutex);
             auto admit_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationAdmitMicroseconds);
-            auto admitted_pred = [this] { return kill_reason || fail_reason || actual_size <= allocated_size; };
+            auto admitted_pred = [this] { return kill_reason || fail_reason || admission_approved; };
             // An infinite deadline (`time_point::max()`) means no timeout: wait_until never fires on time
             // and blocks until the reservation is admitted, killed, or failed.
             timed_out = !cv.wait_until(lock, admission_deadline_, admitted_pred);
             // Flush deferred profile-event counters before potentially throwing,
             // so failure metrics (e.g. MemoryReservationFailed) are not lost.
             metrics.apply();
-            admitted = !kill_reason && !fail_reason && actual_size <= allocated_size;
+            admitted = !kill_reason && !fail_reason && admission_approved;
         }
 
         if (!admitted)
@@ -468,6 +466,7 @@ void MemoryReservation::increaseApproved(const IncreaseRequest & increase)
 {
     std::unique_lock lock(mutex);
     metrics.increases++;
+    admission_approved = true;
     allocated_size += increase.size;
     approved_increment.add(increase.size);
     demand_increment.sub(enqueued_demand);

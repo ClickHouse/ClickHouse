@@ -16,12 +16,13 @@ public:
     {}
 
     /// Adds a new allocation to be managed by this queue.
-    /// If `initial_size` is zero, the allocation starts running immediately.
+    /// If `initial_size` is zero and no admission threshold applies, the allocation starts running immediately.
     /// Otherwise the allocation is pending until the scheduler approves it
-    /// via `ResourceAllocation::increaseApproved`.
+    /// via `ResourceAllocation::increaseApproved` (with zero size for a zero-size allocation).
+    /// Returns true iff the allocation is pending.
     /// Throws an exception if the allocation is invalid or rejected.
     /// May call `ResourceAllocation::allocationFailed` if the allocation is rejected later.
-    virtual void insertAllocation(ResourceAllocation & allocation, ResourceCost initial_size) = 0;
+    virtual bool insertAllocation(ResourceAllocation & allocation, ResourceCost initial_size) = 0;
 
     /// Requests to increase the size of a running allocation by `increase_size`.
     /// The request is processed by the scheduler thread.

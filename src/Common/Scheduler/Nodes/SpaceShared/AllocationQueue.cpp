@@ -36,7 +36,7 @@ AllocationQueue::~AllocationQueue()
 
 std::string_view AllocationQueue::getTypeName() const { return "allocation_queue"; }
 
-void AllocationQueue::insertAllocation(ResourceAllocation & allocation, ResourceCost initial_size)
+bool AllocationQueue::insertAllocation(ResourceAllocation & allocation, ResourceCost initial_size)
 {
     chassert(&allocation.queue == this);
     std::lock_guard lock(mutex);
@@ -53,7 +53,9 @@ void AllocationQueue::insertAllocation(ResourceAllocation & allocation, Resource
             "Workload '{}' allocation of size {} exceeds the limit of {}",
             getWorkloadName(), formatReadableCost(initial_size), formatReadableCost(min_max_allocated));
     }
-    if (initial_size > 0 && max_queued >= 0 && pending_allocations.size() >= static_cast<size_t>(max_queued))
+    // Under an admission threshold every new allocation waits for admission, zero-size included
+    const bool pending = initial_size > 0 || admission_queueing;
+    if (pending && max_queued >= 0 && pending_allocations.size() >= static_cast<size_t>(max_queued))
     {
         ++rejects;
         throw Exception(ErrorCodes::SERVER_OVERLOADED,
@@ -64,7 +66,7 @@ void AllocationQueue::insertAllocation(ResourceAllocation & allocation, Resource
     // Prepare allocation
     allocation.unique_id = ++last_unique_id;
 
-    if (initial_size > 0) // Enqueue as a pending new allocation
+    if (pending) // Enqueue as a pending new allocation
     {
         allocation.increase.prepare(initial_size, IncreaseRequest::Kind::Pending);
         pending_allocations.push_back(allocation);
@@ -78,6 +80,7 @@ void AllocationQueue::insertAllocation(ResourceAllocation & allocation, Resource
         allocation.fair_key = 0;
         running_allocations.insert(allocation);
     }
+    return pending;
 }
 
 void AllocationQueue::increaseAllocation(ResourceAllocation & allocation, ResourceCost increase_size)
@@ -324,6 +327,12 @@ void AllocationQueue::updateMinMaxAllocated(ResourceCost new_value)
     // Update increase pointer in case the removed allocation was the current one
     if (setIncrease() && parent)
         propagate(Update().setIncrease(increase));
+}
+
+void AllocationQueue::updateAdmissionQueueing(bool new_value)
+{
+    std::lock_guard lock(mutex);
+    admission_queueing = new_value;
 }
 
 void AllocationQueue::approveIncrease()

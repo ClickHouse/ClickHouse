@@ -16,10 +16,11 @@ namespace ErrorCodes
 }
 
 AllocationLimit::AllocationLimit(EventQueue & event_queue_, const SchedulerNodeInfo & info_, ResourceCost max_allocated_,
-    ResourceCost soft_limit_)
+    ResourceCost soft_limit_, ResourceCost admission_limit_)
     : ISpaceSharedNode(event_queue_, info_)
     , max_allocated(max_allocated_)
     , soft_limit(soft_limit_)
+    , admission_limit(admission_limit_)
 {}
 
 AllocationLimit::~AllocationLimit()
@@ -60,6 +61,22 @@ ResourceCost AllocationLimit::getSoftLimit() const
     return soft_limit;
 }
 
+void AllocationLimit::updateAdmissionLimit(ResourceCost new_admission_limit)
+{
+    admission_limit = new_admission_limit;
+    if (!child)
+        return;
+    child->updateAdmissionQueueing(childAdmissionQueueing());
+    // A blocked new allocation may be admitted now, or the current one may have to wait
+    if (setIncrease(child->increase, true) && parent)
+        propagate(Update().setIncrease(increase));
+}
+
+ResourceCost AllocationLimit::getAdmissionLimit() const
+{
+    return admission_limit;
+}
+
 std::string_view AllocationLimit::getTypeName() const { return "allocation_limit"; }
 
 void AllocationLimit::attachChild(const std::shared_ptr<ISchedulerNode> & child_)
@@ -71,6 +88,7 @@ void AllocationLimit::attachChild(const std::shared_ptr<ISchedulerNode> & child_
         .setAttached(child.get())
         .setIncrease(child->increase)
         .setDecrease(child->decrease));
+    child->updateAdmissionQueueing(childAdmissionQueueing());
 }
 
 void AllocationLimit::removeChild(ISchedulerNode * child_)
@@ -83,6 +101,7 @@ void AllocationLimit::removeChild(ISchedulerNode * child_)
         .setDecrease(nullptr));
     child->setParentNode(nullptr);
     child->updateMinMaxAllocated(std::numeric_limits<ResourceCost>::max());
+    child->updateAdmissionQueueing(false);
     child.reset();
 }
 
@@ -256,7 +275,13 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
     IncreaseRequest * old_increase = increase;
     if (new_increase)
     {
-        if (allocated + new_increase->size > max_allocated)
+        if (new_increase->kind == IncreaseRequest::Kind::Pending && allocated > admission_limit)
+        {
+            // A new allocation waits until memory is released below the admission threshold.
+            // Nothing is killed for it. Children serve increases of running allocations first.
+            increase = nullptr;
+        }
+        else if (allocated + new_increase->size > max_allocated)
         {
             // Limit would be violated, so we have to reclaim resource.
             // Do not select a victim while a decrease is pending below: `allocated` still contains
@@ -305,6 +330,13 @@ void AllocationLimit::updateMinMaxAllocated(ResourceCost new_value)
     min_max_allocated = new_value;
     if (child)
         child->updateMinMaxAllocated(std::min(min_max_allocated, max_allocated));
+}
+
+void AllocationLimit::updateAdmissionQueueing(bool new_value)
+{
+    admission_queueing = new_value;
+    if (child)
+        child->updateAdmissionQueueing(childAdmissionQueueing());
 }
 
 }
