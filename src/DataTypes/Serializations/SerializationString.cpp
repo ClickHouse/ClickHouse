@@ -190,6 +190,18 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
     }
 }
 
+/// Grows `data` to at least `required` bytes. Growth is geometric. While more values follow in the same read,
+/// the new size is rounded up to a power of two, so the values after a large one usually fit into the slack
+/// instead of doubling the whole buffer again. The last value is not rounded up: a read that ends with a large
+/// value gets a buffer of the needed size, which is not copied again when the column is shrunk to fit.
+static ALWAYS_INLINE void growChars(ColumnString::Chars & data, size_t required, bool more_values_follow)
+{
+    size_t new_size = std::max(required, data.size() * 2);
+    if (more_values_follow)
+        new_size = roundUpToPowerOfTwoOrZero(new_size);
+    data.resize_exact(new_size);
+}
+
 template <size_t copy_size>
 static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
 try
@@ -215,7 +227,7 @@ try
 
         offset += size;
         if (unlikely(offset > data.size()))
-            data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
+            growChars(data, offset, i + 1 < limit);
 
         if (size)
         {
@@ -258,7 +270,7 @@ catch (...)
 /// if it matches the filter; a non-matching value is consumed from the buffer but not appended.
 /// Returns true if the value matched.
 static ALWAYS_INLINE bool readFilteredStringValue(
-    ColumnString::Chars & data, size_t & offset, ReadBuffer & istr, size_t size, const StringValueFilter & filter)
+    ColumnString::Chars & data, size_t & offset, ReadBuffer & istr, size_t size, const StringValueFilter & filter, bool more_values_follow)
 {
     /// Note: `istr.available()` instead of `istr.position() + size <= istr.buffer().end()`,
     /// because the buffer may be empty and its pointers null, and offsetting a null pointer is UB.
@@ -269,7 +281,7 @@ static ALWAYS_INLINE bool readFilteredStringValue(
         if (matched)
         {
             if (unlikely(offset + size > data.size()))
-                data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset + size, data.size() * 2)));
+                growChars(data, offset + size, more_values_follow);
             memcpy(&data[offset], istr.position(), size);
             offset += size;
         }
@@ -279,7 +291,7 @@ static ALWAYS_INLINE bool readFilteredStringValue(
 
     /// The value crosses the buffer boundary: read it into the column and roll back if it does not match.
     if (unlikely(offset + size > data.size()))
-        data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset + size, data.size() * 2)));
+        growChars(data, offset + size, more_values_follow);
     istr.readStrict(reinterpret_cast<char *>(&data[offset]), size);
 
     bool matched = filter.match(reinterpret_cast<const char *>(&data[offset]), size);
@@ -353,7 +365,7 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
                 ++values_checked;
 
                 /// An empty string never matches the filter.
-                if (value_size == 0 || !readFilteredStringValue(data, offset, istr, value_size, filter))
+                if (value_size == 0 || !readFilteredStringValue(data, offset, istr, value_size, filter, i + 1 < num_rows))
                 {
                     ++values_replaced;
                     bytes_skipped += value_size;
@@ -394,7 +406,7 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
                 if (matches)
                 {
                     if (unlikely(offset + value_size > data.size()))
-                        data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset + value_size, data.size() * 2)));
+                        growChars(data, offset + value_size, i + 1 < num_rows);
                     memcpy(&data[offset], value_data, value_size);
                     offset += value_size;
                 }
@@ -453,7 +465,7 @@ try
         ++values_checked;
 
         /// An empty string never matches the filter.
-        if (size == 0 || !readFilteredStringValue(data, offset, istr, size, filter))
+        if (size == 0 || !readFilteredStringValue(data, offset, istr, size, filter, i + 1 < limit))
         {
             ++values_replaced;
             bytes_skipped += size;
