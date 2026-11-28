@@ -1,0 +1,22 @@
+-- the hosts do not run the query as the user, so DEDUPLICATE requires SELECT on the whole table
+column not granted   : (ACCESS_DENIED) hides secret
+rows: 6
+columns granted      : (ACCESS_DENIED) hides secret
+DEDUPLICATE, no list : (ACCESS_DENIED) hides secret
+no list, granted     : OK
+-- an Alias or a table missing on the initiator cannot be checked there
+Alias                : (NOT_IMPLEMENTED) hides secret
+Alias, no list       : (NOT_IMPLEMENTED) hides secret
+missing table        : (UNKNOWN_TABLE) names initiator
+-- a materialized view also needs SELECT on its whole source table
+view, source columns : (ACCESS_DENIED) hides secret
+view, source granted : OK
+mv rows: 4
+-- a view with SQL security is checked on the hosts, as its read is
+refreshable view     : OK
+rmv rows: 4
+definer has source   : OK
+mv_def rows: 4
+-- SELECT on the table
+table granted        : OK
+rows: 4

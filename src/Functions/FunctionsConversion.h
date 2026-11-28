@@ -2635,14 +2635,18 @@ struct ConvertImpl
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
             && std::is_same_v<ToDataType, DataTypeDate>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count, additions);
+            using DateTransform = TransformDateTime64<ToDateImpl<date_time_overflow_behavior>>;
+            const UInt32 from_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type).getScale();
+            return DateTimeTransformImpl<FromDataType, ToDataType, DateTransform, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, DateTransform(from_scale));
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
             && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count, additions);
+            using DateTimeTransform = TransformDateTime64<ToDateTimeImpl<date_time_overflow_behavior>>;
+            const UInt32 from_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type).getScale();
+            return DateTimeTransformImpl<FromDataType, ToDataType, DateTimeTransform, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, DateTimeTransform(from_scale));
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
             && std::is_same_v<ToDataType, DataTypeTime>)

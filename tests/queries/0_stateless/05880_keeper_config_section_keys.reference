@@ -1,0 +1,4 @@
+accepted: localhost:2181,secure://localhost:2281
+unknown_key: KEEPER_EXCEPTION
+unknown_permission: KEEPER_EXCEPTION
+password_too_long: KEEPER_EXCEPTION

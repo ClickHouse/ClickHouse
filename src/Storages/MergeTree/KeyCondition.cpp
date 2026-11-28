@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
@@ -1923,6 +1924,8 @@ KeyCondition::KeyCondition(
             for (const auto & mapping : element.set_index->getIndexesMapping())
                 next_function_number += mapping.functions.size();
     }
+
+    forEachAtomWithPolarity(rpn, [](RPNElement & element, bool positive) { element.under_not = !positive; });
 }
 
 KeyCondition::KeyCondition(
@@ -5481,6 +5484,11 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
         && readsInputNamedIn(*node_dag, info.columns_named_like_key_expressions))
         return;
 
+    /// A key expression is never non-deterministic, so a predicate that calls `rand` or `blockSize` (also inside a
+    /// lambda body) is not computed by a key column with the same name.
+    if (node_dag && !VirtualColumnUtils::isDeterministicInScopeOfQuery(node_dag))
+        return;
+
     /// For example, `ORDER BY a` and `WHERE a = 1`. Here, the function is "equals".
     if (node.isFunction())
     {
@@ -7531,42 +7539,52 @@ BoolMask KeyCondition::checkInRange(
         });
 }
 
-/// A type conversion between native integers of the same signedness, applied to a Field directly, without executing the function.
-/// UInt8/16/32/64 are all stored as UInt64 in Field, Int8/16/32/64 as Int64. `DateTime` is a number of seconds stored as UInt32
-/// (UInt64 in Field), so `toUnixTimestamp(DateTime)` and casts between `DateTime` and unsigned integers convert it the same way.
-/// A conversion to a type at least as wide as the source keeps the Field value; a narrower one wraps it around, keeping the
-/// low `result_size` bytes, as the conversion of a column does.
+/// A type conversion between native integers, applied to a Field directly, without executing the function.
+/// UInt8/16/32/64 are stored as UInt64 in Field, Int8/16/32/64 as Int64, and `DateTime` (seconds, as UInt32) as UInt64.
+/// The conversion of a column keeps the low `result_size` bytes and extends them with the sign of the result type,
+/// except one with a `max_kept_value`: it keeps only the values from 0 to `max_kept_value` and is applied only to those.
 struct IntegerCastOnField
 {
     size_t from_size = 0;
     size_t result_size = 0;
-    bool is_signed = false;
+    bool from_signed = false;
+    bool result_signed = false;
+    std::optional<UInt64> max_kept_value;
 
-    [[nodiscard]] bool keepsValue() const { return result_size >= from_size; }
-
-    /// Whether `apply` handles the Field: a narrowing conversion needs the representation of its family.
-    [[nodiscard]] bool canApply(const Field & value) const
+    [[nodiscard]] bool keepsValue() const
     {
-        return keepsValue() || value.getType() == (is_signed ? Field::Types::Int64 : Field::Types::UInt64);
+        return !max_kept_value && from_signed == result_signed && result_size >= from_size;
     }
 
-    /// Converts the value in place, which keeps the Field type (see `canApply`).
+    /// Whether `apply` handles the Field: a conversion that changes it needs the representation of the source family.
+    [[nodiscard]] bool canApply(const Field & value) const
+    {
+        if (keepsValue())
+            return true;
+        if (value.getType() != (from_signed ? Field::Types::Int64 : Field::Types::UInt64))
+            return false;
+        if (!max_kept_value)
+            return true;
+        if (from_signed)
+        {
+            const Int64 v = value.safeGet<Int64>();
+            return v >= 0 && static_cast<UInt64>(v) <= *max_kept_value;
+        }
+        return value.safeGet<UInt64>() <= *max_kept_value;
+    }
+
+    /// Converts the value as the conversion of a column does, giving it the Field type of the result.
     void apply(Field & value) const
     {
         if (keepsValue())
             return;
 
+        const UInt64 bits = from_signed ? static_cast<UInt64>(value.safeGet<Int64>()) : value.safeGet<UInt64>();
         const size_t shift = 64 - result_size * 8;
-        if (is_signed)
-        {
-            auto & v = value.safeGet<Int64>();
-            v = static_cast<Int64>(static_cast<UInt64>(v) << shift) >> shift;
-        }
+        if (result_signed)
+            value = static_cast<Int64>(bits << shift) >> shift;
         else
-        {
-            auto & v = value.safeGet<UInt64>();
-            v = v << shift >> shift;
-        }
+            value = bits << shift >> shift;
     }
 };
 
@@ -7580,30 +7598,47 @@ static std::optional<IntegerCastOnField> getIntegerCastOnField(
     const FunctionBasePtr & func, const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     /// This is called for every range (e.g. for every granule of a skip index), so the cheap checks go first.
-    WhichDataType from(*from_type);
-    WhichDataType to(*to_type);
+    /// A `Nullable` type converts a value as its nested type does, and a `NULL` bound is never converted (see the caller).
+    const IDataType * from_nested = from_type.get();
+    WhichDataType from(*from_nested);
+    if (from.isNullable())
+    {
+        from_nested = static_cast<const DataTypeNullable &>(*from_type).getNestedType().get();
+        from = WhichDataType(*from_nested);
+    }
+    const DataTypePtr * to_nested = &to_type;
+    WhichDataType to(**to_nested);
+    if (to.isNullable())
+    {
+        to_nested = &static_cast<const DataTypeNullable &>(*to_type).getNestedType();
+        to = WhichDataType(**to_nested);
+    }
 
     /// `Date`, `Date32` and `DateTime64` must not be added here: `toDateTime(Date)`, `toUnixTimestamp(Date)`
     /// and `toUnixTimestamp(DateTime64)` change the value, and this check only looks at the name and the types.
-    /// `Nullable` and `LowCardinality` types are not in either family, so they are rejected here too.
+    /// `LowCardinality` types are not in either family, so they are rejected here too.
     auto is_uint_or_datetime = [](WhichDataType which) { return which.isNativeUInt() || which.isDateTime(); };
 
-    /// Check that both types are in the same family before calling
+    /// Check that both types are integers before calling
     /// getSizeOfValueInMemory, which throws for variable-length types like String.
-    const bool is_signed = from.isNativeInt() && to.isNativeInt();
-    if (!is_signed && !(is_uint_or_datetime(from) && is_uint_or_datetime(to)))
-        return {};
-
-    /// `Bool` and `SimpleAggregateFunction(f, Bool)` are stored as `UInt8`, yet a cast into them maps every nonzero value to 1.
-    if (to.isUInt8() && (isBool(to_type) || isSimpleAggregateFunctionOfBool(*to_type)))
+    const bool from_signed = from.isNativeInt();
+    const bool result_signed = to.isNativeInt();
+    if ((!from_signed && !is_uint_or_datetime(from)) || (!result_signed && !is_uint_or_datetime(to)))
         return {};
 
     IntegerCastOnField cast{
-        .from_size = from_type->getSizeOfValueInMemory(), .result_size = to_type->getSizeOfValueInMemory(), .is_signed = is_signed};
+        .from_size = from_nested->getSizeOfValueInMemory(),
+        .result_size = (*to_nested)->getSizeOfValueInMemory(),
+        .from_signed = from_signed,
+        .result_signed = result_signed,
+        .max_kept_value = std::nullopt};
 
-    /// A conversion of a wider integer to `DateTime` does not wrap around: it is not a plain truncation.
-    if (!cast.keepsValue() && to.isDateTime())
-        return {};
+    /// `Bool` and `SimpleAggregateFunction(f, Bool)` are stored as `UInt8`, yet a cast into them maps every nonzero value to 1.
+    if (to.isUInt8() && (isBool(*to_nested) || isSimpleAggregateFunctionOfBool(**to_nested)))
+        cast.max_kept_value = 1;
+    /// A conversion of a signed or wider integer to `DateTime` saturates (or throws) instead of wrapping around.
+    else if (to.isDateTime() && !cast.keepsValue())
+        cast.max_kept_value = std::numeric_limits<UInt32>::max();
 
     /// Only type conversion functions preserve Field values across integer type boundaries.
     /// Arithmetic functions like plus/minus change the value even with same-family types.
@@ -7611,7 +7646,7 @@ static std::optional<IntegerCastOnField> getIntegerCastOnField(
     bool is_cast = (name == "_CAST" || name == "CAST"
         || name == "toUInt8" || name == "toUInt16" || name == "toUInt32" || name == "toUInt64"
         || name == "toInt8" || name == "toInt16" || name == "toInt32" || name == "toInt64"
-        || name == "toDateTime" || name == "toUnixTimestamp");
+        || name == "toDateTime" || name == "toDateTime32" || name == "toUnixTimestamp");
 
     if (!is_cast)
         return {};
@@ -7686,7 +7721,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
             /// For functions like CAST between integer types that share the same Field representation
             /// (e.g., UInt16 and UInt64 both use UInt64 in Field), the result is computed on the Field
-            /// directly: the value is kept, or wrapped around for a narrowing conversion.
+            /// directly, as the conversion of a column does (see `IntegerCastOnField`).
             /// We can skip the expensive function application that creates columns and executes the function.
             /// A bound referencing a column in the index block is advanced by the application itself:
             /// skipping would leave it on the previous column while `current_type` moves on.
@@ -8200,13 +8235,14 @@ bool keyTypeMayHoldNestedNullOrNaN(const DataTypePtr & key_type)
 /// puts such a value above every value that shares its prefix, and a row whose first differing position
 /// holds one compares greater than the constant at row level too, or is `NULL`, which `WHERE` rejects
 /// as well. So a range bounded above by an ordinary value excludes it on both sides, and only a range
-/// that reaches `+inf` can claim it as matching, while a negated range may claim it either way. A set
-/// atom is not affected: both the set index and the row-level `IN` compare whole tuples by hash, so a
-/// nested `NULL` or `NaN` matches only its identical copy on both sides.
+/// that reaches `+inf` can claim it as matching, while `FUNCTION_NOT_IN_RANGE` or a range under `NOT`
+/// may claim it either way. A set atom is not affected: both the set index and the row-level `IN`
+/// compare whole tuples by hash, so a nested `NULL` or `NaN` matches only its identical copy on both sides.
 bool atomMayClaimNestedNullOrNaN(const KeyCondition::RPNElement & element)
 {
     return element.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE
-        || (element.function == KeyCondition::RPNElement::FUNCTION_IN_RANGE && element.range.right.isPositiveInfinity());
+        || (element.function == KeyCondition::RPNElement::FUNCTION_IN_RANGE
+            && (element.under_not || element.range.right.isPositiveInfinity()));
 }
 
 /// Whether the analysed range of a key column, read by `element`, may hold a NULL value. A NULL key

@@ -4862,7 +4862,7 @@ Number of Parquet column chunks without an offset index whose pages holding the 
 
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
-Row groups whose column data a Parquet reader of a file in object storage or at a URL started reading before their decoding was scheduled, within its share of max_download_threads
+Row groups whose column data a Parquet reader of a file in object storage or at a URL started reading before their decoding was scheduled, within its share of max_download_threads, or one more if decoding uses up that share and the read is small and separate
 
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
@@ -5147,6 +5147,10 @@ Number of times an entry has been found in the primary index cache, so we didn't
 ### PrimaryIndexCacheMisses {#primaryindexcachemisses}
 
 Number of times an entry has not been found in the primary index cache, so we had to load an index file in memory, which is a costly operation, adding to query latency.
+
+### PrometheusRemoteWriteDroppedExemplars {#prometheusremotewritedroppedexemplars}
+
+Number of exemplars received through the Prometheus remote-write protocol and dropped because the TimeSeries table does not store exemplars. They are counted only when the write is stored, for an async insert when its flush succeeds.
 
 ### QueriesWithSubqueries {#querieswithsubqueries}
 
@@ -7395,6 +7399,10 @@ Time spent executing WebAssembly code
 ### WasmTotalExecuteMicroseconds {#wasmtotalexecutemicroseconds}
 
 Time spent executing WebAssembly code
+
+### WriteBufferFromAzureBytes {#writebufferfromazurebytes}
+
+Bytes written to Azure.
 
 ### WriteBufferFromFileDescriptorWrite {#writebufferfromfiledescriptorwrite}
 

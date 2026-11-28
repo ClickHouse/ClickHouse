@@ -4,6 +4,7 @@
 #include <IO/HTTP/HTTPClientIO.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/parseURI.h>
 #include <Core/Types.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
@@ -49,7 +50,7 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
 {
     validateBearerToken(context, bearer_token);
 
-    Poco::URI url(endpoint);
+    Poco::URI url = DB::parseURI(endpoint);
     if (!params.empty())
         url.setQueryParameters(params);
 

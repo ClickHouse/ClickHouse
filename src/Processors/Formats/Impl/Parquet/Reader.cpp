@@ -1,7 +1,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/logger_useful.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Allocator.h>
@@ -3487,7 +3487,9 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         /// When the size of the decoded strings of a column is not known, a whole chunk is not risked: the dictionary
         /// of such a column is decoded in advance (see `ColumnChunk::decode_dictionary_early`), unless it does not
         /// fit the memory budget of the reader either.
-        double bytes_per_row = 0;
+        /// The columns that the caller adds to every chunk after the reader (e.g. the `initial-default` of a field
+        /// that the file does not have, materialized by the schema transform of the source) are counted too.
+        double bytes_per_row = static_cast<double>(options.bytes_per_row_added_after_reading);
         bool size_unknown = false;
         for (size_t i = 0; i < primitive_columns.size(); ++i)
         {
@@ -5597,7 +5599,7 @@ void Reader::addToColumnsCacheWrite(
     auto entry = makeColumnsCacheEntry();
     {
         /// The rest of the entry is the server's from the start, see `makeColumnsCacheEntry`.
-        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        ServerOwnedMemoryScope not_charged_to_query_or_user;
         entry->part_name = cache_options.file_path;
         entry->column_name = extended_sample_block.getByPosition(idx_in_output_block).name;
     }
