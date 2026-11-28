@@ -1,4 +1,6 @@
+import concurrent.futures
 import random
+import re
 
 import pytest
 
@@ -257,6 +259,65 @@ def test_remove_table_from_replication(started_cluster):
     assert instance.contains_in_log(
         "from publication, because table does not exist in PostgreSQL"
     )
+
+
+def test_concurrent_attach_table(started_cluster):
+    # Each `ATTACH TABLE` stores the list of tables with its table added. Concurrent ones used to store lists that
+    # missed each other's tables, and the missing tables were not replicated after a restart. Concurrent `DETACH TABLE
+    # ... PERMANENTLY` used to store lists that kept each other's tables.
+    NUM_TABLES = 9
+    pg_manager.create_and_fill_postgres_tables(NUM_TABLES)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=["materialized_postgresql_tables_list = 'postgresql_replica_0'"],
+    )
+    check_tables_are_synchronized(instance, "postgresql_replica_0")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_TABLES - 1) as executor:
+        futures = [
+            executor.submit(
+                instance.query, f"ATTACH TABLE test_database.postgresql_replica_{i}"
+            )
+            for i in range(1, NUM_TABLES)
+        ]
+        for future in futures:
+            future.result()
+
+    def stored_tables_list():
+        create_query = instance.query(
+            "SHOW CREATE DATABASE test_database FORMAT TSVRaw"
+        )
+        tables_list = re.search(
+            r"materialized_postgresql_tables_list = '([^']*)'", create_query
+        ).group(1)
+        return sorted(tables_list.split(","))
+
+    assert stored_tables_list() == sorted(
+        f"postgresql_replica_{i}" for i in range(NUM_TABLES)
+    )
+
+    # `DETACH TABLE ... PERMANENTLY` stores the list without its table in the same way.
+    NUM_DETACHED = 4
+    with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_DETACHED) as executor:
+        futures = [
+            executor.submit(
+                instance.query,
+                f"DETACH TABLE test_database.postgresql_replica_{i} PERMANENTLY",
+            )
+            for i in range(1, NUM_DETACHED + 1)
+        ]
+        for future in futures:
+            future.result()
+
+    remaining_tables = ["postgresql_replica_0"] + [
+        f"postgresql_replica_{i}" for i in range(NUM_DETACHED + 1, NUM_TABLES)
+    ]
+    assert stored_tables_list() == sorted(remaining_tables)
+
+    instance.restart_clickhouse()
+    for table_name in remaining_tables:
+        check_tables_are_synchronized(instance, table_name)
 
 
 def test_predefined_connection_configuration(started_cluster):
