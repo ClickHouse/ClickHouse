@@ -1,5 +1,7 @@
 #include <filesystem>
+#include <optional>
 #include <Core/Settings.h>
+#include <Disks/LocalDirectorySyncGuard.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/FileEncryptionKeys.h>
 #include <IO/ReadBufferFromFile.h>
@@ -46,11 +48,11 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
-    extern const int NAMED_COLLECTION_DOESNT_EXIST;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int SYNTAX_ERROR;
     extern const int DATA_ENCRYPTION_ERROR;
 }
 
@@ -189,19 +191,33 @@ public:
                 file_name);
         }
 
-        fs::create_directories(root_path);
+        const bool fsync = getContext()->getSettingsRef()[Setting::fsync_metadata];
+
+        createDirectoriesAndSync(root_path, fsync, getContext()->getPath());
 
         auto tmp_path = getPath(file_name + ".tmp");
         auto write_data = writeHook(data);
-        WriteBufferFromFile out(tmp_path, write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(write_data, out);
 
-        out.next();
-        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-            out.sync();
-        out.close();
+        /// The temporary file is opened with O_EXCL, so one left behind by a failed attempt would
+        /// make every later attempt fail too.
+        try
+        {
+            WriteBufferFromFile out(tmp_path, write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
+            writeString(write_data, out);
 
-        fs::rename(tmp_path, getPath(file_name));
+            out.next();
+            if (fsync)
+                out.sync();
+            out.close();
+
+            renameAndSync(tmp_path, getPath(file_name), replace, fsync);
+        }
+        catch (...)
+        {
+            std::error_code remove_ec;
+            fs::remove(tmp_path, remove_ec);
+            throw;
+        }
     }
 
     [[nodiscard]] virtual std::string writeHook(const std::string & data) const
@@ -211,17 +227,34 @@ public:
 
     void remove(const std::string & file_name) override
     {
-        if (!removeIfExists(file_name))
-        {
-            throw Exception(
-                ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
-                "Cannot remove `{}`, because it doesn't exist", file_name);
-        }
+        /// Only a collection the factory holds is removed, so a missing file is not an error, see
+        /// `removeIfExists`.
+        removeIfExists(file_name);
     }
 
     bool removeIfExists(const std::string & file_name) override
     {
-        return fs::remove(getPath(file_name));
+        const auto path = getPath(file_name);
+        const auto dir = fs::path(path).parent_path();
+
+        /// The directory is synced even when the file is missing, which can be the unlink of an
+        /// earlier drop whose sync failed. Without the directory there is nothing to persist.
+        if (!fs::exists(dir))
+            return false;
+
+        /// Opened before the unlink, so a directory that cannot be opened does not leave the
+        /// collection removed, and synced after it, so a DROP is not reported as done while the
+        /// removal could still revert and resurrect the collection.
+        std::optional<CheckedDirectorySync> dir_sync;
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+            dir_sync.emplace(dir.string());
+
+        const bool removed = fs::remove(path);
+
+        if (dir_sync)
+            dir_sync->sync();
+
+        return removed;
     }
 
 protected:
@@ -656,7 +689,13 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
                     "Cannot read named collection '{}', skipping it: {}", collection_name, e.message());
                 continue;
             }
-            throw;
+            if (!isUnparseableLocalEntry(e.code()))
+                throw;
+            CurrentThread::HideLogsFromClientScope hide_logs_from_client;
+            LOG_ERROR(getLogger("NamedCollectionsMetadataStorage"),
+                "Skipping named collection '{}': metadata file failed to parse, error code {}",
+                collection_name, e.code());
+            continue;
         }
     }
     return result;
@@ -755,9 +794,28 @@ ASTCreateNamedCollectionQuery NamedCollectionsMetadataStorage::readCreateQuery(c
     const auto & settings = getContext()->getSettingsRef();
 
     ParserCreateNamedCollectionQuery parser;
-    auto ast = parseQuery(parser, query, "in file " + path, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    ASTPtr ast;
+    try
+    {
+        /// A parser exception quotes the statement, so the collection's secrets, and names its file.
+        /// `system.errors` is readable by users who may not see either, so it is kept out of there
+        /// and replaced by one with neither.
+        Exception::SuppressErrorCodesScope suppress_error_codes;
+        ast = parseQuery(parser, query, "in file " + path, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    }
+    catch (const Exception & e)
+    {
+        throw Exception(e.code(), "Cannot parse the definition of a named collection");
+    }
     const auto & create_query = ast->as<const ASTCreateNamedCollectionQuery &>();
     return create_query;
+}
+
+bool NamedCollectionsMetadataStorage::isUnparseableLocalEntry(int error_code) const
+{
+    /// On replicated storage the error is operational, and on encrypted storage only a missing key
+    /// is expected, so neither is taken for a torn write.
+    return !storage->isReplicated() && !storage->isEncrypted() && error_code == ErrorCodes::SYNTAX_ERROR;
 }
 
 void NamedCollectionsMetadataStorage::writeCreateQuery(const String & collection_name, const String & create_statement, bool replace)

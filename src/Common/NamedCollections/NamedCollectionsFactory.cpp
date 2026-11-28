@@ -124,7 +124,7 @@ NamedCollectionFactory::StoredEntry NamedCollectionFactory::loadIfInStorage(cons
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::DATA_ENCRYPTION_ERROR)
+        if (e.code() == ErrorCodes::DATA_ENCRYPTION_ERROR || metadata_storage->isUnparseableLocalEntry(e.code()))
             return StoredEntry::unreadable;
         throw;
     }
@@ -367,15 +367,14 @@ void NamedCollectionFactory::createFromSQL(const ASTCreateNamedCollectionQuery &
     if (stored == StoredEntry::unreadable)
     {
         /// A named collection all the same, so it is not created again. It cannot be read back, so
-        /// nothing but the key it was encrypted with tells what overwriting it would lose: it is not
-        /// replaced either, only dropped.
+        /// what overwriting it would lose is unknown: it is not replaced either, only dropped.
         if (query.if_not_exists)
             return;
 
         throw Exception(
             ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
             "A named collection `{}` already exists in the storage, but could not be loaded, see the server log. "
-            "Configure the encryption key it was written with to load it, or drop it",
+            "Drop it, or, if it is encrypted, configure the key it was written with to load it",
             query.collection_name);
     }
 
@@ -404,6 +403,11 @@ void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & q
     const auto stored = loadIfInStorage(query.collection_name, lock);
     if (stored == StoredEntry::none)
     {
+        /// An unreadable entry is not loaded, so a missing local file can still be the unlink of an
+        /// earlier drop whose directory sync failed: the sync is retried.
+        if (!metadata_storage->isReplicated())
+            metadata_storage->removeIfExists(query.collection_name);
+
         if (query.if_exists)
             return;
 

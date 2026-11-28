@@ -4,12 +4,13 @@
 #include <Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h>
 
 #include <Common/StringUtils.h>
-#include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 
 #include <Core/Settings.h>
+
+#include <Disks/LocalDirectorySyncGuard.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -25,6 +26,7 @@
 #include <Poco/DirectoryIterator.h>
 
 #include <filesystem>
+#include <optional>
 
 namespace fs = std::filesystem;
 
@@ -42,7 +44,6 @@ namespace ErrorCodes
 {
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int FUNCTION_ALREADY_EXISTS;
-    extern const int UNKNOWN_FUNCTION;
 }
 
 
@@ -177,10 +178,10 @@ void UserDefinedSQLObjectsDiskStorage::reloadObject(UserDefinedSQLObjectType obj
 }
 
 
-void UserDefinedSQLObjectsDiskStorage::createDirectory()
+void UserDefinedSQLObjectsDiskStorage::createDirectory(bool fsync)
 {
     std::error_code create_dir_error_code;
-    fs::create_directories(dir_path, create_dir_error_code);
+    createDirectoriesAndSync(dir_path, fsync, create_dir_error_code, getContext()->getPath());
     if (!fs::exists(dir_path) || !fs::is_directory(dir_path) || create_dir_error_code)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Couldn't create directory {} reason: '{}'",
                         dir_path, create_dir_error_code.message());
@@ -196,7 +197,8 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
     bool replace_if_exists,
     const Settings & settings)
 {
-    createDirectory();
+    const bool fsync = settings[Setting::fsync_metadata];
+    createDirectory(fsync);
     String file_path = getFilePath(object_type, object_name);
     LOG_DEBUG(log, "Storing user-defined object {} to file {}", backQuote(object_name), file_path);
 
@@ -222,14 +224,11 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
         WriteBufferFromFile out(temp_file_path, create_statement.size());
         writeString(create_statement, out);
         out.next();
-        if (settings[Setting::fsync_metadata])
+        if (fsync)
             out.sync();
         out.close();
 
-        if (replace_if_exists)
-            fs::rename(temp_file_path, file_path);
-        else
-            renameNoReplace(temp_file_path, file_path);
+        renameAndSync(temp_file_path, file_path, replace_if_exists, fsync);
     }
     catch (...)
     {
@@ -243,22 +242,27 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
 
 
 bool UserDefinedSQLObjectsDiskStorage::removeObjectImpl(
-    const ContextPtr & /*current_context*/,
+    const ContextPtr & current_context,
     UserDefinedSQLObjectType object_type,
     const String & object_name,
-    bool throw_if_not_exists)
+    bool /*throw_if_not_exists*/)
 {
     String file_path = getFilePath(object_type, object_name);
     LOG_DEBUG(log, "Removing user defined object {} stored in file {}", backQuote(object_name), file_path);
 
-    bool existed = fs::remove(file_path);
+    /// Opened before the unlink, so a directory that cannot be opened does not leave the object
+    /// removed, and synced after it, so a DROP is not reported as done while the removal could
+    /// still revert and resurrect the object.
+    std::optional<CheckedDirectorySync> dir_sync;
+    if (current_context->getSettingsRef()[Setting::fsync_metadata])
+        dir_sync.emplace(fs::path(file_path).parent_path().string());
 
-    if (!existed)
-    {
-        if (throw_if_not_exists)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "User-defined function '{}' doesn't exist", object_name);
-        return false;
-    }
+    /// Only an object the base holds is removed, so a missing file is the unlink of an earlier
+    /// drop whose directory sync failed: the sync is retried and the drop completes.
+    fs::remove(file_path);
+
+    if (dir_sync)
+        dir_sync->sync();
 
     LOG_TRACE(log, "Object {} removed", backQuote(object_name));
     return true;
