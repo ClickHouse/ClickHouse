@@ -151,6 +151,10 @@ cube	0	0	3	3
 cube	0	5	2	1
 cube	5	0	1	1
 cube	5	5	0	1
+subcolumn	0	0	0	3
+subcolumn	0	0	0	3
+subcolumn	0	0	0	3
+subcolumn	0	0	0	3
 complete	0	0	2
 buffer	0	0	3
 buffer fuse	47	15.666666666666666

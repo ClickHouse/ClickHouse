@@ -1406,6 +1406,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Aliases aliases;
             std::unordered_map<String, QueryTreeNodePtr> missing_column_defaults;
+            std::unordered_map<String, QueryTreeNodePtr> subcolumn_conversions;
             RowPolicyDataOpt row_policy_data_opt;
             StorageMetadataPtr storage_metadata_snapshot = std::get<StorageMetadataPtr>(table);
             if (!storage_metadata_snapshot)
@@ -1555,8 +1556,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             }
             else
             {
-                modified_query_info
-                    = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases, missing_column_defaults);
+                modified_query_info = getModifiedQueryInfo(
+                    modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases,
+                    is_smallest_column_requested, aliases, missing_column_defaults, subcolumn_conversions);
 
                 if (!missing_column_defaults.empty())
                     modified_query_info.query_tree_already_optimized = true;
@@ -1652,6 +1654,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     merge_storage_snapshot->metadata->getColumns(),
                     aliases,
                     missing_column_defaults,
+                    subcolumn_conversions,
                     row_policy_data_opt,
                     context,
                     child,
@@ -1769,6 +1772,23 @@ void replaceMissingColumnsWithDefaults(
     for (auto & child : node->getChildren())
         if (child && child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION)
             replaceMissingColumnsWithDefaults(child, table_expression, defaults, context, wrap);
+}
+
+/// Name the child's own columns as its planner does, `<alias>.<column>`: the `Merge` query's planner context has no
+/// identifiers for them.
+void nameChildColumnsByIdentifier(QueryTreeNodePtr & node, const QueryTreeNodePtr & child_table_expression)
+{
+    if (const auto * column = node->as<ColumnNode>(); column && column->getColumnSourceOrNull() == child_table_expression)
+    {
+        const auto & alias = child_table_expression->getAlias();
+        auto name = alias.empty() ? column->getColumnName() : backQuoteIfNeed(alias) + "." + backQuoteIfNeed(column->getColumnName());
+        node = std::make_shared<ColumnNode>(NameAndTypePair{name, column->getColumnType()}, TableExpressionNodeWeakPtr{});
+        return;
+    }
+
+    for (auto & child : node->getChildren())
+        if (child)
+            nameChildColumnsByIdentifier(child, child_table_expression);
 }
 
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
@@ -1935,7 +1955,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     Names & column_names_as_aliases,
     bool & is_smallest_column_requested,
     Aliases & aliases,
-    std::unordered_map<String, QueryTreeNodePtr> & missing_column_defaults) const
+    std::unordered_map<String, QueryTreeNodePtr> & missing_column_defaults,
+    std::unordered_map<String, QueryTreeNodePtr> & subcolumn_conversions) const
 {
     const auto & [database_name, storage, storage_lock, table_name, _] = storage_with_lock_and_name;
     const StorageID current_storage_id = storage->getStorageID();
@@ -2018,6 +2039,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                     get_subcolumn_node->resolveAsFunction(
                         FunctionFactory::instance().get("getSubcolumn", modified_context)->build(get_subcolumn_node->getArgumentColumns()));
 
+                    if (common_processed_stage > QueryProcessingStage::FetchColumns)
+                        subcolumn_conversions.emplace(column_name, get_subcolumn_node);
                     column_name_to_node.emplace(column_name, std::move(get_subcolumn_node));
                     continue;
                 }
@@ -2878,6 +2901,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const ColumnsDescription & merge_columns,
     const Aliases & aliases,
     const std::unordered_map<String, QueryTreeNodePtr> & missing_column_defaults,
+    const std::unordered_map<String, QueryTreeNodePtr> & subcolumn_conversions,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
     ChildPlan & child,
@@ -2945,6 +2969,13 @@ void ReadFromMerge::convertAndFilterSourceStream(
             {
                 auto rewritten = node->clone();
                 replaceMissingColumnsWithDefaults(rewritten, outer_query_info.table_expression, missing_column_defaults, local_context);
+                if (!subcolumn_conversions.empty())
+                {
+                    replaceColumns(rewritten, outer_query_info.table_expression, subcolumn_conversions);
+                    /// Rename in a copy: the conversions are nodes of the child's query tree.
+                    rewritten = rewritten->clone();
+                    nameChildColumnsByIdentifier(rewritten, modified_query_info.table_expression);
+                }
                 return rewritten;
             };
 

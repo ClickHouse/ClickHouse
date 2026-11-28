@@ -1451,18 +1451,29 @@ bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
 class CollectGenuineQualifierTailsVisitor : public InDepthQueryTreeVisitor<CollectGenuineQualifierTailsVisitor>
 {
 public:
-    CollectGenuineQualifierTailsVisitor(const PlannerContext & planner_context_, std::unordered_set<String> & tails_)
+    CollectGenuineQualifierTailsVisitor(
+        const PlannerContext & planner_context_, std::unordered_set<String> & tails_, const RewriteForShard * rewrite_for_shard_ = nullptr)
         : planner_context(planner_context_)
         , tails(tails_)
+        , rewrite_for_shard(rewrite_for_shard_)
     {
     }
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (node->getNodeType() != QueryTreeNodeType::COLUMN)
+        const auto * column = node->as<ColumnNode>();
+        if (!column)
             return;
 
-        const auto * identifier = planner_context.getColumnNodeIdentifierOrNull(node);
+        /// The columns the rewrite puts in place of this one have no source and are named by their identifiers.
+        if (rewrite_for_shard && *rewrite_for_shard)
+        {
+            auto rewritten = (*rewrite_for_shard)(node);
+            CollectGenuineQualifierTailsVisitor(planner_context, tails).visit(rewritten);
+        }
+
+        const auto * identifier
+            = column->getColumnSourceOrNull() ? planner_context.getColumnNodeIdentifierOrNull(node) : &column->getColumnName();
         if (!identifier)
             return;
 
@@ -1485,6 +1496,7 @@ public:
 private:
     const PlannerContext & planner_context;
     std::unordered_set<String> & tails;
+    const RewriteForShard * rewrite_for_shard;
 };
 
 
@@ -1520,7 +1532,7 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
         CollectInlinedAliasExpressionsVisitor alias_visitor(*planner_context, identifier_to_alias_expression);
         alias_visitor.visit(query_tree_for_visit);
 
-        CollectGenuineQualifierTailsVisitor tails_visitor(*planner_context, genuine_qualifier_tails);
+        CollectGenuineQualifierTailsVisitor tails_visitor(*planner_context, genuine_qualifier_tails, &rewrite_for_shard);
         tails_visitor.visit(query_tree_for_visit);
     }
 

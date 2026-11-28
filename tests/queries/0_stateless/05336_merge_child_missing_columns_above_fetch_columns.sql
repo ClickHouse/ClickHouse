@@ -105,6 +105,18 @@ SELECT 'rollup', a, b, grouping(a, b), count() FROM merge(currentDatabase(), '^t
 SELECT 'cube', a, b, grouping(a, b), count() FROM merge(currentDatabase(), '^t_(a|dist_b)$') GROUP BY CUBE(a, b) ORDER BY ALL;
 SELECT 'cube', a, b, grouping(a, b), count() FROM merge(currentDatabase(), '^t_(dist_a|b)$') GROUP BY CUBE(a, b) ORDER BY ALL;
 
+-- A subcolumn that a child derives from its column of another type, next to missing columns, also in a subquery.
+CREATE TABLE t_r (a UInt8, b UInt8, n Nullable(UInt8)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_s (n UInt8) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_r VALUES (5, 5, NULL);
+INSERT INTO t_s VALUES (1), (2);
+CREATE TABLE t_dist_r AS t_r ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_r);
+CREATE TABLE t_dist_s AS t_s ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_s);
+SELECT 'subcolumn', min(a), min(b), min(n.null), count() FROM merge(currentDatabase(), '^t_(r|dist_s)$');
+SELECT 'subcolumn', min(a), min(b), min(n.null), count() FROM merge(currentDatabase(), '^t_(dist_r|s)$');
+SELECT 'subcolumn', * FROM (SELECT min(a), min(b), min(n.null), count() FROM merge(currentDatabase(), '^t_(r|dist_s)$'));
+SELECT 'subcolumn', * FROM (SELECT min(a), min(b), min(n.null), count() FROM merge(currentDatabase(), '^t_(dist_r|s)$'));
+
 -- A `Merge` table with a single `Distributed` child is read at `Complete`.
 CREATE TABLE t_m1 (id UInt64, a UInt8, b UInt8) ENGINE = Merge(currentDatabase(), '^t_dist_b$');
 SELECT 'complete', min(a), min(b), count() FROM t_m1;
