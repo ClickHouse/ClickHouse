@@ -1,0 +1,35 @@
+whole-tuple key transform
+2
+2
+0
+0
+tuple key
+1
+1
+1
+1
+named tuple key, cast by name
+1
+1
+array key
+1
+1
+map key
+1
+1
+array of pairs key, map element
+1
+1
+partition key
+2
+2
+minmax skip index
+1
+1
+a String element keeps the index
+Parts: 1 | Granules: 1
+Condition: (toString(k) notIn 1-element set)
+Parts: 1/2
+Parts: 1 | Granules: 1
+Condition: (k in 1-element set)
+Parts: 1/2
