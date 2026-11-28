@@ -1,6 +1,8 @@
 -- Comparisons with an empty string over LowCardinality(String) and LowCardinality(Nullable(String))
 -- are rewritten to `empty`/`notEmpty`, while bloom filter and primary key analysis keep working.
 
+-- Disable force_primary_key_reverse_order: the reference pins the number of granules selected by the key analysis, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
 SET enable_analyzer = 1;
 SET optimize_empty_string_comparisons = 1;
 SET use_skip_indexes = 1;

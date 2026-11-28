@@ -367,7 +367,7 @@ public:
             return false;
         }
 
-        if (is_bool_type && !insert_settings.allow_type_conversion)
+        if (is_bool_type && (!insert_settings.allow_type_conversion || insert_settings.no_number_to_bool_conversion))
         {
             if (!element.isBool())
                 return false;
@@ -423,7 +423,7 @@ public:
             return false;
         }
 
-        if (this->is_bool_type && !insert_settings.allow_type_conversion)
+        if (this->is_bool_type && (!insert_settings.allow_type_conversion || insert_settings.no_number_to_bool_conversion))
         {
             if (!element.isBool())
                 return false;
@@ -1928,7 +1928,8 @@ public:
             return true;
         }
 
-        /// First pass: try variants without truncating fractional JSON numbers to integer types.
+        /// First pass: try variants without truncating fractional JSON numbers to integer types
+        /// or converting numbers to `Bool`.
         /// This ensures that for `Variant(IntT, FloatT)` the float member claims a fractional
         /// value like `3.14` instead of an integer member silently truncating it to `3`.
         ///
@@ -1938,6 +1939,11 @@ public:
         {
             auto strict_settings = insert_settings;
             strict_settings.no_int_truncation_from_double = true;
+            strict_settings.no_number_to_bool_conversion = true;
+            /// A child rejected by the strict pass must fail the whole alternative,
+            /// not be replaced with a default inside an `Array`, `Tuple`, `Map` or `JSON`.
+            strict_settings.insert_default_on_invalid_elements_in_complex_types = false;
+            strict_settings.skip_invalid_typed_paths = false;
             for (size_t i : order)
             {
                 auto & variant = column_variant.getVariantByGlobalDiscriminator(i);

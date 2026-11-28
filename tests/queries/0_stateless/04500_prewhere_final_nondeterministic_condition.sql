@@ -12,7 +12,7 @@ INSERT INTO t_prewhere_final_rand SELECT number, 'old', 1 FROM numbers(10000);
 INSERT INTO t_prewhere_final_rand SELECT number, 'new', 2 FROM numbers(10000);
 
 SELECT '= deterministic sorting-key condition is moved =';
-SELECT replaceRegexpAll(explain, '__table1\.|_UInt8|_UInt16', '') FROM (EXPLAIN actions=1 SELECT * FROM t_prewhere_final_rand FINAL WHERE k > 100) WHERE explain LIKE '%Prewhere%';
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\.|_UInt8|_UInt16', '')) FROM (EXPLAIN actions=1 SELECT * FROM t_prewhere_final_rand FINAL WHERE k > 100) WHERE explain LIKE '%Prewhere%';
 
 SELECT '= non-deterministic condition is not moved =';
 SELECT count() FROM (EXPLAIN actions=1 SELECT * FROM t_prewhere_final_rand FINAL WHERE (k + rand()) % 2 = 0) WHERE explain LIKE '%Prewhere filter%';

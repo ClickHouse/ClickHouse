@@ -290,4 +290,5 @@ STYLE & CONDUCT
 - Do not assume unstated behavior; if necessary, ask for clarification in "Missing context / blind spots."
 - Avoid changing scope: review what's in the PR; suggest follow-ups separately. Unchanged code that the PR's inputs reach is in scope: a defect there is a finding, even when it is pre-existing. The PR must either fix it or link an issue that tracks it; approve only when one of the two is done.
 - Avoid uncertain minor comments. For serious plausible risks, state the uncertainty and request the needed verification or tests.
+- Treat a defect that the description or comments of the PR report in code outside the diff as one in the unchanged code that the PR's inputs reach, even when the PR changes no code, for example one found by checking existing code against a rule that the PR adds.
 - When performing a code review, **ignore `/.github/workflows/*` files**.

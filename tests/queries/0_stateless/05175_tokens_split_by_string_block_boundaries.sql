@@ -1,5 +1,7 @@
 -- The splitByString tokenizer scans strings in 16-byte blocks: separators crossing block boundaries,
 -- separators that are prefixes of one another, and unfinished separators at the end of the string.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 SELECT '-- empty and separator-only strings';
 SELECT tokens('', 'splitByString', [', ']);

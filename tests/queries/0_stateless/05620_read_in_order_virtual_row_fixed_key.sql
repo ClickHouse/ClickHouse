@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the reference pins the read type `InOrder`/`InReverseOrder`, which flips with a descending key
+SET force_primary_key_reverse_order = 0;
+
 -- A key column fixed by the filter (`WHERE key = constant`) and listed in `ORDER BY` does not determine the direction of reading.
 -- If the read goes in the direction of that column anyway, `ORDER BY` follows the sorting key as it is, and the virtual row
 -- of reading in order stays enabled. Reading in order through an `INNER JOIN` needs it.

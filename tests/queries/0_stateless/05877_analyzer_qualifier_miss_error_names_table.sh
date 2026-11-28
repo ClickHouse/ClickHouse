@@ -15,7 +15,7 @@ CREATE TABLE ${DB}.tbl (id Int32) ENGINE = MergeTree ORDER BY ();
 
 message()
 {
-    $CLICKHOUSE_CLIENT --enable_analyzer 1 --query "$1" 2>&1 \
+    $CLICKHOUSE_CLIENT --query "$1" 2>&1 \
         | grep -m1 -F 'cannot be resolved from' \
         | sed -e 's/.*\(cannot be resolved from .*\)\. In scope.*/\1/' -e 's/\. Maybe you meant.*//' -e "s/${DB}/db/g"
 }

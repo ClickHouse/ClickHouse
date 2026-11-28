@@ -4,6 +4,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests benchmark CLI flag parsing, creates MergeTree tables internally
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 QUERY_ID=$RANDOM
 $CLICKHOUSE_BENCHMARK --query-id $QUERY_ID --max-concurrency 3 --max-threads 2  -i 1 --query "SELECT 1" 2>&1 | grep -F 'Queries executed' 
 $CLICKHOUSE_BENCHMARK --query_id $QUERY_ID --max_concurrency 3 --max_threads 2  -i 1 --query "SELECT 1" 2>&1 | grep -F 'Queries executed' 

@@ -338,13 +338,9 @@ endif ()
 # the ThreadFuzzer test); see commit d5825ec8 / azat 2024-03-04.
 set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
 
-# Arrow IPC buffers use intentionally unaligned int32 offset arrays — suppress the alignment check.
 # RocksDB EmbeddedRocksDB full scan hits a pointer-overflow when a corrupted slice size
 # causes pointer arithmetic to overflow. Pre-existing bug: https://github.com/ClickHouse/ClickHouse/issues/99862
 if (SANITIZE STREQUAL "address,undefined")
-    set_source_files_properties(
-        ${CMAKE_CURRENT_SOURCE_DIR}/Processors/Formats/Impl/ArrowColumnToCHColumn.cpp
-        PROPERTIES COMPILE_FLAGS "-fno-sanitize=alignment")
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/Storages/RocksDB/StorageEmbeddedRocksDB.cpp
         PROPERTIES COMPILE_FLAGS "-fno-sanitize=pointer-overflow")
@@ -834,10 +830,6 @@ endif ()
 
 if (TARGET ch_contrib::parquet_format)
     target_link_libraries(dbms PRIVATE ch_contrib::parquet_format)
-endif ()
-
-if (TARGET ch_contrib::parquet)
-    target_link_libraries(dbms PRIVATE ch_contrib::parquet)
 endif ()
 
 # Native Arrow IPC reader/writer needs only the FlatBuffers-generated metadata headers, not the Arrow runtime.

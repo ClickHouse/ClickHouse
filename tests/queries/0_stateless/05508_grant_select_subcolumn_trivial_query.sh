@@ -24,15 +24,13 @@ check()
 {
     local out
     for query in "SELECT count() FROM $1" "SELECT 1 FROM $1 LIMIT 1"; do
-        for analyzer in 1 0; do
-            if out=$($CLICKHOUSE_CLIENT --user "$user" --enable_analyzer $analyzer -q "$query" 2>&1); then
-                echo "$2: analyzer=$analyzer $query -> $out" | sed "s/${CLICKHOUSE_DATABASE}\.//"
-            elif echo "$out" | grep -q 'ACCESS_DENIED'; then
-                echo "$2: analyzer=$analyzer $query -> ACCESS_DENIED" | sed "s/${CLICKHOUSE_DATABASE}\.//"
-            else
-                echo "$2: analyzer=$analyzer $query -> $out"
-            fi
-        done
+        if out=$($CLICKHOUSE_CLIENT --user "$user" -q "$query" 2>&1); then
+            echo "$2: $query -> $out" | sed "s/${CLICKHOUSE_DATABASE}\.//"
+        elif echo "$out" | grep -q 'ACCESS_DENIED'; then
+            echo "$2: $query -> ACCESS_DENIED" | sed "s/${CLICKHOUSE_DATABASE}\.//"
+        else
+            echo "$2: $query -> $out"
+        fi
     done
 }
 

@@ -2,6 +2,9 @@
 -- UNIQUE KEY `unique_key_conflict_action = 'ignore'` kills an ignored row in the part it arrived in. Overwrite is 04105's.
 -- Red if an ignored row is read, or a re-inserted key under `abort` reports the dead copy instead of the old row.
 
+-- Disable force_primary_key_reverse_order: the reported conflicting row number follows the physical order of the rows, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET enable_unique_key = 1;
 SET async_insert = 0;
 

@@ -43,20 +43,19 @@ SELECT 'nested_arr_new=1', count() FROM items_arrjoin INNER JOIN tags_arrjoin
     ON toString(arrayJoin(items_arrjoin.tag_ids)) = tags_arrjoin.id
     WHERE items_arrjoin.filter_key = 'target';
 
--- (5) MECHANISM-LEVEL: count ARRAY JOIN actions in plan. The substring
---     `'ARRAY JOIN '` (with trailing space) matches every `ARRAY_JOIN`
---     action line regardless of internal `__tableN.colname` aliasing,
+-- (5) MECHANISM-LEVEL: count ARRAY JOIN actions in plan: the lines that
+--     start with `ARRAY JOIN `, one per `ARRAY_JOIN` action,
+--     regardless of internal `__tableN.colname` aliasing,
 --     so this assertion does not bind to internal alias text and stays
 --     stable across renderer / alias-naming churn. Bug = 2; fix = 1.
 SELECT 'arrjoin_count_in_plan_new=1',
-    countSubstrings(arrayStringConcat(groupArray(explain), char(10)),
-                    'ARRAY JOIN ')
+    count()
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM items_arrjoin INNER JOIN tags_arrjoin
         ON arrayJoin(items_arrjoin.tag_ids) = tags_arrjoin.id
         WHERE items_arrjoin.filter_key = 'target'
-);
+) WHERE trimLeft(explain) LIKE 'ARRAY JOIN %';
 
 -- (6) AND-arrayJoin conjunct -- mechanism-level plan-shape check that
 --     simultaneously validates two invariants:
@@ -75,15 +74,14 @@ FROM (
 --     fix-vs-bug signal here because each arrayJoin performs its own
 --     row expansion (see 03832_array_join_filter_push_down_cross_join.sql).
 SELECT 'and_conjunct_arrjoin_count_in_plan_new=1',
-    countSubstrings(arrayStringConcat(groupArray(explain), char(10)),
-                    'ARRAY JOIN ')
+    count()
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM items_arrjoin INNER JOIN tags_arrjoin
         ON arrayJoin(items_arrjoin.tag_ids) = tags_arrjoin.id
         WHERE items_arrjoin.filter_key = 'target'
           AND arrayJoin(items_arrjoin.tag_ids) <> ''
-);
+) WHERE trimLeft(explain) LIKE 'ARRAY JOIN %';
 
 -- (7) Subquery (control: avoids buggy plan shape).
 SELECT 'control_subquery_new=1', count() FROM (
@@ -108,7 +106,7 @@ SELECT 'no_disj_pd_new=1', count() FROM items_arrjoin INNER JOIN tags_arrjoin
 --      `fix_predicate_for_join_logical_step` invocations are exercised:
 --      asymmetric WHERE on the left only, asymmetric WHERE on the right
 --      only, and separable WHERE on both sides simultaneously.
---      Plan-shape assertions count `'ARRAY JOIN '` regardless of side
+--      Plan-shape assertions count `ARRAY JOIN ` lines regardless of side
 --      alias so they don't bind to internal `__tableN.col` text.
 CREATE TABLE right_arrjoin (id UInt64, filter_key String, arr Array(String))
 ENGINE = MergeTree() ORDER BY (filter_key, id);
@@ -127,15 +125,14 @@ SELECT 'bilateral_left_where_count_new=0', count() FROM items_arrjoin AS L
     ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
     WHERE L.filter_key = 'target';
 SELECT 'bilateral_left_where_arrjoin_count_in_plan_new=1',
-    countSubstrings(arrayStringConcat(groupArray(explain), char(10)),
-                    'ARRAY JOIN ')
+    count()
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM items_arrjoin AS L
         INNER JOIN right_arrjoin AS R
         ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
         WHERE L.filter_key = 'target'
-);
+) WHERE trimLeft(explain) LIKE 'ARRAY JOIN %';
 
 -- (11) Bilateral, WHERE on RIGHT only -- right-side push-down triggers.
 --      Symmetric coverage to (10); catches a right-side-only bug in
@@ -149,15 +146,14 @@ SELECT 'bilateral_right_where_count_new=0', count() FROM items_arrjoin AS L
     ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
     WHERE R.filter_key = 'rtarget';
 SELECT 'bilateral_right_where_arrjoin_count_in_plan_new=1',
-    countSubstrings(arrayStringConcat(groupArray(explain), char(10)),
-                    'ARRAY JOIN ')
+    count()
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM items_arrjoin AS L
         INNER JOIN right_arrjoin AS R
         ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
         WHERE R.filter_key = 'rtarget'
-);
+) WHERE trimLeft(explain) LIKE 'ARRAY JOIN %';
 
 -- (12) Bilateral, WHERE on BOTH sides (separable conjuncts) -- both
 --      left- and right-side push-down trigger in the same query.
@@ -170,15 +166,14 @@ SELECT 'bilateral_both_where_count_new=0', count() FROM items_arrjoin AS L
     ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
     WHERE L.filter_key = 'target' AND R.filter_key = 'rtarget';
 SELECT 'bilateral_both_where_arrjoin_count_in_plan_new=1',
-    countSubstrings(arrayStringConcat(groupArray(explain), char(10)),
-                    'ARRAY JOIN ')
+    count()
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM items_arrjoin AS L
         INNER JOIN right_arrjoin AS R
         ON arrayJoin(L.tag_ids) = arrayJoin(R.arr)
         WHERE L.filter_key = 'target' AND R.filter_key = 'rtarget'
-);
+) WHERE trimLeft(explain) LIKE 'ARRAY JOIN %';
 
 DROP TABLE items_arrjoin;
 DROP TABLE tags_arrjoin;

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: EXPLAIN output shows the sort direction of the key
+SET force_primary_key_reverse_order = 0;
+
 SET explain_query_plan_default = 'legacy';
 SET optimize_aggregators_of_group_by_keys = 1;
 SET optimize_read_in_order = 1;
@@ -11,4 +14,4 @@ insert into tab select 0, number % 3, 2 - intDiv(number, 3), (number % 3 + 1) * 
 insert into tab select 0, number % 3, 2 - intDiv(number, 3), (number % 3 + 1) * 100 from numbers(6);
 
 select a, any(b), c, d from tab where b = 1 group by a, c, d order by c, d settings optimize_aggregation_in_order=1;
-select * from (explain actions = 1, sorting=1 select a, any(b), c, d from tab where b = 1 group by a, c, d settings optimize_aggregation_in_order=1, enable_parallel_replicas=0) where explain like '%ReadFromMergeTree%' or explain like '%Aggregating%' or explain like '%Order:%';
+select trimLeft(explain) from (explain actions = 1, sorting=1 select a, any(b), c, d from tab where b = 1 group by a, c, d settings optimize_aggregation_in_order=1, enable_parallel_replicas=0) where explain like '%ReadFromMergeTree%' or explain like '%Aggregating%' or explain like '%Order:%';
