@@ -581,9 +581,56 @@ static bool canFlattenThroughExpression(const ActionsDAG & dag, bool merge_expre
     return canMergeExpressionIntoJoinGraph(dag, merge_expression_into_join);
 }
 
+static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness);
+
+/// Adds `node` to the graph as one relation with its statistics.
+static void addRelation(QueryGraphBuilder & graph, QueryPlan::Node * node, const String & label, size_t relation_index)
+{
+    graph.inputs.push_back(node);
+    RelationStats stats = estimateReadRowsCount(
+        *node, RelationStatsOptions{.find_single_node_read = &graph.context->optimization_settings.find_single_node_read});
+
+    std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
+    if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
+        && (!stats.estimated_rows || stats.source == RowEstimateSource::AssumedSelectivity
+            || num_rows_from_cache.value() < stats.estimated_rows.value()))
+    {
+        /// A measured row count beats statistics: take the minimum and mark it a precise cache value.
+        /// An assumed row count is not an upper bound, so a measured one replaces it also when it is larger.
+        stats.estimated_rows = num_rows_from_cache;
+        stats.imprecise_estimate = false;
+        stats.source = RowEstimateSource::HashTableCache;
+    }
+
+    if (!label.empty())
+        stats.table_name = label;
+
+    if (UInt64 seed = graph.context->effective_randomize_seed)
+        stats = getRandomizedStats(seed, relation_index, stats.table_name, *node->step->getOutputHeader());
+
+    LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
+        stats.source == RowEstimateSource::HashTableCache ? " (from cache)" : "",
+        node->step->getName(), dumpRelationStatsForLogs(stats));
+    graph.relation_stats.push_back(stats);
+}
+
+/// A child join that `addChildQueryGraph` flattened into a graph. Until `finishChildQueryGraph` the join can still be solved
+/// on its own and become one relation of the parent join.
+struct FlattenedChildJoin
+{
+    /// The input of the parent join: the child join, or the expression above it.
+    QueryPlan::Node * node = nullptr;
+    QueryPlan::Node * join_node = nullptr;
+    /// Merged into the graph, unless the child join is solved on its own.
+    ExpressionStep * expression_step = nullptr;
+    JoinStrictness strictness = JoinStrictness::All;
+};
+
+/// Builds the graph of an input of a join into the empty `graph`: the relations of a child join that can be reordered
+/// together with its parent (then `flattened` describes it), or one relation. Returns the number of relations.
 static size_t addChildQueryGraph(
     QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit,
-    bool below_null_supplying)
+    bool below_null_supplying, size_t relation_index, FlattenedChildJoin & flattened)
 {
     auto * join_node = node;
     auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
@@ -620,19 +667,14 @@ static size_t addChildQueryGraph(
             allow_child_join_kind = allow_child_join_kind && child_join_step->typeChangingSides().empty();
             if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
             {
-                QueryGraphBuilder child_graph(graph.context);
-                child_graph.below_null_supplying = below_null_supplying;
-                buildQueryGraph(child_graph, *join_node, nodes, join_steps_limit);
-
-                if (expression_step)
-                {
-                    ActionsDAG::NodeMapping node_mapping;
-                    child_graph.expression_actions.getActionsDAG()->mergeInplace(std::move(expression_step->getExpression()), node_mapping, true);
-                }
-
-                size_t count = child_graph.inputs.size();
-                uniteGraphs(graph, std::move(child_graph));
-                return count;
+                flattened = FlattenedChildJoin{
+                    .node = node,
+                    .join_node = join_node,
+                    .expression_step = expression_step,
+                    .strictness = child_join_step->getJoinOperator().strictness};
+                graph.below_null_supplying = below_null_supplying;
+                buildQueryGraph(graph, *join_node, nodes, join_steps_limit);
+                return graph.inputs.size();
             }
             /// Optimize child subplan before continuing to get size estimation
             optimizeJoinLogicalImpl(child_join_step, *join_node, nodes, graph.context->optimization_settings);
@@ -655,30 +697,44 @@ static size_t addChildQueryGraph(
         }
     }
 
-    graph.inputs.push_back(node);
-    RelationStats stats = estimateReadRowsCount(
-        *node, RelationStatsOptions{.find_single_node_read = &graph.context->optimization_settings.find_single_node_read});
+    addRelation(graph, node, label, relation_index);
+    return 1;
+}
 
-    std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
-    if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
-        && (!stats.estimated_rows || num_rows_from_cache.value() < stats.estimated_rows.value()))
+static bool hasRelationWithoutRowCount(const QueryGraphBuilder & graph)
+{
+    return std::ranges::any_of(graph.relation_stats, [](const auto & stats) { return !stats.estimated_rows; });
+}
+
+/// Completes the graph that `addChildQueryGraph` built for an input of a join, and returns the number of its relations.
+/// A flattened child join that is solved on its own becomes one relation, like a join that cannot be reordered.
+static size_t finishChildQueryGraph(
+    QueryGraphBuilder & graph, const FlattenedChildJoin & child, const String & label, QueryPlan::Nodes & nodes, bool solve_on_its_own)
+{
+    if (!child.join_node)
+        return graph.inputs.size();
+
+    if (!solve_on_its_own)
     {
-        /// A measured row count beats statistics: take the minimum and mark it a precise cache value.
-        stats.estimated_rows = num_rows_from_cache;
-        stats.imprecise_estimate = false;
-        stats.source = RowEstimateSource::HashTableCache;
+        if (child.expression_step)
+        {
+            ActionsDAG::NodeMapping node_mapping;
+            graph.expression_actions.getActionsDAG()->mergeInplace(std::move(child.expression_step->getExpression()), node_mapping, true);
+        }
+        return graph.inputs.size();
     }
 
-    if (!label.empty())
-        stats.table_name = label;
+    for (auto * input : graph.inputs)
+    {
+        if (auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(input->step.get()))
+            lookup_step->optimize(graph.context->optimization_settings);
+    }
 
-    if (UInt64 seed = graph.context->effective_randomize_seed)
-        stats = getRandomizedStats(seed, graph.relation_stats.size(), stats.table_name, *node->step->getOutputHeader());
-
-    LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
-        num_rows_from_cache.has_value() ? " (from cache)" : "",
-        node->step->getName(), dumpRelationStatsForLogs(stats));
-    graph.relation_stats.push_back(stats);
+    QueryGraphBuilder relation_graph(graph.context);
+    *child.join_node = chooseJoinOrder(std::move(graph), nodes, child.strictness);
+    graph = std::move(relation_graph);
+    /// The estimates are not randomized here: with randomized ones every relation has a row count.
+    addRelation(graph, child.node, label, /*relation_index=*/ 0);
     return 1;
 }
 
@@ -851,10 +907,24 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         }
     }
 
+    QueryGraphBuilder lhs_graph(query_graph.context);
+    QueryGraphBuilder rhs_graph(query_graph.context);
+    FlattenedChildJoin lhs_child;
+    FlattenedChildJoin rhs_child;
     size_t lhs_count = addChildQueryGraph(
-        query_graph, lhs_plan, nodes, lhs_label, allow_left_subgraph ? join_steps_limit - 1 : 0, lhs_below_null_supplying);
+        lhs_graph, lhs_plan, nodes, lhs_label, allow_left_subgraph ? join_steps_limit - 1 : 0, lhs_below_null_supplying,
+        /*relation_index=*/ 0, lhs_child);
     size_t rhs_count = addChildQueryGraph(
-        query_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, rhs_below_null_supplying);
+        rhs_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0,
+        rhs_below_null_supplying, /*relation_index=*/ lhs_count, rhs_child);
+
+    /// A relation without a row count is a barrier for reordering: the join keeps its two inputs as written, each of them
+    /// solved on its own, and it keeps its sides, as a swap needs the row counts of both inputs.
+    const bool keep_inputs = hasRelationWithoutRowCount(lhs_graph) || hasRelationWithoutRowCount(rhs_graph);
+    lhs_count = finishChildQueryGraph(lhs_graph, lhs_child, lhs_label, nodes, keep_inputs);
+    rhs_count = finishChildQueryGraph(rhs_graph, rhs_child, rhs_label, nodes, keep_inputs);
+    uniteGraphs(query_graph, std::move(lhs_graph));
+    uniteGraphs(query_graph, std::move(rhs_graph));
 
     size_t total_inputs = query_graph.inputs.size();
 
@@ -1198,6 +1268,18 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
+    /// Two relations have no order to choose, only the build side, and the written one is kept over an assumed row count.
+    if (query_graph.relation_stats.size() == 2)
+    {
+        for (auto & relation : query_graph.relation_stats)
+        {
+            if (relation.source == RowEstimateSource::AssumedSelectivity)
+            {
+                relation.estimated_rows.reset();
+                relation.source = RowEstimateSource::NoStatistics;
+            }
+        }
+    }
     query_graph.edges = std::move(query_graph_builder.join_edges);
     query_graph.edge_conflict_ops = std::move(query_graph_builder.join_edge_ops);
     BitSet null_supplying_relations;
@@ -1331,8 +1413,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     if (!query_graph_builder.context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryGraphBuilder context is not set");
 
-    auto join_settings = std::move(query_graph_builder.context->join_settings);
-    auto sorting_settings = std::move(query_graph_builder.context->sorting_settings);
+    /// Copies: the graphs of the inputs of a join share the context, and each of them can be solved on its own.
+    auto join_settings = query_graph_builder.context->join_settings;
+    auto sorting_settings = query_graph_builder.context->sorting_settings;
 
     /// After applying OUTER joins some columns may change their types (in case of join_use_nulls or JOIN USING)
     /// We need to track this change, this map tracks input columns and how they are transformed
@@ -1628,7 +1711,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .composite = true,
                 .column_stats = entry->column_stats};
 
-            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
+            /// A join without a row count was not costed, see `computeJoinCost`.
+            const auto cost = entry->estimated_rows ? std::make_optional(entry->cost) : std::nullopt;
+            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, cost, entry->selectivity, cluster_id);
 
             auto & new_node = nodes.emplace_back();
 

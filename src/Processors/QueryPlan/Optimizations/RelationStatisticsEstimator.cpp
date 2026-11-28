@@ -47,7 +47,13 @@ namespace DB
 
 namespace Setting
 {
+extern const SettingsDouble query_plan_join_order_default_filter_selectivity;
 extern const SettingsBool use_statistics;
+}
+
+namespace ErrorCodes
+{
+extern const int INVALID_SETTING_VALUE;
 }
 
 namespace QueryPlanOptimizations
@@ -127,6 +133,25 @@ void floorReadWithRows(RelationProfile & profile)
         column_stats.num_distinct_values = std::max<UInt64>(column_stats.num_distinct_values, 1);
 }
 
+/// Applies a filter that neither an index nor column statistics estimate to the row count of `stats`: `selectivity` is
+/// the share of rows assumed to pass it. With 0 the read has no row count, and the joins above it keep their written order.
+void applyUnestimatedFilter(RelationStats & stats, Float64 selectivity)
+{
+    if (!(selectivity >= 0 && selectivity <= 1))
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "The value of the setting `query_plan_join_order_default_filter_selectivity` must be between 0 and 1, got {}", selectivity);
+
+    stats.rows_exact = false;
+    if (selectivity == 0 || !stats.estimated_rows)
+    {
+        stats.estimated_rows.reset();
+        stats.source = RowEstimateSource::NoStatistics;
+        return;
+    }
+    stats.estimated_rows = std::max<UInt64>(toUInt64Saturating(Float64(*stats.estimated_rows) * selectivity), 1);
+    stats.source = RowEstimateSource::AssumedSelectivity;
+}
+
 /// A filter on the elements or on the output of an array join leaves its row count unknown unless the input is empty.
 void forgetFilteredArrayJoinRows(RelationStats & stats)
 {
@@ -152,8 +177,14 @@ bool applyRowLimit(RelationStats & stats, UInt64 limit, UInt64 offset, bool with
             return true;
         }
     }
-    if (!stats.estimated_rows || *stats.estimated_rows > limit)
+    /// The limit bounds the rows whatever was assumed about the input, so it replaces an assumed row count, also a smaller one.
+    const bool assumed = stats.source == RowEstimateSource::AssumedSelectivity;
+    if (!stats.estimated_rows || assumed || *stats.estimated_rows > limit)
+    {
         stats.estimated_rows = limit;
+        if (assumed)
+            stats.source = RowEstimateSource::NoStatistics;
+    }
     stats.rows_exact = false;
     return true;
 }
@@ -632,21 +663,17 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics};
 
-        /// If any conditions are pushed down to storage but not used in the index,
-        /// we cannot precisely estimate the row count
-        if (has_filter && !is_filtered_by_index)
-            return RelationStats{
-                .estimated_rows = {},
-                .table_name = table_display_name,
-                .imprecise_estimate = true,
-                .source = RowEstimateSource::NoStatistics};
-
-        return RelationStats{
+        RelationStats stats{
             .estimated_rows = analyzed_result->selected_rows,
             .table_name = table_display_name,
             .imprecise_estimate = true,
             .rows_exact = !coverage.mayDropRows(analyzed_result->selected_rows),
             .source = RowEstimateSource::PrimaryIndex};
+        /// Conditions pushed down to the storage that the index did not use are not in the selected rows.
+        if (has_filter && !is_filtered_by_index)
+            applyUnestimatedFilter(
+                stats, reading->getContext()->getSettingsRef()[Setting::query_plan_join_order_default_filter_selectivity]);
+        return stats;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
@@ -701,7 +728,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             return stats;
         }
 
-        /// As for MergeTree without column statistics, conditions that pruned nothing give no estimate.
+        /// Conditions that pruned nothing give no estimate.
         if (!estimate->pruned_data_files)
             return stats;
 

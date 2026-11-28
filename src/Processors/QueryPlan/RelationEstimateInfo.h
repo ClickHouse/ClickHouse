@@ -29,13 +29,16 @@ enum class RowEstimateSource : UInt8
     HashTableCache,
     /// Row count from data lake metadata (Iceberg manifest files).
     DataLakeMetadata,
+    /// Row count from the primary index scaled by the selectivity assumed for a filter that the index did not use.
+    AssumedSelectivity,
 };
 
 /// Imprecise specifically because column statistics are missing (excludes the synthetic test sources).
 constexpr bool isMissingStatisticsSource(RowEstimateSource source)
 {
     return source == RowEstimateSource::PrimaryIndex
-        || source == RowEstimateSource::NoStatistics;
+        || source == RowEstimateSource::NoStatistics
+        || source == RowEstimateSource::AssumedSelectivity;
 }
 
 /// EXPLAIN prefix for the row count, e.g. `no_stats` in `a[no_stats~1000]`; empty for precise sources.
@@ -52,6 +55,8 @@ constexpr std::string_view rowEstimateSourceTag(RowEstimateSource source)
             return "random";
         case RowEstimateSource::HashTableCache:
             return "cache";
+        case RowEstimateSource::AssumedSelectivity:
+            return "guess";
         case RowEstimateSource::NoSource:
         case RowEstimateSource::Statistics:
         /// Labelled like MergeTree: no tag when exact, `no_stats` from `displayName` when imprecise.
