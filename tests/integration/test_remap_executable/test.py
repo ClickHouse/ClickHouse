@@ -41,6 +41,31 @@ def test_signal_listener_restarted(started_cluster):
     assert node.query("SELECT 1") == "1\n"
 
 
+def test_only_signal_listener_takes_process_signals(started_cluster):
+    # SIGHUP, SIGINT, SIGQUIT, SIGTERM and SIGCHLD are blocked in every thread but the
+    # signal listener, which leaves them unblocked while it waits for the next record.
+    # Every thread is created after the block: the remap re-creates the logging threads.
+    process_signals = sum(1 << (sig - 1) for sig in (1, 2, 3, 15, 17))
+    pid = node.get_process_pid("clickhouse")
+    deadline = time.time() + 10
+    while True:
+        output = node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"for t in /proc/{pid}/task/*; do m=$(awk '/^SigBlk/{{print $2}}' $t/status 2>/dev/null) && echo \"$m $(cat $t/comm 2>/dev/null)\"; done",
+            ],
+            user="root",
+        )
+        threads = [line.split(" ", 1) for line in output.splitlines() if line.strip()]
+        listener = [int(mask, 16) & process_signals for mask, comm in threads if comm == "SignalListnr"]
+        others = sorted(comm for mask, comm in threads if comm != "SignalListnr" and int(mask, 16) & process_signals != process_signals)
+        if listener == [0] or time.time() > deadline:
+            break
+    assert listener == [0]
+    assert others == []
+
+
 def test_jemalloc_background_threads_restarted(started_cluster):
     # On builds with jemalloc, the background threads must be running again
     # after the remap quiesced them. Builds without jemalloc (sanitizers) do
