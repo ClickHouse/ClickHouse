@@ -15,10 +15,12 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 #include <algorithm>
@@ -39,6 +41,11 @@ namespace Setting
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsUInt64 max_projection_rows_to_use_projection_index;
     extern const SettingsUInt64 min_table_rows_to_use_projection_index;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace ErrorCodes
@@ -394,13 +401,19 @@ static bool partHasPendingMetadataMutationsOnColumns(
     if (!mutations_snapshot->hasMetadataMutations())
         return false;
 
+    /// As in `AlterConversions::isColumnDropped`, a mutation of a `Nested` group `n` also applies to `n.x`.
+    const bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
     auto is_affected = [&](const String & name)
     {
         if (name.empty())
             return false;
-        return std::find(projection.required_columns.begin(), projection.required_columns.end(), name) != projection.required_columns.end()
-            || projection.sample_block.has(name)
-            || std::find(required_column_names.begin(), required_column_names.end(), name) != required_column_names.end();
+        auto matches = [&](const String & column)
+        {
+            return column == name || (share_nested && Nested::extractTableName(column) == name);
+        };
+        return std::ranges::any_of(projection.required_columns, matches)
+            || std::ranges::any_of(projection.sample_block, [&](const auto & column) { return matches(column.name); })
+            || std::ranges::any_of(required_column_names, matches);
     };
 
     /// Only the mutations newer than the part apply to it: the snapshot may also hold finished ones.
