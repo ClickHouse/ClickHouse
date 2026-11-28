@@ -208,8 +208,12 @@ void BackupCoordinationFileInfos::prepare() const
                 else
                 {
                     /// Found a file with the same size and checksum as some file before, reuse old `data_file_index` and `data_file_name`.
+                    const auto & first_info = *file_infos_for_all_hosts[it->second];
                     info.data_file_index = it->second;
-                    info.data_file_name = file_infos_for_all_hosts[it->second]->data_file_name;
+                    info.data_file_name = first_info.data_file_name;
+                    /// Restore reads all files with this size and checksum through the first one, and any of them can write the data file.
+                    info.base_size = first_info.base_size;
+                    info.base_checksum = first_info.base_checksum;
                 }
             }
 
