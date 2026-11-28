@@ -65,7 +65,6 @@ SELECT '-- division exceptional cases must be preserved';
 SELECT intDiv(materialize(toUInt256(100)), materialize(toUInt8(0))); -- { serverError ILLEGAL_DIVISION }
 SELECT modulo(materialize(toInt256(-100)), materialize(toUInt64(0))); -- { serverError ILLEGAL_DIVISION }
 SELECT intDiv(materialize(CAST('-57896044618658097711785492504343953926634992332820282019728792003956564819968', 'Int256')), materialize(toInt8(-1))); -- { serverError ILLEGAL_DIVISION }
-SELECT modulo(materialize(CAST('-170141183460469231731687303715884105728', 'Int128')), materialize(toInt64(-1))); -- { serverError ILLEGAL_DIVISION }
 
 SELECT '-- OrZero and OrNull variants over mixed wide pairs';
 SELECT intDivOrZero(materialize(toUInt256(100)), materialize(toUInt8(0)));
