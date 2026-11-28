@@ -19,6 +19,9 @@ SELECT f FROM tab WHERE f AND intDiv(1, x) > 0 AND toBool(b);
 
 SELECT count() FROM tab WHERE x >= 0 AND g AND intDiv(1, x) > 0 AND toBool(b);
 SELECT count() FROM (SELECT * FROM tab WHERE g) WHERE intDiv(1, x) > 0 AND toBool(b);
+SELECT count() FROM tab WHERE n AND intDiv(1, x) > 0 AND x >= 0;
+SELECT count() FROM (SELECT * FROM tab WHERE n) WHERE intDiv(1, x) > 0;
+SELECT count() FROM values('g UInt8, n Nullable(UInt8), x Int32', (1, NULL, 0), (1, 1, 1)) WHERE g AND n AND intDiv(1, x) > 0;
 
 CREATE TABLE tab_sparse (g UInt8, x Int32, b String) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5;

@@ -413,20 +413,30 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(
 
     /// The left most conjunct that is split when no atom is moved: a non-trivial atom or a column that is not split yet.
     const ActionsDAG::Node * first_conjunct = nullptr;
+    /// The left most nullable column that is not split yet and precedes every non-trivial atom.
+    const ActionsDAG::Node * nullable_column = nullptr;
     for (const auto * atom : atoms)
     {
-        if (!isTrivialSubtree(atom) || isUnsplitInput(atom, split_names))
-        {
+        const bool is_function = !isTrivialSubtree(atom);
+        const bool is_column = !is_function && isUnsplitInput(atom, split_names);
+        if (!first_conjunct && (is_function || is_column))
             first_conjunct = atom;
+        if (!nullable_column && is_column && isNullableOrLowCardinalityNullable(atom->result_type))
+            nullable_column = atom;
+        if (is_function)
             break;
-        }
     }
 
     std::erase_if(atoms, isTrivialSubtree);
 
     /// Do not split subtree if it's the last non-trivial one.
+    /// A nullable column before it is split: `and` evaluates the atom where the column is NULL, which the filter rejects.
     if (atoms.size() < 2)
+    {
+        if (atoms.size() == 1 && nullable_column && !canBeMovedToTheFrontOfAndChain(atoms.front()))
+            return splitSingleAndFilter(dag, nullable_column);
         return {};
+    }
 
     /// A heavy atom is evaluated only on the rows that passed the atoms split before it. If a cheap atom follows it,
     /// split the cheap one first. The atoms that are not moved keep their relative order.
