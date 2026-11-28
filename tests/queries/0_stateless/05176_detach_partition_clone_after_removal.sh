@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-ordinary-database, no-replicated-database
 #
-# A non-transactional `DETACH` copies the parts to `detached/` only after the removal has gone
-# through, so a removal that is refused cannot leave an orphan copy behind. This checks the other
+# A non-transactional `DETACH` copies the parts to `detached/` under the same parts lock that decides their
+# removal, so a removal that is refused cannot leave an orphan copy behind. This checks the other
 # half of that contract: the copies are still made, and made for every part that the removal
 # actually took, for both `DETACH PARTITION` and `DETACH PART`.
 
