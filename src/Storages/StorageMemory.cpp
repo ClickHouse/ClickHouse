@@ -30,6 +30,14 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Processors/ISource.h>
+#include <Core/Streaming/Settings.h>
+#include <Core/Streaming/CursorTree.h>
+#include <Common/randomSeed.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/NativeReader.h>
@@ -81,6 +89,9 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int TOO_MANY_BYTES;
+    extern const int ABORTED;
+    extern const int BAD_ARGUMENTS;
+    extern const int TOO_SLOW;
 }
 
 namespace FailPoints
@@ -258,6 +269,345 @@ size_t StorageMemory::getMaxReadStreams(size_t num_streams, ContextPtr)
     return std::min(num_streams, std::max(1uz, data.get()->blocks.size()));
 }
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+
+/// Reads the blocks of a `Memory` table for a streaming query (`SELECT ... FROM memory_table STREAM`): the blocks that
+/// the table has at the start of the query, and then every block inserted later, in the order of the blocks of the table.
+/// It waits for new blocks asynchronously, without holding a thread of the pipeline. A bounded stream (`STREAM BOUNDED`)
+/// reads the blocks that the table has at the start of the query.
+///
+/// The blocks are numbered within a generation of the data, see `StorageMemory::BlocksWithCounts`. If the data is replaced
+/// (by a mutation or a restore), the stream fails rather than read the replaced rows again. If the blocks that
+/// the stream has not read yet are removed (by `max_rows_to_keep` or `max_bytes_to_keep`), the stream fails as well.
+///
+/// The cursor is {'epoch': <random number of the server process>, 'generation': ..., 'block_number': <the last read block>}.
+/// It is meant for an incremental refresh of a materialized view, which the bounded stream reports it to. A cursor of
+/// another process or of a generation that started empty (`TRUNCATE`) means that all the blocks are new; a cursor of a
+/// generation that a mutation rewrote cannot be resumed.
+class MemoryStreamingSource final : public ISource
+{
+public:
+    MemoryStreamingSource(
+        SharedHeader header_,
+        NamesAndTypesList columns_,
+        Names nested_arrays_,
+        std::shared_ptr<const StorageMemory> storage_,
+        bool bounded_,
+        CursorTreeNodePtr cursor_,
+        ContextPtr context_)
+        : ISource(header_)
+        , columns_to_read(std::move(columns_))
+        , nested_arrays(std::move(nested_arrays_))
+        , storage(std::move(storage_))
+        , bounded(bounded_)
+        , resume_cursor(std::move(cursor_))
+        , context(std::move(context_))
+        , wakeup(storage->stream_subscribers->subscribe())
+        , pending_report(bounded ? context->getStreamingCursor() : nullptr)
+    {
+    }
+
+    /// A random number of the server process: the generations of the data are numbered anew in every process.
+    static UInt64 processEpoch()
+    {
+        static const UInt64 epoch = randomSeed() >> 1;
+        return epoch;
+    }
+
+    String getName() const override { return "MemoryStreamingSource"; }
+
+    Status prepare() override
+    {
+        if (isCancelled())
+        {
+            pending_report.finish();
+            getPort().finish();
+            return Status::Finished;
+        }
+
+        if (getPort().isFinished())
+        {
+            /// The query does not need the rest of the rows (e.g. a `DISTINCT` by constants already has its result),
+            /// so it stopped the read. A bounded read still has to report the cursor after all its blocks: they are
+            /// consumed by the query, although they are not read, and the next incremental refresh must not get them
+            /// again, the same as in `MergeTreeCommitOrderSource::handleShutdown`. If the query was stopped by
+            /// an exception instead, it fails, and the reported cursor is discarded along with it.
+            /// If the read did not start, it returned nothing, and the cursor stays in place.
+            reportFinalCursorOfStoppedRead();
+            pending_report.finish();
+            return Status::Finished;
+        }
+
+        if (is_async_state)
+            return Status::Async;
+
+        const auto status = ISource::prepare();
+        if (status == Status::Finished)
+        {
+            /// The output can be closed by another thread after the check above (e.g. by a `DISTINCT` by constants
+            /// that got its row from another stream), and then `ISource::prepare` returns `Finished` for it.
+            /// It has to be handled in the same way, as the processor is not prepared again after `Finished`.
+            /// It does nothing if the read reached its end and reported the cursor from `tryGenerate`.
+            if (!isCancelled())
+                reportFinalCursorOfStoppedRead();
+            pending_report.finish();
+        }
+        return status;
+    }
+
+    int schedule() override { return wakeup->fd(); }
+
+    /// Called instead of `prepare` while the source waits for new blocks (`Status::Async`): if the output is closed
+    /// then, wake the source up, so that it finishes without waiting for another change of the data.
+    void onUpdatePorts() override
+    {
+        if (getPort().isFinished())
+            wakeup->notify();
+    }
+
+    void onCancel() noexcept override
+    {
+        /// The query fails, so the cursor does not matter.
+        pending_report.finish();
+
+        try
+        {
+            wakeup->notify();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("MemoryStreamingSource");
+        }
+    }
+
+protected:
+    /// The first look at the data. It is done when the query starts to read rather than when it is planned: the table
+    /// of a materialized CTE or of a `GLOBAL` subquery is filled during the execution of the query, and the pipeline
+    /// lets this source read only after that (see `StorageMemory::delayReadForGlobalSubqueries`).
+    /// The subscription is created before it (in the constructor), so that no change is missed.
+    void initialize()
+    {
+        const auto snapshot = storage->data.get();
+        generation = snapshot->generation;
+        next_block_number = snapshot->first_block_number;
+        end_block_number = snapshot->first_block_number + snapshot->blocks.size();
+
+        if (resume_cursor)
+        {
+            if (!resume_cursor->hasValue("epoch") || !resume_cursor->hasValue("generation") || !resume_cursor->hasValue("block_number"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The cursor of a Memory table must have 'epoch', 'generation' and 'block_number'");
+
+            const bool same_generation = static_cast<UInt64>(resume_cursor->getValue("epoch")) == processEpoch()
+                && static_cast<UInt64>(resume_cursor->getValue("generation")) == generation;
+            if (same_generation)
+            {
+                const Int64 last_block_number = resume_cursor->getValue("block_number");
+                if (last_block_number < -1)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid block number {} in the cursor", last_block_number);
+                /// The increment is done in unsigned arithmetic: the cursor is an input of the query (or comes from the
+                /// stored metadata of a refresh), so the block number can be as large as the maximum of `Int64`.
+                next_block_number = static_cast<UInt64>(last_block_number) + 1;
+                if (next_block_number > end_block_number)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The block number {} in the cursor is beyond the blocks of the Memory table", last_block_number);
+            }
+            else if (snapshot->rows_rewritten && static_cast<UInt64>(resume_cursor->getValue("epoch")) == processEpoch())
+                throw Exception(ErrorCodes::ABORTED,
+                    "The data of the Memory table {} was rewritten by a mutation since the cursor was taken",
+                    storage->getStorageID().getNameForLogs());
+            /// Otherwise the data started anew (by `TRUNCATE` or a restart of the server) after the cursor: all the blocks are new.
+        }
+        initialized = true;
+    }
+
+    std::optional<Chunk> tryGenerate() override
+    {
+        if (isCancelled())
+            return {};
+
+        if (!initialized)
+            initialize();
+
+        if (bounded && next_block_number >= end_block_number)
+        {
+            reportFinalCursor();
+            return {};
+        }
+
+        (*wakeup).reset();
+        const auto snapshot = storage->data.get();
+
+        if (snapshot->generation != generation)
+            throw Exception(ErrorCodes::ABORTED,
+                "The data of the Memory table {} was replaced (by a mutation or a restore) during the streaming query",
+                storage->getStorageID().getNameForLogs());
+
+        if (next_block_number < snapshot->first_block_number)
+            throw Exception(ErrorCodes::TOO_SLOW,
+                "The streaming query fell behind the Memory table {}: the blocks it has not read yet were removed by "
+                "max_rows_to_keep or max_bytes_to_keep", storage->getStorageID().getNameForLogs());
+
+        const size_t index = next_block_number - snapshot->first_block_number;
+        if (index >= snapshot->blocks.size())
+        {
+            is_async_state = true;
+            return Chunk();
+        }
+        is_async_state = false;
+
+        const auto & block = snapshot->blocks[index];
+        ++next_block_number;
+
+        /// The same as an ordinary read: decompresses the columns, casts them to the types at the start of the query
+        /// (the structure of the table may have changed since), and fills the columns absent from older blocks.
+        Columns columns = readColumnsFromMemoryBlock(block, columns_to_read, nested_arrays);
+        for (auto & column : columns)
+            column = column->convertToFullColumnIfConst();
+        return Chunk(std::move(columns), block.rows());
+    }
+
+private:
+    /// The cursor of a bounded read that the query stopped before its end: it is after all the blocks of the read.
+    void reportFinalCursorOfStoppedRead()
+    {
+        if (bounded && initialized)
+        {
+            next_block_number = end_block_number;
+            reportFinalCursor();
+        }
+    }
+
+    void reportFinalCursor()
+    {
+        /// Only an incremental refresh of a materialized view has the holder of the cursor.
+        auto streaming_cursor = context->getStreamingCursor();
+        if (!streaming_cursor || reported)
+            return;
+        reported = true;
+
+        auto cursor = std::make_shared<CursorTreeNode>();
+        cursor->setValue("epoch", static_cast<Int64>(processEpoch()));
+        cursor->setValue("generation", static_cast<Int64>(generation));
+        cursor->setValue("block_number", static_cast<Int64>(next_block_number) - 1);
+        streaming_cursor->merge(cursor);
+        pending_report.finish();
+    }
+
+    const NamesAndTypesList columns_to_read;
+    const Names nested_arrays;
+    const std::shared_ptr<const StorageMemory> storage;
+    const bool bounded;
+    /// The cursor to resume the read after, if any.
+    const CursorTreeNodePtr resume_cursor;
+    const ContextPtr context;
+    const MemoryTableWakeupPtr wakeup;
+    /// A bounded read for an incremental refresh is pending until it reports its cursor or finishes, so that a target
+    /// that commits the cursor with its data waits for it (see `WaitForStreamingCursorTransform`).
+    StreamingCursor::PendingReport pending_report;
+    bool reported = false;
+    bool initialized = false;
+
+    UInt64 generation = 0;
+    UInt64 next_block_number = 0;
+    UInt64 end_block_number = 0;
+    bool is_async_state = false;
+};
+
+/// The step of a streaming read. It is a `SourceStepWithFilter`, so that the planner sees the stream settings of the read
+/// (see `hasUnboundedSource`) and plans an unbounded stream as a streaming query.
+///
+/// The planner gives the row-level security filter and `PREWHERE` to the storage (as `Memory` supports `PREWHERE`)
+/// and does not filter the rows itself. They are applied inside the pipe of this step, the row-level filter first and in
+/// a transform of its own, so that no optimization of the query plan can merge it with an expression of the user, and
+/// no such expression is ever evaluated on the rows the policy hides.
+class ReadFromMemoryStream final : public SourceStepWithFilter
+{
+public:
+    ReadFromMemoryStream(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        std::shared_ptr<const StorageMemory> storage_)
+        : SourceStepWithFilter(
+            std::make_shared<const Block>(makeOutputHeader(
+                storage_snapshot_->getSampleBlockForColumns(column_names_), query_info_.row_level_filter, query_info_.prewhere_info)),
+            column_names_, query_info_, storage_snapshot_, context_)
+        , storage(std::move(storage_))
+    {
+        setStepDescription("Read from Memory STREAM");
+    }
+
+    [[nodiscard]] String getName() const override { return "ReadFromMemoryStream"; }
+
+    /// `optimizePrewhere` can move the conditions of `WHERE` to `PREWHERE`.
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override
+    {
+        query_info.prewhere_info = prewhere_info_value;
+        output_header = std::make_shared<const Block>(makeOutputHeader(
+            storage_snapshot->getSampleBlockForColumns(required_source_columns), query_info.row_level_filter, query_info.prewhere_info));
+    }
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
+    {
+        const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
+
+        auto columns = storage_snapshot->getColumnsByNames(
+            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), required_source_columns);
+        auto nested_arrays = getArraysOfRequestedNestedFromMemory(columns, storage_snapshot);
+        auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(required_source_columns));
+        auto source = std::make_shared<MemoryStreamingSource>(
+            header, std::move(columns), std::move(nested_arrays), storage,
+            !stream_settings.subscribe_for_updates, stream_settings.cursor, context);
+        source->setStorageLimits(query_info.storage_limits);
+
+        Pipe pipe(std::move(source));
+        const ExpressionActionsSettings actions_settings(context);
+        if (query_info.row_level_filter)
+        {
+            const auto & row_level_filter = *query_info.row_level_filter;
+            auto actions = std::make_shared<ExpressionActions>(row_level_filter.actions.clone(), actions_settings);
+            pipe.addSimpleTransform([&](const SharedHeader & input_header)
+            {
+                return std::make_shared<FilterTransform>(
+                    input_header, actions, row_level_filter.column_name, row_level_filter.do_remove_column);
+            });
+        }
+        if (query_info.prewhere_info)
+        {
+            const auto & prewhere_info = *query_info.prewhere_info;
+            auto actions = std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions.clone(), actions_settings);
+            pipe.addSimpleTransform([&](const SharedHeader & input_header)
+            {
+                return std::make_shared<FilterTransform>(
+                    input_header, actions, prewhere_info.prewhere_column_name, prewhere_info.remove_prewhere_column);
+            });
+        }
+
+        for (const auto & processor : pipe.getProcessors())
+            processors.emplace_back(processor);
+        pipeline.init(std::move(pipe));
+    }
+
+private:
+    /// The header after the transforms of `initializePipeline`.
+    static Block makeOutputHeader(Block header, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info)
+    {
+        if (row_level_filter)
+            header = FilterTransform::transformHeader(
+                header, &row_level_filter->actions, row_level_filter->column_name, row_level_filter->do_remove_column);
+        if (prewhere_info)
+            header = FilterTransform::transformHeader(
+                header, &prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column);
+        return header;
+    }
+
+    const std::shared_ptr<const StorageMemory> storage;
+};
+
+#endif
+
 void StorageMemory::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -268,6 +618,22 @@ void StorageMemory::readImpl(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
+    if (query_info.isStream())
+    {
+        const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
+        if (stream_settings.watermark)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a table with engine Memory");
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        storage_snapshot->check(column_names);
+        query_plan.addStep(std::make_unique<ReadFromMemoryStream>(
+            column_names, query_info, storage_snapshot, context, std::static_pointer_cast<const StorageMemory>(shared_from_this())));
+        return;
+#else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Streaming queries from a Memory table are not supported on this platform");
+#endif
+    }
+
     query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(
         column_names, query_info, storage_snapshot, context, shared_from_this(), num_streams, delay_read_for_global_subqueries));
 }
@@ -293,6 +659,7 @@ void StorageMemory::setData(std::unique_ptr<BlocksWithCounts> new_data)
     ServerOwnedMemoryScope table_data_not_charged_to_the_query;
     auto replaced = data.get();
     data.set(std::move(new_data));
+    stream_subscribers->notify();
 }
 
 void StorageMemory::drop()
@@ -457,6 +824,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         new_data->rows += buffer.rows();
         new_data->bytes += buffer.allocatedBytes();
     }
+    new_data->rows_rewritten = true;
 
     /// A mutation can make the data larger (e.g. `UPDATE` with longer strings or `MATERIALIZE COLUMN`).
     if (is_temporary_table)
@@ -937,6 +1305,18 @@ ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 100
 ```
 
 **Note:** Both `bytes` and `rows` capping parameters can be set at the same time, however, the lower bounds of `max` and `min` will be adhered to.
+
+## Streaming queries {#streaming-queries}
+
+A streaming query (`SELECT ... FROM memory_table STREAM`, an experimental feature enabled by `enable_streaming_queries`) returns the blocks that the table has at the start of the query, and then every block inserted later, in the order of the blocks of the table. Any number of queries can insert into the table and read it with `STREAM` at the same time. `STREAM BOUNDED` returns the blocks that the table has at the start of the query.
+
+```sql
+SELECT * FROM memory_table STREAM WHERE level = 'Error'
+```
+
+The query fails if the data of the table is replaced while it runs (by a mutation or a restore), and with `TOO_SLOW` if the blocks it has not read yet are removed by `max_rows_to_keep` or `max_bytes_to_keep`. Like any other `SELECT`, a streaming query holds the table, so `TRUNCATE` and `DROP` wait for it to finish (up to `lock_acquire_timeout`). `WATERMARK` is not supported.
+
+A `Memory` table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`): every refresh appends the blocks inserted after the previous one. After a restart of the server or `TRUNCATE`, all the blocks of the table are new; after a mutation, the refresh fails, as the rows it already appended were rewritten.
 
 ## Examples {#examples}
 ```sql

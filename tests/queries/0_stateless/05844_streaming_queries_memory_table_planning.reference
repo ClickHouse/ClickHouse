@@ -1,0 +1,22 @@
+--- an unbounded stream is rejected where its end is needed
+--- the same over a bounded stream
+2
+1
+2
+1	0
+2
+--- an unbounded stream with WHERE and LIMIT
+2
+--- a throwing predicate is not evaluated on the rows hidden by a row policy
+1
+1
+1
+1
+1
+--- a materialized CTE
+1
+1
+--- an incremental refresh whose query stops the read early
+1
+1
+2

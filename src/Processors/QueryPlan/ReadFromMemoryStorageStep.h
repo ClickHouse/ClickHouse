@@ -129,4 +129,11 @@ private:
     MemoryLazyMaterializingRowsPtr lazy_materializing_rows;
 };
 
+/// Reads `columns_to_read` from a block of a `Memory` table: decompresses the columns of a table with `compress = true`,
+/// takes the subcolumns, casts to the requested types, and fills the columns absent from the block (e.g. added by `ALTER`)
+/// with defaults. `nested_arrays` are the arrays of the table that are members of the `Nested` of a requested member,
+/// see `getArraysOfRequestedNestedFromMemory`.
+Columns readColumnsFromMemoryBlock(const Block & src, const NamesAndTypesList & columns_to_read, const Names & nested_arrays);
+Names getArraysOfRequestedNestedFromMemory(const NamesAndTypesList & physical_columns, const StorageSnapshotPtr & storage_snapshot);
+
 }

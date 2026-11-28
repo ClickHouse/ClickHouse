@@ -1,0 +1,20 @@
+--- row policy, bounded
+1	allowed
+1	allowed
+--- row policy, unbounded
+1 allowed again
+--- PREWHERE
+2	forbidden
+2	forbidden again
+forbidden again
+--- compressed table
+1	one	[1]	1
+2	2	[0,1]	2
+3	3	[]	0
+1001	501501	2899	1002
+--- a column added after the blocks were inserted
+1	0	
+2	3	new
+--- an unbounded stream finishes when it has enough rows
+1
+done

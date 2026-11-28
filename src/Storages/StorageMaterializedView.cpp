@@ -63,6 +63,19 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsDouble limit;
+    extern const SettingsDouble offset;
+    extern const SettingsOverflowMode distinct_overflow_mode;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+    extern const SettingsOverflowMode join_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsOverflowMode sort_overflow_mode;
+    extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsOverflowMode timeout_overflow_mode_leaf;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ServerSetting
@@ -206,6 +219,50 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Incremental refresh requires exactly one source table, but the query references other tables (in a JOIN or a subquery)");
 
+        /// A streaming read reports the cursor after all the rows of the bounded stream, also when the query does not
+        /// need the rest of them (see `MergeTreeCommitOrderSource::handleShutdown`). A `LIMIT` stops the read while
+        /// the rest of the rows still belongs to the result of the query over the whole source, so these rows would
+        /// never be appended. Operations like `DISTINCT` and `LIMIT BY` stop the read only when the rest of the rows
+        /// cannot change the result, so they are allowed.
+        const auto & select = *select_with_union->as<ASTSelectWithUnionQuery &>().list_of_selects->children[0]->as<ASTSelectQuery>();
+        if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT and OFFSET are not supported in the query of an incremental refresh");
+        /// The `SETTINGS` clause of the query is not applied to the context when the view is created. Apply it to
+        /// a copy of the context in the same way as the refresh does, so that a `profile` in the clause is resolved
+        /// to the settings of the profile, and a setting that the clause resets with `= DEFAULT` (e.g. after a profile)
+        /// has its default value: the query runs with them, and not with the changes as they are written.
+        auto settings_context = Context::createCopy(context);
+        if (const auto & select_settings = select.settings())
+            InterpreterSetQuery(select_settings, settings_context).executeForCurrentContext(/* ignore_setting_constraints= */ true);
+        const Settings & query_settings = settings_context->getSettingsRef();
+
+        if (query_settings[Setting::limit] != 0 || query_settings[Setting::offset] != 0)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "The settings `limit` and `offset` are not supported in the query of an incremental refresh");
+
+        /// With the overflow mode `break`, a query that reaches a limit finishes successfully with a partial result,
+        /// while the read reports the cursor after all the rows of the bounded stream: the rows that were not read
+        /// (or not passed further) would never be appended. Only the mode `throw` is allowed: the refresh fails
+        /// and the cursor stays in place.
+        auto check_overflow_mode = [](const char * name, OverflowMode mode)
+        {
+            if (mode == OverflowMode::BREAK)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "The setting `{}` = 'break' is not supported in the query of an incremental refresh, "
+                    "because a partial result would lose the rows of the source", name);
+        };
+        check_overflow_mode("read_overflow_mode", query_settings[Setting::read_overflow_mode]);
+        check_overflow_mode("read_overflow_mode_leaf", query_settings[Setting::read_overflow_mode_leaf]);
+        check_overflow_mode("group_by_overflow_mode", query_settings[Setting::group_by_overflow_mode]);
+        check_overflow_mode("sort_overflow_mode", query_settings[Setting::sort_overflow_mode]);
+        check_overflow_mode("result_overflow_mode", query_settings[Setting::result_overflow_mode]);
+        check_overflow_mode("timeout_overflow_mode", query_settings[Setting::timeout_overflow_mode]);
+        check_overflow_mode("timeout_overflow_mode_leaf", query_settings[Setting::timeout_overflow_mode_leaf]);
+        check_overflow_mode("set_overflow_mode", query_settings[Setting::set_overflow_mode]);
+        check_overflow_mode("join_overflow_mode", query_settings[Setting::join_overflow_mode]);
+        check_overflow_mode("transfer_overflow_mode", query_settings[Setting::transfer_overflow_mode]);
+        check_overflow_mode("distinct_overflow_mode", query_settings[Setting::distinct_overflow_mode]);
+
         const auto * identifier = source_table_expr.database_and_table_name->as<ASTTableIdentifier>();
         if (!identifier)
             return;
@@ -219,16 +276,17 @@ namespace
                 "Incremental refresh source table {} has engine {}, which does not support streaming",
                 source->getStorageID().getNameForLogs(), source->getName());
 
-        /// The refresh resumes from the cursor that the read reports through `Context::getStreamingCursor`, and only
-        /// a `MergeTree` read reports it. A source of another engine that supports STREAM (e.g. a queue) would be
-        /// read from the beginning on every refresh, appending the same rows again.
-        const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
-        if (!merge_tree)
+        /// The refresh resumes from the cursor that the read reports through `Context::getStreamingCursor`. A source
+        /// that supports STREAM but does not report the cursor would be read from the beginning on every refresh,
+        /// appending the same rows again.
+        if (!source->reportsStreamingCursor())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Incremental refresh source table {} has engine {}; only MergeTree tables are supported",
+                "Incremental refresh source table {} has engine {}, which does not report the cursor of a streaming read",
                 source->getStorageID().getNameForLogs(), source->getName());
 
         /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
+        const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
+        if (merge_tree)
         {
             if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
