@@ -1046,8 +1046,8 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
     result->query_plan_options = analyze_settings.query_plan_options;
     result->time = analyze_settings.query_plan_options.time;
 
-    /// This is the only place that turns join statistics on, and it must happen before any interpreter
-    /// is built. Every join of the query reads the mode from the context, so joins in nested plans get it as well.
+    /// Turns join statistics on for this query. It must happen before any interpreter is built: every
+    /// join of the query reads the mode from the context, so joins in nested plans get it as well.
     planning_context->setJoinAnalyzeMode(
         result->query_plan_options.matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived);
 
@@ -1560,7 +1560,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 planning_ns += watch.elapsed();
 
-                step_profiler = std::make_shared<StepProfiler>(PlanWalk::of(plan, /*only_built_child_plans=*/ false), analyzed.time);
+                const PlanWalk walk = PlanWalk::of(plan, /*only_built_child_plans=*/ false);
+                chassert(!walk.has_step_without_index, "a step of a query was built outside of its thread group");
+                step_profiler = std::make_shared<StepProfiler>(walk, analyzed.time);
                 pipeline.setStepProfiler(step_profiler);
 
                 CompletedPipelineExecutor executor(pipeline);

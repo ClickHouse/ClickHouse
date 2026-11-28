@@ -628,13 +628,13 @@ delta/type_widening_nested WHERE `id` = 7	ok
 delta/type_widening_nested WHERE `id` >= 25	ok
 delta/type_widening_nested WHERE `p` = 2	ok
 delta/type_widening_nested `arr`	ok
-delta/type_widening_nested `arr`.size0	UNKNOWN_IDENTIFIER
+delta/type_widening_nested `arr`.size0	ok
 delta/type_widening_nested `id`	ok
 delta/type_widening_nested `mp`	ok
 delta/type_widening_nested `p`	ok
 delta/type_widening_nested `st`	ok
-delta/type_widening_nested `st`.`a`	UNKNOWN_IDENTIFIER
-delta/type_widening_nested `st`.`b`	UNKNOWN_IDENTIFIER
+delta/type_widening_nested `st`.`a`	ok
+delta/type_widening_nested `st`.`b`	ok
 delta/type_widening_nested content	2	ok
 delta/type_widening_nested content version 0 CREATE TABLE	0	ok
 delta/type_widening_nested content version 1 WRITE	1	ok

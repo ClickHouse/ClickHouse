@@ -18,7 +18,7 @@ Estas configurações definem o servidor ClickHouse e são geradas automaticamen
 
 ## text_index_header_cache_policy {#text_index_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção de cache do cabeçalho do índice de texto. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Política de evicção de cache para o cache de cabeçalhos do índice de texto. Valores possíveis: `LRU`, `SLRU`, `SIEVE`. Consulte [`text_index_header_cache_size`](/pt-BR/reference/settings/server-settings/settings/text-index#text_index_header_cache_size) e [`text_index_header_cache_max_entries`](/pt-BR/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries) para a capacidade do cache e [`text_index_header_cache_size_ratio`](/pt-BR/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio) para o tamanho da fila protegida na política SLRU.
 
 ## text_index_header_cache_size {#text_index_header_cache_size}
 

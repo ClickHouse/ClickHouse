@@ -15,8 +15,8 @@ namespace DB
 ///   - `String` / `FixedString` columns:
 ///       sum of byte lengths over non-NULL rows (`string_total_bytes`); the average length is
 ///       `string_total_bytes / non_null_string_count`, which merges trivially across parts.
-///   - integer and `Decimal` columns without `Nullable` or `LowCardinality`: the state of the `sum`
-///       aggregate function over the values, like `uniq_v2` statistics keep the state of `uniqCombined64`
+///   - integer and `Decimal` columns, `Nullable` or not, without `LowCardinality`: the state of the `sum`
+///       aggregate function over the non-NULL values, like `uniq_v2` statistics keep the state of `uniqCombined64`
 ///   - any supported column type:
 ///       `default_count` (number of rows equal to the *type's* default value seen by `build`).
 ///       "Default" here is the type-intrinsic default (`IColumn::isDefaultAt` / `IDataType::getDefault`),

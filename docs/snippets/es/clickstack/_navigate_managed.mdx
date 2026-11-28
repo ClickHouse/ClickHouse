@@ -2,11 +2,11 @@
 title: Navegar por Managed
 ---
 
-Seleccione &#39;Launch ClickStack&#39; para acceder a la interfaz de ClickStack (HyperDX). Se le autenticará automáticamente y se le redirigirá.
+Seleccione &#39;Launch ClickStack&#39; para acceder a la interfaz de ClickStack. Se le autenticará automáticamente y se le redirigirá.
 
 <Tabs>
   <Tab title="OpenTelemetry">
-    Se crearán automáticamente orígenes de datos para todos los datos de OpenTelemetry.
+    ClickStack detecta automáticamente las tablas que usan el esquema estándar de OpenTelemetry y crea los orígenes de datos correspondientes. No es necesario confirmar nada en ningún cuadro de diálogo ni crear fuentes manualmente.
 
     <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
   </Tab>
@@ -22,7 +22,7 @@ Seleccione &#39;Launch ClickStack&#39; para acceder a la interfaz de ClickStack 
 
     En el ejemplo anterior, no existe una columna `Body` en los datos. En su lugar, se define mediante una expresión SQL que reconstruye una línea de log de Nginx a partir de los campos disponibles.
 
-    Para ver otras opciones, consulte la [referencia de configuración](/es/clickstack/managing/config).
+    Para ver otras opciones, consulte la [referencia de configuración](/es/clickstack/self-configured/managing/config).
 
     Una vez creado, debería ir a la vista de búsqueda, donde podrá empezar a explorar sus datos de inmediato.
 
