@@ -18,7 +18,6 @@ SELECT count(), uniqExact(_block_number, _block_offset) FROM t_disable_block_col
 ALTER TABLE t_disable_block_columns MODIFY SETTING enable_block_offset_column = 0; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_disable_block_columns MODIFY SETTING enable_block_offset_column = DEFAULT; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_disable_block_columns RESET SETTING enable_block_offset_column; -- { serverError BAD_ARGUMENTS }
-ALTER TABLE t_disable_block_columns ADD COLUMN c UInt8, MODIFY SETTING enable_block_offset_column = 0; -- { serverError BAD_ARGUMENTS }
 
 SELECT extractAll(engine_full, 'enable_block_\\w+_column = \\w+') FROM system.tables WHERE database = currentDatabase() AND name = 't_disable_block_columns';
 

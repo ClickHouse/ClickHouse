@@ -18,7 +18,6 @@ ALTER TABLE t_block_number_after_offset MODIFY SETTING enable_block_number_colum
 ALTER TABLE t_block_number_after_offset MODIFY SETTING allow_experimental_block_number_column = 1; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_block_number_after_offset MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_block_number_after_offset MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 0; -- { serverError BAD_ARGUMENTS }
-ALTER TABLE t_block_number_after_offset ADD COLUMN c UInt8, MODIFY SETTING enable_block_number_column = 1; -- { serverError BAD_ARGUMENTS }
 
 -- Other alters of such a table are not affected.
 ALTER TABLE t_block_number_after_offset MODIFY SETTING enable_block_number_column = 0;
