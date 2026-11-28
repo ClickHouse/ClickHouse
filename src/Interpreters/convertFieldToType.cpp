@@ -31,6 +31,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/DateLUT.h>
+#include <Functions/DateTimeTransforms.h>
 
 
 namespace DB
@@ -42,6 +43,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 
@@ -240,6 +242,48 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         which_from_type = WhichDataType(*from_type_hint);
     }
 
+    /// A `DateTime64` value, floored to whole seconds.
+    const auto decimal64_to_seconds = [&]
+    {
+        const auto & decimal = src.safeGet<Decimal64>();
+        const Int64 scale_multiplier = decimal.getScaleMultiplier().value;
+        Int64 seconds = decimal.getValue().value / scale_multiplier;
+        if (decimal.getValue().value < 0 && decimal.getValue().value % scale_multiplier)
+            --seconds;
+        return seconds;
+    };
+
+    /// Whether a `DateTime64` source value has no fractional part, i.e. whether flooring it to whole
+    /// seconds loses information.
+    const auto decimal64_has_whole_seconds = [&]
+    {
+        const auto & decimal = src.safeGet<Decimal64>();
+        return decimal.getValue().value % decimal.getScaleMultiplier().value == 0;
+    };
+
+    const auto seconds_representable_as_datetime = [](Int64 seconds)
+    {
+        return seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL);
+    };
+
+    /// Mirror `ToDateTimeImpl::execute(Int64)` - the column path used by `CAST` and `INSERT SELECT` - so that
+    /// a `VALUES` constant and the runtime conversion of the same value agree. In particular, with the default
+    /// `ignore` behavior a negative value wraps into the end of the `DateTime` range rather than being clamped
+    /// to the epoch.
+    const auto seconds_to_datetime = [&](Int64 seconds) -> Field
+    {
+        if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
+            return static_cast<UInt64>(static_cast<UInt32>(seconds));
+
+        if (seconds < 0 || seconds >= MAX_DATETIME_TIMESTAMP)
+        {
+            if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                return seconds < 0 ? UInt64(0) : static_cast<UInt64>(std::numeric_limits<UInt32>::max());
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", seconds);
+        }
+        return static_cast<UInt64>(seconds);
+    };
+
     /// Conversion between Date and DateTime, Time and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
     {
@@ -292,6 +336,28 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         return static_cast<Int32>(
             static_cast<const DataTypeTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
+    }
+    if (which_type.isDateTime() && which_from_type.isDateTime64())
+    {
+        const Int64 seconds = decimal64_to_seconds();
+        if (strict && !(decimal64_has_whole_seconds() && seconds_representable_as_datetime(seconds)))
+            return {};
+        return seconds_to_datetime(seconds);
+    }
+    /// As `DateTime` -> `Date` above, the day in the source time zone; a `DateTime64` also covers days a `Date` cannot hold.
+    if (which_type.isDate() && which_from_type.isDateTime64())
+    {
+        const Int64 day_num = static_cast<const DataTypeDateTime64 &>(*from_type_hint).getTimeZone().toDayNum(decimal64_to_seconds()).toUnderType();
+        if (strict && (day_num < 0 || day_num > DATE_LUT_MAX_DAY_NUM))
+            return {};
+        return static_cast<UInt16>(day_num);
+    }
+    if (which_type.isDate32() && which_from_type.isDateTime64())
+    {
+        const Int64 day_num = static_cast<const DataTypeDateTime64 &>(*from_type_hint).getTimeZone().toDayNum(decimal64_to_seconds()).toUnderType();
+        if (strict && (day_num < DATE_LUT_MIN_EXTEND_DAY_NUM || day_num > DATE_LUT_MAX_EXTEND_DAY_NUM))
+            return {};
+        return static_cast<Int32>(day_num);
     }
     if (which_type.isTime() && which_from_type.isDate())
     {
@@ -948,6 +1014,21 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
     {
         return {};
     }
+}
+
+Field tryConvertFieldToTypeExact(const Field & from_value, const IDataType & to_type, const IDataType * from_type)
+{
+    Field converted = tryConvertFieldToType(from_value, to_type, from_type, {}, /*strict=*/ true);
+    /// The conversion unwraps its target but not its hint, so the round trip is given the bare target.
+    const DataTypePtr bare_to_type = removeLowCardinalityAndNullable(to_type.getPtr());
+    if (converted.isNull() || !from_type || isStringOrFixedString(*from_type)
+        || (isNativeNumber(*from_type) && isNativeNumber(*bare_to_type)))
+        return converted;
+
+    Field round_trip = tryConvertFieldToType(converted, *from_type, bare_to_type.get(), {}, /*strict=*/ true);
+    if (round_trip.isNull() || !accurateEquals(round_trip, from_value))
+        return {};
+    return converted;
 }
 
 Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
