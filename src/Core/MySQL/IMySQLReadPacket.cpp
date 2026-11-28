@@ -3,6 +3,8 @@
 #include <IO/MySQLPacketPayloadReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
 
+#include <span>
+
 namespace DB
 {
 
@@ -103,7 +105,7 @@ void readLengthEncodedString(String & s, ReadBuffer & buffer)
         size_t chunk = std::min(static_cast<uint64_t>(buffer.available()), len - s.size());
         size_t old_size = s.size();
         s.resize(old_size + chunk);
-        buffer.readStrict(s.data() + old_size, chunk);
+        buffer.readStrict(std::span(s).subspan(old_size, chunk));
     }
 }
 
