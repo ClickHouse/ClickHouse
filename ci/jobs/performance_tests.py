@@ -3381,6 +3381,7 @@ def main():
     selection_path = Path(temp_dir) / "performance_selection.json"
     all_query_tests = set()
     selection_result = None
+    do_not_cache = False
 
     # Selected up front (after the release_base vintage checkout above): Configure needs the list for the S3 decision.
     test_files = test_discovery.list_test_files("./tests/performance/")
@@ -3433,10 +3434,12 @@ def main():
         reason = full_suite_reason(info, test_options[0])
         if reason:
             selection = {"mode": "full", "reason": reason, "selected": test_files}
+            test_files = test_files[batch_num::total_batches]
         else:
             selector = PerformanceSelection(info)
             try:
                 test_files, all_query_tests = selector.select(test_files)
+                test_files = selector.shard_tests(test_files, batch_num, total_batches, get_perf_arch())
             except (CIDBTimeoutError, GitHubUnavailableError) as error:
                 message = f"Performance tests were not run: test selection unavailable: {error}"
                 info.add_workflow_warning(message)
@@ -3463,7 +3466,8 @@ def main():
                 ).complete_job()
                 return
             selection = {"mode": "selected", **selector.selection_diagnostics}
-        test_files = test_files[batch_num::total_batches]
+            # The selected tests and their shard placement come from CIDB, which the job digest does not cover.
+            do_not_cache = True
         selection.update(
             shard=batch_num + 1,
             shards=total_batches,
@@ -3480,7 +3484,7 @@ def main():
         )
         if not test_files:
             selection_result.info = "No selected tests assigned to this shard"
-            selection_result.complete_job()
+            selection_result.complete_job(do_not_cache=do_not_cache)
             return
     else:
         test_files = test_files[batch_num::total_batches]
@@ -4445,7 +4449,7 @@ def main():
             link=dashboard_link,
             hint="Combined performance dashboard for this run (all shards, amd + arm)",
         )
-    result.complete_job()
+    result.complete_job(do_not_cache=do_not_cache)
 
 
 if __name__ == "__main__":
