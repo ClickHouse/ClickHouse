@@ -837,6 +837,22 @@ TEST(TransformQueryForExternalDatabase, Limit)
         "SELECT column FROM table WHERE column > 2 AND uuid_col > toUUID('12345678-1234-1234-1234-123456789012') LIMIT 10",
         R"(SELECT "column", "uuid_col" FROM "test"."table" WHERE "column" > 2)");
 
+    /// A filter over a string column is evaluated remotely with the collation of the column, which can
+    /// select more rows than the byte-wise local filter keeps (`'ABC'` for `field = 'abc'` with a
+    /// case-insensitive collation, the default of MySQL). Those rows would use up the remote LIMIT and
+    /// then be dropped locally, so the filter is pushed down, but the LIMIT is not.
+    check(state, 1, {"field"},
+        "SELECT field FROM table WHERE field = 'abc' LIMIT 10",
+        R"(SELECT "field" FROM "test"."table" WHERE "field" = 'abc')");
+    check(state, 1, {"field"},
+        "SELECT field FROM table WHERE field IN ('abc', 'xyz') LIMIT 10",
+        R"(SELECT "field" FROM "test"."table" WHERE "field" IN ('abc', 'xyz'))");
+
+    /// A filter that does not refer to a string column selects the same rows on both sides.
+    check(state, 1, {"column"},
+        "SELECT column FROM table WHERE column > 2 LIMIT 10",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" > 2 LIMIT 10)");
+
     /// The SETTINGS clause does not change the data, so it does not prevent the push-down.
     check(state, 1, {"column"},
         "SELECT column FROM table LIMIT 10 SETTINGS max_threads = 1",

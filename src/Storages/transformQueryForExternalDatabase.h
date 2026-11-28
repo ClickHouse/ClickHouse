@@ -41,6 +41,12 @@ class IAST;
   * identifier quoting style only - sets it, so that such a predicate is filtered by ClickHouse instead
   * of being compared against different bytes on the remote side.
   *
+  * The `LIMIT` of the query is pushed down only when the external database provably selects the rows the
+  * local filter keeps. A filter over a string column does not prove that: the external database compares
+  * strings with the collation of the column (case-insensitive by default in MySQL), while ClickHouse
+  * compares them byte-wise. A caller that has checked that its remote compares the pushed-down string
+  * columns byte-wise - `StorageSQLite` does - sets `string_comparisons_are_byte_wise`.
+  *
   * Compatible expressions are comparisons of identifiers, constants, and logical operations on them.
   *
   * Throws INCORRECT_QUERY if external_table_strict_query (from context settings)
@@ -60,7 +66,8 @@ String transformQueryForExternalDatabase(
     const NameSet & unsupported_functions = {},
     const NameSet & local_only_columns = {},
     bool require_dialect_neutral_literals = false,
-    bool allow_limit_push_down = true);
+    bool allow_limit_push_down = true,
+    bool string_comparisons_are_byte_wise = false);
 
 /** When the data source of an external database integration is a user-provided query (passed to the external
   * database as is), the query is not rewritten by `transformQueryForExternalDatabase` and no outer predicate can
