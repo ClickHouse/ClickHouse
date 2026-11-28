@@ -68,9 +68,7 @@ public:
         const String & display_file_name_,
         bool & coupled_spilled_)
         : WriteBufferFromFileBase(
-              adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size_, buf_size_),
-              nullptr,
-              0)
+              adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size_, buf_size_), nullptr, 0)
         , spill_threshold(spill_threshold_)
         , open_per_file(std::move(open_per_file_))
         , claim_archive_base(std::move(claim_archive_base_))
