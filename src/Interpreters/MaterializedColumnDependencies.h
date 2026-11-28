@@ -29,7 +29,7 @@ class MaterializedColumnDependencies
 public:
     struct MaterializedDependencyNode
     {
-        /// ALIAS references expanded and subcolumn references replaced by `getSubcolumn`.
+        /// ALIAS references expanded (lambda parameters renamed apart) and subcolumn references replaced by `getSubcolumn`.
         /// Clone before rewriting it.
         ASTPtr expression;
         Names dependencies;
