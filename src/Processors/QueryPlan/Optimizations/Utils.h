@@ -88,6 +88,9 @@ enum class FilterResult
 
 [[nodiscard]] bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root);
 
+/// Like `nodeReadsUnspecifiedValueUnderNull`, but only for the function of the node itself (or the lambda a COLUMN node holds), not its children.
+[[nodiscard]] bool nodeFunctionReadsUnspecifiedValueUnderNull(const ActionsDAG::Node & node);
+
 /// True when the expression holds a function that is non-deterministic within the query (`rand`), stateful
 /// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
 /// many times and on which rows it was evaluated.
