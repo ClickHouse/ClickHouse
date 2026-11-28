@@ -695,7 +695,7 @@ struct Reader
 
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
 
-    /// `footer_read_size` overrides the initial footer read size; 0 reads 64 KiB of a local file and sizes the read to the file otherwise.
+    /// `footer_read_size` overrides the initial footer read size; 0 reads 64 KiB of a local file or cached tail, else sizes it to the file.
     static std::shared_ptr<const FileFooter> readFileFooter(Prefetcher & prefetcher, size_t footer_read_size);
     /// Works around writer bugs in column chunk metadata.
     static void fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_duckdb);

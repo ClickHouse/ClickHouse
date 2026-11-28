@@ -79,6 +79,8 @@ public:
 
     bool isContentCached(size_t offset, size_t size) override;
 
+    bool isRangeCachedLocally(size_t offset, size_t size) const override;
+
     std::optional<size_t> tryGetFileSize() override;
     std::optional<Field> getMetadata(const String & name) const override;
 
