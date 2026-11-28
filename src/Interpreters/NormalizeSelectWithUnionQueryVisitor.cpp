@@ -27,6 +27,17 @@ bool hasTrailingSettings(const ASTSelectWithUnionQuery & inner_union)
     return ASTSelectIntersectExceptQuery::getTrailingSettings(inner_union.list_of_selects->children.back()) != nullptr;
 }
 
+/// Whether `inner_union` is a list of `UNION` operands, so its selects can become operands of an enclosing
+/// `UNION DISTINCT` list. A normalized node can also hold a binary `INTERSECT` / `EXCEPT` (the form
+/// `UnionNode::toAST` writes, which the AST JSON reader accepts): its operands are not operands of the
+/// enclosing union, and lifting them would silently replace the set operation with `UNION DISTINCT`.
+bool isUnionList(const ASTSelectWithUnionQuery & inner_union)
+{
+    return inner_union.union_mode == SelectUnionMode::UNION_DEFAULT
+        || inner_union.union_mode == SelectUnionMode::UNION_ALL
+        || inner_union.union_mode == SelectUnionMode::UNION_DISTINCT;
+}
+
 bool canLiftUnionAll(const ASTSelectWithUnionQuery * inner_union)
 {
     return inner_union && inner_union->union_mode == SelectUnionMode::UNION_ALL && !hasTrailingSettings(*inner_union);
@@ -38,7 +49,9 @@ void NormalizeSelectWithUnionQueryMatcher::getSelectsFromUnionListNode(ASTPtr as
 {
     /// Same as in `canLiftUnionAll`: a union whose last operand carries a trailing `SETTINGS` clause stays
     /// a separate operand of the `UNION DISTINCT` list, so that the clause keeps applying to it alone.
-    if (const auto * inner_union = ast_select->as<ASTSelectWithUnionQuery>(); inner_union && !hasTrailingSettings(*inner_union))
+    /// An `INTERSECT` / `EXCEPT` node stays a separate operand as well, see `isUnionList`.
+    if (const auto * inner_union = ast_select->as<ASTSelectWithUnionQuery>();
+        inner_union && isUnionList(*inner_union) && !hasTrailingSettings(*inner_union))
     {
         for (const auto & child : inner_union->list_of_selects->children)
             getSelectsFromUnionListNode(child, selects);
