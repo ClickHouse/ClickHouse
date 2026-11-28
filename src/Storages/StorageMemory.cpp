@@ -333,11 +333,7 @@ public:
             /// again, the same as in `MergeTreeCommitOrderSource::handleShutdown`. If the query was stopped by
             /// an exception instead, it fails, and the reported cursor is discarded along with it.
             /// If the read did not start, it returned nothing, and the cursor stays in place.
-            if (bounded && initialized)
-            {
-                next_block_number = end_block_number;
-                reportFinalCursor();
-            }
+            reportFinalCursorOfStoppedRead();
             pending_report.finish();
             return Status::Finished;
         }
@@ -347,7 +343,15 @@ public:
 
         const auto status = ISource::prepare();
         if (status == Status::Finished)
+        {
+            /// The output can be closed by another thread after the check above (e.g. by a `DISTINCT` by constants
+            /// that got its row from another stream), and then `ISource::prepare` returns `Finished` for it.
+            /// It has to be handled in the same way, as the processor is not prepared again after `Finished`.
+            /// It does nothing if the read reached its end and reported the cursor from `tryGenerate`.
+            if (!isCancelled())
+                reportFinalCursorOfStoppedRead();
             pending_report.finish();
+        }
         return status;
     }
 
@@ -464,6 +468,16 @@ protected:
     }
 
 private:
+    /// The cursor of a bounded read that the query stopped before its end: it is after all the blocks of the read.
+    void reportFinalCursorOfStoppedRead()
+    {
+        if (bounded && initialized)
+        {
+            next_block_number = end_block_number;
+            reportFinalCursor();
+        }
+    }
+
     void reportFinalCursor()
     {
         /// Only an incremental refresh of a materialized view has the holder of the cursor.
