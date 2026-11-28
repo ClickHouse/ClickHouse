@@ -13,10 +13,9 @@ ALTER TABLE t_buffer MODIFY COLUMN vec CODEC(Quantized('rabitq', 8)); -- { serve
 INSERT INTO t_buffer SELECT number, arrayMap(j -> toFloat32(number + j), range(8)) FROM numbers(4);
 SELECT count(), sum(arraySum(vec)) FROM t_buffer;
 
--- A Replicated database creates the table from the formatted column list, which has no codec.
-CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic;
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_ctas ENGINE = Log AS SELECT tuple(vec) AS t FROM t_mt; -- { serverError ILLEGAL_COLUMN }
-DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+-- A table created AS SELECT gets the column without the codec.
+CREATE TABLE t_ctas ENGINE = Log AS SELECT tuple(vec) AS t FROM t_mt;
+DROP TABLE t_ctas;
 
 DROP TABLE t_buffer;
 DROP TABLE t_mt;

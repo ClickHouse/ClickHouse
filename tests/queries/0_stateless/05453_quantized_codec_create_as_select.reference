@@ -1,0 +1,10 @@
+id	UInt32
+t	Tuple(SimpleAggregateFunction(anyLast, Array(Float32)))
+vec	SimpleAggregateFunction(anyLast, Array(Float32))
+8	329
+4	175
+4	4	175	175
+4	175
+4	175	175
+4	175
+4	48
