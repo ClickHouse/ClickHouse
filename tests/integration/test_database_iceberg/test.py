@@ -3417,6 +3417,8 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
     TF_V = f"tf_view_{test_ref}"
     EC = f"exec_copy_{test_ref}"
     VC = f"view_copy_{test_ref}"
+    VN = f"view_none_{test_ref}"
+    CO = f"catalog_only_{test_ref}"
     VX = f"view_exec_{test_ref}"
     user = f"u_dist_{test_ref}"
     script = f"{test_ref}.sh"
@@ -3432,6 +3434,8 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
     except NamespaceAlreadyExistsError:
         pass
     create_table(catalog, "default", L).append(pa.Table.from_pylist([generate_record() for _ in range(5)]))
+    # a table `default.CO` in the catalog only
+    create_table(catalog, "default", CO)
 
     create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
 
@@ -3576,10 +3580,16 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
         result = int(node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{EC}", settings=executable_on))
         assert result == 1, f"table created from `executable`: expected 1 row, got {result}"
 
-        # created in `default`: `view` infers its structure with the current database
-        node1.query(f"CREATE TABLE default.{VC} AS view(SELECT symbol FROM default.{L})")
-        result = int(node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{VC}", settings=executable_on))
+        # the structure is inferred from the query as written too
+        node1.query(
+            f"USE {CATALOG_NAME}; CREATE TABLE default.{VC} AS view(SELECT symbol FROM default.{L})", settings=on
+        )
+        result = int(node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{VC}", settings=on))
         assert result == 1, f"table created from `view`: expected 1 row, got {result}"
+        _, err = node1.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; CREATE TABLE default.{VN} AS view(SELECT symbol FROM default.{CO})", settings=on
+        )
+        assert "UNKNOWN_TABLE" in err, f"table created from `view` over a table of the catalog only: {err}"
 
         # the query of `executable` keeps the current-database reading inside a stored view
         node1.query(
@@ -3618,9 +3628,10 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
         node1.query(f"DROP USER IF EXISTS {user}")
         node1.query(f"DROP FUNCTION IF EXISTS {F}")
         node1.query("DROP DATABASE IF EXISTS _table_function")
-        for table in (V, MV, B, DOUT, OUT, D, D2, E, VX, VC, EC, L, L2):
+        for table in (V, MV, B, DOUT, OUT, D, D2, E, VX, VC, VN, EC, L, L2):
             node1.query(f"DROP TABLE IF EXISTS default.{table}")
         node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{L}`")
+        node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{CO}`")
         node1.exec_in_container(["rm", "-f", f"{scripts_path}/{script}"], user="root")
 
 

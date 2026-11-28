@@ -10428,7 +10428,8 @@ When the setting is enabled, the analyzer additionally:
   bodies, row policy conditions, mutations, column `DEFAULT` / `MATERIALIZED` / `ALIAS` expressions,
   `ClickHouse` dictionary source queries executed on the same server, SQL function bodies, the input
   queries of an `Executable` or `ExecutablePool` table, the query argument of the table function when
-  a table created with `CREATE TABLE ... AS f(...)` is read), where `a.b` is always table `b` of database `a`,
+  a table created with `CREATE TABLE ... AS f(...)` is created or read), where `a.b` is always table
+  `b` of database `a`,
   except in the query argument of table functions `view`, `viewIfPermitted`, `eval`, `obfuscate`,
   `explain` and `executable` that such SQL calls. Nor is it applied to a table that an engine reads
   by its stored name: a table of a `Merge` table or of the `merge` table function, the table that

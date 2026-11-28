@@ -52,9 +52,9 @@ ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context
     chassert(create.children.size() == 1);
     chassert(create.children[0]->as<ASTSelectWithUnionQuery>());
 
-    /// The query argument is a part of the calling query, not a stored definition.
+    /// The query argument is a part of the calling query, unless the call creates a table.
     SharedHeader sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
-        create.children[0], context, SelectQueryOptions().allowCompoundTableIdentifierQualification());
+        create.children[0], context, SelectQueryOptions().allowCompoundTableIdentifierQualification(!creates_table));
 
     return ColumnsDescription(sample_block->getNamesAndTypesList());
 }
