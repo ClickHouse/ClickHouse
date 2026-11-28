@@ -57,7 +57,7 @@ ASTPtr convertASTForIndexColumn(const IndexDescription & index, const ASTPtr & e
         /// Create the array argument of arrayMap function.
         auto array_map_arg = replace_index_column
             ? make_intrusive<ASTIdentifier>(preprocessor_column_name)
-            : index.expression_list_ast->children.front();
+            : index.expression_list_ast->children.front()->clone();
 
         /// Pack preprocessor expression into lambda.
         return makeASTFunction("arrayMap",
