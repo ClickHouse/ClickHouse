@@ -1,4 +1,7 @@
 #include <Access/ContextAccess.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
@@ -163,21 +166,21 @@ std::unordered_set<const ActionsDAG::Node *> getUsedInputs(const ActionsDAG & da
 
 /// Returns the nodes whose value reaches the step output only as the truth value of the removed filter column:
 /// the filter node and, through `and`, `or`, `not` and aliases, the nodes used nowhere else.
-std::unordered_set<const ActionsDAG::Node *> getTruthOnlyNodes(const ActionsDAG & dag, const ActionsDAG::Node * filter_node, bool removes_filter_column)
+UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> getTruthOnlyNodes(const ActionsDAG & dag, const ActionsDAG::Node * filter_node, bool removes_filter_column)
 {
-    std::unordered_map<const ActionsDAG::Node *, size_t> uses;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> uses;
     for (const auto * output : dag.getOutputs())
         ++uses[output];
     for (const auto & node : dag.getNodes())
         for (const auto * child : node.children)
             ++uses[child];
 
-    std::unordered_set<const ActionsDAG::Node *> truth_only_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> truth_only_nodes;
     if (!filter_node || !removes_filter_column || uses[filter_node] != 1)
         return truth_only_nodes;
 
-    std::unordered_map<const ActionsDAG::Node *, size_t> truth_uses;
-    std::vector<const ActionsDAG::Node *> stack{filter_node};
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> truth_uses;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{filter_node};
     truth_only_nodes.insert(filter_node);
 
     while (!stack.empty())
@@ -640,7 +643,7 @@ private:
     std::unordered_map<String, const ActionsDAG::Node *> virtual_column_inputs;
     /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
     IndexReadTasks index_read_tasks;
-    std::unordered_set<const ActionsDAG::Node *> truth_only_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> truth_only_nodes;
 
     /// has/hasAll/hasAny operate on array elements directly, bypassing the tokenizer, preprocessor, and postprocessor.
     static bool needApplyTokenizer(const String & function_name)
