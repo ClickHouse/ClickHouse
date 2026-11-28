@@ -1,0 +1,114 @@
+-- ROLLUP
+0	0	1
+0	\N	1
+1	1	1
+1	\N	1
+2	1	1
+2	\N	1
+\N	\N	3
+-- CUBE
+0	0	1
+0	\N	1
+1	1	1
+1	\N	1
+\N	0	1
+\N	1	1
+\N	\N	2
+-- GROUPING SETS
+0	\N	1
+1	\N	1
+\N	0	1
+\N	1	1
+\N	\N	2
+-- key repeated without an alias
+0	0	1
+0	\N	1
+1	1	1
+1	\N	1
+\N	\N	2
+-- Array key
+0	[]	Array(UInt64)	1
+0	[1]	Array(UInt64)	1
+1	[]	Array(UInt64)	1
+1	[2]	Array(UInt64)	1
+\N	[]	Array(UInt64)	2
+-- arrayFold
+0	0	1
+0	\N	1
+1	1	1
+1	\N	1
+\N	\N	2
+-- mapApply
+0	{}	1
+0	{1:1}	1
+1	{}	1
+1	{1:2}	1
+\N	{}	2
+-- nested lambda
+0	[]	1
+0	[1]	1
+1	[]	1
+1	[0]	1
+\N	[]	2
+-- lambda under another function
+0	[1]	1
+0	\N	1
+1	[2]	1
+1	\N	1
+\N	\N	2
+-- key containing the lambda key
+0	1	1
+0	\N	1
+0	\N	1
+1	2	1
+1	\N	1
+1	\N	1
+\N	\N	2
+-- lambda key captured by another lambda
+0	[10]	1
+0	[NULL]	1
+1	[11]	1
+1	[NULL]	1
+\N	[NULL]	2
+-- key reading a column that is not a key
+0	0	1
+0	\N	1
+1	0	1
+1	\N	1
+2	1	1
+2	\N	1
+\N	\N	3
+-- HAVING
+0	\N	1
+1	\N	1
+2	\N	1
+\N	\N	3
+-- APPLY
+0	0	1
+0	\N	1
+1	1	1
+1	\N	1
+\N	\N	2
+-- lambda body folded to a constant
+0	0	1	1
+0	\N	1	1
+1	0	1	1
+1	\N	1	1
+\N	\N	0	2
+0	[]	1
+0	['UInt64']	1
+1	[]	1
+1	['UInt64']	1
+\N	[]	2
+-- near misses are not the key
+0	0	0	0	0	1	1
+0	\N	0	0	0	1	1
+1	1	0	1	1	2	1
+1	\N	0	1	1	2	1
+\N	\N	0	0	0	1	2
+-- remote
+0	0	2
+0	\N	2
+1	1	2
+1	\N	2
+\N	\N	4
