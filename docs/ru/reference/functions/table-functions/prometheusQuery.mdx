@@ -65,7 +65,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 **Note**: `min_of(a, b)` и `max_of(a, b)` возвращают меньшее или большее из двух скалярных значений. Оба аргумента должны быть скалярами.
 
-**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` и `mad_over_time` — экспериментальные функции в Prometheus (там они включаются с помощью `--enable-feature=promql-experimental-functions`); ClickHouse вычисляет их без необходимости указывать этот флаг.
+**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time` и `mad_over_time` — экспериментальные функции в Prometheus (там они включаются с помощью `--enable-feature=promql-experimental-functions`); ClickHouse вычисляет их без необходимости указывать этот флаг.
 
 ### Операторы {#operators}
 

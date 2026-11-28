@@ -2,7 +2,7 @@
 sidebarTitle: '简介'
 description: '无需重写任何 SQL，即可直接从 PostgreSQL 在 ClickHouse 上运行分析查询'
 slug: '/cloud/managed-postgres/extensions/pg_clickhouse'
-title: 'pg_clickhouse 参考文档'
+title: 'pg_clickhouse 文档'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', '外部数据包装器', 'pg_clickhouse', '扩展']
 ---
@@ -62,6 +62,8 @@ docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhous
 | [Query 20] |     473 ms |             28 ms |     |
 | [Query 21] |    1145 ms |           4470 ms |     |
 | [Query 22] |     270 ms |             45 ms |  ✼  |
+
+## 安装 {#installation}
 
 ### 从源码编译 {#compile-from-source}
 
@@ -206,6 +208,42 @@ ERROR:  must be owner of database regression
 make installcheck PGUSER=postgres
 ```
 
+### CloudNativePG {#cloudnativepg}
+
+使用 [ExtensionConfiguration] 将 pg&#95;clickhouse 添加到 [CloudNativePG] 集群中：
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cluster-example
+spec:
+  # ... <snip>
+  postgresql:
+    # ExtensionConfiguration
+    extensions:
+      - name: pg_clickhouse
+        image:
+        reference: ghcr.io/ClickHouse/cnpg-pg_clickhouse:{pg_major_version}-{pg_clickhouse_version}
+```
+
+要将其加载到数据库中，请使用 [ExtensionSpec]：
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: pg_clickhouse-cluster
+spec:
+  name: app
+  owner: app
+  cluster:
+    name: pg_clickhouse-cluster
+  extensions:
+    - name: pg_clickhouse
+      version: {pg_clickhouse_version}
+```
+
 ### 加载 {#loading}
 
 安装 `pg_clickhouse` 后，使用超级用户连接到数据库，并运行以下命令即可将其添加到该数据库：
@@ -239,8 +277,6 @@ make] 和 [CMake]。
 * 允许通过 CREATE SERVER
   和 GUCs 配置服务器级和会话级的 ClickHouse 设置
 * 支持所有 ClickHouse 数据类型
-* 支持轻量级 DELETE 和 UPDATE
-* 支持通过 COPY 进行批次插入
 * 添加一个函数来执行任意 ClickHouse 查询，并将其
   结果以表的形式返回
 * 为所有都查询远程数据库的 UNION 查询添加下推支持
@@ -250,6 +286,7 @@ make] 和 [CMake]。
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 * [Josh Ventura](https://github.com/JoshDreamland)
+* [Kaushik Iska](https://github.com/iskakaushik)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
@@ -260,41 +297,49 @@ make] 和 [CMake]。
 * 部分版权所有 (c) 2019-2023，Adjust GmbH
 * 部分版权所有 (c) 2012-2019，PostgreSQL Global Development Group
 
-[pg_clickhouse]: https://github.com/clickHouse/pg_clickhouse "GitHub 上的 pg_clickhouse"
+  [pg_clickhouse]: https://github.com/clickHouse/pg_clickhouse "GitHub 上的 pg_clickhouse"
 
-[导入外部表]: /products/managed-postgres/extensions/pg_clickhouse/reference#import-foreign-schema
+  [import foreign tables]: /products/managed-postgres/extensions/pg_clickhouse/reference#import-foreign-schema
 
-[Docker image]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "最新 Docker 版本"
+  [Docker image]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "最新 Docker 版本"
 
-[tutorial]: /products/managed-postgres/extensions/pg_clickhouse/tutorial "pg_clickhouse 教程"
+  [tutorial]: /products/managed-postgres/extensions/pg_clickhouse/tutorial "pg_clickhouse 教程"
 
-[PostgreSQL Apt]: https://wiki.postgresql.org/wiki/Apt
+  [PostgreSQL Apt]: https://wiki.postgresql.org/wiki/Apt
 
-[PostgreSQL Yum]: https://yum.postgresql.org
+  [PostgreSQL Yum]: https://yum.postgresql.org
 
-[PGXN client]: https://pgxn.github.io/pgxnclient/ "PGXN client 文档"
+  [PGXN client]: https://pgxn.github.io/pgxnclient/ "PGXN client 文档"
 
-[Homebrew]: https://formulae.brew.sh/formula/pgxnclient#default "Homebrew 上的 PGXN client"
+  [Homebrew]: https://formulae.brew.sh/formula/pgxnclient#default "Homebrew 上的 PGXN client"
 
-[Apt]: https://tracker.debian.org/pkg/pgxnclient "Debian Apt 上的 PGXN client"
+  [Apt]: https://tracker.debian.org/pkg/pgxnclient "Debian Apt 上的 PGXN client"
 
-[`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
+  [`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
 
-[PostgreSQL]: https://www.postgresql.org "PostgreSQL：全球最先进的开源关系型数据库"
+  [PostgreSQL]: https://www.postgresql.org "PostgreSQL：全球最先进的开源关系型数据库"
 
-[libcurl]: https://curl.se/libcurl/ "libcurl —— 网络传输库"
+  [libcurl]: https://curl.se/libcurl/ "libcurl —— 网络传输库"
 
-[libuuid]: https://linux.die.net/man/3/libuuid "libuuid - 与 DCE 兼容的通用唯一标识符库"
+  [libuuid]: https://linux.die.net/man/3/libuuid "libuuid - 与 DCE 兼容的通用唯一标识符库"
 
-[GNU make]: https://www.gnu.org/software/make "GNU Make"
+  [GNU make]: https://www.gnu.org/software/make "GNU Make"
 
-[CMake]: https://cmake.org/ "CMake：强大的软件构建系统"
+  [CMake]: https://cmake.org/ "CMake：强大的软件构建系统"
 
-[LibSSL]: https://openssl-library.org "OpenSSL 库"
+  [LibSSL]: https://openssl-library.org "OpenSSL 库"
 
-[TPC-H]: https://www.tpc.org/tpch/
+  [TPC-H]: https://www.tpc.org/tpch/
 
-[re2]: https://github.com/ClickHouse/pg_re2 "pg_re2：使用 RE2 的 ClickHouse 兼容正则函数"
+  [re2]: https://github.com/ClickHouse/pg_re2 "pg_re2：使用 RE2 的 ClickHouse 兼容正则函数"
+
+  [CloudNativePG]: https://cloudnative-pg.io/ "以 Kubernetes 方式运行 PostgreSQL"
+
+  [ExtensionConfiguration]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionconfiguration
+
+  &quot;CloudNativePG 文档：ExtensionConfiguration:
+  [ExtensionSpec]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionspec
+  &quot;CloudNativePG 文档：ExtensionSpec:
 
 [查询 1] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/1.sql
 [查询 2] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/2.sql

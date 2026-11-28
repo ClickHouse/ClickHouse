@@ -69,7 +69,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadStatus.h>
@@ -177,23 +177,13 @@ void MergeTreePartMinMaxIndex::load(const IMergeTreeDataPart & part)
 
     for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings))
     {
-        const bool synth_block_number = (fill_virtuals || part.isSystemColumnInvalidated(BlockNumberColumn::name)) && metadata_snapshot->isVirtualColumn(BlockNumberColumn::name) && column_name == BlockNumberColumn::name;
-        const bool synth_block_offset = (fill_virtuals || part.isSystemColumnInvalidated(BlockOffsetColumn::name)) && metadata_snapshot->isVirtualColumn(BlockOffsetColumn::name) && column_name == BlockOffsetColumn::name;
-
-        if (synth_block_number)
+        if (fill_virtuals || part.isSystemColumnInvalidated(column_name))
         {
-            const Field block_number = getFieldForConstVirtualColumn(BlockNumberColumn::name, part);
-            hyperrectangle.emplace_back(block_number, true, block_number, true);
-            continue;
-        }
-
-        if (synth_block_offset)
-        {
-            if (part.rows_count == 0)
-                hyperrectangle.emplace_back(Range::createWholeUniverse());
-            else
-                hyperrectangle.emplace_back(Field(UInt64(0)), true, Field(UInt64(part.rows_count - 1)), true);
-            continue;
+            if (auto range = getComputedBlockColumnRange(column_name, part, part.rows_count, *metadata_snapshot))
+            {
+                hyperrectangle.push_back(std::move(*range));
+                continue;
+            }
         }
 
         const String file_name = "minmax_" + getFileColumnName(column_name, part.checksums) + ".idx";
@@ -435,6 +425,46 @@ void MergeTreePartMinMaxIndex::repairInheritedBlockColumns(const IMergeTreeDataP
     }
 }
 
+std::optional<Range> MergeTreePartMinMaxIndex::getComputedBlockColumnRange(
+    const String & column_name, const IMergeTreeDataPart & part, size_t rows_count, const StorageInMemoryMetadata & metadata)
+{
+    if (!metadata.isVirtualColumn(column_name))
+        return std::nullopt;
+
+    if (column_name == BlockNumberColumn::name)
+    {
+        const Field block_number = getFieldForConstVirtualColumn(BlockNumberColumn::name, part);
+        return Range(block_number, true, block_number, true);
+    }
+
+    if (column_name == BlockOffsetColumn::name)
+    {
+        if (rows_count == 0)
+            return Range::createWholeUniverse();
+        return Range(Field(UInt64(0)), true, Field(UInt64(rows_count - 1)), true);
+    }
+
+    return std::nullopt;
+}
+
+void MergeTreePartMinMaxIndex::setComputedBlockColumns(const IMergeTreeDataPart & part, size_t rows_count, const StorageMetadataPtr & metadata_snapshot)
+{
+    if (!initialized)
+        return;
+
+    size_t i = 0;
+    for (const auto & [column_name, _] : MergeTreeData::getMinMaxColumns(*metadata_snapshot, part.storage.getSettings()))
+    {
+        if (i >= hyperrectangle.size())
+            break;
+
+        if (auto range = getComputedBlockColumnRange(column_name, part, rows_count, *metadata_snapshot))
+            hyperrectangle[i] = std::move(*range);
+
+        ++i;
+    }
+}
+
 Names MergeTreePartMinMaxIndex::getProbablyWrittenFiles(const IMergeTreeDataPart & part) const
 {
     if (hyperrectangle.empty())
@@ -483,7 +513,7 @@ IMergeTreeDataPart::MinMaxIndexPtr IMergeTreeDataPart::getMinMaxIndex() const
     /// that resets a virtual minmax column to null (see MergeTreeDataWriter) first create it here.
     /// Part-lifetime metadata, so it is not charged to whichever query happens to materialize it
     /// either; see `setColumns` for why.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     if (is_temp || isEmpty())
@@ -503,7 +533,7 @@ void IMergeTreeDataPart::setMinMaxIndex(MinMaxIndexPtr minmax_index) const
 {
     /// Part-lifetime metadata: not charged to the query that builds it, see `setColumns`. Kept outside
     /// the `isEnabled` check below so the exclusion does not depend on the arena feature.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
 
     /// Re-home the index into the parts arena (deep copy under the scope, then adopt), same rationale as
     /// `setColumns`. The index is one of the larger part-lifetime metadata structures and is built outside
@@ -761,7 +791,7 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
     /// The primary index lives for the part's whole lifetime, so build the `Index` object in the
     /// dedicated arena and keep it off the query's memory tracker, like `setColumns` / `setMinMaxIndex`.
     /// This covers every caller (insert / merge write finalize and the mutation path) in one place.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     optimizeIndexColumns(index_granularity->getMarksCount(), index_columns);
     index = std::make_shared<Index>(std::move(index_columns));
@@ -900,7 +930,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     /// ones, so `total_memory_tracker` still accounts the bytes and the server limit still sees them.
     /// Unlike the narrow arena scopes, it covers the whole function: the transient work is freed on
     /// this same thread, so it nets out either way.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
 
     {
         /// We avoid covering the whole function with the scope so that transient work stays in the default arena (avoid contention)
@@ -1321,7 +1351,7 @@ UInt64 IMergeTreeDataPart::getExistingBytesOnDisk() const
 {
     if ((*storage.getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && supportLightweightDeleteMutate() && hasLightweightDelete()
         && existing_rows_count.has_value() && existing_rows_count.value() < rows_count && rows_count > 0)
-        return bytes_on_disk * existing_rows_count.value() / rows_count;
+        return static_cast<UInt64>(UInt128(bytes_on_disk) * existing_rows_count.value() / rows_count);
     return bytes_on_disk;
 }
 
@@ -1549,7 +1579,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_co
             /// The loaded statistics and the bookkeeping of the cache outlive the query in the server-wide
             /// cache, so they are not charged to the query or the user, like the marks and the primary index
             /// in their caches. The merged statistics of the query are built by the caller and still charged.
-            MemoryTrackerBlockerInThread not_charged_to_the_query;
+            ServerOwnedMemoryScope not_charged_to_the_query;
             const auto key = StatisticsCache::hash(part_path, column_desc->name);
             cell = cache->getOrSet(key, load);
             /// `clearCaches` sets the flag before it removes the entries, so if it ran concurrently
@@ -1764,7 +1794,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Memory should not be limited during ATTACH TABLE query.
     /// This is already true at the server startup but must be also ensured for manual table ATTACH.
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+    ServerOwnedMemoryScope temporarily_disable_memory_tracker;
 
     /// Long-lived per-part metadata (columns substreams, checksums, index granularity, patch part
     /// index, primary index, per-column sizes, partition / minmax index, TTL infos, projections)
@@ -2050,7 +2080,7 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadIndex");
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+    ServerOwnedMemoryScope temporarily_disable_memory_tracker;
 
     /// The loaded primary-index `Columns` are long-lived (kept on the part or handed to
     /// `PrimaryIndexCache`), so route them into the dedicated parts arena. Keeping cache-owned indices
@@ -2067,7 +2097,7 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
         getReadSettings(),
         [&](MutableColumns & index_columns) { optimizeIndexColumns(marks_count, index_columns); });
 
-    return std::make_shared<Index>(std::move(loaded_index));
+    return makeServerOwned<Index>(std::move(loaded_index));
 }
 
 NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
@@ -3095,7 +3125,7 @@ void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_
 {
     /// The interned list is shared between parts and outlives the query, so it is not charged to it;
     /// see `setColumns`.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
 
     if (validate_against_loaded_columns)
         columns_substreams_.validateColumns(getColumns().getNames());
@@ -3114,7 +3144,7 @@ void IMergeTreeDataPart::moveMetadataToDedicatedArena()
         return;
 
     /// Part-lifetime metadata, so the copies are not charged to the query; see `setColumns`.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     /// Re-home the members built outside the arena into it (copy under the scope, then adopt).
@@ -3667,7 +3697,7 @@ void IMergeTreeDataPart::checkDataFileCoversMarks(
     size_t available_bytes = 0;
     if (last_mark.offset_in_compressed_file < data_file_size)
     {
-        CompressedReadBufferFromFile data_in(getDataPartStorage().readFile(data_file_name, getReadSettings(), data_file_size));
+        CompressedReadBufferFromFile data_in(getDataPartStorage().readFile(data_file_name, getReadSettings(), data_file_size), true);
         data_in.seek(last_mark.offset_in_compressed_file, last_mark.offset_in_decompressed_block);
         available_bytes = data_in.tryIgnore(expected_bytes);
     }
@@ -3703,7 +3733,7 @@ void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked(
     /// happens to compute them; see `setColumns`. Unlike the arena scope below this covers the whole
     /// computation, because the short-lived churn it allocates is freed on this same thread and so
     /// nets out either way.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
 
     /// The computation must run outside the dedicated arena: `calculateEachColumnSizes` resolves a
     /// stream name and builds a sample column for every column and substream, which is heavy

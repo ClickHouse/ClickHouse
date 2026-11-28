@@ -18,6 +18,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/Stopwatch.h>
+#include <Common/checkStackSize.h>
 #include <Common/scope_guard_safe.h>
 
 #include <Interpreters/normalizeDivision.h>
@@ -920,8 +921,13 @@ static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStat
 static constexpr size_t PLAN_RENDER_INITIAL_CHUNK_SIZE = 4096;
 
 /// A row whose plan could not be written says why, in place of the plan.
-static void writeQueryPlanError(String & query_plan, const String & reason)
+static void writeQueryPlanError(String & query_plan, String reason)
 {
+    /// The reason can be the message of any exception thrown while rendering the plan, which may
+    /// quote what it was rendering.
+    if (auto masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(reason);
+
     query_plan.clear();
     try
     {
@@ -948,9 +954,8 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
         return;
 
     /// Runs on the logging path of a query that has already returned its result, so failing to
-    /// write the plan must not fail the query. Producing the document is also the one part of
-    /// profiling that allocates in proportion to the plan, hence the blocker.
-    MemoryTrackerBlockerInThread block_memory_tracker;
+    /// write the plan must not fail the query.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
     const size_t max_size = context->getSettingsRef()[Setting::log_query_plans_max_size];
 
@@ -2034,6 +2039,8 @@ void wrapNestedConstructionSettings(
     if (!ast)
         return;
 
+    checkStackSize();
+
     /// `INSERT … SELECT` and an *immediate* `CREATE … AS SELECT` (`CREATE TABLE … AS SELECT`, or a
     /// `POPULATE`d materialized view) run their source `SELECT` right now, so a construction setting
     /// the source `SELECT` carries in its own `SETTINGS` clause must be materialized onto it — exactly
@@ -2137,6 +2144,8 @@ static void wrapPerArmConstructionSettingsImpl(
 {
     if (!ast)
         return;
+
+    checkStackSize();
 
     /// Descend into an `INSERT … SELECT` / immediate `CREATE … AS SELECT` source `SELECT` and keep the
     /// `select` member in sync, so per-arm settings on a source `UNION` are materialized too (see
@@ -3673,8 +3682,8 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
-                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, internal))
-                    context->enablePlanLogCapture();
+                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, query, internal))
+                    context->enablePlanLogCapture(QueryPlanLogCapture::collectedStatisticsFromSettings(settings));
 
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(
@@ -4890,7 +4899,9 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(*istr, {.read_no_more = max_query_size + 1});
+        /// One byte more than the limit detects a too long query; the limit may be the maximum of `size_t` already.
+        const size_t read_no_more = max_query_size == std::numeric_limits<size_t>::max() ? max_query_size : max_query_size + 1;
+        LimitReadBuffer limit(*istr, {.read_no_more = read_no_more});
         copyData(limit, out);
         out.finalize();
 
@@ -5076,9 +5087,11 @@ void executeQuery(
             String key = key_value.safeGet<Tuple>().at(0).safeGet<String>();
             String value = key_value.safeGet<Tuple>().at(1).safeGet<String>();
 
-            if (std::find_if(key.begin(), key.end(), isControlASCII) != key.end()
-                || std::find_if(value.begin(), value.end(), isControlASCII) != value.end())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The keys and values of the `http_response_headers` setting cannot contain ASCII control characters");
+            if (key.empty() || !std::all_of(key.begin(), key.end(), isHTTPTokenChar))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The keys of the `http_response_headers` setting must be valid HTTP header names");
+
+            if (std::any_of(value.begin(), value.end(), isControlOrDeleteASCII))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `http_response_headers` setting cannot contain ASCII control characters");
 
             if (!result_details.additional_headers.emplace(key, value).second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are duplicate entries in the `http_response_headers` setting");

@@ -570,10 +570,7 @@ namespace QueryPlanFormat
 
         for (const auto & func : window_description.window_functions)
         {
-            String pretty;
-
-            if (func.aggregate_function)
-                pretty += func.aggregate_function->getName();
+            String pretty = func.getFunctionName();
 
             pretty += '(';
             for (size_t i = 0; i < func.argument_names.size(); ++i)

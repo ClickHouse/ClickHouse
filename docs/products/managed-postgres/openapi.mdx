@@ -417,7 +417,7 @@ counter set documented under [per-execution counters].
 
 ### List blocking queries {#list-blocking-queries}
 
-The `blockingQueries` endpoint returns the same groups as the
+The [blocking queries API] returns the same groups as the
 [Blocking queries] table in the console: each result pairs one waiting query
 with one direct blocker, most frequently seen first. It has data only for
 periods when blocking query collection was on for the service. Pass
@@ -575,5 +575,7 @@ count; advance `offset` until a page returns fewer than `limit` entries.
   "List Postgres slow query patterns"
 [slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get
   "Get a Postgres slow query pattern with recent executions"
+[blocking queries API]: /products/cloud/api-reference/postgres/postgres-blocking-queries-get-list
+  "List Postgres blocking queries"
 [logs API]: /products/cloud/api-reference/postgres/postgres-logs-get-list
   "List Postgres server logs"

@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -392,6 +393,8 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     for (const auto & column_from_file_path : new_info.hive_partition_columns_to_read_from_file_path)
         new_info.source_header.insert({column_from_file_path.type->createColumn(), column_from_file_path.type, column_from_file_path.name});
 
+    new_info.columns_added_after_format = info.columns_added_after_format;
+
     new_info.requested_virtual_columns = info.requested_virtual_columns;
     new_info.columns_read_under_other_names = info.columns_read_under_other_names;
     for (const auto & requested_virtual_column : new_info.requested_virtual_columns)
@@ -454,16 +457,69 @@ bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
     return false;
 }
 
+bool ReadFromFormatInfo::formatReturnsColumnUnchanged(const String & name, const DataTypePtr & type) const
+{
+    if (formatReadsHivePartitionColumns())
+        return false;
+
+    if (columns_read_under_other_names.contains(name))
+        return false;
+
+    const auto * format_column = format_header.findByName(name);
+    if (!format_column || !format_column->type->equals(*type))
+        return false;
+
+    /// A column with a default expression is recomputed above the format for the values the reader reported as missing.
+    return !columns_description.hasDefault(name);
+}
+
+bool ReadFromFormatInfo::hasDefaultOfColumnOrParent(const String & name) const
+{
+    if (columns_description.hasDefault(name))
+        return true;
+    for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
+        if (columns_description.hasDefault(name.substr(0, pos)))
+            return true;
+    return false;
+}
+
+bool ReadFromFormatInfo::defaultsDependOnTheirBlock(const ContextPtr & context) const
+{
+    if (!columns_description.hasDefaults())
+        return false;
+
+    const auto physical_columns = columns_description.getAllPhysical();
+    for (const auto & column : columns_description)
+    {
+        if (!column.default_desc.expression)
+            continue;
+
+        Block available;
+        for (const auto & physical_column : physical_columns)
+            if (physical_column.name != column.name)
+                available.insert({physical_column.type->createColumn(), physical_column.type, physical_column.name});
+        if (!available.columns())
+            available.insert({DataTypeUInt8().createColumn(), std::make_shared<DataTypeUInt8>(), "_dummy"});
+
+        auto dag = evaluateMissingDefaults(available, {{column.name, column.type}}, columns_description, context, false);
+        if (dag && dag->hasNonDeterministicOrStatefulFunctions())
+            return true;
+    }
+    return false;
+}
+
 std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const
 {
-    if (!filter_actions_dag || (hive_partition_columns_to_read_from_file_path.empty() && requested_virtual_columns.empty()))
+    if (!filter_actions_dag
+        || (hive_partition_columns_to_read_from_file_path.empty() && requested_virtual_columns.empty() && columns_added_after_format.empty()))
         return filter_actions_dag;
     if (formatReadsHivePartitionColumns())
         return nullptr;
 
     auto is_added_after_format = [&](const String & name)
     {
-        return hive_partition_columns_to_read_from_file_path.contains(name) || requested_virtual_columns.contains(name);
+        return hive_partition_columns_to_read_from_file_path.contains(name) || requested_virtual_columns.contains(name)
+            || columns_added_after_format.contains(name);
     };
 
     auto reads_added_column = [&](const ActionsDAG::Node * atom)
@@ -528,6 +584,16 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
     ctx.out << "\n";
 
     hive_partition_columns_to_read_from_file_path.writeTextWithNamesInStorage(ctx.out);
+    /// At an older step version the set is not written: the peer reads it as empty, as before it existed.
+    if (ctx.step_version >= SERIALIZATION_VERSION_WITH_COLUMNS_ADDED_AFTER_FORMAT)
+    {
+        /// Sorted, so that the bytes do not depend on the order of the hash set.
+        Names names(columns_added_after_format.begin(), columns_added_after_format.end());
+        std::sort(names.begin(), names.end());
+        writeVarUInt(names.size(), ctx.out);
+        for (const auto & name : names)
+            writeStringBinary(name, ctx.out);
+    }
     writeBinary(prewhere_info != nullptr, ctx.out);
     if (prewhere_info != nullptr)
         prewhere_info->serialize(ctx);
@@ -567,6 +633,17 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     ctx.in >> "\n";
 
     result.hive_partition_columns_to_read_from_file_path.readTextWithNamesInStorage(ctx.in);
+    if (ctx.step_version >= SERIALIZATION_VERSION_WITH_COLUMNS_ADDED_AFTER_FORMAT)
+    {
+        size_t num_columns_added_after_format = 0;
+        readVarUInt(num_columns_added_after_format, ctx.in);
+        for (size_t i = 0; i < num_columns_added_after_format; ++i)
+        {
+            String name;
+            readStringBinary(name, ctx.in);
+            result.columns_added_after_format.insert(std::move(name));
+        }
+    }
     bool has_prewhere_info = false;
     readBinary(has_prewhere_info, ctx.in);
     if (has_prewhere_info)

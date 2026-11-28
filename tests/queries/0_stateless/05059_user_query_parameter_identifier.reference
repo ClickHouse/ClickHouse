@@ -16,6 +16,7 @@
 0
 1
 0
+1
 REVOKE SELECT ON *.* FROM ALL
 GRANT SELECT ON *.* TO {g:Identifier}
 DROP ROLE IF EXISTS r1, `r2@%.myhost.com`

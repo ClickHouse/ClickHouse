@@ -75,6 +75,19 @@ Treat inserted enum values in CSV formats as enum indices
     DECLARE(Bool, input_format_csv_arrays_as_nested_csv, false, R"(
 When reading Array from CSV, expect that its elements were serialized in nested CSV and then put into string. Example: \"[\"\"Hello\"\", \"\"world\"\", \"\"42\"\"\"\" TV\"\"]\". Braces around array can be omitted.
 )", 0) \
+    DECLARE(Bool, input_format_skip_duplicated_fields, false, R"(
+Enables or disables skipping the repeated occurrences of a field within one row of input data.
+
+When enabled, a field that appears more than once in a row keeps its first value and its other occurrences are skipped, instead of throwing the `Duplicate field found` exception. Schema inference then infers the type of such a field from its first value.
+
+Supported formats:
+
+- `JSONEachRow` and the formats that read JSON objects the same way (`JSONStringsEachRow`, `JSONObjectEachRow`, the rows of `JSON`), including the nested fields read with `input_format_import_nested_json`
+- `BSONEachRow`
+- `TSKV`
+- `Form`
+)", 0, \
+        {"26.12", false, false, "New setting to skip the repeated occurrences of a field in a row of input data instead of throwing an exception."}) \
     DECLARE(Bool, input_format_skip_unknown_fields, true, R"(
 Enables or disables skipping insertion of extra data.
 

@@ -30,11 +30,11 @@ doc_type: 'reference'
 * **إعادة المحاولة مع زيادة تدريجية في التأخير**: تتم إعادة محاولة الإخفاقات العابرة ([`ai_function_max_retries`](/ar/reference/settings/session-settings/ai-function#ai_function_max_retries)) باستخدام تأخير أُسّي متزايد ([`ai_function_retry_initial_delay_ms`](/ar/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 * **الطلبات المتزامنة**: تُرسَل الطلبات من مجمّع خيوط مشترك على مستوى الخادم، عدة طلبات في آنٍ واحد (ويُتحكَّم في ذلك عبر الإعداد [`ai_function_max_concurrent_requests_per_thread`](/ar/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
 
-## الإعداد {#configuration}
+## الإعدادات {#configuration}
 
-تشير دوال الذكاء الاصطناعي إلى **مجموعة مُسمّاة** تخزّن بيانات اعتماد الموفّر وإعداداته. ويمكن إنشاء مجموعات مُسمّاة مختلفة واستخدامها مع دوال مختلفة أو مع استدعاءات مختلفة للدوال. على سبيل المثال، قد ترغب في تعريف مجموعة مُسمّاة مختلفة لاستخدامها مع دوال النص (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) مقابل دوال التضمين (`aiEmbed`, `aiSimilarity`)، إذ تتطلب نقاط نهاية مختلفة وتستخدم عادةً نماذج مختلفة.
+تتطلب دوال الذكاء الاصطناعي أذونات `AI FUNCTIONS` (راجع [التحكم في الوصول](#access-control))، وتشير إلى **مجموعة مُسمّاة** تخزّن بيانات اعتماد الموفّر وإعداداته. ويمكن إنشاء مجموعات مُسمّاة مختلفة واستخدامها مع دوال مختلفة أو مع استدعاءات مختلفة للدوال. على سبيل المثال، قد ترغب في تعريف مجموعة مُسمّاة مختلفة لاستخدامها مع دوال النص (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) مقابل دوال التضمين (`aiEmbed`, `aiSimilarity`)، إذ تتطلب نقاط نهاية مختلفة وتستخدم عادةً نماذج مختلفة.
 
-مثال على تعليمة لإنشاء مجموعة مُسمّاة تحتوي على بيانات اعتماد الموفّر، إحداهما مع نقطة نهاية للدردشة والأخرى مع نقطة نهاية للتضمين:
+مثال على عبارة لإنشاء مجموعة مُسمّاة تحتوي على بيانات اعتماد الموفّر، إحداهما مع نقطة نهاية للدردشة والأخرى مع نقطة نهاية للتضمين:
 
 ```sql
 CREATE NAMED COLLECTION ai_text_credentials AS
@@ -50,6 +50,41 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
     api_key = 'sk-...';
+```
+
+### التحكم في الوصول {#access-control}
+
+يتطلب استدعاء دالة الذكاء الاصطناعي امتيازين:
+
+* امتياز الدالة: إما الامتياز الخاص بكل دالة على حدة (per-function، مثل `aiGenerate`) أو المجموعة `AI FUNCTIONS`، راجع [`GRANT`](/ar/reference/statements/grant#ai-functions)؛
+* امتياز `NAMED COLLECTION` على بيانات الاعتماد المحددة.
+
+```sql
+GRANT AI FUNCTIONS ON *.* TO ai_user_role;
+GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
+GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
+```
+
+يؤدي ضبط الإعداد [`allow_ai_functions`](/ar/reference/settings/session-settings/allow#allow_ai_functions) (المفعّل افتراضيًا) على `0` إلى تعطيل دوال الذكاء الاصطناعي، ويمكن ذلك مثلًا في ملف تعريف الإعدادات أو باستخدام قيد. ومع `CONST`، لا يستطيع مستخدمو ملف التعريف تمكينها:
+
+```sql
+CREATE SETTINGS PROFILE no_ai SETTINGS allow_ai_functions = 0 CONST TO ai_restricted_role;
+```
+
+لا تُنفَّذ دوال الذكاء الاصطناعي إلا في الاستعلامات التي يشغّلها المستخدم. فهي مرفوضة في عمليات التعديل (`ALTER TABLE ... UPDATE`، و`ALTER TABLE ... DELETE`)، وفي مفاتيح الجدول وTTL وفهارس تخطي البيانات والإسقاطات الخاصة به، إذ تُنفَّذ جميعها في الخلفية. كما ترفع عمليات تفريغ `Buffer` استثناءً عند تقييمها لدالة ذكاء اصطناعي. تُقيَّم أعمدة `DEFAULT` و`MATERIALIZED` أثناء عملية الإدراج؛ أما عند إضافة عمود من هذا النوع باستخدام `ALTER TABLE`، فتحسبه أجزاء البيانات الموجودة في الخلفية، حيث لا تُنفَّذ دوال الذكاء الاصطناعي.
+
+لملء عمود في الصفوف الموجودة، استخدم عملية [`UPDATE`](/ar/reference/statements/update) الخفيفة، التي يُنفّذها الاستعلام نفسه ولا تكتب سوى العمود المُحدَّث:
+
+```sql
+UPDATE t SET y = aiEmbed(x, 'model') WHERE empty(y) SETTINGS enable_lightweight_update = 1;
+```
+
+أما الجداول التي لا تستوفي [متطلبات التحديث خفيف الوزن](/ar/reference/statements/update#lightweight-update-requirements)، فاستخدم معها `INSERT ... SELECT`، على سبيل المثال بمعالجة تقسيم واحد في كل مرة:
+
+```sql
+CREATE TABLE t_tmp AS t;
+INSERT INTO t_tmp SELECT x, aiEmbed(x, 'model') AS y FROM t WHERE _partition_id = '202610';
+ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 ```
 
 ### معلمات المجموعة المسماة {#named-collection-parameters}
@@ -194,34 +229,59 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 | OpenAI    | `'openai'`      | نعم           | الموفّر الافتراضي.                  |
 | Anthropic | `'anthropic'`   | نعم           | يستخدم نقطة النهاية `/v1/messages`. |
 
-## Observability {#observability}
+## إمكانية المراقبة {#observability}
 
-يُتتبَّع نشاط AI function عبر [ProfileEvents](/ar/reference/system-tables/query_log) في ClickHouse:
+يُتتبَّع نشاط دوال الذكاء الاصطناعي عبر [ProfileEvents](/ar/reference/system-tables/query_log) في ClickHouse:
 
-| ProfileEvent      | Description                                                                                  |
-| ----------------- | -------------------------------------------------------------------------------------------- |
-| `AIAPICalls`      | عدد طلبات HTTP المُرسلة إلى موفّر الذكاء الاصطناعي.                                          |
-| `AIInputTokens`   | إجمالي رموز الإدخال المستهلَكة.                                                              |
-| `AIOutputTokens`  | إجمالي رموز الإخراج المستهلَكة.                                                              |
-| `AIRowsProcessed` | عدد الصفوف التي تلقّت نتيجة.                                                                 |
-| `AIRowsSkipped`   | عدد الصفوف التي جرى تخطيها (تم تجاوز الحصة، أو حدث خطأ مع `ai_function_throw_on_error = 0`). |
+| ProfileEvent                 | الوصف                                                                                                                                                                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AIAPICalls`                 | عدد طلبات HTTP المُرسَلة إلى مزود خدمات الذكاء الاصطناعي.                                                                                                                                                               |
+| `AIInputTokens`              | إجمالي رموز الإدخال المستهلكة، بما في ذلك عمليات القراءة من ذاكرة التخزين المؤقت والكتابة فيها.                                                                                                                         |
+| `AIOutputTokens`             | إجمالي رموز الإخراج المستهلكة.                                                                                                                                                                                          |
+| `AICacheReadTokens`          | رموز الإدخال المقروءة من ذاكرة التخزين المؤقت للموجّهات لدى المزوّد.                                                                                                                                                    |
+| `AICacheWriteTokens`         | رموز الإدخال المكتوبة في ذاكرة التخزين المؤقت للموجّهات لدى المزوّد.                                                                                                                                                    |
+| `AIRequestMicroseconds`      | إجمالي الوقت المستغرق في استدعاءات مزود خدمات الذكاء الاصطناعي (تسلسل الطلب، والرحلة ذهابًا وإيابًا عبر HTTP، والتحليل النحوي للاستجابة)، بما في ذلك المحاولات الفاشلة، ودون احتساب التأخير بين محاولات إعادة المحاولة. |
+| `AIRetryBackoffMicroseconds` | إجمالي وقت الانتظار قبل إعادة محاولة استدعاءات مزود خدمات الذكاء الاصطناعي الفاشلة.                                                                                                                                     |
+| `AIRowsProcessed`            | عدد الصفوف التي تلقّت نتيجة.                                                                                                                                                                                            |
+| `AIRowsSkipped`              | عدد الصفوف المتجاهَلة (بسبب تجاوز الحصة، أو حدوث خطأ مع `ai_function_throw_on_error = 0`).                                                                                                                              |
+
+تُجمَع الأزمنة عبر عمليات التنفيذ وخيوط التنفيذ، لذا قد تتجاوز زمن الساعة الفعلي للاستعلام.
+اقسم `AIRequestMicroseconds` على `AIAPICalls` للحصول على متوسط زمن الانتقال لكل طلب، بما في ذلك المحاولات الفاشلة.
+هذه العدادات محسوبة على مستوى الاستعلام، ولا توفّر معلومات عن زمن الانتقال لكل طلب على حدة.
+إذا استدعى استعلامٌ عدة دوال ذكاء اصطناعي، فتُجمَع قيمها معًا.
+
+عدادات ذاكرة التخزين المؤقت هي مجموعات جزئية من `AIInputTokens`، وليست رموزًا إضافية. وهي تعكس عمليات القراءة/الكتابة في ذاكرة التخزين المؤقت التي يُبلغ عنها المزوّد، لا أي تخزين مؤقت داخلي في ClickHouse. أما المزوّد الذي لا يُبلغ عن استخدام ذاكرة التخزين المؤقت فتكون
+رموز ذاكرة التخزين المؤقت لديه صفرًا.
 
 استعلم عن هذه الأحداث:
 
 ```sql
+SYSTEM FLUSH LOGS;
+
 SELECT
+    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
+    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
+    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
+    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type = 'QueryFinish'
+AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
 
+يكون الإعدادان `log_queries` و`log_profile_events` مفعّلين افتراضيًا، وذلك لتسجيل هذه الأحداث في `system.query_log`.
+كما تتوفر الإجماليات على مستوى الخادم بأكمله في `system.events`.
+
 {/*
-  يُستبدل المحتوى داخل الوسوم أدناه، وقت بناء إطار عمل التوثيق، بـ
-  توثيق مُولَّد من system.functions. يُرجى عدم تعديل الوسوم أو حذفها.
+  يُستبدل محتوى الوسوم أدناه أثناء إصدار إطار عمل التوثيق
+  بوثائق مولّدة من system.functions. يُرجى عدم تعديل الوسوم أو إزالتها.
   راجع: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
   */}
 

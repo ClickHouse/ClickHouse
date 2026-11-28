@@ -1,0 +1,84 @@
+---
+slug: /clickstack/observability/api-reference
+title: 'Справочник API'
+description: 'Справочник API ClickHouse Observability: панели мониторинга, оповещения, источники, вебхуки, роли и сохранённые поиски'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'API', 'REST API', 'панели мониторинга', 'оповещения']
+sidebarTitle: 'Справочник API'
+---
+
+ClickHouse Observability использует ClickHouse Cloud API для управления панелями мониторинга, оповещениями, вебхуками, ролями и сохранёнными поисками, а также для доступа к источникам данных.
+
+<Note>
+  В полностью управляемом варианте источниками управляет сервис. Для их просмотра используйте операции чтения из источников; операции создания, обновления и удаления источников предназначены для развертываний, в которых вы управляете источниками самостоятельно.
+</Note>
+
+## Справочник API {#api-docs}
+
+Выберите конечную точку на боковой панели, чтобы просмотреть её параметры, схемы запросов и ответов, а также интерактивные примеры. На этих страницах используется спецификация **ClickHouse Cloud API** с URL-адресами сервиса ClickHouse Cloud и соответствующей аутентификацией.
+
+Доступны следующие конечные точки:
+
+| Ресурс                 | Операции                                                                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Панели мониторинга** | Создание, получение списка, получение, обновление, удаление и проверка корректности панелей мониторинга                           |
+| **Оповещения**         | Создание, получение списка, получение, обновление и удаление оповещений                                                           |
+| **Источники**          | Получение списка и получение источников данных; создание, обновление и удаление источников, которыми вы управляете самостоятельно |
+| **Вебхуки**            | Создание, получение списка, обновление, удаление и проверка корректности вебхуков                                                 |
+| **Роли**               | Создание, получение списка, получение, обновление и удаление ролей                                                                |
+| **Сохранённые поиски** | Создание, получение списка, получение, обновление и удаление сохранённых поисков                                                  |
+
+## Аутентификация {#authentication}
+
+Для аутентификации ClickHouse Observability использует **ключ API ClickHouse Cloud** по схеме [базовой аутентификации HTTP](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication). О том, как создавать ключи API и управлять ими, см. в разделе [Управление ключами API](/ru/products/cloud/features/admin-features/api/openapi).
+
+У ключа должно быть разрешение `control-plane:service:manage-clickstack-api`.
+
+Передайте ID ключа и секрет с помощью базовой аутентификации HTTP:
+
+```bash
+export KEY_ID=<your_key_id>
+export KEY_SECRET=<your_key_secret>
+
+curl --user $KEY_ID:$KEY_SECRET \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+```
+
+## Базовый URL и формат запросов {#base-url}
+
+Все запросы к API ClickHouse Observability направляются в ClickHouse Cloud API:
+
+```bash
+https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/<resource>
+```
+
+**Идентификатор организации** можно найти в консоли ClickHouse Cloud в разделе **Organization → Organization details**. **Идентификатор сервиса** указан в URL сервиса или на странице со сведениями о сервисе.
+
+### Пример: получение списка панелей мониторинга {#list-dashboards-managed}
+
+```bash
+curl --user $KEY_ID:$KEY_SECRET \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+```
+
+### Пример: создание оповещения {#create-alert-managed}
+
+```bash
+curl -X POST --user $KEY_ID:$KEY_SECRET \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dashboardId": "<DASHBOARD_ID>",
+    "tileId": "<TILE_ID>",
+    "threshold": 100,
+    "interval": "1h",
+    "source": "tile",
+    "thresholdType": "above",
+    "channel": {
+      "type": "webhook",
+      "webhookId": "<WEBHOOK_ID>"
+    },
+    "name": "Error Spike Alert",
+    "message": "Error rate exceeded 100 in the last hour"
+  }' \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/alerts
+```

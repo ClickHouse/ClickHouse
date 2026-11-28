@@ -16,7 +16,7 @@ doc_type: 'reference'
 * ClickHouse Cloud 서비스 생성, 구성, 확장, 백업 및 쿼리
 * [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview) 서비스 생성, 모니터링, 구성 및 복원
 * 객체 스토리지, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB, BigQuery를 소스로 하는 ClickPipes 생성 및 운영
-* [Managed ClickStack](/ko/clickstack/deployment/managed) 서비스의 소스, 대시보드, 알림, 웹훅, 저장된 검색 및 역할 관리
+* [자체 관리형 ClickHouse Observability](/ko/clickstack/self-configured/deployment/managed) 서비스의 소스, 대시보드, 알림, 웹훅, 저장된 검색 및 역할 관리
 * 실행 가능한 사용자 정의 함수(Executable UDFs)를 로컬에서 개발하여 ClickHouse Cloud에 배포
 * 조직 구성원, 초대, API 키 및 역할 관리
 * 공식 ClickHouse agent skills를 코딩 에이전트에 설치
@@ -430,7 +430,7 @@ CDC 파이프는 `update` 전에 `Paused` 상태여야 합니다. 파이프를 �
 
 ### ClickStack {#clickstack}
 
-`cloud clickstack`은 기존 [Managed ClickStack](/ko/clickstack/deployment/managed) 서비스의 소스, 대시보드, 알림, 웹훅, 저장된 검색 및 역할을 관리합니다. 리소스는 JSON 파일로 전달합니다(`--file` 사용, stdin에서 읽으려면 `-` 지정). 읽기 작업은 OAuth 인증을 지원하지만, 쓰기 작업에는 API Key가 필요합니다.
+`cloud clickstack`은 기존 [자체 관리형 ClickHouse Observability](/ko/clickstack/self-configured/deployment/managed) 서비스의 소스, 대시보드, 알림, 웹훅, 저장된 검색 및 역할을 관리합니다. 리소스는 JSON 파일로 전달합니다(`--file` 사용, stdin에서 읽으려면 `-` 지정). 읽기 작업은 OAuth 인증을 지원하지만, 쓰기 작업에는 API Key가 필요합니다.
 
 ```bash
 clickhousectl cloud clickstack source list <service-id>

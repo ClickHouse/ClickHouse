@@ -14,7 +14,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 ## mark_cache_policy {#mark_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />mark cache のエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />マークキャッシュ (MergeTree ファミリーのテーブルの索引) のキャッシュエビクションポリシー。設定可能な値: `LRU`、`SLRU`、`SIEVE`。キャッシュ容量については [`mark_cache_size`](/ja/reference/settings/server-settings/settings/mark-cache#mark_cache_size) を、SLRUポリシーにおける保護キューのサイズについては [`mark_cache_size_ratio`](/ja/reference/settings/server-settings/settings/mark-cache#mark_cache_size_ratio) を参照してください。
 
 ## mark_cache_prewarm_ratio {#mark_cache_prewarm_ratio}
 
