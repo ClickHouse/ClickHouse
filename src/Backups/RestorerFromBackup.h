@@ -91,6 +91,9 @@ private:
     void loadSystemAccessTables();
     void checkAccessForObjectsFoundInBackup() const;
 
+    /// Applies the settings constraints check of `CREATE [OR REPLACE] USER/ROLE/SETTINGS PROFILE` to the entities to restore.
+    void checkSettingsOfAccessEntitiesToRestore() const;
+
     /// Returns the data path of the "system.named_collections" table in the backup, or an empty
     /// string when this host's part of the backup holds no named collections.
     String findNamedCollectionsDataPathInBackup() const;

@@ -31,10 +31,6 @@ public:
 #else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 #endif
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
-    {
-    }
-
     bool hasEqualValues() const override { return true; }
 
     Field operator[](size_t) const override;

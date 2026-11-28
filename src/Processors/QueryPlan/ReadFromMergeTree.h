@@ -536,8 +536,8 @@ public:
     /// Announce an empty read set to the parallel-replicas coordinator (what initializePipeline() sends
     /// when there are no ranges). Callable from the projection optimizer when it replaces this step and
     /// initializePipeline() will not run. No-op unless this is the initiator local plan; returns whether
-    /// an announcement was sent.
-    bool announceEmptyReadRangesToCoordinatorIfInitiator();
+    /// an announcement was sent. `mode` overrides the coordination mode the read order implies.
+    bool announceEmptyReadRangesToCoordinatorIfInitiator(std::optional<CoordinationMode> mode = {});
 
     bool isParallelReplicasLocalPlanForInitiator() const;
     bool isParallelReplicasLocalPlanForFollower() const;

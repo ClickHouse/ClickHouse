@@ -46,6 +46,7 @@ def generate_cluster_def(port):
                 <min_upload_part_size>100000</min_upload_part_size>
                 <max_single_download_retries>10</max_single_download_retries>
                 <max_single_read_retries>10</max_single_read_retries>
+                <persistent_removal_log>true</persistent_removal_log>
             </blob_storage_disk>
             <hdd>
                 <type>local</type>
