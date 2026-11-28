@@ -183,6 +183,17 @@ std::optional<std::string_view> adjustSettingName(std::string_view name)
 
 }
 
+SettingsChanges ObjectStorageQueueSettings::normalizeChanges(const SettingsChanges & changes)
+{
+    SettingsChanges normalized = changes;
+    for (auto & change : normalized)
+    {
+        if (auto maybe_new_name = adjustSettingName(change.name); maybe_new_name.has_value())
+            change.name = std::string{*maybe_new_name};
+    }
+    return normalized;
+}
+
 void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id)
 {
     if (storage_def.settings)

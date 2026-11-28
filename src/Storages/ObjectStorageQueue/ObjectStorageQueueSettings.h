@@ -70,6 +70,11 @@ struct ObjectStorageQueueSettings
 
     void loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id);
 
+    /// Returns a copy of `changes` with the legacy `s3queue_` prefix stripped
+    /// (and `enable_logging_to_s3queue_log` renamed), for callers that derive
+    /// other settings (e.g. format settings) from the SETTINGS clause.
+    static SettingsChanges normalizeChanges(const SettingsChanges & changes);
+
     void applyChanges(const SettingsChanges & changes);
 
     Field get(const std::string & name);
