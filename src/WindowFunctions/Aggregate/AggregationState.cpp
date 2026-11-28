@@ -1,4 +1,4 @@
-#include <WindowFunctions/Aggregate/AggregateState.h>
+#include <WindowFunctions/Aggregate/AggregationState.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -21,12 +21,23 @@ namespace
 
 constexpr size_t arena_replace_bytes = 16 << 20;
 
+[[noreturn]] NO_INLINE void throwNotCreated()
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate state of window function is used after a failed creation");
 }
 
-AggregateState::AggregateState(AggregateFunctionPtr function_)
+ALWAYS_INLINE void throwIfNot(bool condition)
+{
+    if (unlikely(!condition))
+        throwNotCreated();
+}
+
+}
+
+AggregationState::AggregationState(AggregateFunctionPtr function_)
     : function(std::move(function_))
-    , place(function->sizeOfData(), function->alignOfData())
     , is_state(function->isState())
+    , place(function->sizeOfData(), function->alignOfData())
     , check_cancellation(makeCancellationCheck(function->getName()))
     , budget(check_cancellation)
 {
@@ -37,13 +48,13 @@ AggregateState::AggregateState(AggregateFunctionPtr function_)
     created = true;
 }
 
-AggregateState::~AggregateState()
+AggregationState::~AggregationState()
 {
     if (created)
         function->destroy(place.data());
 }
 
-void AggregateState::recreate()
+void AggregationState::recreate()
 {
     if (created)
     {
@@ -58,14 +69,9 @@ void AggregateState::recreate()
     created = true;
 }
 
-void AggregateState::throwNotCreated() const
+void AggregationState::add(const WindowArguments & arguments, Int64 begin, Int64 end)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate state of window function {} is used after a failed creation", function->getName());
-}
-
-void AggregateState::add(const WindowArguments & arguments, Int64 begin, Int64 end)
-{
-    checkCreated();
+    throwIfNot(created);
     while (begin < end)
     {
         const ArgumentsSegment segment = arguments.segment(begin, end);
@@ -75,13 +81,25 @@ void AggregateState::add(const WindowArguments & arguments, Int64 begin, Int64 e
     }
 }
 
-void AggregateState::insertResultInto(IColumn & result)
+void AggregationState::merge(ConstAggregateDataPtr rhs)
 {
-    checkCreated();
+    throwIfNot(created);
+    function->merge(place.data(), rhs, arena.get());
+}
+
+void AggregationState::insertResultInto(IColumn & result)
+{
+    throwIfNot(created);
     if (is_state)
         function->insertMergeResultInto(place.data(), result, arena.get());
     else
         function->insertResultInto(place.data(), result, arena.get());
+}
+
+ConstAggregateDataPtr AggregationState::getData() const
+{
+    throwIfNot(created);
+    return place.data();
 }
 
 }
