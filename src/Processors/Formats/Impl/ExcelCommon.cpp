@@ -1111,6 +1111,14 @@ bool RangeReader::readNonEmptyRow()
     }
 }
 
+void RangeReader::setEmptyRow(VectorWithMemoryTracking<Cell> & cells) const
+{
+    cells.clear();
+    /// A range with the last column has all its columns in every row, including the empty rows.
+    if (range.last_column)
+        cells.resize(*range.last_column - range.first_column + 1);
+}
+
 bool RangeReader::next(VectorWithMemoryTracking<Cell> & cells)
 {
     if (finished)
@@ -1122,7 +1130,7 @@ bool RangeReader::next(VectorWithMemoryTracking<Cell> & cells)
     if (pending_empty_rows)
     {
         --pending_empty_rows;
-        cells.clear();
+        setEmptyRow(cells);
         return true;
     }
 
@@ -1149,7 +1157,7 @@ bool RangeReader::next(VectorWithMemoryTracking<Cell> & cells)
             if (!skip_empty_rows && explicit_range && range.last_row && *next_row_index <= *range.last_row)
             {
                 pending_empty_rows = *range.last_row - *next_row_index;
-                cells.clear();
+                setEmptyRow(cells);
                 return true;
             }
             finished = true;
@@ -1163,7 +1171,7 @@ bool RangeReader::next(VectorWithMemoryTracking<Cell> & cells)
             has_pending_row = true;
             previous_row_index = row.index;
             --pending_empty_rows;
-            cells.clear();
+            setEmptyRow(cells);
             return true;
         }
         previous_row_index = row.index;

@@ -62,3 +62,12 @@ date	Nullable(Date32)
 ts	Nullable(DateTime64(3))					
 flag	Nullable(Bool)					
 time	Nullable(String)					
+--- a range without values has all its columns in the empty rows
+c1	Nullable(String)					
+c2	Nullable(String)					
+\N	\N
+\N	\N
+c1	Nullable(String)					
+c2	Nullable(String)					
+\N	\N
+\N	\N

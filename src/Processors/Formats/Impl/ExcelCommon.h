@@ -190,6 +190,7 @@ public:
 
 private:
     bool readNonEmptyRow();
+    void setEmptyRow(VectorWithMemoryTracking<Cell> & cells) const;
 
     std::unique_ptr<ISheetReader> sheet_reader;
     CellRange range;

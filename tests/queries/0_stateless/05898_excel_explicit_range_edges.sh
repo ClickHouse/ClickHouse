@@ -29,3 +29,15 @@ for file in "$DATA/sample.xlsx" "$DATA/sample.xls"; do
     echo "--- $format: an open range does not have empty columns at the right"
     $CLICKHOUSE_LOCAL -q "DESCRIBE file('$file') SETTINGS input_format_excel_range = 'A1'"
 done
+
+echo "--- a range without values has all its columns in the empty rows"
+for file in "$DATA/sample.xlsx" "$DATA/sample.xls"; do
+    $CLICKHOUSE_LOCAL -q "
+        DESCRIBE file('$file')
+        SETTINGS input_format_excel_sheet = 'Second', input_format_excel_range = 'J1:K2',
+            input_format_excel_skip_empty_rows = 0, input_format_excel_header = 0"
+    $CLICKHOUSE_LOCAL -q "
+        SELECT * FROM file('$file')
+        SETTINGS input_format_excel_sheet = 'Second', input_format_excel_range = 'J1:K2',
+            input_format_excel_skip_empty_rows = 0, input_format_excel_header = 0"
+done
