@@ -171,7 +171,8 @@ static bool hasAuthentication(const Poco::Util::AbstractConfiguration & config, 
         return true;
 
     for (const auto * key : {"no_password", "password_sha256_hex", "password_scram_sha256_hex", "password_double_sha1_hex",
-             "ldap", "kerberos", "ssl_certificates", "ssh_keys", "http_authentication", "auth_methods", "time_based_one_time_password"})
+             "password_bcrypt_hash", "ldap", "kerberos", "ssl_certificates", "ssh_keys", "http_authentication", "auth_methods",
+             "time_based_one_time_password"})
         if (config.has(user_path + "." + key))
             return true;
 
@@ -181,7 +182,8 @@ static bool hasAuthentication(const Poco::Util::AbstractConfiguration & config, 
 /// Whether a flat authentication method at `path` in a users config is a non-empty password.
 static bool hasPasswordAt(const Poco::Util::AbstractConfiguration & config, const std::string & path)
 {
-    for (const auto * key : {"password", "password_sha256_hex", "password_scram_sha256_hex", "password_double_sha1_hex"})
+    for (const auto * key :
+         {"password", "password_sha256_hex", "password_scram_sha256_hex", "password_double_sha1_hex", "password_bcrypt_hash"})
         if (!config.getString(path + "." + key, "").empty())
             return true;
     return false;

@@ -649,3 +649,15 @@ def test_used_codes_in_keeper_single_use_across_servers(
     assert "1\n" == node1.query(
         f"SELECT name = hex(SHA256('{user}')) FROM system.zookeeper WHERE path = '{USED_CODES_KEEPER_PATH}'"
     )
+
+
+def test_bcrypt_hash_with_one_time_password(started_cluster):
+    """A `password_bcrypt_hash` user with TOTP logs in with `password+code`."""
+    query_text = "SELECT currentUser()"
+    code = get_otp("totuser_bcrypt")
+    assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
+        query_text, user="totuser_bcrypt", password=f"wrong_pass+{code}"
+    )
+    assert "totuser_bcrypt\n" == node.query(
+        query_text, user="totuser_bcrypt", password=f"bcrypt_totp+{code}"
+    )

@@ -134,7 +134,10 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
 
     auto [result, _] = bcrypt_cache.getOrSet(cache_key, [&] -> std::shared_ptr<bool>
         {
-            int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            /// libbcrypt reads C strings: `password` can be a prefix of `password+code`, and a stored hash may have no terminator.
+            const String password_str(password);
+            const String hash_str(reinterpret_cast<const char *>(password_bcrypt.data()), password_bcrypt.size());
+            int ret = bcrypt_checkpw(password_str.c_str(), hash_str.c_str());
             /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
             /// and it could not be decoded by the library
             if (ret == -1)
@@ -303,7 +306,10 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, std::optiona
             /// However the library we use to encode it requires hash string to be 64 characters long,
             ///  so we also allow the hash of this length.
 
-            if (validate && hash.size() != 59 && hash.size() != 60 && hash.size() != 64)
+            /// A 64-byte hash is the library's buffer: a 59- or 60-character hash followed by zero padding.
+            const bool is_zero_padded_buffer = hash.size() == 64
+                && std::all_of(hash.begin() + 60, hash.end(), [](uint8_t byte) { return byte == 0; });
+            if (validate && hash.size() != 59 && hash.size() != 60 && !is_zero_padded_buffer)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Password hash for the 'BCRYPT_PASSWORD' authentication type has length {} "
                                 "but must be 59 or 60 bytes.", hash.size());

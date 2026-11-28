@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -79,3 +81,34 @@ def test_auth_types_in_system_table(started_cluster):
     )
     # plaintext_password(1) < double_sha1_password(3), so plaintext comes first
     assert TSV(result) == TSV([["plaintext_password"], ["double_sha1_password"], ["double_sha1_password"]])
+
+
+def test_bcrypt_hash_passwords(started_cluster):
+    """Users with `password_bcrypt_hash`, flat and inside `auth_methods`, authenticate with the hashed password"""
+    for user, password in [("bcrypt_user", "bcrypt_pass"), ("mixed_bcrypt", "bcrypt_pass_1"), ("mixed_bcrypt", "plain_pass_2")]:
+        result = node.query("SELECT currentUser()", user=user, password=password)
+        assert result.strip() == user
+
+    for user in ["bcrypt_user", "mixed_bcrypt"]:
+        error = node.query_and_get_error("SELECT currentUser()", user=user, password="wrong_pass")
+        assert "AUTHENTICATION_FAILED" in error
+
+
+def test_stored_bcrypt_hash_without_zero_padding(started_cluster):
+    """A stored 64-byte bcrypt hash without zero padding, which older versions accepted, matches no password"""
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""
+        cat > /var/lib/clickhouse/access/{uuid.uuid4()}.sql << 'EOF'
+ATTACH USER unpadded_bcrypt IDENTIFIED WITH bcrypt_hash BY '$2a$04$5nQvqncp7WGRfBG.nGaU/O59eNFFYuWXpp.sjFAhbwYgxSywzWa3iabcd';
+EOF""",
+        ]
+    )
+    node.query("SYSTEM RELOAD USERS")
+    assert node.query("SELECT auth_type FROM system.users WHERE name = 'unpadded_bcrypt'") == "['bcrypt_password']\n"
+
+    error = node.query_and_get_error("SELECT currentUser()", user="unpadded_bcrypt", password="bcrypt_pass")
+    assert "AUTHENTICATION_FAILED" in error
+    node.query("DROP USER unpadded_bcrypt")
