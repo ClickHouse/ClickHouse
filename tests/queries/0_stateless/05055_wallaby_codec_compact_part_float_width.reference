@@ -1,0 +1,8 @@
+# Both parts are compact
+Compact
+Compact
+# The data round-trips exactly
+0
+0
+# The compressed size does not depend on the order of the columns
+1

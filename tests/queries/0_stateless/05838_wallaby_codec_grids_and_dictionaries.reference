@@ -1,0 +1,10 @@
+# Roundtrip is lossless
+100000	0	0	0	0
+# Averages over 60 samples, a grid of 1/6000: 15.9 bits of information per value
+1
+# Decimals produced by a multiplication: 16.6 bits of information per value
+1
+# A thousand distinct values that are not decimals: 10 bits of information per value plus the dictionaries
+1
+# Rare values and NaN among zeros
+1

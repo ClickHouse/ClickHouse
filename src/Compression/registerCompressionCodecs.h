@@ -25,6 +25,7 @@ void registerCodecZXC(CompressionCodecFactory & factory);
 void registerCodecGDeflate(CompressionCodecFactory & factory);
 void registerCodecSZ3(CompressionCodecFactory & factory);
 void registerCodecPco(CompressionCodecFactory & factory);
+void registerCodecWallaby(CompressionCodecFactory & factory);
 
 CompressionCodecPtr getCompressionCodecLZ4(int level);
 CompressionCodecPtr getCompressionCodecZSTD(int level);
@@ -33,5 +34,6 @@ CompressionCodecPtr getCompressionCodecDoubleDelta(UInt8 data_bytes_size);
 CompressionCodecPtr getCompressionCodecGCD(UInt8 gcd_bytes_size);
 CompressionCodecPtr getCompressionCodecALP(UInt8 float_width);
 CompressionCodecPtr getCompressionCodecSZ3(UInt8 float_bytes_size);
+CompressionCodecPtr getCompressionCodecWallaby(UInt8 float_width);
 
 }
