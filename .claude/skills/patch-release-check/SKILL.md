@@ -59,7 +59,7 @@ It prints four blocks (each ending in a one-line verdict):
    excluded by config (`excluded`), and what is actually `analyzed`.
 2. **Per-version staleness** — latest patch tag (resolved from the complete
    `git/matching-refs` tag list, so a quiet/older LTS is never missed), age in days
-   (from the annotated tag's `tagger.date`, matching `auto_release_job.py`), release-worthy
+   (from the annotated tag's `tagger.date`, matching `ci/jobs/auto_release_job.py`), release-worthy
    / first-parent-total commits (`rel/tot`, reconstructed from the first-parent chain
    like `AutoReleaseInfo`), and a `⚠️ MISSING` flag when a version is older than
    `STALE_DAYS` (default 18) *and* has release-worthy commits. A supported version with
@@ -106,8 +106,7 @@ result is non-empty. The guard runs before any per-branch dispatch, so a guard f
 > traceback frame **and** the `raise RuntimeError` source line — not a line number
 > (which drifts) and not bare `RuntimeError`. Both frames count:
 > `in _assert_no_open_version_bump_prs` (`ci/jobs/auto_release_job.py`) and the legacy
-> `in _prepare` (`tests/ci/auto_release.py`), which the 14-day lookback still reaches
-> for two weeks after the praktika migration. Other failures — e.g. a branch reported
+> `in _prepare` (the removed `tests/ci/auto_release.py`), which old runs still show. Other failures — e.g. a branch reported
 > `ERROR` for having no release tag — classify as `OTHER`, so the operator is not sent
 > to hunt version-bump PRs when the guard is clear.
 
@@ -193,9 +192,10 @@ TAG=$(git tag --list "v$BR.*" --sort=-v:refname | head -1)
 # Candidate SHAs: first-parent since the tag, drop the oldest (version-bump) commit,
 # newest 8 — exactly AutoReleaseInfo's set.
 CANDS=$(git rev-list --first-parent "$TAG..FETCH_HEAD" | sed '$d' | head -8)
-# Pick the newest CI-green SHA, mirroring ci_utils.GH exactly:
-#   check_wf_completed   — /check-runs must be NON-EMPTY and every run "completed"
-#   get_failed_statuses  — paginate /statuses, keep the newest state PER CONTEXT,
+# Pick the newest CI-green SHA, mirroring ci/jobs/auto_release_job.py exactly:
+#   _wf_completed        — paginate /check-runs, must be NON-EMPTY and every run
+#                          "completed"
+#   _failed_statuses     — paginate /statuses, keep the newest state PER CONTEXT,
 #                          require none non-success
 # (Re-reading the combined /status rollup is insufficient — it is blind to check-runs
 # and to status history, so it both over- and under-reports.) Chosen SHA -> stdout.
@@ -208,11 +208,12 @@ def gh(args):
     if r.returncode != 0:
         raise SystemExit(f"gh api failed ({' '.join(args)}): {r.stderr.strip()}")
     return r.stdout
-def wf_completed(sha):                       # ci_utils.GH.check_wf_completed
-    runs = (json.loads(gh([f"repos/{REPO}/commits/{sha}/check-runs?per_page=100"]))
-            .get("check_runs") or [])
-    return bool(runs) and all(c["status"] == "completed" for c in runs)
-def failed_statuses(sha):                    # ci_utils.GH.get_failed_statuses
+def wf_completed(sha):                       # _wf_completed
+    out = gh(["--paginate", "--jq", ".check_runs[].status",
+              f"repos/{REPO}/commits/{sha}/check-runs?per_page=100"])
+    runs = out.split()
+    return bool(runs) and all(s == "completed" for s in runs)
+def failed_statuses(sha):                    # _failed_statuses
     out = gh(["--paginate", "--jq", ".[]",
               f"repos/{REPO}/commits/{sha}/statuses?per_page=100"])
     latest = {}
