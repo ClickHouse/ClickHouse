@@ -50,8 +50,9 @@ DROP TABLE IF EXISTS t_clear_detached_part SYNC;
 CREATE TABLE t_clear_detached_part (k UInt32, b UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_clear_detached_part', 'r1') ORDER BY k;
 SYSTEM STOP MERGES t_clear_detached_part;
-INSERT INTO t_clear_detached_part VALUES (1, 41);
-INSERT INTO t_clear_detached_part VALUES (2, 42);
+-- The part names below are literal, so an insert must not retry a Keeper fault with a fresh block number.
+INSERT INTO t_clear_detached_part SETTINGS insert_keeper_fault_injection_probability = 0 VALUES (1, 41);
+INSERT INTO t_clear_detached_part SETTINGS insert_keeper_fault_injection_probability = 0 VALUES (2, 42);
 SYSTEM SYNC REPLICA t_clear_detached_part PULL;
 ALTER TABLE t_clear_detached_part DETACH PART 'all_1_1_0';
 SYSTEM START MERGES t_clear_detached_part;
@@ -74,7 +75,8 @@ DROP TABLE t_clear_detached_rename SYNC;
 
 DROP TABLE IF EXISTS t_clear_detached_mutate SYNC;
 CREATE TABLE t_clear_detached_mutate (k UInt32, b UInt32, c UInt32)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_clear_detached_mutate', 'r1') ORDER BY k;
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_clear_detached_mutate', 'r1') ORDER BY k
+SETTINGS min_bytes_for_wide_part = 1000000000;
 INSERT INTO t_clear_detached_mutate VALUES (1, 41, 7);
 ALTER TABLE t_clear_detached_mutate DETACH PARTITION tuple();
 ALTER TABLE t_clear_detached_mutate CLEAR COLUMN b;

@@ -2448,8 +2448,8 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
         return {};
 
     /// Here we return mutation commands for part which has bigger alter version than part metadata version.
-    /// Please note, we don't use getDataVersion(). It's because these alter commands are used for in-fly conversions
-    /// of part's metadata.
+    /// Please note, we don't use getDataVersion() except for CLEAR commands. It's because these alter commands are used
+    /// for in-fly conversions of part's metadata, while a CLEAR changes the data, like a data mutation.
     for (const auto & [mutation_version, entry] : in_partition->second | std::views::reverse)
     {
         if (seen_all_data_mutations && seen_all_metadata_mutations)
