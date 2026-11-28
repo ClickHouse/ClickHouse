@@ -15,7 +15,15 @@ integration:
 ### General {#general}
 
 <Accordion title="How does ClickPipes for Kafka work?">
-ClickPipes uses a dedicated architecture running the Kafka Consumer API to read data from a specified topic and then inserts the data into a ClickHouse table on a specific ClickHouse Cloud service.
+ClickPipes uses a dedicated architecture running the Kafka Consumer API to read data from one or more specified topics and then inserts the data into a ClickHouse table on a specific ClickHouse Cloud service.
+</Accordion>
+
+<Accordion title="Can a single ClickPipe ingest from multiple Kafka topics?">
+Yes. A single Kafka ClickPipe can ingest from multiple topics into the same destination table. All topics must have the same schema.
+
+Create the ClickPipe using the [ClickHouse Cloud API](/products/cloud/api-reference/clickpipes/create-clickpipe#body-source-kafka-one-of-0-topics) or [Terraform](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipe#topics-1), and set `source.kafka.topics` to a comma-separated string such as `topic1,topic2`.
+
+Multi-topic setup is currently available through the API and Terraform, but not through the ClickHouse Cloud console.
 </Accordion>
 
 <Accordion title="What's the difference between ClickPipes and the ClickHouse Kafka Table Engine?">
