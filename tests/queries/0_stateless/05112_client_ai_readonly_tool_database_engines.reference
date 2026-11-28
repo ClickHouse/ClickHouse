@@ -13,6 +13,7 @@ show_columns_foreign_database: BLOCKED
 system_columns: OK
 system_tables: BLOCKED
 system_databases: BLOCKED
+system_dashboards: BLOCKED
 information_schema_views: BLOCKED
 information_schema_tables: BLOCKED
 system_grants: BLOCKED

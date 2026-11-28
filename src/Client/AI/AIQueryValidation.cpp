@@ -1106,6 +1106,21 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         "user_defined_functions",
         "workloads",
         "resources",
+        /// More of the stored definitions of server-wide objects: the queries of the dashboards,
+        /// which a custom dashboard of the configuration holds as they were written, with whatever
+        /// they name (`dashboards.query`), and the code of the WebAssembly modules.
+        "dashboards",
+        "webassembly_modules",
+        /// More of the texts of queries: the filter conditions of the queries of every user that
+        /// the query condition cache keeps (`condition`, when it is stored as text).
+        "query_condition_cache",
+        /// More of the access metadata: the masking policies with their expressions and the users
+        /// they apply to, and the connections of every user to the server with their addresses.
+        "masking_policies",
+        "connections",
+        /// The names and the addresses of the hosts the server has resolved: the external systems
+        /// that its tables, dictionaries and named collections talk to, for whichever user.
+        "dns_cache",
         /// The introspection of the server process, which is neither the data nor the schema of
         /// the user: the stacks of its threads (`stack_trace`), the symbols of its binary with
         /// their addresses (`symbols`), and the heap profile of jemalloc with the stacks of the
