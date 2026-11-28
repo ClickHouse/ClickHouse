@@ -11408,6 +11408,7 @@ Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dict
 
 The accelerated patterns are `%value%`, `value%` and `%value`, as well as the `startsWith` and `endsWith` calls that `optimize_rewrite_like_perfect_affix` rewrites into `value%` and `%value`.
 A `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` or `multiSearchAnyCaseInsensitiveUTF8` call with one needle is searched as `%value%`.
+With the `splitByNonAlpha` tokenizer, a phrase of several words such as `%java heap%` can be searched by one of its words, which only skips granules.
 )", 0, \
         {"26.4", true, true, "New setting"}) \
     DECLARE(Bool, use_text_index_for_substring_search, false, R"(
@@ -11428,6 +11429,7 @@ Requires [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings
         {"26.4", 4, 4, "New setting"}) \
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
 Maximum number of large postings to read when text index LIKE evaluation by the dictionary scan is enabled.
+A phrase of several words that is searched by one of its words counts every token the word matches.
 
 Requires [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) to be enabled.
 )", 0, \
