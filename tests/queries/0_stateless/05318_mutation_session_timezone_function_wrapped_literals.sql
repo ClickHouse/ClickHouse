@@ -1,0 +1,74 @@
+-- A string literal inside a function in a mutation predicate is read in the session timezone, like in a `SELECT`.
+
+SET session_timezone = 'America/Denver'; -- far from a typical server timezone
+SET mutations_sync = 2;
+
+DROP TABLE IF EXISTS t_mut_fn_tz;
+CREATE TABLE t_mut_fn_tz (id UInt32, time DateTime, time64 DateTime64(3), v String DEFAULT '') ENGINE = MergeTree ORDER BY id;
+
+-- Pair `k` is two rows with the same wall-clock string, read in UTC (id `2k - 1`) and in `America/Denver` (id `2k`).
+-- The mutation of case `k` has to affect id `2k`, the row the same `SELECT` finds in the session timezone.
+INSERT INTO t_mut_fn_tz (id, time, time64)
+WITH concat('2000-01-0', toString(1 + intDiv(number, 7)), ' 0', toString(1 + number % 7), ':00:00') AS wall_clock
+SELECT 2 * (number + 1) - 1, toDateTime(wall_clock, 'UTC'), toDateTime64(wall_clock, 3, 'UTC') FROM numbers(11);
+INSERT INTO t_mut_fn_tz (id, time, time64)
+WITH concat('2000-01-0', toString(1 + intDiv(number, 7)), ' 0', toString(1 + number % 7), ':00:00') AS wall_clock
+SELECT 2 * (number + 1), toDateTime(wall_clock, 'America/Denver'), toDateTime64(wall_clock, 3, 'America/Denver') FROM numbers(11);
+
+ALTER TABLE t_mut_fn_tz DELETE WHERE time = toDateTime('2000-01-01 01:00:00');
+ALTER TABLE t_mut_fn_tz DELETE WHERE time64 = toDateTime64('2000-01-01 02:00:00', 3);
+ALTER TABLE t_mut_fn_tz DELETE WHERE time = CAST('2000-01-01 03:00:00' AS DateTime);
+ALTER TABLE t_mut_fn_tz DELETE WHERE time64 = '2000-01-01 04:00:00'::DateTime64(3);
+ALTER TABLE t_mut_fn_tz DELETE WHERE time = parseDateTimeBestEffort('2000-01-01 05:00:00');
+ALTER TABLE t_mut_fn_tz DELETE WHERE time = parseDateTime('2000-01-01 06:00:00', '%Y-%m-%d %H:%i:%s');
+ALTER TABLE t_mut_fn_tz UPDATE v = 'updated' WHERE time = toDateTime('2000-01-01 07:00:00');
+DELETE FROM t_mut_fn_tz WHERE time = toDateTime('2000-01-02 01:00:00');
+ALTER TABLE t_mut_fn_tz DELETE WHERE time IN (toDateTime('2000-01-02 02:00:00'));
+ALTER TABLE t_mut_fn_tz DELETE WHERE toDateTime('2000-01-02 03:00:00') = time;
+-- An explicit timezone is kept as it is: the UTC row (id 21) goes, not the Denver one.
+ALTER TABLE t_mut_fn_tz DELETE WHERE time = toDateTime('2000-01-02 04:00:00', 'UTC');
+
+SELECT id, v FROM t_mut_fn_tz ORDER BY id;
+
+DROP TABLE t_mut_fn_tz;
+
+-- The overloads without a timezone that have another number of arguments, and the casts that keep their alias or wrap the target type.
+-- Pair `k` is two rows with the same wall-clock string: id `2k - 1` is read in UTC, id `2k` in `America/Denver`. `cutoff` is the same as `time`.
+DROP TABLE IF EXISTS t_mut_fn_tz2;
+CREATE TABLE t_mut_fn_tz2 (id UInt32, time DateTime64(3), cutoff DateTime64(3)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_mut_fn_tz2
+WITH concat('2000-01-01 0', toString(number + 1), ':00:00') AS wall_clock
+SELECT 2 * (number + 1) - 1, toDateTime64(wall_clock, 3, 'UTC'), toDateTime64(wall_clock, 3, 'UTC') FROM numbers(6);
+INSERT INTO t_mut_fn_tz2
+WITH concat('2000-01-01 0', toString(number + 1), ':00:00') AS wall_clock
+SELECT 2 * (number + 1), toDateTime64(wall_clock, 3, 'America/Denver'), toDateTime64(wall_clock, 3, 'America/Denver') FROM numbers(6);
+
+ALTER TABLE t_mut_fn_tz2 DELETE WHERE time = parseDateTime('2000-01-01 02:00:00');
+ALTER TABLE t_mut_fn_tz2 DELETE WHERE time = toDateTime('2000-01-01 03:00:00', 3);
+ALTER TABLE t_mut_fn_tz2 DELETE WHERE time = CAST('2000-01-01 04:00:00' AS Nullable(DateTime));
+ALTER TABLE t_mut_fn_tz2 DELETE WHERE time = CAST('2000-01-01 05:00:00' AS Nullable(DateTime64(3)));
+-- The alias of the cast is kept: `cutoff` in the second operand is the cast, not the column, so only the Denver row (id 2) goes.
+ALTER TABLE t_mut_fn_tz2 DELETE WHERE time = (CAST('2000-01-01 01:00:00' AS DateTime) AS cutoff) OR time = cutoff;
+
+SELECT id FROM t_mut_fn_tz2 ORDER BY id;
+
+DROP TABLE t_mut_fn_tz2;
+
+-- The timezone is made explicit by changing the type of the call, so what depends on the exact type is left as it was submitted.
+DROP TABLE IF EXISTS t_mut_fn_tz3;
+CREATE TABLE t_mut_fn_tz3 (id UInt8, v String, d Dynamic) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_mut_fn_tz3 (id, v) VALUES (1, 'DateTime'), (9, 'DateTime(\'America/Denver\')'), (10, 'DateTime'), (11, 'DateTime(\'America/Denver\')');
+
+-- SELECT matches ids 1 and 10, the type name is `DateTime` here.
+ALTER TABLE t_mut_fn_tz3 DELETE WHERE v = toTypeName(toDateTime('2000-01-01 01:00:00'));
+ALTER TABLE t_mut_fn_tz3 DELETE WHERE v = toTypeName(CAST('2000-01-01 01:00:00' AS DateTime));
+INSERT INTO t_mut_fn_tz3 (id, v) VALUES (12, 'DateTime'), (13, 'DateTime(\'America/Denver\')');
+-- The same through an alias: the type of `x` is `DateTime` too, and the row with id 12 goes.
+ALTER TABLE t_mut_fn_tz3 DELETE WHERE v = toTypeName(x) AND (toDateTime('2000-01-01 01:00:00') AS x) IS NOT NULL;
+-- A `Dynamic` column keeps the exact type of what is stored in it.
+ALTER TABLE t_mut_fn_tz3 UPDATE d = toDateTime('2000-01-01 01:00:00') WHERE id = 9;
+
+SELECT id FROM t_mut_fn_tz3 ORDER BY id;
+SELECT dynamicType(d) FROM t_mut_fn_tz3 WHERE id = 9;
+
+DROP TABLE t_mut_fn_tz3;

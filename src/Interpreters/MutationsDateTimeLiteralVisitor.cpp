@@ -1,4 +1,5 @@
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
+#include <functional>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -8,6 +9,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
@@ -52,6 +54,89 @@ ASTPtr wrapWithTimezone(const ASTPtr & literal_ast, const DataTypePtr & datetime
     }
 
     return makeASTFunction("toDateTime", literal_ast, std::move(tz_literal));
+}
+
+/// Functions that parse their string argument in the session timezone, with the number of arguments
+/// they have when the optional timezone, which would come right after them, is not given.
+const std::unordered_map<String, size_t> timezone_less_parsers = {
+    {"toDateTime", 1},
+    {"toDateTime64", 2},
+    {"parseDateTimeBestEffort", 1},
+    {"parseDateTime", 2},
+};
+
+/// Returns `type` with `timezone` set if it is a `DateTime` or `DateTime64` without an explicit timezone,
+/// possibly wrapped in `Nullable` or `LowCardinality`. Returns nullptr otherwise.
+DataTypePtr addTimezoneToType(const DataTypePtr & type, const String & timezone)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto nested = addTimezoneToType(nullable->getNestedType(), timezone);
+        return nested ? std::make_shared<DataTypeNullable>(nested) : nullptr;
+    }
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        auto dictionary = addTimezoneToType(low_cardinality->getDictionaryType(), timezone);
+        return dictionary ? std::make_shared<DataTypeLowCardinality>(dictionary) : nullptr;
+    }
+    if (const auto * dt = typeid_cast<const DataTypeDateTime *>(type.get()); dt && !dt->hasExplicitTimeZone())
+        return std::make_shared<DataTypeDateTime>(timezone);
+    if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type.get()); dt64 && !dt64->hasExplicitTimeZone())
+        return std::make_shared<DataTypeDateTime64>(dt64->getScale(), timezone);
+    return nullptr;
+}
+
+/// A string literal inside a function call is parsed by the background mutation thread in the server timezone.
+/// Makes the session timezone explicit, `toDateTime('..')` becomes `toDateTime('..', 'tz')`, and
+/// `CAST('..' AS DateTime)` becomes `CAST('..' AS DateTime('tz'))`. The node is changed in place, so its alias is kept.
+/// Returns true if it was rewritten.
+bool tryAddTimezoneToLiteralParser(ASTPtr & ast, const String & timezone)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments || function->arguments->children.empty())
+        return false;
+
+    auto & arguments = function->arguments->children;
+    const auto * literal = arguments[0]->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        return false;
+
+    if (function->name == "CAST" && arguments.size() == 2)
+    {
+        const auto * type_name = arguments[1]->as<ASTLiteral>();
+        auto type = type_name && type_name->value.getType() == Field::Types::String
+            ? DataTypeFactory::instance().tryGet(type_name->value.safeGet<String>())
+            : nullptr;
+        if (!type)
+            return false;
+
+        auto type_with_timezone = addTimezoneToType(type, timezone);
+        if (!type_with_timezone)
+            return false;
+
+        arguments[1] = make_intrusive<ASTLiteral>(Field(type_with_timezone->getName()));
+        return true;
+    }
+
+    auto parser = timezone_less_parsers.find(function->name);
+    if (parser == timezone_less_parsers.end())
+        return false;
+
+    /// The overloads without a timezone that have another number of arguments: `parseDateTime` with its default
+    /// format, and `toDateTime` with a scale (`toDateTime('..', 3)` is a `DateTime64`).
+    const bool is_parse_with_default_format = function->name == "parseDateTime" && arguments.size() == 1;
+    const auto * second_literal = arguments.size() == 2 ? arguments[1]->as<ASTLiteral>() : nullptr;
+    const bool is_to_datetime_with_scale
+        = function->name == "toDateTime" && second_literal && second_literal->value.getType() != Field::Types::String;
+
+    if (arguments.size() != parser->second && !is_parse_with_default_format && !is_to_datetime_with_scale)
+        return false;
+
+    if (is_parse_with_default_format)
+        arguments.push_back(make_intrusive<ASTLiteral>(Field(String("%Y-%m-%d %H:%i:%s"))));
+
+    arguments.push_back(make_intrusive<ASTLiteral>(Field(timezone)));
+    return true;
 }
 
 /// For a comparison like `column >= 'datetime-string'`, try to wrap the string
@@ -145,6 +230,37 @@ bool tryWrapInLiterals(ASTFunction & function, const ColumnsDescription & column
     "in", "notIn", "globalIn", "globalNotIn",
 };
 
+/// Functions whose result depends on the exact type of an argument.
+const std::unordered_set<String> type_inspecting_functions = {
+    "toTypeName", "toColumnTypeName", "dumpColumnStructure", "defaultValueOfArgumentType",
+    "dynamicType", "dynamicElement", "variantType", "variantElement", "getTypeSerializationStreams",
+};
+
+/// A `Dynamic`, `Variant` or `JSON` column keeps the exact type of what is stored in it, so the timezone
+/// of the type would be visible there. Such assignments are left as they were submitted.
+bool keepsExactType(const String & column_name, const ColumnsDescription & columns)
+{
+    const auto * desc = columns.tryGet(column_name);
+    return desc && (desc->type->hasDynamicStructure() || desc->type->getName().contains("Variant"));
+}
+
+/// An alias can be used where the function that returns the type of its argument is, and the rewritten call may be the alias.
+bool inspectsTypeOfAlias(const ASTPtr & ast, const ColumnsDescription & columns)
+{
+    if (const auto * function = ast->as<ASTFunction>(); function && type_inspecting_functions.contains(function->name) && function->arguments)
+    {
+        std::function<bool(const ASTPtr &)> has_alias = [&](const ASTPtr & node)
+        {
+            if (const auto * identifier = node->as<ASTIdentifier>(); identifier && !columns.has(identifier->name()))
+                return true;
+            return std::any_of(node->children.begin(), node->children.end(), has_alias);
+        };
+        if (has_alias(function->arguments))
+            return true;
+    }
+    return std::any_of(ast->children.begin(), ast->children.end(), [&](const ASTPtr & child) { return inspectsTypeOfAlias(child, columns); });
+}
+
 class RewriteDateTimeLiteralsMatcher
 {
 public:
@@ -157,13 +273,26 @@ public:
 
     static bool needChildVisit(const ASTPtr & ast, const ASTPtr & /*child*/)
     {
-        return !ast->as<ASTSelectQuery>();
+        if (ast->as<ASTSelectQuery>())
+            return false;
+
+        /// The timezone is made explicit by changing the type of the rewritten call, from `DateTime` to
+        /// `DateTime('tz')`. The value is the same, but a function that returns the name of its argument's type
+        /// would report the changed one. Leave such expressions as they were submitted: they do not depend on the value.
+        if (const auto * function = ast->as<ASTFunction>())
+            return !type_inspecting_functions.contains(function->name);
+
+        return true;
     }
 
     static void visit(ASTPtr & ast, Data & data)
     {
         if (auto * function = ast->as<ASTFunction>())
+        {
             visit(*function, data);
+            if (tryAddTimezoneToLiteralParser(ast, data.session_timezone))
+                data.modified = true;
+        }
         else if (auto * assignment = ast->as<ASTAssignment>())
             visit(*assignment, data);
     }
@@ -227,10 +356,16 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
     {
         ASTPtr update_assignments = new_command.update_assignments->clone();
         remove_child(new_command.children, new_command.update_assignments);
-        visitor.visit(update_assignments);
+        for (auto & child : update_assignments->children)
+        {
+            const auto * assignment = child->as<ASTAssignment>();
+            if ((assignment && keepsExactType(assignment->column_name, columns)) || inspectsTypeOfAlias(child, columns))
+                continue;
+            visitor.visit(child);
+        }
         new_command.update_assignments = new_command.children.emplace_back(std::move(update_assignments)).get();
     }
-    if (new_command.predicate)
+    if (new_command.predicate && !inspectsTypeOfAlias(new_command.predicate, columns))
     {
         ASTPtr predicate = new_command.predicate->clone();
         remove_child(new_command.children, new_command.predicate);
