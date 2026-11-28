@@ -16,6 +16,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+    extern const int CANNOT_PARSE_DATETIME;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 SerializationDateTime64::SerializationDateTime64(
@@ -222,7 +224,17 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
     DateTime64 x = 0;
     if (checkChar('"', istr))
     {
-        readText(x, scale, istr, settings, time_zone, utc_time_zone);
+        try
+        {
+            readText(x, scale, istr, settings, time_zone, utc_time_zone);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::DECIMAL_OVERFLOW)
+                throw;
+
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "DateTime64 value is out of range");
+        }
         assertChar('"', istr);
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
