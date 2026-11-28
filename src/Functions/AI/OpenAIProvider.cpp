@@ -36,8 +36,9 @@ void setCommonHeaders(Poco::Net::HTTPRequest & http_request, const AIRequest & a
 
 }
 
-OpenAIProvider::OpenAIProvider(const String & endpoint_, std::string_view api_key_)
-    : endpoint(endpoint_)
+OpenAIProvider::OpenAIProvider(const String & endpoint_, std::string_view api_key_, HTTPHeaderEntries custom_headers_)
+    : IAIProvider(std::move(custom_headers_))
+    , endpoint(endpoint_)
     , api_key(api_key_)
     , uri(endpoint_)
 {
@@ -45,9 +46,10 @@ OpenAIProvider::OpenAIProvider(const String & endpoint_, std::string_view api_ke
 
 HTTPHeaderEntries OpenAIProvider::getHeaders() const
 {
-    if (api_key.empty()) /// not all providers need API key
-        return {};
-    return {{"Authorization", fmt::format("Bearer {}", api_key)}};
+    HTTPHeaderEntries headers;
+    if (!api_key.empty()) /// not all providers need API key
+        headers.emplace_back("Authorization", fmt::format("Bearer {}", api_key));
+    return addCustomHeaders(std::move(headers));
 }
 
 void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
@@ -107,7 +109,7 @@ void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTime
     {
         throw AIProviderHTTPException(
             status,
-            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
+            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body, api_key)));
     }
 
     Poco::JSON::Parser parser;
@@ -217,7 +219,7 @@ void OpenAIProvider::embed(
     {
         throw AIProviderHTTPException(
             status,
-            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
+            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body, api_key)));
     }
 
     Poco::JSON::Parser parser;

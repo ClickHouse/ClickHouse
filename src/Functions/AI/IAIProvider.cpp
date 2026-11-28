@@ -7,6 +7,9 @@
 
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/String.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -30,8 +33,32 @@ String sanitize(std::string_view input)
 /// Prefers the structured `error.message`/`error.type` fields, falling back to the first 256
 /// bytes of the body. Every part is drawn from the (external) response, so control characters are
 /// replaced with spaces to stop the endpoint from forging log lines or corrupting a terminal.
-String formatProviderError(int status_code, const String & response_body)
+String IAIProvider::formatProviderError(int status_code, const String & response_body, std::string_view api_key) const
 {
+    auto safe_text = [&](std::string_view text, size_t limit = std::string_view::npos)
+    {
+        auto contains_value = [&](std::string_view value) { return !value.empty() && text.contains(value); };
+        if (contains_value(api_key) || std::any_of(custom_headers.begin(), custom_headers.end(),
+                [&](const HTTPHeaderEntry & header)
+                {
+                    std::string_view value(header.value);
+                    const auto begin = value.find_first_not_of(" \t");
+                    if (begin == std::string_view::npos)
+                        return false;
+                    value = value.substr(begin, value.find_last_not_of(" \t") - begin + 1);
+                    if (contains_value(value))
+                        return true;
+                    if (Poco::icompare(header.name, "Authorization") != 0)
+                        return false;
+                    const auto scheme_end = value.find_first_of(" \t");
+                    if (scheme_end == std::string_view::npos)
+                        return false;
+                    return contains_value(value.substr(value.find_first_not_of(" \t", scheme_end)));
+                }))
+            return String("[REDACTED]");
+        return sanitize(text.substr(0, limit));
+    };
+
     try
     {
         Poco::JSON::Parser err_parser;
@@ -45,7 +72,7 @@ String formatProviderError(int status_code, const String & response_body)
                 String msg = err->optValue<String>("message", "");
                 String type = err->optValue<String>("type", "");
                 if (!msg.empty())
-                    return fmt::format("HTTP {} [{}]: {}", status_code, sanitize(type), sanitize(msg));
+                    return fmt::format("HTTP {} [{}]: {}", status_code, safe_text(type), safe_text(msg));
             }
         }
     }
@@ -54,8 +81,7 @@ String formatProviderError(int status_code, const String & response_body)
     }
 
     constexpr size_t max_len = 256;
-    const std::string_view snippet = std::string_view(response_body).substr(0, max_len);
-    return fmt::format("HTTP {}: {}", status_code, sanitize(snippet));
+    return fmt::format("HTTP {}: {}", status_code, safe_text(response_body, max_len));
 }
 
 AIProviderHTTPException::AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPStatus http_status_, PreformattedMessage msg)
@@ -70,14 +96,38 @@ void IAIProvider::embed(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support embeddings");
 }
 
-AIProviderPtr createAIProvider(
-    const ContextPtr & context, const String & provider_name, const String & endpoint, std::string_view api_key, const String & api_version)
+HTTPHeaderEntries IAIProvider::addCustomHeaders(HTTPHeaderEntries headers) const
 {
+    for (const auto & custom_header : custom_headers)
+    {
+        const auto same_name = [&](const HTTPHeaderEntry & header) { return Poco::icompare(header.name, custom_header.name) == 0; };
+        if (std::any_of(headers.begin(), headers.end(), same_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate AI HTTP header '{}'", custom_header.name);
+        headers.push_back(custom_header);
+    }
+    return headers;
+}
+
+AIProviderPtr createAIProvider(
+    const ContextPtr & context,
+    const String & provider_name,
+    const String & endpoint,
+    std::string_view api_key,
+    const String & api_version,
+    HTTPHeaderEntries custom_headers)
+{
+    /// Validate custom names/values before producing any diagnostics about duplicate names.
+    context->getHTTPHeaderFilter().checkHeaders(custom_headers);
+    for (const auto & header : custom_headers)
+    {
+        if (Poco::icompare(header.name, "Content-Length") == 0 || Poco::icompare(header.name, "Transfer-Encoding") == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI functions manage HTTP header '{}' automatically", header.name);
+    }
     AIProviderPtr provider;
     if (provider_name == "openai" || provider_name == "huggingface" || provider_name == "tei")
-        provider = std::make_unique<OpenAIProvider>(endpoint, api_key);
+        provider = std::make_unique<OpenAIProvider>(endpoint, api_key, std::move(custom_headers));
     else if (provider_name == "anthropic")
-        provider = std::make_unique<AnthropicProvider>(endpoint, api_key, api_version);
+        provider = std::make_unique<AnthropicProvider>(endpoint, api_key, api_version, std::move(custom_headers));
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'huggingface', 'tei'", provider_name);

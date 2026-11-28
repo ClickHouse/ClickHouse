@@ -94,6 +94,7 @@ public:
         String endpoint;
         SecretString api_key;
         String api_version;
+        HTTPHeaderEntries headers;
     };
 
     /// Resolved parameters for one AI-function call: the named-collection connection config plus the

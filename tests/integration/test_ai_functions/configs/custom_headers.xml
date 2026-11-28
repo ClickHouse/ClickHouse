@@ -1,0 +1,5 @@
+<clickhouse>
+    <http_forbid_headers>
+        <header>X-Rejected-AI-Test</header>
+    </http_forbid_headers>
+</clickhouse>
