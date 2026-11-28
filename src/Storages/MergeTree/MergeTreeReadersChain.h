@@ -65,7 +65,8 @@ private:
         size_t num_read_rows) const;
 
     /// Evaluates default expressions for columns that are absent in part.
-    /// The columns of `result.default_intermediates` are read as they are. With `keep_intermediates`, the missing
+    /// The columns of `result.default_intermediates` are read as they are; the ones that hold a value only in some rows
+    /// are evaluated in the other rows first, if they are read. With `keep_intermediates`, the missing
     /// columns evaluated here are added to it, so that the next evaluations give or read the same values.
     void evaluateMissingDefaults(
         MergeTreeRangeReader & range_reader,
@@ -112,12 +113,33 @@ private:
     /// Adds to `columns_to_evaluate` the columns of `candidates` (the `DEFAULT` columns in `block` that may be evaluated
     /// again) that read a missing column through which the expressions of `columns_to_evaluate` read, as that column
     /// is evaluated anew.
+    /// The missing columns the expressions read through that are evaluated here are kept in `result.default_intermediates`,
+    /// with the rows they were evaluated in (`result.default_intermediates_rows`): a column evaluated by a later step
+    /// reads the same values.
     static void evaluateDefaultsInRowsFilledByDefaults(
         const IMergeTreeReader & reader,
-        const ReadResult & result,
+        ReadResult & result,
         Block & block,
         const NamesAndTypesList & candidates,
         NamesAndTypesList & columns_to_evaluate);
+
+    /// Evaluates the `DEFAULT` expressions of the columns `batch`, present in `block`, in the rows of `filter_column`
+    /// (a `UInt8` column; in every row if it is null). The other rows keep their values, and the expressions are not
+    /// executed on them. The other columns of `block` are the inputs.
+    static void evaluateDefaultsInRows(
+        const IMergeTreeReader & reader,
+        Block & block,
+        const NamesAndTypesList & batch,
+        const ColumnPtr & filter_column);
+
+    /// Evaluates the columns of `result.default_intermediates` that hold a value only in some rows
+    /// (see `ReadResult::default_intermediates_rows`) in their other rows, if the `DEFAULT` expressions of `missing_columns`
+    /// read them or they are among `missing_columns`, and adds them to `block`, which holds the inputs.
+    static void completeDefaultIntermediates(
+        const IMergeTreeReader & reader,
+        ReadResult & result,
+        Block & block,
+        const NamesAndTypesList & missing_columns);
 
     /// Evaluates the `DEFAULT` expressions of the columns in `result.columns_filled_by_defaults`
     /// once more, after patches were applied to `patched_columns` of the result accumulated up to

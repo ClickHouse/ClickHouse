@@ -434,6 +434,7 @@ void MergeTreeRangeReader::ReadResult::clear()
     columns_for_patches.clear();
     rows_filled_by_defaults.clear();
     default_intermediates.clear();
+    default_intermediates_rows.clear();
 }
 
 void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns, const NumRows & rows_per_granule_previous) const
@@ -508,6 +509,11 @@ void MergeTreeRangeReader::ReadResult::checkInternalConsistency() const
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Number of rows in the intermediate columns evaluated from their defaults {} is not equal to number of rows in result columns {}",
             default_intermediates.rows(), num_rows);
+
+    if (!default_intermediates_rows.empty() && default_intermediates_rows.rows() != num_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Number of rows in the masks of the intermediate columns evaluated from their defaults {} is not equal to number of rows in result columns {}",
+            default_intermediates_rows.rows(), num_rows);
 
     for (const auto & column : columns)
     {
@@ -696,6 +702,7 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
     filterBlock(patch_versions_block, filter);
     filterBlock(rows_filled_by_defaults, filter);
     filterBlock(default_intermediates, filter);
+    filterBlock(default_intermediates_rows, filter);
 
     num_rows = filter.countBytesInFilter();
 
@@ -787,6 +794,7 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
             shrink(patch_versions_block, rows_per_granule_previous);
             shrink(rows_filled_by_defaults, rows_per_granule_previous);
             shrink(default_intermediates, rows_per_granule_previous);
+            shrink(default_intermediates_rows, rows_per_granule_previous);
 
             num_rows = total_rows_per_granule;
 

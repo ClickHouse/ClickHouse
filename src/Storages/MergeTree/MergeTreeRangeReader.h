@@ -482,6 +482,13 @@ public:
         /// recomputed by a step. See `MergeTreeReadersChain::forgetDefaultIntermediatesDependingOn`.
         Block default_intermediates;
 
+        /// For a column of `default_intermediates` evaluated only in some rows: a `UInt8` column with its name, with 1
+        /// in the rows that hold a value of its `DEFAULT`. A column evaluated again after patches is evaluated only in
+        /// the rows the columns reading it need (its expression must not be executed on the values of the other rows),
+        /// and is kept with those rows, so that a column evaluated by a later step reads the same value in them.
+        /// The other rows are evaluated when a column needs them. A column absent here holds a value in every row.
+        Block default_intermediates_rows;
+
         /// Track newly initiated granule ranges during startReadingChain. Does not contain the range started in previous read.
         /// Used to compute _part_offset and align continueReadingChain streams accordingly.
         RangesInfo started_ranges;

@@ -861,7 +861,7 @@ void MergeTreeReadersChain::forgetPatchedRows(ReadResult & result, const Block &
 
 void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
     const IMergeTreeReader & reader,
-    const ReadResult & result,
+    ReadResult & result,
     Block & block,
     const NamesAndTypesList & candidates,
     NamesAndTypesList & columns_to_evaluate)
@@ -883,14 +883,25 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
     /// The unrequested missing columns that keep their values are inputs like the others: the expressions evaluated
     /// again read the values the other columns were evaluated from, see `ReadResult::default_intermediates`.
     /// The ones whose `DEFAULT` reads a patched column are not there any more, and are evaluated anew below.
+    /// A kept column that holds a value only in some rows (see `ReadResult::default_intermediates_rows`) is not an input
+    /// as it is: if the expressions read it, it is evaluated in the rest of the rows they need, like the missing columns
+    /// evaluated anew, and keeps its values in the rows it has them. The columns that read it were evaluated from those
+    /// values, so they are not evaluated again because of it.
     NameSet retained_names;
+    NameSet partial_names;
     for (const auto & column : result.default_intermediates)
     {
-        if (!block.has(column.name))
+        if (block.has(column.name))
+            continue;
+
+        if (result.default_intermediates_rows.has(column.name))
         {
-            block.insert(column);
-            retained_names.insert(column.name);
+            partial_names.insert(column.name);
+            continue;
         }
+
+        block.insert(column);
+        retained_names.insert(column.name);
     }
 
     NameSet candidate_names;
@@ -922,7 +933,10 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
         added_candidates = false;
         NameSet intermediate_names;
         for (const auto & column : intermediates)
-            intermediate_names.insert(column.name);
+        {
+            if (!partial_names.contains(column.name))
+                intermediate_names.insert(column.name);
+        }
 
         for (const auto & [candidate, missing_inputs] : missing_inputs_of_candidates)
         {
@@ -953,7 +967,12 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
 
     size_t num_rows = block.rows();
     for (const auto & column : intermediates)
-        block.insert({column.type->createColumnConstWithDefaultValue(num_rows), column.type, column.name});
+    {
+        if (partial_names.contains(column.name))
+            block.insert(result.default_intermediates.getByName(column.name));
+        else
+            block.insert({column.type->createColumnConstWithDefaultValue(num_rows), column.type, column.name});
+    }
 
     /// A `DEFAULT` reads the final values of the columns evaluated again before it, not the stale ones.
     NamesAndTypesList all_columns = intermediates;
@@ -970,7 +989,9 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
     for (const auto & column : intermediates)
         intermediate_names.insert(column.name);
 
+    /// An intermediate that already holds a value in some rows is evaluated only in the rest of the rows needed.
     std::unordered_map<String, ColumnPtr> filters;
+    std::unordered_map<String, ColumnPtr> needed_rows;
     std::unordered_map<String, NameSet> inputs;
     NameSet skipped;
     for (auto it = order.rbegin(); it != order.rend(); ++it)
@@ -1014,10 +1035,25 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
             filter = std::move(combined);
         }
 
-        if (needed)
-            filters[it->name] = filter;
-        else
+        if (!needed)
+        {
             skipped.insert(it->name);
+            continue;
+        }
+
+        needed_rows[it->name] = filter;
+        if (const auto * valid_rows = result.default_intermediates_rows.findByName(it->name); valid_rows && partial_names.contains(it->name))
+        {
+            const auto & valid_data = assert_cast<const ColumnUInt8 &>(*valid_rows->column).getData();
+            auto rows_to_evaluate = ColumnUInt8::create(valid_data.size());
+            auto & rows_to_evaluate_data = rows_to_evaluate->getData();
+            const auto * needed_data = filter ? &assert_cast<const ColumnUInt8 &>(*filter).getData() : nullptr;
+            for (size_t row = 0; row < valid_data.size(); ++row)
+                rows_to_evaluate_data[row] = !valid_data[row] && (!needed_data || (*needed_data)[row]);
+            filter = std::move(rows_to_evaluate);
+        }
+
+        filters[it->name] = filter;
     }
 
     auto same_filter = [](const ColumnPtr & lhs, const ColumnPtr & rhs)
@@ -1030,54 +1066,6 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
         const auto & lhs_data = assert_cast<const ColumnUInt8 &>(*lhs).getData();
         const auto & rhs_data = assert_cast<const ColumnUInt8 &>(*rhs).getData();
         return lhs_data.size() == rhs_data.size() && std::equal(lhs_data.begin(), lhs_data.end(), rhs_data.begin());
-    };
-
-    auto evaluate = [&](const NamesAndTypesList & batch, const ColumnPtr & filter_column)
-    {
-        if (!filter_column)
-        {
-            reader.evaluateDefaults(block, batch);
-            return;
-        }
-
-        /// The expressions are executed only in the rows that hold their `DEFAULT`. In a patched row,
-        /// one may throw on values its result is never used for, e.g. `intDiv(100, a)` with `a` patched to 0.
-        const auto & filter = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
-        size_t num_filtered_rows = countBytesInFilter(filter);
-        if (num_filtered_rows == 0)
-            return;
-
-        Block filtered;
-        for (const auto & column : block)
-        {
-            if (!column.column)
-                continue;
-
-            chassert(column.column->size() == filter.size());
-            filtered.insert({column.column->filter(filter, num_filtered_rows), column.type, column.name});
-        }
-
-        reader.evaluateDefaults(filtered, batch);
-
-        for (const auto & column_to_evaluate : batch)
-        {
-            auto & target = block.getByName(column_to_evaluate.name);
-            auto new_values = removeSpecialRepresentations(filtered.getByName(column_to_evaluate.name).column->convertToFullColumnIfConst());
-            auto old_values = removeSpecialRepresentations(target.column->convertToFullColumnIfConst());
-            chassert(new_values->size() == num_filtered_rows && old_values->size() == filter.size());
-
-            auto combined = new_values->cloneEmpty();
-            combined->reserve(filter.size());
-            for (size_t row = 0, filtered_row = 0; row < filter.size(); ++row)
-            {
-                if (filter[row])
-                    combined->insertFrom(*new_values, filtered_row++);
-                else
-                    combined->insertFrom(*old_values, row);
-            }
-
-            target.column = std::move(combined);
-        }
     };
 
     /// The consecutive columns evaluated in the same rows are evaluated together, in one expression: one reading
@@ -1097,7 +1085,7 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
             && (!same_filter(batch_filter, filter)
                 || std::ranges::any_of(inputs[column_to_evaluate.name], [&](const String & input) { return batch_subcolumns.contains(input); })))
         {
-            evaluate(batch, batch_filter);
+            evaluateDefaultsInRows(reader, block, batch, batch_filter);
             batch.clear();
             batch_subcolumns.clear();
         }
@@ -1110,13 +1098,142 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
     }
 
     if (!batch.empty())
-        evaluate(batch, batch_filter);
+        evaluateDefaultsInRows(reader, block, batch, batch_filter);
 
+    /// The intermediates evaluated here are kept with the rows they hold a value in: a column evaluated by a later step,
+    /// or evaluated again after the next patches, reads the same values as the columns evaluated here.
     for (const auto & column : intermediates)
+    {
+        if (!skipped.contains(column.name))
+        {
+            const auto & evaluated = block.getByName(column.name);
+            if (auto * kept = result.default_intermediates.findByName(column.name))
+                kept->column = evaluated.column;
+            else
+                result.default_intermediates.insert(evaluated);
+
+            const auto & evaluated_rows = needed_rows[column.name];
+            auto * valid_rows = result.default_intermediates_rows.findByName(column.name);
+            if (!evaluated_rows)
+            {
+                if (valid_rows)
+                    result.default_intermediates_rows.erase(column.name);
+            }
+            else if (valid_rows)
+            {
+                auto combined = IColumn::mutate(std::move(valid_rows->column));
+                auto & combined_data = assert_cast<ColumnUInt8 &>(*combined).getData();
+                const auto & evaluated_data = assert_cast<const ColumnUInt8 &>(*evaluated_rows).getData();
+                for (size_t row = 0; row < combined_data.size(); ++row)
+                    combined_data[row] |= evaluated_data[row];
+                valid_rows->column = std::move(combined);
+            }
+            else
+            {
+                result.default_intermediates_rows.insert({evaluated_rows, std::make_shared<DataTypeUInt8>(), column.name});
+            }
+        }
+
         block.erase(column.name);
+    }
 
     for (const auto & name : retained_names)
         block.erase(name);
+}
+
+void MergeTreeReadersChain::evaluateDefaultsInRows(
+    const IMergeTreeReader & reader,
+    Block & block,
+    const NamesAndTypesList & batch,
+    const ColumnPtr & filter_column)
+{
+    if (!filter_column)
+    {
+        reader.evaluateDefaults(block, batch);
+        return;
+    }
+
+    /// The expressions are executed only in the rows that hold their `DEFAULT`. In a patched row,
+    /// one may throw on values its result is never used for, e.g. `intDiv(100, a)` with `a` patched to 0.
+    const auto & filter = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
+    size_t num_filtered_rows = countBytesInFilter(filter);
+    if (num_filtered_rows == 0)
+        return;
+
+    Block filtered;
+    for (const auto & column : block)
+    {
+        if (!column.column)
+            continue;
+
+        chassert(column.column->size() == filter.size());
+        filtered.insert({column.column->filter(filter, num_filtered_rows), column.type, column.name});
+    }
+
+    reader.evaluateDefaults(filtered, batch);
+
+    for (const auto & column_to_evaluate : batch)
+    {
+        auto & target = block.getByName(column_to_evaluate.name);
+        auto new_values = removeSpecialRepresentations(filtered.getByName(column_to_evaluate.name).column->convertToFullColumnIfConst());
+        auto old_values = removeSpecialRepresentations(target.column->convertToFullColumnIfConst());
+        chassert(new_values->size() == num_filtered_rows && old_values->size() == filter.size());
+
+        auto combined = new_values->cloneEmpty();
+        combined->reserve(filter.size());
+        for (size_t row = 0, filtered_row = 0; row < filter.size(); ++row)
+        {
+            if (filter[row])
+                combined->insertFrom(*new_values, filtered_row++);
+            else
+                combined->insertFrom(*old_values, row);
+        }
+
+        target.column = std::move(combined);
+    }
+}
+
+void MergeTreeReadersChain::completeDefaultIntermediates(
+    const IMergeTreeReader & reader,
+    ReadResult & result,
+    Block & block,
+    const NamesAndTypesList & missing_columns)
+{
+    /// The columns to evaluate in the rest of their rows: the ones the expressions of the missing columns read,
+    /// directly or not, and the missing columns themselves (or their parents, for subcolumns).
+    NamesAndTypesList columns_to_complete;
+    NameSet names_to_complete;
+    auto add = [&](const String & name)
+    {
+        if (block.has(name) || !result.default_intermediates_rows.has(name) || !names_to_complete.emplace(name).second)
+            return;
+
+        const auto & kept = result.default_intermediates.getByName(name);
+        columns_to_complete.emplace_back(kept.name, kept.type);
+    };
+
+    for (const auto & input : reader.getMissingDefaultInputs(missing_columns, block))
+        add(input.name);
+
+    for (const auto & column : missing_columns)
+        add(column.getNameInStorage());
+
+    /// A column is evaluated after the ones its expression reads: it reads their values in every row.
+    for (const auto & column : reader.orderByDefaultDependencies(columns_to_complete))
+    {
+        const auto & valid_data = assert_cast<const ColumnUInt8 &>(*result.default_intermediates_rows.getByName(column.name).column).getData();
+        auto rows_to_evaluate = ColumnUInt8::create(valid_data.size());
+        auto & rows_to_evaluate_data = rows_to_evaluate->getData();
+        for (size_t row = 0; row < valid_data.size(); ++row)
+            rows_to_evaluate_data[row] = !valid_data[row];
+
+        auto & kept = result.default_intermediates.getByName(column.name);
+        block.insert(kept);
+        evaluateDefaultsInRows(reader, block, {column}, std::move(rows_to_evaluate));
+
+        kept.column = block.getByName(column.name).column;
+        result.default_intermediates_rows.erase(column.name);
+    }
 }
 
 void MergeTreeReadersChain::forgetColumnsOverwrittenByStep(ReadResult & result, const MergeTreeRangeReader & range_reader)
@@ -1159,7 +1276,11 @@ void MergeTreeReadersChain::forgetDefaultIntermediatesDependingOn(ReadResult & r
     for (const auto & name : names)
     {
         if (stale.contains(name) || changed_columns.contains(name))
+        {
             result.default_intermediates.erase(name);
+            if (result.default_intermediates_rows.has(name))
+                result.default_intermediates_rows.erase(name);
+        }
     }
 }
 
@@ -1236,10 +1357,25 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
 
     /// The defaults evaluated here read the same values of the unrequested missing columns as the ones evaluated
     /// before them, and as the ones evaluated again after patches, see `ReadResult::default_intermediates`.
+    /// The ones that hold a value only in some rows are evaluated in the other rows first, if they are read here.
     for (const auto & col : result.default_intermediates)
     {
-        if (!additional_columns.has(col.name))
+        if (!additional_columns.has(col.name) && !result.default_intermediates_rows.has(col.name))
             additional_columns.insert(col);
+    }
+
+    if (!result.default_intermediates_rows.empty())
+    {
+        NamesAndTypesList missing_columns;
+        size_t pos = 0;
+        for (const auto & column : range_reader.getReader()->getOriginalRequestedColumns())
+        {
+            if (pos < columns.size() && !columns[pos])
+                missing_columns.push_back(column);
+            ++pos;
+        }
+
+        completeDefaultIntermediates(*range_reader.getReader(), result, additional_columns, missing_columns);
     }
 
     addDummyColumnWithRowCount(additional_columns, result.num_rows);
