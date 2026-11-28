@@ -541,9 +541,13 @@ stable() {
     previous=$("$@" 2>&1; echo .)
     for _ in $(seq 9); do
         current=$("$@" 2>&1; echo .)
-        [ "$current" = "$previous" ] && break
+        if [ "$current" = "$previous" ]; then
+            printf '%s' "${previous%.}"
+            return
+        fi
         previous=$current
     done
+    echo "no two runs in a row agree, the last one printed:"
     printf '%s' "${previous%.}"
 }
 
