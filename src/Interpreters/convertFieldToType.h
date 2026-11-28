@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Formats/FormatSettings.h>
+
+#include <string_view>
 
 
 namespace DB
@@ -22,6 +25,7 @@ class IDataType;
   *   convertFieldToType(Field(256), Bool)                 -> Field(true)   i.e. 1
   *   convertFieldToType(Field(1),   Bool)                 -> Field(true)   i.e. 1
   *   convertFieldToType(Decimal64("33.33"), Decimal64(1)) -> Decimal64("33.3")  (truncated)
+  *   convertFieldToType(DateTime64("12:00:00.5"), DateTime)  -> DateTime("12:00:00")  (truncated)
   *
   * Conversion to a floating-point type, however, stays exact by default: a value that is not exactly
   * representable in the target type returns Null, e.g. convertFieldToType(Field(0.1), Float32) -> Null.
@@ -54,9 +58,15 @@ class IDataType;
   *       convertFieldToType(Field(0.5), Float32, .., true) -> Field(0.5f)
   *   - Decimal -> Decimal: rejects any lossy conversion by requiring exact equality after conversion.
   *   - Float64 -> Decimal: converts the Decimal back to Float64 and compares with the original.
+  *   - Float64 -> DateTime64 / Time64: the same read-back rule against the ticks at the target scale, so
+  *     `toDateTime64('1970-01-01 00:00:01.2', 1, 'UTC') IN (1.25)` is 0 while `IN (1.5)` at scale 1 is 1.
   *
   * Out-of-range values are always rejected (return Null) regardless of `strict`/`convert_inexact_floats`,
   * e.g. convertFieldToType(Field(1e300), Float32, .., false, true) -> Field(Null) (no silent overflow to inf).
+  * The one exception is a numeric constant outside the calendar / clock window of `DateTime64` / `Time64`
+  * under `convert_inexact_floats`: such a caller stores the value rather than comparing against it, so it
+  * gets what `CAST` gives for the same constant under `format_settings.date_time_overflow_behavior` -
+  * an exception for `throw`, the nearest representable tick for `saturate` and the default `ignore`.
   *
   * The strictness checks apply recursively inside composite types (Tuple, Array, Map), so e.g. a
   * Tuple(Decimal64(2)) element inside an Array is also checked for precision loss, and a Float32 element
@@ -71,14 +81,6 @@ class IDataType;
   *   CAST('33.3', 'Decimal64(1)') IN (CAST('33.33', 'Decimal64(2)'))           -> 0
   *   CAST('33.3', 'Decimal64(1)') IN (33.33)                                   -> 0
   *   (CAST('33.3', 'Decimal64(1)'), 1) IN ((CAST('33.33', 'Decimal64(2)'), 1)) -> 0
-  *
-  * `temporal_numeric_is_offset` marks a numeric source that is a *distance* in the target's underlying
-  * units rather than a temporal point - a window frame `RANGE` offset is the only such caller. A distance
-  * must not be reinterpreted as a day number or a unix timestamp, and must not be clamped to the target's
-  * visible range; it is range-checked against the storage type instead, so an offset the storage type
-  * cannot hold is rejected (Null) in every overflow mode:
-  *   convertFieldToType(Field(65536), Date, .., false, true)       -> day number 0 (65536 read as a timestamp)
-  *   convertFieldToType(Field(65536), Date, .., false, true, true) -> Field(Null)  (outside UInt16 storage)
   */
 Field convertFieldToType(
     const Field & from_value,
@@ -86,8 +88,7 @@ Field convertFieldToType(
     const IDataType * from_type_hint = nullptr,
     const FormatSettings & format_settings = {},
     bool strict = false,
-    bool convert_inexact_floats = false,
-    bool temporal_numeric_is_offset = false);
+    bool convert_inexact_floats = false);
 
 /// Same as convertFieldToType but returns empty Field in case of an exception.
 Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {}, bool strict = false, bool convert_inexact_floats = false);
@@ -97,8 +98,30 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
 /// `ALTER ... PARTITION` resolution) reject float literals that are not exactly representable instead
 /// of silently rounding them. Value-materialization callers (the `values`/`VALUES` table function,
 /// `WITH FILL`, window frame offsets, ...) pass it as true to convert to the nearest representable
-/// floating-point value like CAST. Window frame offsets additionally pass
-/// `temporal_numeric_is_offset = true`, because an offset is a distance rather than a temporal point.
-Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {}, bool convert_inexact_floats = false, bool temporal_numeric_is_offset = false);
+/// floating-point value like CAST.
+Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {}, bool convert_inexact_floats = false);
+
+/// For a constant that becomes an exact bound or key: strict, and the result has to convert back to the
+/// original value, because `strict` still truncates a `DateTime` to a `Date` and a `DateTime64` to a lower
+/// scale. A string constant is parsed at the target's resolution and native numbers convert exactly, so
+/// those skip the round trip. Returns Null when the value is not representable.
+Field tryConvertFieldToTypeExact(const Field & from_value, const IDataType & to_type, const IDataType * from_type);
+
+/// For a string `src` that `convertFieldToType` rejects because an integer element does not fit an `Array`, `Tuple`
+/// or `Map` type: converts it with the integer elements widened to 256 bits and replaces `type` with the wider type.
+/// Returns Null otherwise, and when the integers fit neither `Int256` nor `UInt256` elements.
+Field convertFieldToTypeWithWiderIntegers(const Field & src, DataTypePtr & type, const IDataType * from_type_hint, const FormatSettings & format_settings);
+
+/// Where a decimal integer literal falls relative to the range of an integer type. `NotApplicable` also covers
+/// a non-integer type, a non-decimal literal, and `-0` against an unsigned type.
+enum class IntegerLiteralRange : uint8_t
+{
+    NotApplicable,
+    BelowMin,
+    InRange,
+    AboveMax,
+};
+
+IntegerLiteralRange classifyIntegerLiteralRange(std::string_view literal, const IDataType & to_type);
 
 }

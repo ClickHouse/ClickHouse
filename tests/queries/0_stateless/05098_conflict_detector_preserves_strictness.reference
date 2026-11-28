@@ -1,0 +1,10 @@
+ANY  greedy cd_a	4
+ANY  greedy cd_c	4
+ANY  dpsub  cd_a	4
+ANY  dpsub  cd_c	4
+SEMI greedy cd_a	1
+SEMI dpsub  cd_c	1
+ANTI greedy cd_a	3
+ANTI dpsub  cd_c	3
+nested ANTI dpsub cd_c	3
+nested SEMI dpsub cd_a	1

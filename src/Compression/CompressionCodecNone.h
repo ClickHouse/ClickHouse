@@ -1,8 +1,6 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
 #include <Compression/ICompressionCodec.h>
-#include <IO/BufferWithOwnMemory.h>
 
 
 namespace DB
@@ -11,9 +9,10 @@ namespace DB
 class CompressionCodecNone final : public ICompressionCodec
 {
 public:
-    CompressionCodecNone();
+    CompressionCodecNone() = default;
 
-    uint8_t getMethodByte() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -23,11 +22,11 @@ protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    bool isCompression() const override { return false; }
-    bool isGenericCompression() const override { return false; }
-    bool isNone() const override { return true; }
+    [[nodiscard]] bool isCompression() const override { return false; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isNone() const override { return true; }
 
-    String getDescription() const override { return "No compression. Can be used on columns that can not be compressed anyway."; }
+    [[nodiscard]] String getDescription() const override { return "No compression. Can be used on columns that can not be compressed anyway."; }
 };
 
 }

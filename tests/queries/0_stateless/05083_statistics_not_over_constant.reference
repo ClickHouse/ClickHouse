@@ -1,0 +1,4 @@
+statistics materialized	1
+every estimate was extracted	1
+a negated constant makes the conjunction empty	1
+a negated constant leaves the disjunction at the range	1

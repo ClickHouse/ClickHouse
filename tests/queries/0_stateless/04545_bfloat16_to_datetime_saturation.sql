@@ -15,8 +15,9 @@ SELECT toDateTime(CAST(1e10 AS BFloat16), 'UTC');
 SELECT toDateTime32(CAST(-100 AS BFloat16), 'UTC');
 SELECT toDateTime(CAST(-100 AS BFloat16), 'UTC');
 
--- Numeric inputs now honour date_time_overflow_behavior: throw mode rejects the value instead of
--- saturating it. The saturation above is what the other two modes do.
+-- Numeric inputs saturate in the default 'ignore' mode and raise an error in the 'throw' mode.
+SELECT toDateTime32(CAST(1e10 AS BFloat16), 'UTC') SETTINGS date_time_overflow_behavior = 'ignore';
+SELECT toDateTime32(CAST(-100 AS BFloat16), 'UTC') SETTINGS date_time_overflow_behavior = 'ignore';
 SELECT toDateTime32(CAST(1e10 AS BFloat16), 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT toDateTime32(CAST(-100 AS BFloat16), 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 

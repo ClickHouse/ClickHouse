@@ -1,5 +1,4 @@
 -- CTE column aliases must work with INTERSECT/EXCEPT (issue #104770)
-SET enable_analyzer = 1;
 
 WITH t (a, b) AS (SELECT 1, 2 INTERSECT SELECT 1, 2) SELECT a, b FROM t ORDER BY a;
 WITH t (a, b) AS (SELECT 1, 2 INTERSECT DISTINCT SELECT 1, 2) SELECT a, b FROM t ORDER BY a;

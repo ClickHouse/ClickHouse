@@ -13,33 +13,31 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="url_base">
-  ## url_base
-</div>
+## url_base {#url_base}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "Nouveau paramètre permettant de spécifier l’URL de base pour la résolution des URL relatives dans la fonction de table url et le moteur de table URL."}]}]} />
 
 L’URL de base utilisée pour résoudre les URL relatives dans la fonction de table [url](/fr/reference/functions/table-functions/url) et le moteur de table [URL](/fr/reference/engines/table-engines/special/url).
 
-Lorsqu’elle est définie, les URL relatives sont résolues comme suit :
+Lorsqu’elle est définie, les URL relatives sont résolues comme suit :
 
-* URL relative au chemin (par ex. `data.csv`) : fusionnée avec le chemin de l’URL de base conformément à la RFC 3986. Tout ce qui suit le dernier `/` dans le chemin de base est remplacé par l’URL relative, donc la présence d’un slash final est importante : `https://example.com/dir/` + `data.csv` = `https://example.com/dir/data.csv`, mais `https://example.com/dir` + `data.csv` = `https://example.com/data.csv`. Si l’URL de base n’a pas de chemin (par ex. `https://example.com`), un `/` est inséré : `https://example.com/data.csv`. Les segments de point (`./` et `../`) dans l’URL relative sont normalisés : `https://example.com/dir/` + `../a.csv` = `https://example.com/a.csv`.
-* URL relative à l’hôte (par ex. `/test/data.csv`) : résolue à partir du schéma et de l’hôte de l’URL de base.
-* URL relative au schéma (par ex. `//other.com/test/data.csv`) : résolue à l’aide du schéma de l’URL de base.
-* Référence contenant uniquement une chaîne de requête (par ex. `?x=1`) : ajoutée au chemin de l’URL de base (en remplaçant toute chaîne de requête ou tout fragment existant).
-* Référence contenant uniquement un fragment (par ex. `#frag`) : ajoutée à l’URL de base, en conservant toute chaîne de requête (en remplaçant tout fragment existant).
-* Référence vide : renvoie l’URL de base sans fragment.
-* Si l’URL de base est uniquement un schéma (par ex. `file://`), une URL relative au chemin y est ajoutée directement : `file://` + `data.csv` = `file://data.csv`, ce qui, pour le schéma `file://`, désigne un chemin relatif au répertoire user&#95;files (le répertoire courant pour clickhouse-local). Dans ce cas, les segments de point sont conservés tels quels, de sorte que le moteur cible les résout par rapport à son propre répertoire de base.
+* URL relative au chemin (par ex. `data.csv`) : fusionnée avec le chemin de l’URL de base conformément à la RFC 3986. Tout ce qui suit le dernier `/` dans le chemin de base est remplacé par l’URL relative, donc la présence d’un slash final est importante : `https://example.com/dir/` + `data.csv` = `https://example.com/dir/data.csv`, mais `https://example.com/dir` + `data.csv` = `https://example.com/data.csv`. Si l’URL de base n’a pas de chemin (par ex. `https://example.com`), un `/` est inséré : `https://example.com/data.csv`. Les segments de point (`./` et `../`) dans l’URL relative sont normalisés : `https://example.com/dir/` + `../a.csv` = `https://example.com/a.csv`.
+* URL relative à l’hôte (par ex. `/test/data.csv`) : résolue à partir du schéma et de l’hôte de l’URL de base.
+* URL relative au schéma (par ex. `//other.com/test/data.csv`) : résolue à l’aide du schéma de l’URL de base.
+* Référence contenant uniquement une chaîne de requête (par ex. `?x=1`) : ajoutée au chemin de l’URL de base (en remplaçant toute chaîne de requête ou tout fragment existant).
+* Référence contenant uniquement un fragment (par ex. `#frag`) : ajoutée à l’URL de base, en conservant toute chaîne de requête (en remplaçant tout fragment existant).
+* Référence vide : renvoie l’URL de base sans fragment.
+* Si l’URL de base est uniquement un schéma (par ex. `file://`), une URL relative au chemin y est ajoutée directement : `file://` + `data.csv` = `file://data.csv`, ce qui, pour le schéma `file://`, désigne un chemin relatif au répertoire user&#95;files (le répertoire courant pour clickhouse-local). Dans ce cas, les segments de point sont conservés tels quels, de sorte que le moteur cible les résout par rapport à son propre répertoire de base.
 
-Par exemple, si `url_base` vaut `https://example.com/def/`, alors :
+Par exemple, si `url_base` vaut `https://example.com/def/`, alors :
 
 * `data.csv` est résolu en `https://example.com/def/data.csv`
 * `/test/data.csv` est résolu en `https://example.com/test/data.csv`
 * `//other.com/test/data.csv` est résolu en `https://other.com/test/data.csv`
 
-<div id="url_wildcard_max_directories_to_read">
-  ## url_wildcard_max_directories_to_read
-</div>
+Lorsque l’URL relative provient d’une [collection nommée](/fr/concepts/features/configuration/server-config/named-collections), sa résolution est considérée comme une surcharge de la clé `url` de la collection et nécessite le privilège `SHOW NAMED COLLECTIONS SECRETS` sur cette collection.
+
+## url_wildcard_max_directories_to_read {#url_wildcard_max_directories_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 

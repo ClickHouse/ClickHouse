@@ -1,0 +1,34 @@
+<test>
+    <!-- Compact parts without statistics give PREWHERE no sizes and no estimates, so it keeps the
+         written order of the conditions. `hasToken(s, 'xqzt')` starts every disjunct and is rare,
+         so it must stay in front of the remaining disjunction, which reads the whole Map. -->
+
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE extract_common_leading (k LowCardinality(String), s String, m Map(LowCardinality(String), String))
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, auto_statistics_types = ''
+    </create_query>
+
+    <fill_query>
+        INSERT INTO extract_common_leading
+        SELECT 'a',
+               concat(if(number % 1000000 = 7, 'xqzt ', ''), 'lorem ipsum ', toString(number)),
+               mapFromArrays(
+                   arrayMap(i -> 'k' || toString(i), range(16)),
+                   arrayMap(i -> toString(cityHash64(number, i)), range(16)))
+        FROM numbers_mt(2000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE extract_common_leading FINAL SETTINGS mutations_sync=1</fill_query>
+
+    <query>
+        SELECT count() FROM extract_common_leading
+        WHERE k = 'a' AND ((hasToken(s, 'xqzt') AND m['k0'] != '') OR (hasToken(s, 'xqzt') AND m['k1'] != ''))
+        SETTINGS optimize_extract_common_expressions = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS extract_common_leading</drop_query>
+</test>

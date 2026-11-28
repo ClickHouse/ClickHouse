@@ -63,6 +63,12 @@ public:
     Strings getUnfinishedHosts() const;
     Strings getUnfinishedOtherHosts() const;
 
+    /// Whether the initiating host takes the named collections access decisions before dispatching
+    /// the query, which its coordination version shows: authorizing the export for BACKUP (see
+    /// `backupNamedCollections`) and requiring the restore right for RESTORE (see
+    /// `restoreNamedCollections`).
+    bool doesInitiatorTakeNamedCollectionsAccessDecisions() const;
+
     /// Returns a printable name of a specific host. For empty host the function returns "initiator".
     static String getHostDesc(const String & host);
     static String getHostsDesc(const Strings & hosts);
@@ -105,6 +111,8 @@ private:
     /// Lets other hosts know that the current host has encountered an error.
     void setError(const Exception & exception, bool throw_if_error);
     [[noreturn]] void rethrowSetError() const;
+    /// Rethrows the error which any host has set for this backup or restore, either already known or read from the error node.
+    void rethrowErrorIfSet(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
     void createErrorNode(const Exception & exception, Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
 
     /// Deserializes an error stored in the error node.
@@ -128,7 +136,6 @@ private:
     bool checkIfHostsReachStage(const Strings & hosts, const String & stage_to_wait, Strings & results) const TSA_REQUIRES(mutex);
 
     /// Creates the 'finish' node.
-    void finishImpl(bool throw_if_error, WithRetries::Kind retries_kind);
     void createFinishNodeAndRemoveAliveNode(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper, bool throw_if_error);
 
     /// Returns the version used by the initiator.
@@ -203,6 +210,10 @@ private:
 
         bool operator ==(const HostInfo & other) const;
         bool operator !=(const HostInfo & other) const;
+
+        /// Returns ": " followed by why this host may keep us waiting (it hasn't started yet or it's disconnected), or an empty string.
+        /// The result is appended to messages about waiting for this host.
+        [[nodiscard]] String getStatusDesc(const String & operation) const;
     };
 
     /// Information about all the host participating in the current BACKUP or RESTORE operation.

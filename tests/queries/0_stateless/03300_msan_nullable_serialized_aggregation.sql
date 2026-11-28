@@ -4,7 +4,7 @@
 -- The bug was in ColumnNullable::getSerializedValueSize which returned 1 + nested_size even for NULL values,
 -- but serializeValueIntoMemory only writes 1 byte for NULLs, leaving uninitialized memory.
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SET optimize_group_by_constant_keys = 1;
 SET optimize_syntax_fuse_functions = 0;
 SET optimize_injective_functions_in_group_by = 1;
@@ -23,7 +23,7 @@ GROUP BY
     isZeroOrNull(assumeNotNull(materialize(NULL))),
     tuple(1, NULL),
     (NULL, NULL) GLOBAL IN CAST(tuple(NULL, NULL), 'Nullable(Tuple(Nullable(UInt32), Nullable(UInt32)))')
-SETTINGS transform_null_in = 0, enable_analyzer = 1;
+SETTINGS transform_null_in = 0;
 
 
 -- Multiple nullable tuples in GROUP BY

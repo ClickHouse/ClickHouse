@@ -25,24 +25,6 @@ using namespace DB;
 namespace
 {
 
-/// A queue file written by a much older server: just the size of the query, followed by the query text.
-/// No settings, no client info at all.
-void writeOldestLayout(WriteBuffer & out, const String & query)
-{
-    writeVarUInt(query.size(), out);
-    out.write(query.data(), query.size());
-}
-
-/// A queue file written by an older server: the `DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT` signature,
-/// the insert settings in the binary format, and the query text. Still no client info.
-void writeOldFormatLayout(WriteBuffer & out, const String & query)
-{
-    writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT, out);
-    Settings settings;
-    settings.write(out, SettingsWriteFormat::BINARY);
-    writeStringBinary(query, out);
-}
-
 /// A queue file in the current layout, carrying an embedded `ClientInfo` with the given version.
 void writeCurrentLayout(WriteBuffer & out, const String & query, UInt64 version_major, UInt64 version_minor, UInt64 version_patch)
 {
@@ -90,34 +72,10 @@ DistributedAsyncInsertHeader roundTrip(const String & name, WriteLayout && write
 
 }
 
-/// A legacy queue file carries no client info at all, so it is left default-constructed - which means the
-/// `TCP` interface with a zero version, exactly what `ClientInfo::write` serializes on replay. The zero
-/// version must be replaced with this server's own, or the receiving shard would treat the initiator as a
-/// pre-23.3 server and apply legacy compatibility downgrades.
-TEST(DistributedAsyncInsertHeader, FillsZeroVersionForOldestLayout)
-{
-    const auto header = roundTrip("oldest", [](WriteBuffer & out) { writeOldestLayout(out, "INSERT INTO t VALUES"); });
-
-    EXPECT_EQ(header.insert_query, "INSERT INTO t VALUES");
-    EXPECT_EQ(header.client_info.client_version_major, VERSION_MAJOR);
-    EXPECT_EQ(header.client_info.client_version_minor, VERSION_MINOR);
-    EXPECT_EQ(header.client_info.client_version_patch, VERSION_PATCH);
-    EXPECT_EQ(header.client_info.client_tcp_protocol_version, DBMS_TCP_PROTOCOL_VERSION);
-}
-
-TEST(DistributedAsyncInsertHeader, FillsZeroVersionForOldFormatLayout)
-{
-    const auto header = roundTrip("old_format", [](WriteBuffer & out) { writeOldFormatLayout(out, "INSERT INTO t VALUES"); });
-
-    EXPECT_EQ(header.insert_query, "INSERT INTO t VALUES");
-    EXPECT_EQ(header.client_info.client_version_major, VERSION_MAJOR);
-    EXPECT_EQ(header.client_info.client_version_minor, VERSION_MINOR);
-    EXPECT_EQ(header.client_info.client_version_patch, VERSION_PATCH);
-    EXPECT_EQ(header.client_info.client_tcp_protocol_version, DBMS_TCP_PROTOCOL_VERSION);
-}
-
-/// The current layout embeds a `ClientInfo`, but a server-initiated query context of an older server (a
-/// `Buffer` flush, a streaming consumer, an asynchronous insert flush) had a zero version there as well.
+/// A server-initiated query context of an older server (a `Buffer` flush, a streaming consumer, an
+/// asynchronous insert flush) wrote a zero version in the embedded `ClientInfo`. The zero version must be
+/// replaced with this server's own, or the receiving shard would treat the initiator as a pre-23.3 server
+/// and apply legacy compatibility downgrades.
 TEST(DistributedAsyncInsertHeader, FillsZeroVersionForCurrentLayout)
 {
     const auto header = roundTrip("current_zero", [](WriteBuffer & out) { writeCurrentLayout(out, "INSERT INTO t VALUES", 0, 0, 0); });

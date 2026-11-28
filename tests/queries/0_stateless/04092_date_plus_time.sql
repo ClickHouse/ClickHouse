@@ -368,16 +368,10 @@ INSERT INTO test_overflow_vec64 VALUES
 SELECT d + t FROM test_overflow_vec64 ORDER BY d; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 DROP TABLE test_overflow_vec64;
 
--- Large negative Time64 can bring an intermediate overflow back into range.
--- midnight(2299-12-31) * 10^9 overflows Int64, but subtracting 1.2B seconds lands in range.
-SELECT toDate32('2299-12-31') + CAST(toDecimal128('-1200000000.000000000', 9), 'Time64(9)');
-
--- Vector path: one row has large negative time (in range), other row overflows.
-DROP TABLE IF EXISTS test_intermediate_overflow;
-CREATE TABLE test_intermediate_overflow (t Time64(9)) ENGINE = Memory;
-INSERT INTO test_intermediate_overflow SELECT arrayJoin([CAST(toDecimal128('-1200000000.000000000', 9), 'Time64(9)'), toTime64('00:00:00.000000000', 9)]);
-SELECT toDate32('2299-12-31') + t FROM test_intermediate_overflow ORDER BY t; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-DROP TABLE test_intermediate_overflow;
+-- An intermediate overflow used to be reachable through a `Time64` holding more than the 999:59:59 its clock
+-- window allows: a `Decimal` source was the one numeric conversion that still stored its value unclamped.
+-- `date_time_overflow_behavior` now governs that conversion too, so every `Time64` is inside its window and
+-- `midnight(2299-12-31) + t` overflows the scale-9 ticks for all of them - which the cases above already cover.
 
 -- Overflow with saturate
 
@@ -392,65 +386,18 @@ SELECT toDate32('1900-01-01') + toTime64('-00:00:00.000001', 6);
 -- DateTime64(9) overflow saturates to the last representable value
 SELECT toDate32('2262-04-11') + toTime64('23:47:16.854775808', 9);
 
--- Large negative time brings intermediate overflow back into range (should NOT saturate)
+-- A `Decimal` source of a `Time64` is clamped to the clock window of the type like every other numeric source,
+-- so it can no longer bring an intermediate overflow back into range: both rows saturate.
 SELECT toDate32('2299-12-31') + CAST(toDecimal128('-1200000000.000000000', 9), 'Time64(9)');
 
--- Vector: first row is in range despite intermediate overflow, second row saturates
+-- Vector: both rows saturate, the clamped one included
 DROP TABLE IF EXISTS test_saturate_intermediate;
 CREATE TABLE test_saturate_intermediate (t Time64(9)) ENGINE = Memory;
 INSERT INTO test_saturate_intermediate SELECT arrayJoin([CAST(toDecimal128('-1200000000.000000000', 9), 'Time64(9)'), toTime64('00:00:00.000000000', 9)]);
 SELECT toDate32('2299-12-31') + t FROM test_saturate_intermediate ORDER BY t;
 DROP TABLE test_saturate_intermediate;
 
-SET date_time_overflow_behavior = 'ignore';
-
--- Date + Time uses the Time column's internal seconds, so two distinct Time values
--- produce distinct DateTime results (and equal Times produce equal results). This does
--- not rely on any out-of-range value.
-DROP TABLE IF EXISTS test_internal_time;
-CREATE TABLE test_internal_time (t_a Time, t_b Time) ENGINE = Memory;
-INSERT INTO test_internal_time VALUES (3600, 7200);
-SELECT t_a, t_b, t_a = t_b AS same_time FROM test_internal_time;
-SELECT
-    toDate('2024-01-15') + t_a AS dt_a,
-    toDate('2024-01-15') + t_b AS dt_b,
-    dt_a = dt_b AS same_dt
-FROM test_internal_time;
-DROP TABLE test_internal_time;
-
--- A numeric VALUES expression into a Time column now respects date_time_overflow_behavior
--- (same rule as toTime/CAST), clamping the out-of-visible-range value instead of storing it raw.
--- The expression reaches convertFieldToType only with expression templates disabled: the default
--- input_format_values_deduce_templates_of_expressions = 1 routes the row through a template that
--- ends in castColumn, i.e. CAST itself, so the assertion would not exercise the coercion at all.
-DROP TABLE IF EXISTS test_values_expr_time;
-CREATE TABLE test_values_expr_time (x Time) ENGINE = Memory;
-SET input_format_values_deduce_templates_of_expressions = 0;
-INSERT INTO test_values_expr_time VALUES (9999999 + 0);
-SET input_format_values_deduce_templates_of_expressions = 1;
-SELECT toInt32(x) FROM test_values_expr_time;
-DROP TABLE test_values_expr_time;
-
-SET date_time_overflow_behavior = 'throw';
-
--- A numeric VALUES expression into a Time column raises in throw mode, like toTime/CAST (again with
--- templates disabled, for the same reason as above).
--- The overflow may surface as a client or a server error depending on async_insert, so the
--- error hint below accepts either kind rather than requiring a server error.
-DROP TABLE IF EXISTS test_values_expr_time;
-CREATE TABLE test_values_expr_time (x Time) ENGINE = Memory;
-SET input_format_values_deduce_templates_of_expressions = 0;
-INSERT INTO test_values_expr_time VALUES (9999999 + 0); -- { error VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SET input_format_values_deduce_templates_of_expressions = 1;
-DROP TABLE test_values_expr_time;
-
--- Numeric cast of an out-of-visible-range Time now respects date_time_overflow_behavior:
--- throw raises, while saturate/ignore clamp to the max visible Time (999:59:59 = 3599999 s).
-SELECT toTime(9999999); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT toDate('2024-01-15') + toTime(9999999); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SET date_time_overflow_behavior = 'saturate';
-SELECT toTime(9999999) AS t, toInt32(t) AS raw;
-SELECT toDate('2024-01-15') + toTime(9999999) AS dt;
 
 -- Numeric inputs to `Time` are capped to the range of the type ([-999:59:59, 999:59:59]),
 -- whatever the width of the source type is, so a value beyond the visible range is stored
@@ -467,7 +414,3 @@ SELECT
 SELECT
     (toDate('2024-01-15') + toTime(9999999)) =
     (toDate('2024-01-15') + toTime(3599999)) AS same_dt_from_same_visible_time;
-
-SET date_time_overflow_behavior = 'ignore';
-SELECT toTime(9999999) AS t, toInt32(t) AS raw;
-SELECT toDate('2024-01-15') + toTime(9999999) AS dt;

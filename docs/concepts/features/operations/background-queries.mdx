@@ -169,7 +169,7 @@ LIMIT 1;
 The submission request can succeed even if background execution later fails. In that case, the exception is recorded
 in `system.query_log` rather than returned over the original connection.
 
-:::note Clustered and load-balanced deployments
+<Note title="Clustered and load-balanced deployments">
 `system.processes`, `system.query_log`, and `KILL QUERY` are node-local: each one only sees the queries of the server that answers it.
 
 A background query belongs to the server that accepted it, which is not necessarily the one your next request reaches through a load balancer. Read the whole cluster instead:
@@ -185,7 +185,7 @@ The same applies to `system.query_log`, and cancellation needs the cluster-wide 
 ```sql
 KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
 ```
-:::
+</Note>
 
 ## Query log flush delay {#query-log-flush-delay}
 

@@ -2,7 +2,10 @@
 title: Snippet Dicionário no Cloud
 ---
 
-<Tip>
-  Se você estiver usando um dicionário com o ClickHouse Cloud, use a opção de consulta DDL para criar seus dicionários e crie o dicionário com o usuário `default`.
-  Além disso, verifique a lista de fontes de dicionário compatíveis no [guia de compatibilidade do Cloud](/pt-BR/products/cloud/guides/cloud-compatibility).
-</Tip>
+<Note title="ClickHouse Cloud">
+  Use [`CREATE DICTIONARY`](/pt-BR/reference/statements/create/dictionary#creating-a-dictionary-with-a-ddl-query) para criar dicionários.
+
+  Ao criar um dicionário que lê dados de uma tabela do ClickHouse, inclua o nome de usuário e a senha de um usuário dedicado na cláusula `SOURCE`. Esse usuário precisa ter permissão `SELECT` na tabela de origem. Consulte o [exemplo de fonte de dicionário do ClickHouse](/pt-BR/reference/statements/create/dictionary/sources/clickhouse).
+
+  Verifique a lista de fontes de dicionário compatíveis no [guia de compatibilidade do Cloud](/pt-BR/products/cloud/guides/cloud-compatibility).
+</Note>

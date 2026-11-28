@@ -10,9 +10,7 @@ doc_type: 'guide'
 
 توضّح الأمثلة التالية بصورة مبسطة جدًا كيفية تحميل بيانات JSON المنظَّمة وشبه المنظَّمة. أما إذا كنت تتعامل مع JSON أكثر تعقيدًا، بما في ذلك البُنى المتداخلة، فراجع دليل [**Designing JSON schema**](/ar/guides/clickhouse/data-formats/json/schema).
 
-<div id="loading-structured-json">
-  ## تحميل JSON المهيكل
-</div>
+## تحميل JSON المهيكل {#loading-structured-json}
 
 في هذا القسم، نفترض أن بيانات JSON بتنسيق [`NDJSON`](https://github.com/ndjson/ndjson-spec) (JSON المحدَّد بسطر جديد)، المعروف بـ [`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow) في ClickHouse، وأنها ذات بنية منتظمة، أي أن أسماء الأعمدة وأنواعها ثابتة. يُعدّ `NDJSON` التنسيق المفضَّل لتحميل JSON نظرًا لإيجازه واستخدامه الفعّال للمساحة، غير أن تنسيقات أخرى مدعومة أيضًا لكلٍّ من [الإدخال والإخراج](/ar/reference/formats/JSON/JSON).
 
@@ -131,15 +129,13 @@ FORMAT JSONEachRow
 
 تفترض هذه الأمثلة استخدام التنسيق `JSONEachRow`. كما أن تنسيقات JSON الشائعة الأخرى مدعومة أيضًا، وتتوفر [هنا](/ar/guides/clickhouse/data-formats/json/formats) أمثلة على كيفية تحميلها.
 
-<div id="loading-semi-structured-json">
-  ## تحميل JSON شبه المهيكل
-</div>
+## تحميل JSON شبه المهيكل {#loading-semi-structured-json}
 
 في مثالنا السابق، حمّلنا بيانات JSON كانت ثابتة وبأسماء مفاتيح وأنواع معروفة جيدًا. لكن هذا لا ينطبق غالبًا، إذ يمكن إضافة مفاتيح أو قد تتغير أنواعها. وهذا شائع في حالات استخدام مثل بيانات observability.
 
 يتعامل ClickHouse مع ذلك من خلال نوع [`JSON`](/ar/reference/data-types/newjson) مخصص.
 
-تأمل المثال التالي من نسخة موسعة من مجموعة بيانات [بايثون PyPI dataset](https://clickpy.clickhouse.com/) أعلاه. هنا أضفنا عمود `tags` عشوائيًا يحتوي على أزواج مفتاح-قيمة عشوائية.
+تأمل المثال التالي من نسخة موسعة من [مجموعة بيانات Python PyPI](https://clickpy.clickhouse.com/) أعلاه. هنا أضفنا عمود `tags` عشوائيًا يحتوي على أزواج مفتاح-قيمة عشوائية.
 
 ```json
 {
@@ -159,11 +155,9 @@ FORMAT JSONEachRow
 
 ```
 
-عمود `tags` هنا غير متوقَّع، لذا يستحيل علينا نمذجته. لتحميل هذه البيانات، يمكننا استخدام المخطط السابق، مع إضافة عمود `tags` من النوع [`JSON`](/ar/reference/data-types/newjson):
+عمود `tags` هنا غير متوقَّع، لذا يستحيل علينا نمذجته. لتحميل هذه البيانات، يمكننا استخدام المخطط السابق، مع إضافة عمود `tags` من النوع [`JSON`](/ar/reference/data-types/newjson):
 
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE pypi_with_tags
 (
     `date` Date,
@@ -179,6 +173,10 @@ CREATE TABLE pypi_with_tags
 ENGINE = MergeTree
 ORDER BY (project, date);
 ```
+
+<Note>
+  في الإصدارات من 24.8 إلى 25.2، فعّل نوع `JSON` باستخدام `SET allow_experimental_json_type = 1;` قبل إنشاء الجدول.
+</Note>
 
 نملأ الجدول بالطريقة نفسها المستخدمة مع مجموعة البيانات الأصلية:
 
@@ -215,9 +213,7 @@ LIMIT 2
 
 لاحظ هنا فرق الأداء عند تحميل البيانات. يتطلب عمود JSON استنتاج النوع وقت الإدراج، بالإضافة إلى مساحة تخزين إضافية إذا وُجدت أعمدة لها أكثر من نوع واحد. ومع أنه يمكن تهيئة نوع JSON (راجع [Designing JSON schema](/ar/guides/clickhouse/data-formats/json/schema)) لتحقيق أداء مماثل لتعريف الأعمدة صراحةً، فإنه مصمم عمدًا ليكون مرنًا بشكل افتراضي. لكن هذه المرونة تأتي على حسابٍ ما.
 
-<div id="when-to-use-the-json-type">
-  ### متى تستخدم نوع JSON
-</div>
+### متى تستخدم نوع JSON {#when-to-use-the-json-type}
 
 استخدم نوع JSON إذا كانت بياناتك:
 

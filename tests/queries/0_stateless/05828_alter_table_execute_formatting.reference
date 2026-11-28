@@ -1,0 +1,3 @@
+ALTER TABLE t (EXECUTE `my cmd`( `a b` = 1))	1
+ALTER TABLE t (EXECUTE `a.b`( ))	1
+ALTER TABLE t (EXECUTE expire_snapshots( \'2020-01-01 00:00:00\'))	1

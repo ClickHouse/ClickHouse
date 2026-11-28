@@ -1,5 +1,6 @@
 #include <Core/ProtocolDefines.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ClientInfo.h>
@@ -18,6 +19,8 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
@@ -382,6 +385,56 @@ TEST(ClientInfoRead, CurrentRolesRoundTripsTriState)
     auto some = round_trip(std::vector<String>{"role_a", "role_b"});
     ASSERT_TRUE(some.has_value());
     EXPECT_EQ(*some, (std::vector<String>{"role_a", "role_b"}));
+}
+
+/// A full `ClientInfo` wire payload whose `current_roles` declares `declared_roles` names, the first of
+/// which declares `declared_name_size` bytes, with no role bytes following: the declared sizes come
+/// from the peer, and in interserver mode they are read before the secret hash of the query is checked.
+static String makeClientInfoWireWithOversizedRoles(UInt64 declared_roles, UInt64 declared_name_size)
+{
+    String wire = makeFullClientInfoWire(ClientInfo::QueryKind::SECONDARY_QUERY, "127.0.0.1:9000");
+    /// Drop the trailing `have_current_roles = no`.
+    wire.pop_back();
+
+    WriteBufferFromString buf(wire, AppendModeTag{});
+    writeBinary(static_cast<UInt8>(1), buf);
+    writeVarUInt(declared_roles, buf);
+    if (declared_roles)
+        writeVarUInt(declared_name_size, buf);
+    buf.finalize();
+    return wire;
+}
+
+TEST(ClientInfoRead, CurrentRolesCountIsBounded)
+{
+    /// The vector would be resized to the declared count before any role name arrives.
+    ClientInfo info;
+    ReadBufferFromOwnString in(makeClientInfoWireWithOversizedRoles(1ULL << 30, 0));
+    try
+    {
+        info.read(in, DBMS_TCP_PROTOCOL_VERSION);
+        FAIL() << "a current roles count of a gigabyte was accepted";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::TOO_LARGE_ARRAY_SIZE) << e.displayText();
+    }
+}
+
+TEST(ClientInfoRead, CurrentRoleNameSizeIsBounded)
+{
+    /// A role name would be resized to its declared size before its value arrives.
+    ClientInfo info;
+    ReadBufferFromOwnString in(makeClientInfoWireWithOversizedRoles(1, 1ULL << 30));
+    try
+    {
+        info.read(in, DBMS_TCP_PROTOCOL_VERSION);
+        FAIL() << "a role name of a gigabyte was accepted";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::TOO_LARGE_STRING_SIZE) << e.displayText();
+    }
 }
 
 /// An older peer can forward a server-initiated query whose context was never filled with a

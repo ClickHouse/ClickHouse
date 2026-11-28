@@ -1,0 +1,30 @@
+-- ntile rejects NULL, Nullable, fractional and string bucket counts
+-- nth_value takes exactly two arguments
+-- The offset of nth_value must be an integer
+-- The offset may come from a column and differ per row
+0	5	40	0
+1	4	30	0
+2	3	20	20
+3	2	10	10
+4	1	0	0
+-- A per-row offset of zero is an error
+-- NULL values inside the frame are returned as is; an offset past the frame gives NULL for Nullable input
+0	0	\N	3	\N
+1	\N	\N	3	\N
+2	2	\N	3	\N
+3	3	\N	3	\N
+4	\N	\N	3	\N
+-- An offset past the frame gives the default value of the type for non-Nullable input
+0	0		[]	1970-01-01
+1	0		[]	1970-01-01
+2	0		[]	1970-01-01
+-- Non-numeric argument types
+0	1	[1,1]	(1,'1')	1	2024-01-02	1	{1:'1'}
+1	1	[1,1]	(1,'1')	1	2024-01-02	1	{1:'1'}
+2	1	[1,1]	(1,'1')	1	2024-01-02	1	{1:'1'}
+-- Single-row frames: only the first value exists
+0	0	0	0	0
+1	1	0	1	0
+2	2	0	2	0
+-- Running frame without PARTITION BY across many small blocks
+0	0	1000

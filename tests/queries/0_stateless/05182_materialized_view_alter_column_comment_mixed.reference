@@ -1,0 +1,3 @@
+comment then query	before query
+query then comment	after query
+last comment wins	second

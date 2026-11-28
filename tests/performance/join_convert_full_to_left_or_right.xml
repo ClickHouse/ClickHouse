@@ -2,8 +2,32 @@
     <create_query>CREATE TABLE users1 (uid UInt64, name String, age Int16) ENGINE=MergeTree() ORDER BY ()</create_query>
     <create_query>CREATE TABLE users2 (uid UInt64, name String, age Int16) ENGINE=MergeTree() ORDER BY ()</create_query>
 
-    <fill_query>INSERT INTO users1 SELECT number as uid, 'Alice' as name, 30 as age FROM numbers(10000000)</fill_query>
-    <fill_query>INSERT INTO users2 SELECT number as uid, 'Alice2' as name, 30 as age FROM numbers(10000000)</fill_query>
+    <!-- The amount of data this query reads has to be a property of the query plan
+         and not of whatever the background merge happened to do first.
+
+         `ORDER BY ()` leaves no primary key, so the pushed-down `uid < 100`
+         predicate is resolved by the automatic column statistics, which prune at
+         part level and not at granule level (`Parts: 1/10` in `EXPLAIN
+         indexes = 1`): the query reads, in full, the one part that holds
+         `uid < 100`. Left to itself the `INSERT` writes parts whose boundaries
+         depend on the number of insert streams, and the merge then folds an
+         arbitrary number of them together, so `SelectedRows` was 2223906 where
+         that part was still a 1.1M-row one and 13343436 where it had already been
+         merged into a 6.7M-row one, and a merge landing between two runs made a
+         single server report both. The comparison then reports a change in
+         performance for two identical query plans - an amd shard read a third of
+         the rows its arm counterpart did.
+
+         `SYSTEM STOP MERGES` before the `INSERT` keeps the inserted parts as they
+         were written, and pinning the block size makes the way they are cut a
+         property of the settings rather than of the machine: 10 parts of 1048576
+         rows (the last one 562816) on every server. The predicate then sits in the
+         first part and the query reads 2097152 rows over 256 marks, run after run. -->
+    <fill_query>SYSTEM STOP MERGES users1</fill_query>
+    <fill_query>SYSTEM STOP MERGES users2</fill_query>
+
+    <fill_query>INSERT INTO users1 SELECT number as uid, 'Alice' as name, 30 as age FROM numbers(10000000) SETTINGS max_insert_threads = 1, max_block_size = 65536, min_insert_block_size_rows = 1048576, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO users2 SELECT number as uid, 'Alice2' as name, 30 as age FROM numbers(10000000) SETTINGS max_insert_threads = 1, max_block_size = 65536, min_insert_block_size_rows = 1048576, min_insert_block_size_bytes = 0</fill_query>
 
     <query><![CDATA[ SELECT count() FROM users2 u1 FULL JOIN (SELECT *, 'bar' as x FROM users1) u2 ON u1.uid = u2.uid WHERE x = 'bar' AND u2.uid < 100 ]]></query>
 

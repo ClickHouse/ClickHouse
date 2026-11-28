@@ -12,6 +12,11 @@ namespace DB
 
 class VectorSimilarityIndexCache;
 
+size_t getIndexStreamFileSize(
+    const IMergeTreeDataPartInfoForReader & data_part_info,
+    const String & stream_name,
+    const String & extension);
+
 class MergeTreeIndexReader
 {
 public:
@@ -25,7 +30,10 @@ public:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
-        MergeTreeReaderSettings settings_);
+        MergeTreeReaderSettings settings_,
+        /// Only readers whose caller tolerates a cancellation exception may pass true: a throw
+        /// from the marks read is reported as a corrupt part by readers that validate or load parts.
+        bool interruptible_marks_read_);
     virtual ~MergeTreeIndexReader();
 
     void read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges);
@@ -33,7 +41,6 @@ public:
     void adjustRightMark(size_t right_mark);
     void prefetchBeginOfRange(size_t from_mark, Priority priority);
     const StreamMap & getStreams() { return streams; }
-    static MergeTreeReaderSettings patchSettings(MergeTreeReaderSettings settings, MergeTreeIndexSubstream::Type substream);
 
 private:
     MergeTreeIndexPtr index;
@@ -44,6 +51,7 @@ private:
     UncompressedCache * uncompressed_cache;
     VectorSimilarityIndexCache * vector_similarity_index_cache;
     MergeTreeReaderSettings settings;
+    const bool interruptible_marks_read;
 
     StreamMap streams;
     std::vector<std::unique_ptr<MergeTreeReaderStream>> stream_holders;

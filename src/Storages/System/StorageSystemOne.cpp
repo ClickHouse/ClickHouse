@@ -1,4 +1,7 @@
 #include <Storages/System/StorageSystemOne.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Core/ProtocolDefines.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/ColumnConst.h>
@@ -15,7 +18,6 @@
 
 namespace DB
 {
-
 
 StorageSystemOne::StorageSystemOne(const StorageID & table_id_)
     : StorageWithCommonVirtualColumns(table_id_)
@@ -62,6 +64,24 @@ ReadFromSystemOneStep::ReadFromSystemOneStep(
 }
 
 
+ReadFromSystemOneStep::ReadFromSystemOneStep(SharedHeader header_)
+    : ISourceStep(std::move(header_))
+{
+}
+
+
+void ReadFromSystemOneStep::serialize(Serialization &) const
+{
+    /// The step has no state of its own beyond its header.
+}
+
+
+QueryPlanStepPtr ReadFromSystemOneStep::deserialize(Deserialization & ctx)
+{
+    return std::make_unique<ReadFromSystemOneStep>(ctx.output_header);
+}
+
+
 void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto column = DataTypeUInt8().createColumnConst(1, 0u)->convertToFullColumnIfConst();
@@ -77,3 +97,20 @@ void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, 
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemOne) }
+
+namespace DB
+{
+
+void registerReadFromSystemOneStep(QueryPlanStepRegistry & registry);
+void registerReadFromSystemOneStep(QueryPlanStepRegistry & registry)
+{
+    /// Declared with the version that introduced the step rather than the default "since version 0":
+    /// an older peer does not know the name, so the registry must not write it into a stream below
+    /// that version.
+    registry.registerStep(
+        "ReadFromSystemOne",
+        &ReadFromSystemOneStep::deserialize,
+        {{0, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS}});
+}
+
+}

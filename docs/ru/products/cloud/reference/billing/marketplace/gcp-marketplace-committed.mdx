@@ -6,45 +6,57 @@ keywords: ['gcp', 'google', 'маркетплейс', 'биллинг', 'с об
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Начните работу с ClickHouse Cloud в [GCP Marketplace](https://console.cloud.google.com/marketplace) через контракт с обязательствами по объёму расходов. Такой контракт, также известный как Private Offer, позволяет клиентам взять на себя обязательство потратить определённую сумму на ClickHouse Cloud в течение заданного периода.
 
 <div id="prerequisites">
-  ## Предварительные требования
+  ## Предварительные требования {#prerequisites}
 </div>
 
 * Private Offer от ClickHouse на основе конкретных условий договора.
 
-<div id="steps-to-sign-up">
-  ## Шаги для регистрации
+## Порядок регистрации {#steps-to-sign-up}
+
+1. Вы должны были получить письмо со ссылкой для просмотра и принятия индивидуального предложения.
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![Письмо GCP Marketplace с индивидуальным предложением](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-1.webp)
+  </Frame>
 </div>
 
-1. Вы должны были получить электронное письмо со ссылкой для просмотра и принятия вашего Private Offer.
+<br />
+
+2. Нажмите ссылку **Review Offer** в письме. Откроется страница GCP Marketplace с подробностями индивидуального предложения.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-1.webp" size="md" alt="Письмо от GCP Marketplace с индивидуальным предложением" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Сводка предложения в GCP Marketplace](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-2.webp)
+  </Frame>
+</div>
 
 <br />
 
-2. Нажмите ссылку **Review Offer** в письме. Вы перейдете на страницу GCP Marketplace с подробной информацией о Private Offer.
+<div className="ch-image-md">
+  <Frame>
+    ![Сводка цен в GCP Marketplace](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-3.webp)
+  </Frame>
+</div>
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-2.webp" size="md" alt="Сводка предложения в GCP Marketplace" border />
+3. Проверьте условия индивидуального предложения и, если всё верно, нажмите **Accept**.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-3.webp" size="md" alt="Сводка по ценам в GCP Marketplace" border />
-
-<br />
-
-3. Просмотрите сведения о Private Offer и, если все верно, нажмите **Accept**.
-
-<br />
-
-<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-4.webp" size="md" alt="Страница принятия предложения в GCP Marketplace" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Страница принятия предложения в GCP Marketplace](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-4.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -52,7 +64,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-5.webp" size="md" alt="Подтверждение принятия предложения в GCP Marketplace" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Подтверждение принятия в GCP Marketplace](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-5.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -60,68 +76,100 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-6.webp" size="md" alt="Страница ClickHouse Cloud в GCP Marketplace" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Страница ClickHouse Cloud в GCP Marketplace](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-6.webp)
+  </Frame>
+</div>
 
 <br />
 
-На этом этапе крайне важно перейти в ClickHouse Cloud и зарегистрироваться или войти в аккаунт. Без этого мы не сможем связать вашу подписку через маркетплейс GCP Marketplace с ClickHouse Cloud.
+На этом этапе крайне важно перейти в ClickHouse Cloud и зарегистрироваться или войти в систему. Без этого шага мы не сможем связать вашу подписку через GCP Marketplace с ClickHouse Cloud.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-7.webp" size="md" alt="Модальное окно подтверждения перехода с сайта GCP Marketplace" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Модальное окно подтверждения перехода с сайта GCP Marketplace](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-7.webp)
+  </Frame>
+</div>
 
 <br />
 
-6. После перехода в ClickHouse Cloud вы можете либо войти в существующий аккаунт, либо зарегистрировать новый.
+6. После перехода в ClickHouse Cloud вы можете войти с существующим аккаунтом или зарегистрировать новый.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-6.webp" size="md" alt="Страница входа в ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Страница входа ClickHouse Cloud](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-6.webp)
+  </Frame>
+</div>
 
 <br />
 
-Если вы новый пользователь ClickHouse Cloud, нажмите **Register** внизу страницы. Вам будет предложено создать нового пользователя и подтвердить адрес электронной почты. После подтверждения адреса электронной почты вы можете покинуть страницу входа ClickHouse Cloud и войти с новым именем пользователя по адресу [https://console.clickhouse.cloud](https://console.clickhouse.cloud).
+Если вы новый пользователь ClickHouse Cloud, нажмите **Register** внизу страницы. Вам будет предложено создать нового пользователя и подтвердить адрес электронной почты. После подтверждения адреса можно закрыть страницу входа ClickHouse Cloud и войти под новым именем пользователя на [https://console.clickhouse.cloud](https://console.clickhouse.cloud).
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-7.webp" size="md" alt="Страница регистрации в ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Страница регистрации ClickHouse Cloud](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-7.webp)
+  </Frame>
+</div>
 
 <br />
 
-Обратите внимание: если вы новый пользователь, вам также потребуется указать основную информацию о вашей компании. См. скриншоты ниже.
+Обратите внимание: новым пользователям также потребуется указать основные сведения о своей компании (см. скриншоты ниже).
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="Форма с информацией при регистрации в ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Форма регистрационных данных ClickHouse Cloud](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp)
+  </Frame>
+</div>
 
 <br />
 
-Если вы уже являетесь пользователем ClickHouse Cloud, просто войдите, используя свои учетные данные.
+Если вы уже пользуетесь ClickHouse Cloud, просто войдите со своими учётными данными.
 
-7. После успешного входа будет создана новая организация ClickHouse Cloud. Эта организация будет связана с вашим платежным аккаунтом GCP, и все использование будет тарифицироваться через ваш аккаунт GCP.
+7. После успешного входа будет создана новая организация ClickHouse Cloud. Она будет привязана к вашему платёжному аккаунту GCP, и всё использование будет оплачиваться через ваш аккаунт GCP.
 
-8. После входа вы сможете убедиться, что биллинг действительно привязан к GCP Marketplace, и начать настраивать ресурсы ClickHouse Cloud.
-
-<br />
-
-<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-5.webp" size="md" alt="Страница входа в ClickHouse Cloud" border />
+8. После входа вы можете убедиться, что биллинг действительно привязан к GCP Marketplace, и приступить к настройке облачных ресурсов ClickHouse Cloud.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-11.webp" size="md" alt="Страница новых сервисов в ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Страница входа ClickHouse Cloud](/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-5.webp)
+  </Frame>
+</div>
 
 <br />
 
-9. Вы должны получить электронное письмо с подтверждением регистрации:
+<div className="ch-image-md">
+  <Frame>
+    ![Страница новых сервисов ClickHouse Cloud](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-11.webp)
+  </Frame>
+</div>
+
+<br />
+
+9. Вы получите письмо с подтверждением регистрации:
 
 <br />
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-6.webp" size="md" alt="Письмо с подтверждением от GCP Marketplace" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Письмо с подтверждением от GCP Marketplace](/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-6.webp)
+  </Frame>
+</div>
 
 <br />
 
 <br />
 
-Если у вас возникнут какие-либо проблемы, пожалуйста, свяжитесь с [нашей службой поддержки](https://clickhouse.com/support/program).
+Если у вас возникнут проблемы, обращайтесь в [нашу службу поддержки](https://clickhouse.com/support/program).

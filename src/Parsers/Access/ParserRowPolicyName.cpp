@@ -30,7 +30,10 @@ namespace
 
             bool wildcard = false;
             bool default_database = false;
+            /// RowPolicyName cannot represent prefix wildcards (`db*.*`, `table*`), and `*.*`
+            /// would silently shrink to the current database. Reject both.
             if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, res_table_name, wildcard, default_database)
+                || wildcard
                 || (res_database.empty() && res_table_name.empty() && !default_database))
                 return false;
 

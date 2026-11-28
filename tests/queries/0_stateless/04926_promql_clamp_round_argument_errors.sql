@@ -10,7 +10,7 @@ SET allow_experimental_time_series_table = 1;
 
 CREATE TABLE prometheus ENGINE = TimeSeries;
 
-INSERT INTO prometheus (metric_name, tags, time_series) VALUES
+INSERT INTO prometheus (metric_name, tags, samples) VALUES
     ('m', map('host', 'h1'), [(toDateTime64(100, 3), 1.5), (toDateTime64(110, 3), 2.5)]);
 
 SELECT '-- wrong number of arguments';

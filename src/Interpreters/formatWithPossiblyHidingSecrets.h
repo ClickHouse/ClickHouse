@@ -16,5 +16,9 @@ struct SecretHidingFormatSettings
     bool one_line = true;
 };
 
+/// Whether this user may see plaintext secrets: the server setting, the format setting and the
+/// `displaySecretsInShowAndSelect` grant all have to allow it.
+bool canDisplaySecrets(const ContextPtr & context);
+
 String format(const SecretHidingFormatSettings & settings);
 }

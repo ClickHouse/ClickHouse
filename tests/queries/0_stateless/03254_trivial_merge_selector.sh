@@ -41,7 +41,7 @@ SELECT x FROM test ORDER BY x;
 OPTIMIZE TABLE test;
 "
 
-while true
+while clickhouse_test_time_left
 do
     ${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.parts WHERE active AND table = 'test' AND database = currentDatabase() AND name = 'all_1_10_1'" | grep . && break
     sleep 0.1

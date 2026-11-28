@@ -1,0 +1,18 @@
+-- native types are returned as they are
+LowCardinality(UInt64)	0
+LowCardinality(String)	compile_unit
+-- a different requested type is converted
+UInt64	0
+String	0
+LowCardinality(String)	0
+UInt64	31
+String	compile_unit
+LowCardinality(String)	0
+Array(String)	10
+Array(Tuple(Int64, Int64))	46
+-- inserting into a table whose column types differ from the format
+1	1
+-- a type that cannot be converted is a normal error
+TYPE_MISMATCH
+-- an unknown column name is a normal error
+THERE_IS_NO_COLUMN

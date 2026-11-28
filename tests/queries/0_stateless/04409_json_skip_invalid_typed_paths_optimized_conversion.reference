@@ -1,0 +1,31 @@
+--- Changed typed paths ---
+{"a":123}
+{"a":0}
+{"a":456}
+123
+0
+456
+--- New typed paths from dynamic ---
+{"a":123}
+{"a":0}
+{"a":789}
+123
+0
+789
+--- New typed paths from shared data ---
+{"a":100}
+{"a":0}
+{"a":200}
+100
+0
+200
+--- Without skip_invalid (should throw) ---
+--- Optimized vs legacy comparison ---
+optimized
+10
+0
+20
+legacy
+10
+0
+20

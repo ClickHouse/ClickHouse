@@ -10,8 +10,6 @@ echo "Starting the test"
 test_seed=`$CLICKHOUSE_CLIENT -q "SELECT toUnixTimestamp(now())"`
 
 res=`$CLICKHOUSE_CLIENT -mq "
-set enable_analyzer=1;
-set allow_experimental_analyzer=1;
 set max_threads='auto';
 
 DROP TABLE IF EXISTS st;

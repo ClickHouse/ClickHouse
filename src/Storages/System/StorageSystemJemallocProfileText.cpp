@@ -5,10 +5,11 @@
 #include <DataTypes/DataTypeString.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
+#include <Interpreters/Context.h>
+#include <Access/Common/AccessFlags.h>
 
 #if USE_JEMALLOC
 #    include <Core/Settings.h>
-#    include <Interpreters/Context.h>
 #    include <Processors/Sources/JemallocProfileSource.h>
 #    include <Common/Jemalloc.h>
 #endif
@@ -64,6 +65,8 @@ Pipe StorageSystemJemallocProfileText::read(
     [[maybe_unused]] const size_t max_block_size,
     const size_t /*num_streams*/)
 {
+    context->checkAccess(AccessType::SYSTEM_JEMALLOC);
+
 #if USE_JEMALLOC
     storage_snapshot->check(column_names);
 
@@ -84,7 +87,8 @@ Pipe StorageSystemJemallocProfileText::read(
         max_block_size,
         format,
         symbolize_with_inline,
-        collapsed_use_count);
+        collapsed_use_count,
+        /* remove_file= */ true);
 
     return Pipe(std::move(source));
 #else

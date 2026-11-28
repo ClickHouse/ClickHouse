@@ -1,6 +1,8 @@
 -- Tags: no-msan, long, no-azure-blob-storage, no-parallel-replicas
 -- msan: too slow
 -- no-parallel-replicas: EXPLAIN ESTIMATE reports no rows when the plan has no ReadFromMergeTree
+-- Random settings limits: max_bytes_before_external_set=(0, 0); max_bytes_ratio_before_external_set=(0, 0)
+-- The sets of `IN` stay in memory: a set written to disk while it is built is not used for partition pruning.
 
 SELECT '-- Single partition by function';
 

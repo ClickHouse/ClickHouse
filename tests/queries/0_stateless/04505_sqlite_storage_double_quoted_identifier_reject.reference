@@ -1,0 +1,5 @@
+Reading a column that does not exist in the remote table fails closed instead of returning silently wrong data:
+no such column
+Reading the existing base column still works:
+1
+2

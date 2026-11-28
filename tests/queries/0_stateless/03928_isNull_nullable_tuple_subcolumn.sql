@@ -5,7 +5,7 @@
 -- hardcoding its type as UInt8. But for Nullable(Tuple(... Nullable(T) ...)),
 -- the .null subcolumn in storage is Nullable(UInt8), causing a type mismatch.
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS t_nullable_tuple;
 

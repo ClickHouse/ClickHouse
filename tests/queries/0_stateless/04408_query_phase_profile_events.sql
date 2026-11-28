@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 -- Checks the per-phase query pre-execution ProfileEvents:
 --   QueryParseMicroseconds, QueryAnalysisMicroseconds,

@@ -1,0 +1,4 @@
+CREATE DATABASE default_1
+ENGINE = Dictionary
+COMMENT 'Test DB with \'comment\''
+Dictionary	Test DB with 'comment'

@@ -1,0 +1,7 @@
+undecodable path	400
+empty command	400
+create	200	{"result":""}
+get at the default cwd	200	{"result":"\n"}
+get at the given cwd	200	{"result":"hello\n"}
+ruok	200	{"result":"imok"}
+unknown four letter word	500

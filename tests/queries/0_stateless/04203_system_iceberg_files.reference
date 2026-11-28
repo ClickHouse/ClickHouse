@@ -30,7 +30,7 @@ file_size_positive:          1
 partition:                   {'eu', 1}
 schema_id:                   0
 sequence_number:             1
-sort_order_id:               ᴺᵁᴸᴸ
+sort_order_id:               1
 null_value_counts:           {1:0,2:0,3:0,4:0}
 value_counts:                {}
 column_sizes_keys:           [1,2,3,4]
@@ -49,7 +49,7 @@ file_size_positive:          1
 partition:                   {'us', 0}
 schema_id:                   0
 sequence_number:             1
-sort_order_id:               ᴺᵁᴸᴸ
+sort_order_id:               1
 null_value_counts:           {1:0,2:0,3:1,4:0}
 value_counts:                {}
 column_sizes_keys:           [1,2,3,4]

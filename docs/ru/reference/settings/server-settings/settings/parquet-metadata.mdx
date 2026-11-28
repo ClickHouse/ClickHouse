@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки задают параметры сервера ClickHouse и автоматически сгенерированы на основе исходного кода ClickHouse.
 
-<div id="parquet_metadata_cache_max_entries">
-  ## parquet_metadata_cache_max_entries
-</div>
+## parquet_metadata_cache_max_entries {#parquet_metadata_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="No" />Максимальное количество записей в кэше файлов метаданных Parquet. Ноль означает, что кэш отключён.
 
-<div id="parquet_metadata_cache_policy">
-  ## parquet_metadata_cache_policy
-</div>
+## parquet_metadata_cache_policy {#parquet_metadata_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики кэша метаданных Parquet.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики вытеснения кэша метаданных Parquet. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="parquet_metadata_cache_size">
-  ## parquet_metadata_cache_size
-</div>
+## parquet_metadata_cache_size {#parquet_metadata_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" changeable_without_restart="Yes" />Максимальный размер кэша метаданных Parquet в байтах. Значение 0 означает, что кэш отключён.
 
-<div id="parquet_metadata_cache_size_ratio">
-  ## parquet_metadata_cache_size_ratio
-</div>
+## parquet_metadata_cache_size_ratio {#parquet_metadata_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="Нет" />Размер защищённой очереди (в случае политики SLRU) в кэше метаданных Parquet относительно общего размера кэша.
 

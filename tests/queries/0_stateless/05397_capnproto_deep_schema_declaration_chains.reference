@@ -1,0 +1,17 @@
+member_chain
+1
+application_chain
+1
+nested_suffix_chains
+1
+alias_chain
+1
+const_chain
+1
+struct_chain_with_defaults
+1
+enum_annotation_chain
+1
+data	Int32					
+s	Tuple(\n    f Tuple(\n        f Tuple(\n            x Int32)))					
+e	Enum8(\'v\' = 0)					

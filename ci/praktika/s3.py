@@ -33,11 +33,15 @@ from .utils import Utils
 
 try:
     import boto3
+    from botocore import UNSIGNED
+    from botocore.config import Config
     from botocore.exceptions import ClientError, NoCredentialsError
 
     BOTO3_AVAILABLE = True
 except ImportError:
     BOTO3_AVAILABLE = False
+    Config = None
+    UNSIGNED = None
     ClientError = None
     NoCredentialsError = None
 
@@ -100,9 +104,10 @@ def _file_url(local_path: Path) -> str:
 
 class S3:
     _boto3_client = None
+    _boto3_client_anon = None
 
     @classmethod
-    def _get_boto3_client(cls):
+    def _get_boto3_client(cls, anonymous=False):
         # Honor Settings.AWS_PROFILE on developer machines so SSO / named
         # profiles work without having to export AWS_PROFILE in the shell.
         # On EC2 runners the configured profile typically isn't present in
@@ -112,8 +117,26 @@ class S3:
         # chain.
         if not BOTO3_AVAILABLE:
             return None
+        if anonymous:
+            # Unsigned requests for public read-only objects.
+            if cls._boto3_client_anon is None:
+                region = Settings.AWS_REGION or None
+                config = Config(
+                    signature_version=UNSIGNED,
+                    retries={"mode": "standard", "total_max_attempts": 13},
+                )
+                try:
+                    cls._boto3_client_anon = boto3.client(
+                        "s3", region_name=region, config=config
+                    )
+                except Exception as e:
+                    print(f"WARNING: Failed to initialize anonymous boto3 client: {e}")
+                    return None
+            return cls._boto3_client_anon
         if cls._boto3_client is None:
             region = Settings.AWS_REGION or None
+            # Standard mode caps a backoff at 20 s, so 13 attempts retry for up to about 3 minutes.
+            config = Config(retries={"mode": "standard", "total_max_attempts": 13})
             try:
                 if Settings.AWS_PROFILE:
                     import botocore.session
@@ -125,19 +148,23 @@ class S3:
                         cls._boto3_client = boto3.Session(
                             profile_name=Settings.AWS_PROFILE,
                             region_name=region,
-                        ).client("s3")
+                        ).client("s3", config=config)
                     else:
-                        cls._boto3_client = boto3.client("s3", region_name=region)
+                        cls._boto3_client = boto3.client(
+                            "s3", region_name=region, config=config
+                        )
                 else:
-                    cls._boto3_client = boto3.client("s3", region_name=region)
+                    cls._boto3_client = boto3.client(
+                        "s3", region_name=region, config=config
+                    )
             except Exception as e:
                 print(f"WARNING: Failed to initialize boto3 client: {e}")
                 return None
         return cls._boto3_client
 
     @classmethod
-    def _ensure_boto3(cls):
-        client = cls._get_boto3_client()
+    def _ensure_boto3(cls, anonymous=False):
+        client = cls._get_boto3_client(anonymous=anonymous)
         assert (
             BOTO3_AVAILABLE and client is not None
         ), "boto3 is required for S3 operations: install with `pip install boto3`"
@@ -313,10 +340,7 @@ class S3:
         except Exception as e:
             print(f"WARNING: Failed to record upload usage for {local_path}: {e}")
 
-        bucket = s3_path.split("/")[0]
-        endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
-        assert endpoint
-        return quote(f"https://{s3_full_path}".replace(bucket, endpoint), safe=":/?&=")
+        return cls.get_url(s3_full_path)
 
     @classmethod
     def put(
@@ -423,6 +447,7 @@ class S3:
         include_pattern="",
         _skip_download_counter=False,
         no_strict=False,
+        anonymous=False,
     ):
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
 
@@ -453,7 +478,7 @@ class S3:
                 local_file.parent.mkdir(parents=True, exist_ok=True)
 
                 def _download():
-                    client = cls._ensure_boto3()
+                    client = cls._ensure_boto3(anonymous=anonymous)
                     client.download_file(bucket, key, str(local_file))
 
                 cls._retry_on_no_credentials(_download)
@@ -478,7 +503,7 @@ class S3:
 
         # Recursive / pattern download via list_objects_v2
         try:
-            client = cls._ensure_boto3()
+            client = cls._ensure_boto3(anonymous=anonymous)
             s3_path_clean = str(s3_path).removeprefix("s3://")
             bucket, prefix = s3_path_clean.split("/", maxsplit=1)
             assert Path(local_path).is_dir(), f"Path [{local_path}] is not a directory"
@@ -643,6 +668,63 @@ class S3:
             return False
 
     @classmethod
+    def list_prefix(cls, s3_path, recursive=True):
+        """List object keys under ``[s3://]bucket/prefix``.
+
+        Keys come back in full, prefix included, bucket excluded.
+        ``recursive=False`` lists a single level: the immediate sub-prefixes
+        are returned alongside the keys, the way ``list_objects_v2`` reports
+        them under ``CommonPrefixes``, so each one ends with ``/``.
+        """
+        cleaned = str(s3_path).removeprefix("s3://").lstrip("/")
+        bucket, _, prefix = cleaned.partition("/")
+
+        if _is_local_run():
+            base = _local_root() / bucket
+            keys, sub_prefixes = [], set()
+            for path in sorted(base.rglob("*")):
+                if not path.is_file() or path.name.endswith(".s3meta.json"):
+                    continue
+                key = path.relative_to(base).as_posix()
+                if not key.startswith(prefix):
+                    continue
+                rest = key[len(prefix) :]
+                if recursive or "/" not in rest:
+                    keys.append(key)
+                else:
+                    sub_prefixes.add(prefix + rest.split("/", 1)[0] + "/")
+            return keys + sorted(sub_prefixes)
+
+        client = cls._ensure_boto3()
+        paginator = client.get_paginator("list_objects_v2")
+        kwargs = {"Bucket": bucket, "Prefix": prefix}
+        if not recursive:
+            kwargs["Delimiter"] = "/"
+        keys = []
+        for page in paginator.paginate(**kwargs):
+            for obj in page.get("Contents", []):
+                keys.append(obj["Key"])
+            if not recursive:
+                for common_prefix in page.get("CommonPrefixes", []):
+                    keys.append(common_prefix["Prefix"])
+        return keys
+
+    @classmethod
+    def get_url(cls, s3_path):
+        """The HTTP URL ``[s3://]bucket/key`` is served from.
+
+        In local mode this is the ``file://`` URL of the mapped path, so a
+        caller can hand the result to a downloader either way.
+        """
+        if _is_local_run():
+            return _file_url(_to_local_path(s3_path))
+        cleaned = str(s3_path).removeprefix("s3://").lstrip("/")
+        bucket = cleaned.split("/")[0]
+        endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
+        assert endpoint
+        return quote(f"https://{cleaned}".replace(bucket, endpoint), safe=":/?&=")
+
+    @classmethod
     def _upload_file_to_s3(
         cls, local_file_path, upload_to_s3: bool, text: bool = False, s3_subprefix=""
     ) -> str:
@@ -671,12 +753,8 @@ class S3:
     @classmethod
     def _dump_urls(cls, s3_path):
         # TODO: add support for path with '*'
-        bucket, name = s3_path.split("/")[0], s3_path.split("/")[-1]
-        if _is_local_run():
-            url = _file_url(_to_local_path(s3_path))
-        else:
-            endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
-            url = quote(f"https://{s3_path}".replace(bucket, endpoint), safe=":/?&=")
+        name = s3_path.split("/")[-1]
+        url = cls.get_url(s3_path)
 
         with open(Settings.ARTIFACT_URLS_FILE, "w", encoding="utf-8") as f:
             json.dump({name: url}, f)

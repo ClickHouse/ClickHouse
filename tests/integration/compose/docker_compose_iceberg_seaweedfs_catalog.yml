@@ -1,6 +1,6 @@
 services:
   seaweedfs:
-    image: chrislusf/seaweedfs:4.41
+    image: chrislusf/seaweedfs:4.48
     entrypoint: /bin/sh
     command:
       - -c

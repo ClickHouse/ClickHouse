@@ -1,0 +1,9 @@
+-- the mutation of the live table is pending
+1	0
+-- the readonly table reports the concurrently removed entry, not a missing object
+the reason is reported
+FILE_DOESNT_EXIST is reported
+S3_ERROR is not reported
+-- the next attempt succeeds once the metadata of the disk, which still lists the entry, is reloaded
+100
+0

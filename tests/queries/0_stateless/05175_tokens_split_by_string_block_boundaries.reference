@@ -1,0 +1,50 @@
+-- empty and separator-only strings
+[]
+[]
+[',']
+['a']
+-- separator crossing, starting at, and ending at the block boundary
+['aaaaaaaaaaaaaaa','b']
+['aaaaaaaaaaaaaaaa','b']
+['aaaaaaaaaaaaaa','b']
+['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','b']
+-- candidate first byte that does not complete a separator
+['aaaaaaaaaaaaaaa','b']
+['aaaaaaaaaaaaaaa=b','c']
+['a=b=c']
+['a','b=']
+['a','b']
+['aaaaaaaaaaaaaaa=']
+-- separators that are prefixes of one another: the first listed one wins
+['a',' b','c']
+['a','b','c']
+['a','b','c','d']
+['a','b','c','d']
+['a','b','c=d']
+-- strings of exactly one and two blocks
+['0123456789abcde']
+['0123456789abcd']
+['23456789abcd']
+['0123456789abcd','0123456789abcd']
+['0123456789abcde','0123456789abcde']
+-- runs of separators and tokens longer than a block
+['a','b']
+['a','b']
+['xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx','yyyyyyyyyyyyyyyyy','z']
+['xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx','yyyyyyyyyyyyyyyyy','z']
+100	['ab']
+200	['ab','cd']
+-- non-ASCII separators
+['a','b','c']
+['a','b','c']
+['a','b','c']
+['ααααααααααααααα','β']
+-- log-like lines
+['2024-01-01','12:00:00.123','[thread-7]','INFO','user_id','42','method','GET','path','/api/v1/items/ABC','status','200','ua','Mozilla/5.0','(X11;','Linux','x86_64)','ok']
+['key','v1','other','v2','last','3']
+['Many','years','later','as','he','faced','the','firing','squad','Colonel','Aureliano','Buendia','was','to','remember','that','distant','afternoon','42']
+-- the same tokenizer through a text index
+[1,2,3]
+[1]
+[4]
+[2]

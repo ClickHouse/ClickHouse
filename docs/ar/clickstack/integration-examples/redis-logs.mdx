@@ -6,25 +6,23 @@ description: 'مراقبة سجلات Redis باستخدام ClickStack'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
   **باختصار**
 
-  اجمع سجلات خادم Redis واستعرضها بصريًا في ClickStack باستخدام receiver ‏OTel ‏`filelog`. يتضمن ذلك مجموعة بيانات تجريبية ولوحة معلومات جاهزة مسبقًا.
+  اجمع سجلات خادم Redis واستعرضها بصريًا في ClickStack باستخدام المستقبِل ‏OTel ‏`filelog`. يتضمن ذلك مجموعة بيانات تجريبية ولوحة معلومات جاهزة مسبقًا.
 </Info>
 
 <div id="existing-redis">
-  ## التكامل مع Redis الحالي
+  ## التكامل مع Redis الحالي {#existing-redis}
 </div>
 
 يتناول هذا القسم كيفية تهيئة تثبيت Redis الحالي لديك لإرسال السجلات إلى ClickStack، وذلك من خلال تعديل إعداد ClickStack OTel collector.
 إذا أردت اختبار تكامل Redis قبل تهيئة إعدادك الحالي، فيمكنك استخدام الإعداد المهيأ مسبقًا وبيانات العينة في قسم [&quot;مجموعة البيانات التجريبية&quot;](/ar/clickstack/integration-examples/redis-logs#demo-dataset).
 
 <div id="prerequisites">
-  ### المتطلبات الأساسية
+  ### المتطلبات الأساسية {#prerequisites}
 </div>
 
 * مثيل ClickStack قيد التشغيل
@@ -43,7 +41,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
     * **Linux (apt/yum)**: `/var/log/redis/redis-server.log`
     * **macOS (Homebrew)**: `/usr/local/var/log/redis.log`
-    * **Docker**: غالبًا ما تُسجَّل السجلات في `stdout`، لكن يمكن تهيئته للكتابة إلى `/data/redis.log`
+    * **Docker**: غالبًا ما تُسجَّل السجلات في `stdout`، لكن يمكن تهيئته للكتابة إلى `/data/redis.log`
 
     إذا كان Redis يكتب سجلاته إلى `stdout`، فقم بتهيئته للكتابة إلى ملف عبر تحديث `redis.conf`:
 
@@ -67,7 +65,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="أنشئ تهيئة مخصصة لـ OTel collector" id="custom-otel">
-    يتيح لك ClickStack توسيع تهيئة OpenTelemetry Collector الأساسية عبر إرفاق ملف تهيئة مخصص وتعيين متغير بيئة. وتُدمَج هذه التهيئة المخصصة مع التهيئة الأساسية التي يديرها HyperDX عبر OpAMP.
+    يتيح لك ClickStack توسيع تهيئة OpenTelemetry Collector الأساسية عبر إرفاق ملف تهيئة مخصص وتعيين متغير بيئة. وتُدمَج هذه التهيئة المخصصة مع التهيئة الأساسية التي تديرها واجهة مستخدم ClickStack عبر OpAMP.
 
     أنشئ ملفًا باسم `redis-monitoring.yaml` بالتكوين التالي:
 
@@ -110,26 +108,26 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     هذا الإعداد:
 
     * يقرأ سجلات Redis من موقعها القياسي
-    * يحلّل تنسيق سجلات Redis باستخدام Regex لاستخراج الحقول المنظَّمة (`pid`, `role`, `timestamp`, `log_level`, `message`)
-    * يضيف السمة `source: redis` لتسهيل التصفية في HyperDX
-    * يوجّه السجلات إلى مُصدِّر ClickHouse عبر خط أنابيب مخصّص
+    * يحلّل تنسيق سجلات Redis باستخدام Regex لاستخراج الحقول المنظَّمة (`pid`, `role`, `timestamp`, `log_level`, `message`)
+    * يضيف السمة `source: redis` لتسهيل التصفية في واجهة مستخدم ClickStack
+    * يوجّه السجلات إلى مُصدِّر ClickHouse عبر خط أنابيب مخصّص
 
     <Note>
       - ما عليك سوى تعريف receivers وخطوط الأنابيب الجديدة في الإعداد المخصّص
-      - إن المعالجات (`memory_limiter`, `transform`, `batch`) والمُصدِّرات (`clickhouse`) معرّفة مسبقًا في إعداد ClickStack الأساسي، وما عليك إلا الإشارة إليها بالاسم
+      - إن المعالجات (`memory_limiter`, `transform`, `batch`) والمُصدِّرات (`clickhouse`) معرّفة مسبقًا في إعداد ClickStack الأساسي، وما عليك إلا الإشارة إليها بالاسم
       - يستخرج المشغّل `time_parser` الطوابع الزمنية من سجلات Redis للحفاظ على توقيتها الأصلي
-      - يستخدم هذا الإعداد `start_at: beginning` لقراءة جميع السجلات الموجودة عند بدء تشغيل المُجمِّع، ما يتيح لك رؤية السجلات فورًا. أمّا في عمليات النشر في بيئات الإنتاج، حيث تريد تجنّب إعادة إدخال السجلات عند إعادة تشغيل المُجمِّع، فغيّره إلى `start_at: end`.
+      - يستخدم هذا الإعداد `start_at: beginning` لقراءة جميع السجلات الموجودة عند بدء تشغيل المُجمِّع، ما يتيح لك رؤية السجلات فورًا. أمّا في عمليات النشر في بيئات الإنتاج، حيث تريد تجنّب إعادة إدخال السجلات عند إعادة تشغيل المُجمِّع، فغيّره إلى `start_at: end`.
     </Note>
   </Step>
 
   <Step title="تهيئة ClickStack لتحميل إعدادات مخصّصة" id="load-custom">
-    لتمكين إعدادات المجمِّع المخصّصة في عملية نشر ClickStack الحالية لديك، يجب عليك:
+    لتمكين إعدادات المجمِّع المخصّصة في عملية نشر ClickStack الحالية لديك، يجب عليك:
 
     1. تحميل ملف الإعدادات المخصّص إلى `/etc/otelcol-contrib/custom.config.yaml`
     2. تعيين متغيّر البيئة `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
-    3. تحميل دليل سجلات Redis لديك حتى يتمكّن المجمِّع من قراءتها
+    3. تحميل دليل سجلات Redis لديك حتى يتمكّن المجمِّع من قراءتها
 
-    ##### الخيار 1: Docker Compose
+##### الخيار 1: Docker Compose {#docker-compose}
 
     حدّث إعدادات نشر ClickStack لديك:
 
@@ -146,7 +144,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
           # ... other volumes ...
     ```
 
-    ##### الخيار 2: Docker Run (الصورة الشاملة)
+##### الخيار 2: Docker Run (الصورة الشاملة) {#all-in-one}
 
     إذا كنت تستخدم الصورة الشاملة مع Docker، فشغّل:
 
@@ -164,20 +162,26 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="التحقق من السجلات في HyperDX" id="verifying-logs">
-    بعد إكمال الإعداد، سجّل الدخول إلى HyperDX وتحقّق من أن السجلات تصل كما ينبغي:
+  <Step title="التحقق من السجلات في واجهة مستخدم ClickStack" id="verifying-logs">
+    بعد إكمال الإعداد، سجّل الدخول إلى واجهة مستخدم ClickStack وتحقّق من أن السجلات تصل كما ينبغي:
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="عرض السجلات" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![عرض السجلات](/images/clickstack/redis/redis-log-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="سجل" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![سجل](/images/clickstack/redis/redis-log.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## مجموعة البيانات التجريبية
-</div>
+## مجموعة البيانات التجريبية {#demo-dataset}
 
-للمستخدمين الذين يريدون اختبار تكامل Redis قبل تهيئة أنظمة production الخاصة بهم، نوفر مجموعة بيانات تجريبية من سجلات Redis مُولَّدة مسبقًا بأنماط واقعية.
+للمستخدمين الذين يريدون اختبار تكامل Redis قبل تهيئة أنظمة بيئة الإنتاج الخاصة بهم، نوفر مجموعة بيانات تجريبية من سجلات Redis مُولَّدة مسبقًا بأنماط واقعية.
 
 <Steps>
   <Step title="تنزيل مجموعة البيانات التجريبية" id="download-sample">
@@ -188,8 +192,8 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="إنشاء تهيئة collector للاختبار" id="test-config">
-    أنشئ ملفًا باسم `redis-demo.yaml` بالتهيئة التالية:
+  <Step title="إنشاء إعدادات جامع البيانات للاختبار" id="test-config">
+    أنشئ ملفًا باسم `redis-demo.yaml` بالإعدادات التالية:
 
     ```yaml
     cat > redis-demo.yaml << 'EOF'
@@ -230,8 +234,8 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="تشغيل ClickStack باستخدام التهيئة التجريبية" id="run-demo">
-    شغّل ClickStack باستخدام السجلات والتهيئة التجريبية:
+  <Step title="تشغيل ClickStack باستخدام الإعدادات التجريبية" id="run-demo">
+    شغّل ClickStack باستخدام السجلات والإعدادات التجريبية:
 
     ```bash
     docker run --name clickstack-demo \
@@ -246,29 +250,35 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
       **يؤدي ذلك إلى ربط ملف السجل مباشرةً داخل الحاوية. ويُستخدم هذا لأغراض الاختبار مع بيانات تجريبية ثابتة.**
     </Note>
 
-    ## التحقق من السجلات في HyperDX
+## التحقق من السجلات في واجهة مستخدم ClickStack {#verify-demo-logs}
 
     بعد تشغيل ClickStack:
 
-    1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج أولًا إلى إنشاء حساب)
+    1. افتح [واجهة مستخدم ClickStack](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج أولًا إلى إنشاء حساب)
     2. انتقل إلى Search view واضبط source على `Logs`
-    3. اضبط time range على **2025-10-26 10:00:00 - 2025-10-29 10:00:00**
+    3. اضبط النطاق الزمني على **2025-10-26 10:00:00 - 2025-10-29 10:00:00**
 
     <Info>
       **عرض المنطقة الزمنية**
 
-      يعرض HyperDX الطوابع الزمنية بحسب المنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
+      تعرض واجهة مستخدم ClickStack الطوابع الزمنية بحسب المنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
     </Info>
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="عرض السجل" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![عرض السجل](/images/clickstack/redis/redis-log-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="سجل" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![سجل](/images/clickstack/redis/redis-log.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## لوحات المعلومات والتصورات
-</div>
+## لوحات المعلومات والتصورات {#dashboards}
 
 لمساعدتك على بدء مراقبة Redis باستخدام ClickStack، نوفر التصورات الأساسية لسجلات Redis.
 
@@ -277,15 +287,23 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">نزّل ملف إعدادات لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step title="استيراد لوحة معلومات مُعدّة مسبقًا" id="import-dashboard">
-    1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات.
+  <Step title="استيراد لوحة معلومات جاهزة مسبقًا" id="import-dashboard">
+    1. افتح واجهة مستخدم ClickStack وانتقل إلى قسم لوحات المعلومات.
     2. انقر على &quot;استيراد لوحة معلومات&quot; في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث.
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="استيراد لوحة معلومات" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![استيراد لوحة معلومات](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
     3. ارفع ملف redis-logs-dashboard.json ثم انقر على إنهاء الاستيراد.
 
-    <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="إنهاء الاستيراد" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![إنهاء الاستيراد](/images/clickstack/redis/redis-import-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا" id="created-dashboard">
@@ -293,16 +311,20 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
       بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** (عدّله وفقًا لمنطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا افتراضيًا.
     </Note>
 
-    <Image img="/images/clickstack/redis/redis-logs-dashboard.webp" alt="لوحة معلومات نموذجية" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![لوحة معلومات نموذجية](/images/clickstack/redis/redis-logs-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### عدم تحميل إعدادات مخصّصة
+  ### عدم تحميل إعدادات مخصّصة {#troubleshooting-not-loading}
 </div>
 
 **تحقّق من ضبط متغيّر البيئة بشكل صحيح:**
@@ -333,9 +355,7 @@ docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 1
 # Should show your filelog/redis receiver configuration
 ```
 
-<div id="no-logs">
-  ### عدم ظهور سجلات في HyperDX
-</div>
+### عدم ظهور سجلات في واجهة مستخدم ClickStack {#no-logs}
 
 **تأكد من أن Redis يكتب السجلات إلى ملف:**
 
@@ -352,14 +372,14 @@ tail -f /var/log/redis/redis-server.log
 # Should show recent log entries in Redis format
 ```
 
-**تحقق من أن أداة التجميع يمكنها قراءة السجلات:**
+**تحقق من أن جامع البيانات يمكنه قراءة السجلات:**
 
 ```bash
 docker exec <container> cat /var/log/redis/redis-server.log
 # Should display Redis log entries
 ```
 
-**تحقّق من وجود أخطاء في سجلات أداة التجميع:**
+**تحقّق من وجود أخطاء في سجلات جامع البيانات:**
 
 ```bash
 docker exec <container> cat /etc/otel/supervisor-data/agent.log
@@ -375,7 +395,7 @@ docker volume inspect <volume-name>
 ```
 
 <div id="logs-not-parsing">
-  ### السجلات لا تُحلَّل على نحو صحيح
+  ### السجلات لا تُحلَّل على نحو صحيح {#logs-not-parsing}
 </div>
 
 **تحقق من أن تنسيق سجلات Redis يطابق النمط المتوقع:**
@@ -392,14 +412,12 @@ tail -5 /var/log/redis/redis-server.log
 * مثال: `12345:M 28 Oct 2024 14:23:45.123 * Server started`
 
 <div id="next-steps">
-  ## الخطوات التالية
+  ## الخطوات التالية {#next-steps}
 </div>
 
 * أعدّ [التنبيهات](/ar/clickstack/features/alerts) للمقاييس المهمة (معدلات الخطأ، عتبات زمن الاستجابة)
 * أنشئ [لوحات معلومات](/ar/clickstack/features/dashboards/overview) إضافية لحالات استخدام محددة (مراقبة واجهة برمجة التطبيقات، أحداث الأمان)
 
-<div id="going-to-production">
-  ## الانتقال إلى بيئة الإنتاج
-</div>
+## الانتقال إلى بيئة الإنتاج {#going-to-production}
 
 يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما بالنسبة إلى عمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

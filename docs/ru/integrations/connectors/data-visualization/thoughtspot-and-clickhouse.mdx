@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'ThoughtSpot'
+slug: /integrations/thoughtspot
+keywords: ['clickhouse', 'ThoughtSpot', 'connect', 'integrate', 'ui']
+description: 'ThoughtSpot — аналитическая платформа на базе ИИ, которая позволяет искать, исследовать и визуализировать данные в реальном времени.'
+title: 'ThoughtSpot'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
+import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+ThoughtSpot может подключаться к ClickHouse Cloud или к развертыванию в собственной инфраструктуре с помощью встроенного коннектора ClickHouse.
+
+<Steps>
+  <Step title="Соберите сведения о подключении" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="Создайте соединение с ClickHouse в ThoughtSpot" id="2-create-a-clickhouse-connection-in-thoughtspot">
+    1. Перейдите в раздел **Data workspace** &gt; **Connections**.
+
+    2. Нажмите **+ Create connection**, выберите плитку **ClickHouse** и нажмите **Next**.
+
+    3. Укажите имя соединения, при желании — описание, а также сведения о подключении к ClickHouse, собранные на предыдущем шаге, и нажмите **Next**. Подробное описание каждого атрибута см. в [справочнике по соединению с ClickHouse](https://docs.thoughtspot.com/cloud/latest/connections-clickhouse-reference) в документации ThoughtSpot.
+
+    4. (Необязательно) Чтобы настроить тайм-аут на уровне запроса, откройте меню **Advanced Config**. В поле **Key** введите `queryTimeoutSeconds`, а в поле **Value** — значение тайм-аута в секундах. Рекомендуется не превышать 10 минут.
+
+    5. (Необязательно) Чтобы задать дополнительные пары ключ-значение, откройте меню **Advanced Config** и заполните поля **Key** и **Value**. Чтобы добавить другие пары, нажмите значок плюса (**+**).
+
+       <Note>
+         Все вводимые пары ключ-значение должны быть определены в вашем источнике данных ClickHouse. Пары ключ-значение чувствительны к регистру.
+       </Note>
+
+    6. Выберите нужные таблицы и столбцы и нажмите **Create connection**. Появится сообщение с количеством добавленных таблиц и столбцов.
+
+    Теперь соединение отображается на странице **Data workspace** &gt; **Connections**. Вы можете искать данные ClickHouse и выполнять запросы в реальном времени к связанным таблицам в ThoughtSpot.
+  </Step>
+</Steps>

@@ -1,0 +1,21 @@
+-- EXPLAIN PLAN actions = 1
+column_view: 0 1 0
+renamed_view: 0 1 0
+asterisk_view: 0 1 0
+expression_view: 0 0 1
+alias_view: 0 0 1
+alias_asterisk_view: 0 0 1
+-- EXPLAIN PIPELINE graph = 1, header = 1
+column_view: 0 1 0
+renamed_view: 0 1 0
+asterisk_view: 0 1 0
+expression_view: 0 0 1
+alias_view: 0 0 1
+alias_asterisk_view: 0 0 1
+-- the reader still queries every view
+column_view: a
+renamed_view: a
+asterisk_view: a
+expression_view: aEXPRESSION_SECRET
+alias_view: aALIAS_SECRET
+alias_asterisk_view: a

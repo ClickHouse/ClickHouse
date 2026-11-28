@@ -121,10 +121,15 @@ def report_s3_base():
 
 
 def master_coverage_url(sha):
-    """Link to the `llvm_coverage.info` published by `MasterCI` at master
-    commit `sha`."""
+    """Link to the `llvm_coverage.info` published for master commit `sha`.
+
+    Since 2026-10-09 the scheduled `CoverageReport` workflow measures master (one run
+    every 3 hours, on the commit current at that time); `MasterCI` no longer runs the
+    coverage jobs. The diff step probes the master-track commits in order and uses the
+    newest one with a published tracefile, so the gaps between the scheduled runs are
+    fine, but a wrong workflow prefix finds nothing at all."""
     prefix = _Environment.get_s3_prefix_static(
-        pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
+        pr_number=0, branch="master", sha=sha, workflow_name="CoverageReport"
     )
     return f"https://{S3_BUCKET_HTTP_ENDPOINT}/{prefix}/llvm_coverage/llvm_coverage.info"
 
@@ -672,15 +677,25 @@ if __name__ == "__main__":
 
             _sw = Utils.Stopwatch()
             try:
+                # Extra older master baselines downloaded by the diff script in
+                # this outcome; a transition must hold in all of them, filtering
+                # out lines that fire only occasionally on master.
+                _extra_baselines = tuple(
+                    sorted(
+                        str(p) for p in Path(TEMP_DIR).glob("base_llvm_coverage_*.info")
+                    )
+                )
                 _newly_covered_stats = generate_report(
                     current_info=str(_current_info_file),
                     baseline_info=str(_baseline_info_file),
                     output_path=_newly_covered_log,
+                    extra_baseline_infos=_extra_baselines,
                 )
                 _newly_info = (
                     f"{_newly_covered_stats['newly_covered']} newly covered lines in "
                     f"{_newly_covered_stats['newly_covered_files']} files, "
-                    f"{_newly_covered_stats['lost_coverage']} lines lost coverage"
+                    f"{_newly_covered_stats['lost_coverage']} lines lost coverage "
+                    f"(agreed by {_newly_covered_stats['baselines_used']} master baselines)"
                 )
                 print(f"Newly covered lines analysis: {_newly_info}")
                 newly_res = Result.create_from(
