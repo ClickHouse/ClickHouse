@@ -5,15 +5,27 @@
 #include <Core/SortCursor.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
 #include <Columns/replaceNegativeZeros.h>
+#include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char distinct_sorted_stream_transform_pause[];
+}
+
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
+
+/// Poll cancellation every this many rows while skipping plain (no-hash-table) ranges,
+/// so KILL QUERY interrupts long equal-key runs instead of waiting for the whole chunk.
+constexpr size_t poll_interval = 4096;
 
 namespace
 {
@@ -106,6 +118,19 @@ size_t DistinctSortedStreamTransform::buildFilterForRange(
     size_t count = 0;
     for (size_t i = range_begin; i < range_end; ++i)
     {
+        if ((i & 0xFFF) == 0)
+        {
+            if (i > 0) [[unlikely]]
+                FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
+            if (isCancelled())
+            {
+                /// The caller discards the chunk, so the rest of the filter is never consumed:
+                /// filling it would do the whole suffix of the cancellation that just arrived.
+                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled while hashing a range at a poll site");
+                return count;
+            }
+        }
+
         const auto emplace_result = state.emplaceKey(method.data, i, data.string_pool);
 
         /// emit the record if there is no such key in the current set, skip otherwise
@@ -114,6 +139,26 @@ size_t DistinctSortedStreamTransform::buildFilterForRange(
             ++count;
     }
     return count;
+}
+
+bool DistinctSortedStreamTransform::fillFilterRangeWithPolling(IColumnFilter & filter, const size_t begin, const size_t end)
+{
+    size_t pos = begin;
+    while (end - pos > poll_interval)
+    {
+        std::fill(filter.begin() + pos, filter.begin() + pos + poll_interval, 0);
+        pos += poll_interval;
+        FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
+        if (isCancelled())
+        {
+            /// The caller discards the chunk, so the rest of the filter is never consumed.
+            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled while skipping a plain range at a poll site");
+            return false;
+        }
+    }
+
+    std::fill(filter.begin() + pos, filter.begin() + end, 0);
+    return true;
 }
 
 void DistinctSortedStreamTransform::saveLatestKey(const size_t row_pos)
@@ -160,11 +205,31 @@ std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(c
     size_t output_rows = 0;
     const size_t range_end = getEqualRangeEndAssumeSorted(key_runs, sorted_columns, sorted_columns_descr, 0, chunk_rows);
     if (other_columns.empty())
-        std::fill(filter.begin(), filter.begin() + range_end, 0); /// skip rows already included in distinct on previous transform()
+    {
+        /// Skip the carried-over prefix from the previous transform, polling cancellation
+        /// inside it so a long all-same-key chunk stays interruptible.
+        if (!fillFilterRangeWithPolling(filter, 0, range_end))
+        {
+            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled while skipping the carried-over prefix");
+            return {range_end, output_rows};
+        }
+        FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
+        if (isCancelled())
+        {
+            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled at the carried-over prefix poll");
+            return {range_end, output_rows};
+        }
+    }
     else
     {
         constexpr bool clear_data = false;
         output_rows = ordinaryDistinctOnRange<clear_data>(filter, 0, range_end);
+        FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
+        if (isCancelled())
+        {
+            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled while hashing the carried-over prefix");
+            return {range_end, output_rows};
+        }
     }
 
     return {range_end, output_rows};
@@ -192,6 +257,18 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     /// (3) repeat until chunk is processed
     IColumn::Filter filter(chunk_rows);
     auto [range_begin, output_rows] = continueWithPrevRange(chunk_rows, filter); /// try to process chuck as continuation of previous one
+
+    if (isCancelled())
+    {
+        /// Late bail-out: `continueWithPrevRange` already reported no cancellation, so nothing was
+        /// interrupted at a poll site. A distinct message lets tests tell this apart from the polls.
+        LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled after the continuation range");
+        stopReading();
+        chunk.clear();
+        return;
+    }
+
+    size_t last_checked_row = range_begin;
     size_t range_end = range_begin;
     while (range_end != chunk_rows)
     {
@@ -202,7 +279,11 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
         if (other_columns.empty())
         {
             filter[range_begin] = 1;
-            std::fill(filter.begin() + range_begin + 1, filter.begin() + range_end, 0);
+            if (!fillFilterRangeWithPolling(filter, range_begin + 1, range_end))
+            {
+                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled after skipping a plain range");
+                break;
+            }
             ++output_rows;
         }
         else
@@ -210,14 +291,43 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
             // ordinary distinct in range if there are "non-sorted" columns
             constexpr bool clear_data = true;
             output_rows += ordinaryDistinctOnRange<clear_data>(filter, range_begin, range_end);
+            if (isCancelled())
+            {
+                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled after hashing a range");
+                break;
+            }
         }
 
         // set where next range start
         range_begin = range_end;
+
+        if (range_begin - last_checked_row >= 4096)
+        {
+            last_checked_row = range_begin;
+            FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
+            if (isCancelled())
+            {
+                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled at the outer-loop poll");
+                break;
+            }
+        }
     }
+    if (isCancelled())
+    {
+        /// Late bail-out after the loop already finished (e.g. the cancel arrived after the last
+        /// poll). Every poll site logs its own distinct "Cancelled while/at ..." message, so this
+        /// one being the only one proves no poll observed the cancellation.
+        LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled after the row processing loop");
+        stopReading();
+        chunk.clear();
+        return;
+    }
+
     /// if there is no any new rows in this chunk, just skip it
     if (!output_rows)
     {
+        if (isCancelled())
+            stopReading();
         chunk.clear();
         return;
     }
