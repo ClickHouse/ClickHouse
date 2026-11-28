@@ -10312,6 +10312,10 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         parts_holder.clear();
         cleanup_thread.wakeup();
 
+        /// The replaced parts may include the last part inserted with quorum.
+        if (replace)
+            cleanLastPartNode(partition_id);
+
         return entry;
     }
 
