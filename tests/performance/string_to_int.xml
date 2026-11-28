@@ -7,6 +7,10 @@
     </fill_query>
 
     <query>SELECT count(num::Int64) FROM numeric_strings FORMAT Null</query>
+    <!-- `count(num::Int64)` is answered from the row count (optimize_trivial_count_query), so these queries parse every row. -->
+    <query>SELECT sum(num::Int64) FROM numeric_strings FORMAT Null</query>
+    <query>SELECT sum(toUInt32OrZero(num)) FROM numeric_strings FORMAT Null</query>
+    <query>SELECT sum(toInt16OrNull(num)) FROM numeric_strings FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS numeric_strings</drop_query>
 </test>

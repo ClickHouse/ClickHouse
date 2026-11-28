@@ -454,7 +454,7 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
         && ((to.isDateTime() && (which.isDateOrDate32() || which.isDateTime64()))
             || (to.isDate() && (which.isDate32() || which.isDateTime() || which.isDateTime64())));
-    can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
+    can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isInteger();
 
     if (requested_result_is_nullable && (which.isString() || (cast_type == CastType::accurateOrNull && which.isFixedString())))
     {

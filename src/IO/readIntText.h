@@ -29,8 +29,9 @@ void assertEOF(ReadBuffer & buf);
 
 /// Without `CHECK_OVERFLOW` the accumulation of the digits, and the negation of the result for a
 /// negative number, are meant to wrap around - that is what "do not check overflow" means here.
-template <int base, typename T, typename ReturnType, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
-ReturnType NO_SANITIZE_UNSIGNED_OVERFLOW readIntTextInBaseImpl(T & x, ReadBuffer & buf)
+/// `Input` is a `ReadBuffer`, or anything with its `eof` and `position`.
+template <int base, typename T, typename ReturnType, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename Input>
+ReturnType NO_SANITIZE_UNSIGNED_OVERFLOW readIntTextInBaseImpl(T & x, Input & buf)
 {
     using UnsignedT = make_unsigned_t<T>;
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -46,7 +47,6 @@ ReturnType NO_SANITIZE_UNSIGNED_OVERFLOW readIntTextInBaseImpl(T & x, ReadBuffer
             return ReturnType(false);
     }
 
-    const size_t initial_pos = buf.count();
     bool has_sign = false;
     bool has_number = false;
     for (; !buf.eof(); ++buf.position())
@@ -154,47 +154,26 @@ handle_digit:
                     goto end;
             }
             has_number = true;
-            if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW && !is_big_int_v<T>)
+            if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
             {
-                /// Perform relativelly slow overflow check only when
-                /// number of decimal digits so far is close to the max for given type.
-                /// Example: 20 * 10 will overflow Int8.
-                constexpr size_t max_digits = (base == 10) ? std::numeric_limits<T>::max_digits10 : (
-                                              (base == 2) ? std::numeric_limits<T>::digits : (
-                                              (base == 8) ? ((std::numeric_limits<T>::digits + 2) / 3) : (
-                                              (base == 16) ? ((std::numeric_limits<T>::digits + 3) / 4) : 0)));
-
-                if (buf.count() - initial_pos + 1 >= max_digits)
+                /// `res * base + digit` must not exceed `max`, or `-min` (that is `max + 1`) for a negative number.
+                constexpr UnsignedT max_abs = static_cast<UnsignedT>(std::numeric_limits<T>::max());
+                constexpr UnsignedT min_abs = static_cast<UnsignedT>(max_abs + 1);
+                constexpr UnsignedT max_abs_div = max_abs / base;
+                constexpr UnsignedT max_abs_mod = max_abs % base;
+                constexpr UnsignedT min_abs_div = min_abs / base;
+                constexpr UnsignedT min_abs_mod = min_abs % base;
+                const UnsignedT bound_div = negative ? min_abs_div : max_abs_div;
+                if (res >= bound_div) [[unlikely]]
                 {
-                    if (negative)
+                    const UnsignedT bound_mod = negative ? min_abs_mod : max_abs_mod;
+                    if (res > bound_div || static_cast<UnsignedT>(digit) > bound_mod)
                     {
-                        T signed_res = static_cast<T>(-res);
-                        if (common::mulOverflow<T>(signed_res, base, signed_res) ||
-                            common::subOverflow<T>(signed_res, digit, signed_res))
-                        {
-                            if constexpr (throw_exception)
-                                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Overflow while parsing a number");
-                            else
-                                return ReturnType(false);
-                        }
-
-                        res = static_cast<UnsignedT>(-static_cast<UnsignedT>(signed_res));
+                        if constexpr (throw_exception)
+                            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Overflow while parsing a number");
+                        else
+                            return ReturnType(false);
                     }
-                    else
-                    {
-                        T signed_res = res;
-                        if (common::mulOverflow<T>(signed_res, base, signed_res) ||
-                            common::addOverflow<T>(signed_res, digit, signed_res))
-                        {
-                            if constexpr (throw_exception)
-                                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Overflow while parsing a number");
-                            else
-                                return ReturnType(false);
-                        }
-
-                        res = signed_res;
-                    }
-                    break;
                 }
             }
             res *= base;
@@ -214,20 +193,7 @@ end:
     if constexpr (is_signed_v<T>)
     {
         if (negative)
-        {
-            if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
-            {
-                if (common::mulOverflow<UnsignedT, Int8, T>(res, -1, x))
-                {
-                    if constexpr (throw_exception)
-                        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Overflow while parsing a number");
-                    else
-                        return ReturnType(false);
-                }
-            }
-            else
-                x = static_cast<T>(-res);
-        }
+            x = static_cast<T>(-res);
     }
 
     return ReturnType(true);
@@ -275,7 +241,7 @@ bool tryReadIntText(T & x, ReadBuffer & buf)
 
 
 /// Reads a decimal integer into an `Int128`, saturating to the `Int128` range instead of wrapping:
-/// `readIntText` skips the overflow check for big-int types, so a literal wider than `Int128` (39+ digits)
+/// `readIntText` does not check overflow by default, so a literal wider than `Int128` (39+ digits)
 /// is silently accepted modulo 2^128. Overflow is detected with an explicit per-digit threshold check
 /// (`common::mulOverflow` is a no-op stub for big-int types). The whole digit run is consumed and the
 /// saturated value keeps its sign, so a later range check sees the value on the correct side of its bounds.
@@ -368,14 +334,21 @@ T parseInt(std::string_view str)
 template <int base, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
 bool tryParseIntInBase(T & x, std::string_view str)
 {
-    ReadBufferFromMemory buf{std::move(str)};
-    return tryReadIntTextInBase<base, check_overflow>(x, buf) && buf.eof();
+    /// No `ReadBuffer`, so no virtual `next` at the end of the string.
+    struct Input
+    {
+        const char * pos;
+        const char * end;
+        [[nodiscard]] bool eof() const { return pos == end; }
+        const char *& position() { return pos; }
+    } input{str.data(), str.data() + str.size()};
+    return readIntTextInBaseImpl<base, T, bool, check_overflow>(x, input) && input.eof();
 }
 
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
 bool tryParseInt(T & x, std::string_view str)
 {
-    return tryParseIntInBase<10>(x, str);
+    return tryParseIntInBase<10, check_overflow>(x, str);
 }
 
 

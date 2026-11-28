@@ -1645,6 +1645,31 @@ struct ConvertThroughParsing
                 /// and `isAllRead` skips it.
                 trimRight(text, '\0');
             }
+            if constexpr (IsDataTypeNumber<ToDataType> && is_integer<typename ToDataType::FieldType>)
+            {
+                std::string_view digits = text;
+                if constexpr (std::is_same_v<FromDataType, DataTypeFixedString>)
+                    trimRight(digits, '\0');
+                /// The generic path below reads a `FixedString` of only zero bytes as 0.
+                if (std::is_same_v<FromDataType, DataTypeString> || !digits.empty())
+                {
+                    /// Same verdict and value as the generic path, which a rejected row reaches only in `Throw` mode.
+                    constexpr auto check_overflow
+                        = (exception_mode != ConvertFromStringExceptionMode::Throw || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+                        ? ReadIntTextCheckOverflow::CHECK_OVERFLOW
+                        : ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW;
+                    const bool parsed = tryParseIntInBase<10, check_overflow>(vec_to[i], digits);
+                    if (parsed || exception_mode != ConvertFromStringExceptionMode::Throw)
+                    {
+                        if (!parsed)
+                            vec_to[i] = static_cast<typename ToDataType::FieldType>(0);
+                        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+                            (*vec_null_map_to)[i] = !parsed;
+                        current_offset = next_offset;
+                        continue;
+                    }
+                }
+            }
             if constexpr (std::is_same_v<FromDataType, DataTypeString> && is_floating_point<typename ToDataType::FieldType>)
             {
                 if (settings.precise_float_parsing)

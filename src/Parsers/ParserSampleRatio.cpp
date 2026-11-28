@@ -53,10 +53,10 @@ static const char * readUInt128Text(ASTSampleRatio::BigNum & x, const char * pos
         ++significant;
 
     UInt128 tmp = 0;
-    const char * result = tryReadIntText(tmp, pos, end);
+    const char * result = tryReadIntText<ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>(tmp, pos, end);
     auto num_significant = result - significant;
-    /// tryReadIntText skips overflow checks for big-int types (is_big_int_v),
-    /// so values wrap modulo 2^128. Numbers with 40+ significant digits always overflow.
+    /// Without the overflow check every digit is read and the value wraps modulo 2^128.
+    /// Numbers with 40+ significant digits always overflow.
     /// For exactly 39, compare the significant digits lexicographically against 2^128 - 1.
     static constexpr std::string_view MAX_UINT128_STR = "340282366920938463463374607431768211455";
     if (num_significant >= 40 || (num_significant == 39 && std::string_view(significant, 39) > MAX_UINT128_STR))
