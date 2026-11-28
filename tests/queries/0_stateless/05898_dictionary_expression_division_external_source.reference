@@ -1,0 +1,7 @@
+-- the stored expression: as it was written for an external source, exact division for ClickHouse
+d_clickhouse	0	1
+d_clickhouse_legacy	1	0
+d_mysql	1	0
+d_postgresql	1	0
+-- a ClickHouse source still divides as the setting said when the dictionary was created
+3	3.5
