@@ -5641,6 +5641,29 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 }
 
 
+Coordination::RequestPtr StorageReplicatedMergeTree::getCleanLastPartNodeRequest(
+    zkutil::ZooKeeper & zookeeper, const MergeTreePartInfo & part_info) const
+{
+    const String quorum_last_part_path = fs::path(zookeeper_path) / "quorum" / "last_part";
+
+    String parts_with_quorum_str;
+    Coordination::Stat stat;
+    if (!zookeeper.tryGet(quorum_last_part_path, parts_with_quorum_str, &stat) || parts_with_quorum_str.empty())
+        return nullptr;
+
+    ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(format_version);
+    parts_with_quorum.fromString(parts_with_quorum_str);
+
+    auto partition_it = parts_with_quorum.added_parts.find(part_info.getPartitionId());
+    if (partition_it == parts_with_quorum.added_parts.end()
+        || !part_info.contains(MergeTreePartInfo::fromPartName(partition_it->second, format_version)))
+        return nullptr;
+
+    parts_with_quorum.added_parts.erase(partition_it);
+    return zkutil::makeSetRequest(quorum_last_part_path, parts_with_quorum.toString(), stat.version);
+}
+
+
 bool StorageReplicatedMergeTree::partIsInsertingWithParallelQuorum(const MergeTreePartInfo & part_info) const
 {
     auto zookeeper = getZooKeeper();
@@ -5650,23 +5673,7 @@ bool StorageReplicatedMergeTree::partIsInsertingWithParallelQuorum(const MergeTr
 
 bool StorageReplicatedMergeTree::partIsLastQuorumPart(const MergeTreePartInfo & part_info) const
 {
-    auto zookeeper = getZooKeeper();
-
-    const String parts_with_quorum_path = fs::path(zookeeper_path) / "quorum" / "last_part";
-
-    String parts_with_quorum_str = zookeeper->get(parts_with_quorum_path);
-
-    if (parts_with_quorum_str.empty())
-        return false;
-
-    ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(format_version);
-    parts_with_quorum.fromString(parts_with_quorum_str);
-
-    auto partition_it = parts_with_quorum.added_parts.find(part_info.getPartitionId());
-    if (partition_it == parts_with_quorum.added_parts.end())
-        return false;
-
-    return partition_it->second == part_info.getPartNameAndCheckFormat(format_version);
+    return getCleanLastPartNodeRequest(*getZooKeeper(), part_info) != nullptr;
 }
 
 
@@ -10654,7 +10661,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
         if (partIsLastQuorumPart(part->info))
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "Part {} is last inserted part with quorum in partition. Would not be able to drop",
+                            "Part {} contains the last inserted part with quorum in partition. Would not be able to drop",
                             part_name);
         }
 
@@ -10943,12 +10950,8 @@ bool StorageReplicatedMergeTree::dropPartImpl(
             return false;
         }
 
-        if (partIsLastQuorumPart(part->info))
-        {
-            if (throw_if_noop)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part {} is last inserted part with quorum in partition. Cannot drop", part_name);
-            return false;
-        }
+        /// Like DROP PARTITION, dropping the part that contains the last part inserted with quorum forgets it.
+        auto clean_last_part_node = getCleanLastPartNodeRequest(*zookeeper, part->info);
 
         if (partIsInsertingWithParallelQuorum(part->info))
         {
@@ -10986,6 +10989,8 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
         /// Just update version, because merges assignment relies on it
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "log", "", -1));
+        if (clean_last_part_node)
+            ops.emplace_back(clean_last_part_node);
         Coordination::Responses responses;
         Coordination::Error rc = zookeeper->tryMulti(ops, responses);
 

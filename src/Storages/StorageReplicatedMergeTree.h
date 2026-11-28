@@ -821,7 +821,10 @@ private:
     /// Deletes info from quorum/last_part node for particular partition_id.
     void cleanLastPartNode(const String & partition_id);
 
-    /// Part name is stored in quorum/last_part for corresponding partition_id.
+    /// Request removing the partition of part_info from quorum/last_part if part_info contains the part stored there, otherwise nullptr.
+    Coordination::RequestPtr getCleanLastPartNodeRequest(zkutil::ZooKeeper & zookeeper, const MergeTreePartInfo & part_info) const;
+
+    /// The part contains the part stored in quorum/last_part for its partition.
     bool partIsLastQuorumPart(const MergeTreePartInfo & part_info) const;
 
     /// Part currently inserting with quorum (node quorum/parallel/part_name exists)
