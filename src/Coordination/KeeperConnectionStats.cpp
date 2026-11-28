@@ -1,4 +1,5 @@
 #include <atomic>
+#include <limits>
 #include <Coordination/KeeperConnectionStats.h>
 
 namespace DB
@@ -6,7 +7,9 @@ namespace DB
 
 uint64_t KeeperConnectionStats::getMinLatency() const
 {
-    return min_latency.load(std::memory_order_relaxed);
+    /// `min_latency` holds the maximum value while there are no samples.
+    auto value = min_latency.load(std::memory_order_relaxed);
+    return value == std::numeric_limits<uint64_t>::max() ? 0 : value;
 }
 
 uint64_t KeeperConnectionStats::getMaxLatency() const
@@ -71,7 +74,7 @@ void KeeperConnectionStats::resetLatency()
     total_latency.store(0, std::memory_order_relaxed);
     count.store(0, std::memory_order_relaxed);
     max_latency.store(0, std::memory_order_relaxed);
-    min_latency.store(0, std::memory_order_relaxed);
+    min_latency.store(std::numeric_limits<uint64_t>::max(), std::memory_order_relaxed);
     last_latency.store(0, std::memory_order_relaxed);
 }
 

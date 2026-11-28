@@ -6,6 +6,8 @@
 #include <Common/SLRUCachePolicy.h>
 #include <Common/SIEVECachePolicy.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ServerOwnedMemory.h>
+#include <base/scope_guard.h>
 
 #include <base/UUID.h>
 #include <base/defines.h>
@@ -100,6 +102,10 @@ public:
         : cache_policy(std::move(cache_policy_))
     {}
 
+    /// The entries and the bookkeeping of the cache are the server's: setting, evicting and removing entries is done in a
+    /// `ServerOwnedMemoryScope`, see `Common/ServerOwnedMemory.h`. Not for caches owned by a query.
+    void markServerOwned() { server_owned = true; }
+
     MappedPtr get(const Key & key)
     {
         std::lock_guard lock(mutex);
@@ -146,6 +152,7 @@ public:
     /// Insert several entries under one lock.
     void setMany(const std::vector<Key> & keys, const std::vector<MappedPtr> & mapped)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         chassert(keys.size() == mapped.size());
         std::lock_guard lock(mutex);
         for (size_t i = 0; i < keys.size(); ++i)
@@ -170,6 +177,7 @@ public:
 
     void set(const Key & key, const MappedPtr & mapped)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         cache_policy->set(key, mapped);
     }
@@ -179,6 +187,7 @@ public:
     template <typename OnResident>
     bool setAndContains(const Key & key, const MappedPtr & mapped, OnResident && on_resident)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         cache_policy->set(key, mapped);
         if (!cache_policy->contains(key))
@@ -198,6 +207,8 @@ public:
     template <typename LoadFunc>
     std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
     {
+        /// Declared first, so that it covers the release of the token too.
+        auto server_owned_scope = serverOwnedScope();
         InsertTokenHolder token_holder;
         {
             std::lock_guard cache_lock(mutex);
@@ -229,7 +240,12 @@ public:
         }
 
         ++misses;
-        token->value = load_func();
+        {
+            /// The value is made at the level of the caller, who decides whom it is charged to.
+            server_owned_scope.reset();
+            SCOPE_EXIT({ server_owned_scope = serverOwnedScope(); });
+            token->value = load_func();
+        }
 
         std::lock_guard cache_lock(mutex);
 
@@ -264,6 +280,7 @@ public:
 
     void clear()
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         insert_tokens.clear();
         hits = 0;
@@ -273,12 +290,14 @@ public:
 
     void remove(const Key & key)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         cache_policy->remove(key);
     }
 
     void remove(std::function<bool(const Key&, const MappedPtr &)> predicate)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         cache_policy->remove(predicate);
     }
@@ -294,6 +313,7 @@ public:
     /// Callers reasoning about use_count should account for the extra ref.
     bool removeIfMatches(const Key & key, std::function<bool(const MappedPtr &)> predicate)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         auto value = cache_policy->get(key);
         if (!value || !predicate(value))
@@ -307,6 +327,7 @@ public:
     /// removeIfMatches, and like it bumps the LRU position of the resident.
     bool replaceIfMatches(const Key & key, const MappedPtr & expected, const MappedPtr & mapped)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         auto value = cache_policy->get(key);
         if (!value || value != expected)
@@ -319,6 +340,7 @@ public:
     /// `update` runs under the cache lock, so no eviction sees a changed resident with its old weight.
     bool updateIfMatches(const Key & key, std::function<bool(const MappedPtr &)> update)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         auto value = cache_policy->get(key);
         if (!value || !update(value))
@@ -353,12 +375,14 @@ public:
 
     void setMaxCount(size_t max_count)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         cache_policy->setMaxCount(max_count);
     }
 
     void setMaxSizeInBytes(size_t max_size_in_bytes)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         cache_policy->setMaxSizeInBytes(max_size_in_bytes);
     }
@@ -384,6 +408,14 @@ protected:
 
 private:
     std::unique_ptr<CachePolicy> cache_policy TSA_GUARDED_BY(mutex);
+    bool server_owned = false;
+
+    std::optional<ServerOwnedMemoryScope> serverOwnedScope() const
+    {
+        if (!server_owned)
+            return {};
+        return std::optional<ServerOwnedMemoryScope>(std::in_place);
+    }
 
     typename CachePolicy::OnRemoveEntryFunction makeOnRemoveEntryFunction()
     {

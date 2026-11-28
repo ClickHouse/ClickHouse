@@ -49,6 +49,7 @@ public:
 
 protected:
     void transform(Chunk & chunk) override;
+    Status prepareOnOutputFinished() override;
 
     bool finished_transform = false;
     bool total_prepared = false;
@@ -57,6 +58,8 @@ protected:
 private:
     void addToTotals(const Chunk & chunk, const IColumnFilter * filter);
     void prepareTotals();
+
+    bool draining = false;
 
     /// Params
     const ColumnsMask aggregates_mask;

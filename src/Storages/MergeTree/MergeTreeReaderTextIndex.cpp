@@ -1118,7 +1118,7 @@ private:
         size_t previous_read = std::numeric_limits<size_t>::max();
         for (size_t idx = 0; idx < ranks.size();)
         {
-            const size_t block_idx = ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+            const size_t block_idx = ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_SIZE;
             if (block_idx >= dir.numBlocks())
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Corrupt text index positions: rank {} is outside the token's {} blocks", ranks[idx], dir.numBlocks());
@@ -1149,17 +1149,17 @@ private:
             size_t needed = 0;
             do
             {
-                const size_t local_rank = ranks[group_end] % TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+                const size_t local_rank = ranks[group_end] % TextIndexBlockedPositionsCodec::BLOCK_SIZE;
                 needed += doc_offsets[local_rank + 1] - doc_offsets[local_rank];
                 ++group_end;
-            } while (group_end < ranks.size() && ranks[group_end] / TextIndexBlockedPositionsCodec::BLOCK_DOCS == block_idx);
+            } while (group_end < ranks.size() && ranks[group_end] / TextIndexBlockedPositionsCodec::BLOCK_SIZE == block_idx);
 
             /// Copy the whole block for many candidates and only their positions for few, so the lane stays within 4x of what the chunk needs.
             if (4 * needed < doc_offsets.back())
             {
                 for (; idx < group_end; ++idx)
                 {
-                    const size_t local_rank = ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+                    const size_t local_rank = ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_SIZE;
                     token_bounds.push_back(lane.size());
                     lane.insert(values.begin() + doc_offsets[local_rank], values.begin() + doc_offsets[local_rank + 1]);
                     token_bounds.push_back(lane.size());
@@ -1171,7 +1171,7 @@ private:
             lane.insert(values.begin(), values.begin() + doc_offsets.back());
             for (; idx < group_end; ++idx)
             {
-                const size_t local_rank = ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+                const size_t local_rank = ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_SIZE;
                 token_bounds.push_back(lane_begin + doc_offsets[local_rank]);
                 token_bounds.push_back(lane_begin + doc_offsets[local_rank + 1]);
             }

@@ -157,6 +157,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// skipping the name and aggregating with another method.
 /// Version 21 also adds `min_string_column_bytes_for_hash_join_row_store` to the join step settings.
 /// Version 22 adds version 1 of the `ReadFromTable` step, which carries the row policy filter of the read.
+/// Version 22 also adds the `window_sliding_aggregation_min_frame_rows` plan setting, written only towards a peer at
+/// this version or above. A peer below it adds the rows of every window frame again, which can change only the speed,
+/// the memory use and the last digits of floating-point results.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -204,6 +207,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
+/// First query-plan serialization version that knows the `window_sliding_aggregation_min_frame_rows` plan setting
+/// name. Gates writing it in `WindowStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_SLIDING_AGGREGATION = 22;
 /// First query-plan serialization version that knows the `enable_packed_string_keys_in_aggregation`
 /// plan setting name. Gates writing it in `AggregatingStep::serializeSettings` /
 /// `MergingAggregatedStep::serializeSettings`.

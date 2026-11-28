@@ -123,7 +123,7 @@ public:
                     const Int64 length = column_length->getInt(row);
                     typename std::decay_t<decltype(source)>::Slice slice;
                     if (length > 0)
-                        slice = source.getSliceFromRight(static_cast<UInt64>(length), static_cast<UInt64>(length));
+                        slice = source.getSliceFromRight(static_cast<UInt64>(length));
                     else if (length < 0)
                     {
                         const UInt64 abs_length = common::negateIgnoreOverflow(static_cast<UInt64>(length));

@@ -1,3 +1,4 @@
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -6,6 +7,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -127,6 +129,19 @@ static bool canUseTableFunctionForParallelReplicas(
     const bool has_final
         = table_function_node.hasTableExpressionModifiers() && table_function_node.getTableExpressionModifiers()->hasFinal();
     return isStorageEligibleForParallelReplicas(table_function_node.getStorage(), has_final, context);
+}
+
+bool canRunQueryOnEachReplicaShare(const QueryNode & query_node)
+{
+    return !(query_node.hasGroupBy() || query_node.hasHaving()
+        || query_node.hasWindow() || query_node.hasQualify()
+        || query_node.hasOrderBy() || query_node.isShuffle() || query_node.isDistinct()
+        || query_node.hasLimitByLimit() || query_node.hasLimitByOffset()
+        || query_node.hasLimitBy()
+        || query_node.hasLimit() || query_node.hasOffset()
+        || query_node.hasLimitAfter() || query_node.hasLimitUntil()
+        || hasWindowFunctionNodes(query_node.getProjectionNode())
+        || hasAggregateFunctionNodes(query_node.getProjectionNode()));
 }
 
 bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context)

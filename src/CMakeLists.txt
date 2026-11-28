@@ -575,8 +575,8 @@ add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
-elseif (USE_AVRO)
-    # The Avro input format reads Iceberg variants with the Parquet variant decoder.
+elseif (USE_AVRO OR USE_ORC)
+    # The Avro and ORC input formats read Iceberg variants with the Parquet variant decoder.
     list (APPEND dbms_sources Processors/Formats/Impl/Parquet/VariantEncoding.cpp)
     list (APPEND dbms_headers Processors/Formats/Impl/Parquet/VariantEncoding.h)
 endif()
@@ -1156,8 +1156,13 @@ if (ENABLE_TESTS)
     grep_wyrd_gtest_sources("${ClickHouse_SOURCE_DIR}/src" wyrd_gtest_sources)
     clickhouse_add_executable(unit_tests_wyrd ${wyrd_gtest_sources})
 
+    # `dbms` references symbols defined in `clickhouse_functions` and `clickhouse_storages_system`
+    # (e.g. `StorageSystemNumbers`, `clearPointInPolygonCache`). Builds without function and data
+    # sections (the coverage build) cannot drop these references, so the libraries must be linked.
     target_link_libraries(unit_tests_wyrd PRIVATE
         clickhouse_wyrd_enabled
+        clickhouse_functions
+        clickhouse_storages_system
         dbms
     )
 endif ()

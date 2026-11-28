@@ -3722,12 +3722,14 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster, db, unique):
     )
 
     num_rows = 25
+    log_anchor = instance.count_log_lines()
     for i in range(num_rows):
         message = json.dumps({"key": i, "value": i}) + "\n"
         channel.basic_publish(exchange=exchange, routing_key="", body=message)
 
     instance.wait_for_log_line(
-        "Failed to push to views. Error: Code: 153. DB::Exception: Division by zero"
+        "Failed to push to views. Error: Code: 153. DB::Exception: Division by zero",
+        look_behind_lines=f"+{log_anchor}",
     )
 
     count = [0]
