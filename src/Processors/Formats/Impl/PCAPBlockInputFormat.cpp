@@ -387,13 +387,24 @@ int pcapLinkTypeToDLT(UInt32 link_type)
 /// carried frame.
 constexpr UInt32 ppi_fixed_header_size = 8;
 
-Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen);
+/// The contents of a packet choose how many layers it has: a PPI header can name PPI as the link
+/// type of the frame it carries, an 802.1Q tag can be followed by another tag, and so on, and a
+/// header takes only a few bytes, so a single packet can nest millions of layers. The dissection
+/// of the PPI frames recurses once per layer, so only this many PPI headers nested one inside
+/// another are dissected, and the frame carried by the last of them is kept raw. The same limit
+/// applies to the 802.1Q tags appended by `appendCompleteVlanTags`. `libtins` has a limit of its
+/// own, `Tins::Internals::MAX_NESTED_PDUS`, for the layers that it dissects.
+constexpr UInt32 max_nested_layers = Tins::Internals::MAX_NESTED_PDUS;
+
+Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen, UInt32 ppi_nesting = 0);
 
 /// Dissects a PPI frame: the PPI header, and the frame it carries, which is dissected by
 /// `dissectFrame` according to the link type named in the header. `Tins::PPI` dissects the
 /// carried frame itself, but neither as a raw IP packet nor as an IEEE 802.3 frame with `SNAP`,
-/// so only the header is given to it. A frame whose PPI header was cut or is invalid is kept raw.
-Tins::PDU * dissectPPI(const uint8_t * data, UInt32 caplen)
+/// so only the header is given to it. A frame whose PPI header was cut or is invalid is kept raw,
+/// and so is the frame carried by a PPI header that has `max_nested_layers` PPI headers around it:
+/// `ppi_nesting` is the number of PPI headers that this frame is carried by.
+Tins::PDU * dissectPPI(const uint8_t * data, UInt32 caplen, UInt32 ppi_nesting)
 {
     if (caplen < ppi_fixed_header_size)
         return new Tins::RawPDU(data, caplen);
@@ -404,7 +415,14 @@ Tins::PDU * dissectPPI(const uint8_t * data, UInt32 caplen)
 
     auto ppi = std::make_unique<Tins::PPI>(data, ppi_length);
     if (ppi_length < caplen)
-        ppi->inner_pdu(dissectFrame(pcapLinkTypeToDLT(ppi->dlt()), data + ppi_length, caplen - ppi_length));
+    {
+        const uint8_t * frame = data + ppi_length;
+        const UInt32 frame_size = caplen - ppi_length;
+        if (ppi_nesting >= max_nested_layers)
+            ppi->inner_pdu(new Tins::RawPDU(frame, frame_size));
+        else
+            ppi->inner_pdu(dissectFrame(pcapLinkTypeToDLT(ppi->dlt()), frame, frame_size, ppi_nesting + 1));
+    }
     return ppi.release();
 }
 
@@ -418,17 +436,20 @@ bool isVlanTagType(UInt16 ether_type)
 /// Appends to `last` the 802.1Q tags that follow a link-layer header ending at `offset` and were
 /// captured completely, when `ether_type`, the type field of that header, names a tag. Returns the
 /// offset after the last appended tag; `last` is left pointing to it, and `ether_type` is set to
-/// the type field of the last appended tag.
+/// the type field of the last appended tag. At most `max_nested_layers` tags are appended: the
+/// tags after them are left to the caller, which keeps them raw.
 UInt32 appendCompleteVlanTags(Tins::PDU *& last, const uint8_t * data, UInt32 offset, UInt32 caplen, UInt16 & ether_type)
 {
     static constexpr UInt32 vlan_tag_size = 4;
-    while (isVlanTagType(ether_type) && offset + vlan_tag_size <= caplen)
+    UInt32 tags = 0;
+    while (tags < max_nested_layers && isVlanTagType(ether_type) && offset + vlan_tag_size <= caplen)
     {
         auto * tag = new Tins::Dot1Q(data + offset, vlan_tag_size);
         last->inner_pdu(tag);
         last = tag;
         offset += vlan_tag_size;
         ether_type = tag->payload_type();
+        ++tags;
     }
     return offset;
 }
@@ -436,19 +457,21 @@ UInt32 appendCompleteVlanTags(Tins::PDU *& last, const uint8_t * data, UInt32 of
 /// Dissects an Ethernet frame whose 802.1Q tags are followed by the length of an IEEE 802.3 frame
 /// instead of an EtherType: the Ethernet header, the tags, and the LLC data (see `dissectDot3`).
 /// `Tins::Dot1Q` takes the length for an EtherType and keeps the LLC data raw. Returns `nullptr`
-/// for a frame without tags, a frame cut inside a tag, and a tagged Ethernet II frame, which are
-/// dissected by `libtins`.
+/// for a frame without tags, a frame cut inside a tag, a tagged Ethernet II frame, and a frame
+/// with more than `max_nested_layers` tags, which are dissected by `libtins`.
 Tins::PDU * dissectVlanTaggedDot3(const uint8_t * data, UInt32 caplen, UInt16 ether_type)
 {
     static constexpr UInt32 vlan_tag_size = 4;
     UInt32 offset = ethernet_header_size;
     UInt16 type_or_length = ether_type;
-    while (isVlanTagType(type_or_length) && offset + vlan_tag_size <= caplen)
+    UInt32 tags = 0;
+    while (tags <= max_nested_layers && isVlanTagType(type_or_length) && offset + vlan_tag_size <= caplen)
     {
         type_or_length = static_cast<UInt16>((data[offset + 2] << 8) | data[offset + 3]);
         offset += vlan_tag_size;
+        ++tags;
     }
-    if (offset == ethernet_header_size || type_or_length > 1500)
+    if (tags == 0 || tags > max_nested_layers || type_or_length > 1500)
         return nullptr;
 
     auto eth = std::make_unique<Tins::EthernetII>(data, ethernet_header_size);
@@ -467,12 +490,12 @@ Tins::PDU * dissectVlanTaggedDot3(const uint8_t * data, UInt32 caplen, UInt16 et
 /// `dissectVlanTaggedDot3`), are dispatched here as well, and so are the BSD loopback frames (see
 /// `dissectLoopback`) and the PPI frames (see `dissectPPI`). The frames of all the other link
 /// types are kept as a single raw PDU.
-Tins::PDU * dissectFrameLayers(int dlt, const uint8_t * data, UInt32 caplen)
+Tins::PDU * dissectFrameLayers(int dlt, const uint8_t * data, UInt32 caplen, UInt32 ppi_nesting)
 {
     if (dlt == DLT_NULL && caplen >= loopback_header_size)
         return dissectLoopback(data, caplen, /*dissect_packet=*/ true);
     if (dlt == DLT_PPI)
-        return dissectPPI(data, caplen);
+        return dissectPPI(data, caplen, ppi_nesting);
 
     if (dlt == DLT_EN10MB && caplen >= ethernet_header_size)
     {
@@ -578,12 +601,13 @@ Tins::PDU * dissectCompleteOuterHeaders(int dlt, const uint8_t * data, UInt32 ca
 /// reports such a frame with `malformed_packet`; it is a valid record of the capture, so the frame
 /// is dissected up to its last complete outer header and the rest is kept raw (see
 /// `dissectCompleteOuterHeaders`). A raw IP frame whose IP header was cut is kept raw as a whole;
-/// `outerLayerType` still names its layer.
-Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen)
+/// `outerLayerType` still names its layer. `ppi_nesting` is the number of PPI headers that the
+/// frame is carried by (see `dissectPPI`).
+Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen, UInt32 ppi_nesting)
 {
     try
     {
-        return dissectFrameLayers(dlt, data, caplen);
+        return dissectFrameLayers(dlt, data, caplen, ppi_nesting);
     }
     catch (const Tins::malformed_packet &)
     {
@@ -1427,6 +1451,20 @@ complete outer header, and the rest is kept raw. IEEE 802.11 frames, with or
 without a radiotap header, are not: such a cut 802.11 frame produces a row like
 a frame of an unsupported link type, where `link_type` is `RAW`, `protocols` is
 `['RAW']`, and the layer-specific columns are empty.
+</Note>
+
+<Note>
+When the radiotap header of an IEEE 802.11 frame has the data padding flag
+(`0x20`), the 802.11 header is padded to a multiple of four bytes. The padding
+is skipped, and the packet is decoded after it.
+</Note>
+
+<Note>
+A packet can name layers nested one inside another without a limit, for
+example a long run of 802.1Q tags, MPLS labels, IP-in-IP headers, or PPI
+headers that carry PPI frames. At most 64 layers nested this way are
+dissected, which is far more than real traffic has; the rest of such a packet
+is kept as a `RAW` layer at the end of `protocols`.
 </Note>
 
 <Info>

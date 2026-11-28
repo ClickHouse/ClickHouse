@@ -62,6 +62,20 @@ a frame of an unsupported link type, where `link_type` is `RAW`, `protocols` is
 `['RAW']`, and the layer-specific columns are empty.
 </Note>
 
+<Note>
+When the radiotap header of an IEEE 802.11 frame has the data padding flag
+(`0x20`), the 802.11 header is padded to a multiple of four bytes. The padding
+is skipped, and the packet is decoded after it.
+</Note>
+
+<Note>
+A packet can name layers nested one inside another without a limit, for
+example a long run of 802.1Q tags, MPLS labels, IP-in-IP headers, or PPI
+headers that carry PPI frames. At most 64 layers nested this way are
+dissected, which is far more than real traffic has; the rest of such a packet
+is kept as a `RAW` layer at the end of `protocols`.
+</Note>
+
 <Info>
 A capture file is a sequence of packet records. Each record stores the
 capture timestamp, the number of bytes that were actually saved

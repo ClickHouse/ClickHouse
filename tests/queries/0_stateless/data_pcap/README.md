@@ -1,7 +1,8 @@
 # PCAP test captures
 
 `generate.py <output directory>` creates the captures used by
-`04498_pcap_input_format.sh` from self-authored Ethernet, IPv4, IPv6, TCP, UDP,
+`04498_pcap_input_format.sh`, `05898_pcap_nested_layers.sh` and
+`05899_pcap_radiotap_data_padding.sh` from self-authored Ethernet, IPv4, IPv6, TCP, UDP,
 and ICMP packets. It uses only the Python standard library. The test generates them
 into its own temporary directory, so that concurrent runs of the test do not
 rewrite each other's files.
@@ -67,3 +68,16 @@ rewrite each other's files.
 - `jumbogram.pcap` — an IPv6 UDP jumbogram (RFC 2675) whose length is in the
   Jumbo Payload option of the Hop-by-Hop header, in a frame longer than 65535
   bytes, so the ports and the payload come from the right offsets.
+- `radiotap_padding.pcap` — IEEE 802.11 data frames behind a radiotap header
+  with the data padding flag (`0x20`), which says that the 802.11 header is
+  padded to a multiple of four bytes: a QoS data frame without the flag, the
+  same frame with the flag and two bytes of padding, a frame with four
+  addresses and two bytes of padding, a QoS data frame with four addresses,
+  whose header needs no padding, and the padded QoS data frame cut inside the
+  padding.
+- `nested_ppi.pcapng`, `nested.pcapng` — packets with 200000 layers nested one
+  inside another: PPI headers that each name PPI as the link type of the frame
+  they carry, 802.1Q tags in front of an IPv4 packet and in front of an IEEE
+  802.3 frame, and MPLS labels, and a packet with 2000 IPv4 headers that each
+  carry an IPv4 packet. They are dissected up to a fixed number of layers, and
+  the rest is kept raw.

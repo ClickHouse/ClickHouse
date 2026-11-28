@@ -108,14 +108,16 @@ def write_pcap(path, records, snaplen=65535, linktype=1):
             file.write(packet)
 
 
-def write_pcapng(path, records, snaplen=65535):
-    """pcapng with a single section, a single Ethernet interface, and Enhanced Packet Blocks."""
+def write_pcapng(path, records, snaplen=65535, linktype=1):
+    """pcapng with a single section, a single interface, and Enhanced Packet Blocks.
+
+    `linktype` is the link type of the interface, `LINKTYPE_ETHERNET` by default."""
     def block(block_type, body):
         total_length = len(body) + 12
         return struct.pack("<II", block_type, total_length) + body + struct.pack("<I", total_length)
 
     out = block(0x0A0D0D0A, struct.pack("<IHHq", 0x1A2B3C4D, 1, 0, -1))  # Section Header Block
-    out += block(0x00000001, struct.pack("<HHI", 1, 0, snaplen))  # Interface Description Block, LINKTYPE_ETHERNET
+    out += block(0x00000001, struct.pack("<HHI", linktype, 0, snaplen))  # Interface Description Block
     for number, (packet, wire_length) in enumerate(records):
         timestamp = (1_700_000_000 + number) * 1_000_000  # microseconds, the default resolution
         padding = b"\x00" * (-len(packet) % 4)
@@ -327,6 +329,72 @@ dot11 = (
 write_pcap(out_dir / "dot11.pcap", [(dot11, len(dot11))], linktype=105)
 radiotap = struct.pack("<BBHI", 0, 0, 9, 0x2) + bytes([0]) + dot11
 write_pcap(out_dir / "radiotap.pcap", [(radiotap, len(radiotap))], linktype=127)
+
+# IEEE 802.11 data frames behind a radiotap header whose Flags field has the
+# data padding flag (0x20): the capturing driver pads the 802.11 header to a
+# multiple of four bytes, and the padding is not part of the carried packet.
+# - A QoS data frame with three addresses and no padding flag: the 26-byte
+#   header is followed by the LLC header right away.
+# - The same frame with the padding flag: two bytes of padding follow the QoS
+#   control field.
+# - A data frame with four addresses (To DS and From DS) and the padding flag:
+#   two bytes of padding follow the fourth address of the 30-byte header.
+# - A QoS data frame with four addresses and the padding flag: the 32-byte
+#   header needs no padding.
+# - The padded QoS frame cut by the snapshot length inside the padding.
+def dot11_data(frame_control, llc_padding, qos=False, four_addresses=False):
+    frame = (
+        bytes.fromhex(frame_control)
+        + struct.pack("<H", 0)
+        + bytes.fromhex("001122334455" "66778899aabb" "ccddeeff0011")
+        + struct.pack("<H", 0x10)
+    )
+    if four_addresses:
+        frame += bytes.fromhex("0a0b0c0d0e0f")
+    if qos:
+        frame += struct.pack("<H", 0)
+    return frame + bytes(llc_padding) + bytes.fromhex("aaaa03000000") + struct.pack(">H", 0x0800) + ipv4(17, udp_ping)
+
+
+def radiotap_frame(flags, frame):
+    return struct.pack("<BBHI", 0, 0, 9, 0x2) + bytes([flags]) + frame
+
+
+radiotap_padding = [
+    radiotap_frame(0x00, dot11_data("8802", 0, qos=True)),
+    radiotap_frame(0x20, dot11_data("8802", 2, qos=True)),
+    radiotap_frame(0x20, dot11_data("0803", 2, four_addresses=True)),
+    radiotap_frame(0x20, dot11_data("8803", 0, qos=True, four_addresses=True)),
+]
+radiotap_padding_records = [(packet, len(packet)) for packet in radiotap_padding]
+radiotap_padding_records.append((radiotap_padding[1][:9 + 26 + 1], len(radiotap_padding[1])))
+write_pcap(out_dir / "radiotap_padding.pcap", radiotap_padding_records, linktype=127)
+
+# Packets whose headers nest far deeper than any real packet: every layer takes
+# a few bytes, so a packet can name hundreds of thousands of them. They are
+# dissected up to a fixed number of layers, and the rest is kept raw.
+# - PPI headers (`LINKTYPE_PPI`, 192) that each name PPI as the link type of the
+#   frame they carry.
+# - 802.1Q tags, followed by an IPv4 UDP packet.
+# - MPLS labels without the bottom-of-stack bit, followed by the last label and
+#   an IPv4 UDP packet.
+# - 802.1Q tags, followed by the length of an IEEE 802.3 frame and LLC data.
+# - IPv4 packets that each carry an IPv4 packet (protocol 4).
+NESTED_LAYERS = 200_000
+ETHERNET_ADDRESSES = bytes.fromhex("00112233445566778899aabb")
+nested_ppi = struct.pack("<BBHI", 0, 0, 8, 192) * NESTED_LAYERS + b"\0"
+write_pcapng(out_dir / "nested_ppi.pcapng", [(nested_ppi, len(nested_ppi))], snaplen=len(nested_ppi), linktype=192)
+
+nested_ipv4 = ipv4(17, udp)
+for _ in range(2000):
+    nested_ipv4 = ipv4(4, nested_ipv4)
+nested = [
+    ETHERNET_ADDRESSES + struct.pack(">HH", 0x8100, 1) * NESTED_LAYERS + struct.pack(">H", 0x0800) + ipv4(17, udp),
+    ETHERNET_ADDRESSES + struct.pack(">H", 0x8847) + struct.pack(">I", 0x00010040) * NESTED_LAYERS + struct.pack(">I", 0x00010140) + ipv4(17, udp),
+    ETHERNET_ADDRESSES + struct.pack(">HH", 0x8100, 1) * NESTED_LAYERS + struct.pack(">H", 3) + bytes.fromhex("424203"),
+    ETHERNET_ADDRESSES + struct.pack(">H", 0x0800) + nested_ipv4,
+]
+write_pcapng(out_dir / "nested.pcapng", [(packet, len(packet)) for packet in nested], snaplen=max(len(packet) for packet in nested))
 
 # Complete IPv6 TCP packets behind a BSD loopback header with the values of
 # `AF_INET6` that are in captures (`LINKTYPE_NULL`): 24 (NetBSD, OpenBSD), 28
