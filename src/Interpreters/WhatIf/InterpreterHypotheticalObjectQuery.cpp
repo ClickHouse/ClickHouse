@@ -228,24 +228,30 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
         return {};
     }
 
-    /// same privilege as the real ADD PROJECTION, before the table is resolved so nothing about it leaks;
+    /// Only a temporary table is looked up before the check below. Looking up an ordinary table waits for its
+    /// startup, and an unknown database or a failed startup would answer before the access is checked.
+    auto table_id = context->tryResolveStorageID(StorageID(query.getDatabase(), query.getTable()), Context::ResolveExternal);
+    const bool is_temporary = static_cast<bool>(table_id);
+    if (!is_temporary)
+        table_id = StorageID(context->resolveDatabase(query.getDatabase()), query.getTable());
+
+    /// same privilege as the real ADD PROJECTION, before the table is looked up so nothing about it leaks;
     /// dropping needs it too, otherwise the drop alone would answer what the caller may not ask
     if (is_projection)
-        context->checkAccess(
-            AccessType::ALTER_ADD_PROJECTION, context->resolveDatabase(query.getDatabase()), query.getTable());
+        context->checkAccess(AccessType::ALTER_ADD_PROJECTION, table_id);
     /// Indexes need `SELECT` on their columns, which is checked once the index is built. Before that, the table lookup
     /// and the checks of its engine would reveal the existence and the engine of a table the user cannot see, both
     /// when creating and when dropping, so require the table to be visible first (any grant on it implies this).
     else
     {
-        context->checkAccess(
-            AccessType::SHOW_TABLES, context->resolveDatabase(query.getDatabase()), query.getTable());
+        context->checkAccess(AccessType::SHOW_TABLES, table_id);
         /// the `ADD INDEX` checks validate the whole table, so their errors can name any column
         if (query.kind == ASTHypotheticalObjectQuery::Create)
-            context->checkAccess(AccessType::SHOW_COLUMNS, context->resolveDatabase(query.getDatabase()), query.getTable());
+            context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
     }
 
-    auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
+    if (!is_temporary)
+        table_id = context->resolveStorageID(table_id);
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
     auto & store = context->getHypotheticalObjectStore();
 
