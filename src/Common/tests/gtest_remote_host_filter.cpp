@@ -149,3 +149,38 @@ TEST(RemoteHostFilter, AbsentSectionAllowsAllAndEmptySectionRejectsAll)
     EXPECT_THROW(filter.checkURL(Poco::URI("https://anything.example.com/")), DB::Exception);
     EXPECT_FALSE(filter.isBucketAllowed("s3.example.com", 443, "any"));
 }
+
+TEST(RemoteHostFilter, CheckHostName)
+{
+    DB::RemoteHostFilter filter;
+    EXPECT_TRUE(filter.checkHostName("anything.com"));
+
+    auto config = parseConfig(R"CONFIG(<clickhouse>
+    <remote_url_allow_hosts>
+        <host>plain.com</host>
+        <host>with-port.com:8443</host>
+        <host>[::1]:9000</host>
+        <host_regexp>^.*\.regexp\.org$</host_regexp>
+        <s3_bucket>s3.example.com/my-bucket</s3_bucket>
+        <s3_bucket>s3.port.com:9001/other-bucket</s3_bucket>
+    </remote_url_allow_hosts>
+</clickhouse>)CONFIG");
+    filter.setValuesFromConfig(*config);
+
+    /// A port in an entry does not matter: the check does not know the port.
+    EXPECT_TRUE(filter.checkHostName("plain.com"));
+    EXPECT_TRUE(filter.checkHostName("with-port.com"));
+    EXPECT_TRUE(filter.checkHostName("::1"));
+    EXPECT_TRUE(filter.checkHostName("sub.regexp.org"));
+    /// Both the path-style and the virtual-hosted-style host of a bucket.
+    EXPECT_TRUE(filter.checkHostName("s3.example.com"));
+    EXPECT_TRUE(filter.checkHostName("my-bucket.s3.example.com"));
+    EXPECT_TRUE(filter.checkHostName("s3.port.com"));
+    EXPECT_TRUE(filter.checkHostName("other-bucket.s3.port.com"));
+
+    EXPECT_FALSE(filter.checkHostName("other.com"));
+    EXPECT_FALSE(filter.checkHostName("sub.regexp.org.evil.com"));
+    EXPECT_FALSE(filter.checkHostName("my-bucket.s3.port.com"));
+    EXPECT_FALSE(filter.checkHostName("another-bucket.s3.example.com"));
+    EXPECT_FALSE(filter.checkHostName("xmy-bucket.s3.example.com"));
+}

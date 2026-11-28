@@ -9,6 +9,7 @@
 #include <Common/HTTPConnectionInfo.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Common/RemoteProxyConfigurationResolver.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
@@ -34,6 +35,7 @@
 #include <Poco/Net/SocketImpl.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/MapConfiguration.h>
+#include <Poco/Util/XMLConfiguration.h>
 
 #if USE_SSL
 #include <Common/tests/gtest_ephemeral_certificate.h>
@@ -56,6 +58,7 @@ namespace DB::ErrorCodes
 {
 extern const int SUPPORT_IS_DISABLED;
 extern const int TIMEOUT_EXCEEDED;
+extern const int UNACCEPTABLE_URL;
 }
 
 namespace
@@ -419,6 +422,53 @@ TEST_F(ConnectionPoolTest, CanReuse)
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reused]);
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+}
+
+/// The pool is shared by all requests to an endpoint. A connection that an internal request has left in it
+/// must not be handed to a request that may not resolve the host.
+TEST_F(ConnectionPoolTest, NameResolutionFilterIsCheckedBeforeReuse)
+{
+    std::istringstream config_xml( // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        "<clickhouse><remote_url_allow_hosts>"
+        "<host>allowed.test</host><check_name_resolution>true</check_name_resolution>"
+        "</remote_url_allow_hosts></clickhouse>");
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration(config_xml));
+    DB::NameResolutionFilter::setValuesFromConfig(*config);
+    ASSERT_TRUE(DB::NameResolutionFilter::isEnabled());
+    SCOPE_EXIT({
+        Poco::AutoPtr<Poco::Util::MapConfiguration> empty_config(new Poco::Util::MapConfiguration);
+        DB::NameResolutionFilter::setValuesFromConfig(*empty_config);
+    });
+
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    {
+        DB::NameResolutionFilter::InternalScope internal_scope;
+        auto connection = pool->getConnection(timeouts, nullptr);
+    }
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+
+    try
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        FAIL() << "Expected UNACCEPTABLE_URL";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(DB::ErrorCodes::UNACCEPTABLE_URL, e.code());
+    }
+
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+
+    {
+        DB::NameResolutionFilter::InternalScope internal_scope;
+        auto connection = pool->getConnection(timeouts, nullptr);
+        ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    }
 }
 
 TEST_F(ConnectionPoolTest, CanReuse10)

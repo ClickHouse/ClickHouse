@@ -30,6 +30,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
 #include <Core/UUID.h>
@@ -453,6 +454,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 {
     if (blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Fetching of part was cancelled");
+
+    /// The interserver host of another replica comes from its metadata in Keeper, not from a user.
+    NameResolutionFilter::InternalScope internal_scope;
 
     const auto data_settings = data.getSettings();
 

@@ -1,6 +1,7 @@
 #include <Common/HostResolvePool.h>
 
 #include <Common/DNSResolver.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/FailPoint.h>
 #include <Common/NetException.h>
 #include <Common/thread_local_rng.h>
@@ -148,6 +149,10 @@ void HostResolver::updateWeights()
 
 HostResolver::Entry HostResolver::resolve()
 {
+    /// On every connection, not only on an update: the addresses are shared by all connections to the host,
+    /// including internal ones.
+    NameResolutionFilter::check(host);
+
     if (isUpdateNeeded())
         update();
 

@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <Coordination/Defines.h>
 #include <Common/DNSResolver.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/isLocalAddress.h>
@@ -52,6 +53,16 @@ namespace
 {
 
 const std::string copy_lock_file = "STATE_COPY_LOCK";
+
+/// The raft peers come from the server configuration and from the cluster configuration replicated by Raft, so
+/// they are not subject to `remote_url_allow_hosts`. NuRaft resolves them in an internal thread of `asio`, which
+/// no `NameResolutionFilter::InternalScope` reaches, so they are registered as internal endpoints: the host
+/// together with the raft port.
+void addInternalEndpoints(const nuraft::cluster_config & config)
+{
+    for (const auto & server : config.get_servers())
+        NameResolutionFilter::addInternalEndpoint(server->get_endpoint());
+}
 
 bool isLocalhost(const std::string & hostname)
 {
@@ -195,6 +206,7 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
         int new_server_id = config.getInt(full_prefix + ".id");
         std::string hostname = config.getString(full_prefix + ".hostname");
         int port = config.getInt(full_prefix + ".port");
+        NameResolutionFilter::addInternalEndpoint(hostname, static_cast<UInt16>(port));
         bool can_become_leader = config.getBool(full_prefix + ".can_become_leader", true);
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
         bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);
@@ -383,7 +395,11 @@ ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore() const
 {
     auto entry_with_change = log_store->getLatestConfigChange();
     if (entry_with_change)
-        return ClusterConfig::deserialize(entry_with_change->get_buf());
+    {
+        auto config = ClusterConfig::deserialize(entry_with_change->get_buf());
+        addInternalEndpoints(*config);
+        return config;
+    }
     return nullptr;
 }
 
@@ -403,6 +419,7 @@ void KeeperStateManager::save_config(const nuraft::cluster_config & config)
     std::lock_guard lock(configuration_wrapper_mutex);
     nuraft::ptr<nuraft::buffer> buf = config.serialize();
     configuration_wrapper.cluster_config = nuraft::cluster_config::deserialize(*buf);
+    addInternalEndpoints(*configuration_wrapper.cluster_config);
 }
 
 const String & KeeperStateManager::getOldServerStatePath()

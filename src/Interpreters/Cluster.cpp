@@ -13,6 +13,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/DNSResolver.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
@@ -109,6 +110,8 @@ Cluster::Address::Address(
     , replica_index(replica_index_)
 {
     host_name = config.getString(config_prefix + ".host");
+    /// A host of a cluster from the server configuration is not subject to `remote_url_allow_hosts`.
+    NameResolutionFilter::addInternalHost(host_name);
     if (config.has(config_prefix + ".user"))
         user_specified = true;
 
@@ -186,6 +189,10 @@ Cluster::Address::Address(
         }
     }
     host_name = parsed_host_port.first;
+    /// A replica of a named cluster, such as the cluster of a `Replicated` database, is not subject to
+    /// `remote_url_allow_hosts`. The ad-hoc cluster of `remote` has no name, and its hosts are checked.
+    if (!params.cluster_name.empty())
+        NameResolutionFilter::addInternalHost(host_name);
     database_shard_name = info.shard_name;
     database_replica_name = info.replica_name;
     replica_group = info.replica_group;

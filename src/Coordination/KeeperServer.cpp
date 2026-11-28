@@ -33,6 +33,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/Stopwatch.h>
 #include <Common/saturatedWaitDuration.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -1546,6 +1547,9 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         if (raft_instance->get_srv_config(add->id) != nullptr)
             return Accepted;
 
+        /// NuRaft connects to the joining server right away, before the new configuration is saved (which is
+        /// where the peers are registered otherwise), and resolves it in a thread of its own.
+        NameResolutionFilter::addInternalEndpoint(add->endpoint);
         auto resp = raft_instance->add_srv(static_cast<nuraft::srv_config>(*add));
         resp->get();
         return resp->get_accepted() ? Accepted : Declined;
@@ -1637,6 +1641,8 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
     const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
     if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
+        /// See `applyConfigUpdate`.
+        NameResolutionFilter::addInternalEndpoint(add->endpoint);
         for (size_t i = 0; i < coordination_settings[CoordinationSetting::configuration_change_tries_count] && !is_recovering; ++i)
         {
             if (raft_instance->get_srv_config(add->id) != nullptr)

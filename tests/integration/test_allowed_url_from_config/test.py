@@ -1,6 +1,10 @@
+import os
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster, is_arm
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", main_configs=["configs/config_with_hosts.xml"])
@@ -604,6 +608,32 @@ def test_storage_engine_remote(start_cluster):
             == "Distributed"
         )
         node6.query("DROP TABLE test_remote_engine")
+
+
+def test_check_name_resolution(start_cluster):
+    config_path = "/etc/clickhouse-server/config.d/check_name_resolution.xml"
+    node6.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "configs/check_name_resolution.xml"), config_path
+    )
+    node6.query("SYSTEM RELOAD CONFIG")
+    try:
+        # A cluster of the server configuration is not subject to `remote_url_allow_hosts`.
+        assert (
+            node6.query(
+                "SELECT count() FROM cluster('check_name_resolution_cluster', system.one)"
+            )
+            == "1\n"
+        )
+        assert node6.query("SELECT * FROM remote('localhost', system.one)") == "0\n"
+        assert "not allowed in configuration file" in node6.query_and_get_error(
+            "SELECT * FROM remote('127.0.0.1', system.one)"
+        )
+
+        # None of the connections of the server itself was rejected.
+        assert not node6.contains_in_log("Resolution of the host name")
+    finally:
+        node6.exec_in_container(["rm", "-f", config_path], user="root")
+        node6.query("SYSTEM RELOAD CONFIG")
 
 
 @pytest.mark.skipif(is_arm(), reason="skip for ARM")

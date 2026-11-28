@@ -5,6 +5,7 @@
 #include <base/sleep.h>
 #include <Common/Exception.h>
 #include <Common/HTTPFieldLess.h>
+#include <Common/NameResolutionFilter.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 
@@ -47,6 +48,10 @@ public:
 
     Result authenticateRequest(Poco::Net::HTTPRequest & request) const
     {
+        /// The authentication server comes from the server configuration (`http_authentication_servers`,
+        /// token processors), so it is not subject to `remote_url_allow_hosts`.
+        NameResolutionFilter::InternalScope internal_scope;
+
         auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, timeouts);
         Poco::Net::HTTPResponse response;
 

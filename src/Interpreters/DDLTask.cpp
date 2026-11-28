@@ -26,6 +26,7 @@
 #include <base/sort.h>
 #include <Poco/Net/NetException.h>
 #include <Common/DNSResolver.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/config_version.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -83,6 +84,8 @@ HostID HostID::fromString(const String & host_port_str)
 
 bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
+    /// The hosts of a distributed DDL task come from the cluster metadata, not from a user.
+    NameResolutionFilter::InternalScope internal_scope;
     auto address = DNSResolver::instance().resolveAddress(host_name, port);
     return DB::isLocalAddress(address, clickhouse_port);
 }
@@ -91,6 +94,7 @@ bool HostID::isLoopbackHost() const
 {
     try
     {
+        NameResolutionFilter::InternalScope internal_scope;
         auto address = DNSResolver::instance().resolveAddress(host_name, port);
         return address.host().isLoopback();
     }

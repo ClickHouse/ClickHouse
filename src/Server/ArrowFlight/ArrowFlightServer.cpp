@@ -10,6 +10,7 @@
 
 #include <Core/Block.h>
 #include <Core/Settings.h>
+#include <Common/NameResolutionFilter.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/logger_useful.h>
@@ -774,7 +775,11 @@ void ArrowFlightServer::start()
     /// As Arrow Flight servers do: a message is not limited in size.
     builder.SetMaxReceiveMessageSize(-1);
     builder.SetMaxSendMessageSize(-1);
-    grpc_server = builder.BuildAndStart();
+    {
+        /// gRPC resolves the address to listen on, which comes from the server configuration.
+        NameResolutionFilter::InternalScope internal_scope;
+        grpc_server = builder.BuildAndStart();
+    }
     if (!grpc_server || selected_port == 0)
         throw Exception(ErrorCodes::NETWORK_ERROR, "Failed init Arrow Flight Server: cannot listen on {}", address_to_listen.toString());
 

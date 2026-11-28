@@ -106,6 +106,63 @@ bool RemoteHostFilter::isBucketAllowed(const std::string & endpoint_host, UInt16
         || s3_buckets.contains(endpoint_host + ":" + toString(endpoint_port) + "/" + bucket);
 }
 
+namespace
+{
+
+/// The host part of a `<host>` entry: `host:port` and `[ipv6]:port` lose the port; anything else, including a bare
+/// IPv6 address, is a host on its own.
+std::string_view hostPartOfEntry(std::string_view entry)
+{
+    if (entry.starts_with('['))
+    {
+        const auto closing = entry.find(']');
+        if (closing != std::string_view::npos)
+            return entry.substr(1, closing - 1);
+        return entry;
+    }
+
+    const auto colon = entry.find(':');
+    if (colon == std::string_view::npos || entry.find(':', colon + 1) != std::string_view::npos)
+        return entry;
+    return entry.substr(0, colon);
+}
+
+}
+
+bool RemoteHostFilter::checkHostName(const std::string & host) const
+{
+    if (!is_initialized)
+        return true;
+
+    std::lock_guard guard(hosts_mutex);
+
+    if (primary_hosts.contains(host))
+        return true;
+
+    for (const auto & entry : primary_hosts)
+        if (hostPartOfEntry(entry) == host)
+            return true;
+
+    for (const auto & regexp : regexp_hosts)
+        if (re2::RE2::FullMatch(host, regexp))
+            return true;
+
+    for (const auto & entry : s3_buckets)
+    {
+        /// The form `host[:port]/bucket` is validated in `setValuesFromConfig`.
+        const std::string_view entry_view = entry;
+        const auto slash = entry_view.find('/');
+        const auto endpoint_host = hostPartOfEntry(entry_view.substr(0, slash));
+        const auto bucket = entry_view.substr(slash + 1);
+        if (host == endpoint_host
+            || (host.size() == bucket.size() + 1 + endpoint_host.size() && host.starts_with(bucket)
+                && host[bucket.size()] == '.' && host.ends_with(endpoint_host)))
+            return true;
+    }
+
+    return false;
+}
+
 bool RemoteHostFilter::checkForDirectEntry(const std::string & str) const
 {
     if (!is_initialized)

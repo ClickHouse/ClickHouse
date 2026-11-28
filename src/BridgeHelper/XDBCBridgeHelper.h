@@ -10,6 +10,7 @@
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/BridgeProtocolVersion.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/SecretString.h>
 #include <Common/ShellCommand.h>
 #include <Common/ShellCommandsHolder.h>
@@ -69,6 +70,8 @@ public:
     {
         bridge_host = config.getString(BridgeHelperMixin::configPrefix() + ".host", DEFAULT_HOST);
         bridge_port = config.getUInt(BridgeHelperMixin::configPrefix() + ".port", DEFAULT_PORT);
+        /// The bridge is a part of the server, its address comes from the server configuration.
+        NameResolutionFilter::addInternalHost(bridge_host);
     }
 
 protected:
