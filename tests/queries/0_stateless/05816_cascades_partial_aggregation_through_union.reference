@@ -1,0 +1,45 @@
+-- the union runs on every node, so the aggregation over it is split into partial and merge
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Union
+          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+            ReadFromMergeTree (ParallelRead default.t_union_agg_left)
+          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+            ReadFromMergeTree (ParallelRead default.t_union_agg_right)
+-- overlapping keys, NULL values and several aggregates
+0	49500000000	99000	10	999990	99000
+1	49999600000	100000	1	999991	100000
+2	49999700000	100000	2	999992	100000
+3	49999800000	100000	3	999993	100000
+4	49999900000	100000	4	999994	100000
+5	500000	200000	-999990	999995	200000
+6	500000	200000	-999991	999996	200000
+7	500000	200000	-999992	999997	200000
+8	500000	200000	-999993	999998	200000
+9	500000	200000	-999994	999999	200000
+10	-50000000000	100000	-999995	-5	100000
+11	-50000100000	100000	-999996	-6	100000
+12	-50000200000	100000	-999997	-7	100000
+13	-50000300000	100000	-999998	-8	100000
+14	-50000400000	100000	-999999	-9	100000
+-- partial states in bucket order reach a memory-efficient merge one stream per node
+15	-499500000	2000000
+-- UNION DISTINCT
+15	105
+-- the union counts the rows of every branch: the plan does not depend on the branch order
+Expression ((Project names + Projection))
+  Aggregating
+    Union
+      Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+        ReadFromMergeTree (default.t_union_agg_left)
+      Expression ((Before GROUP BY + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers))))))
+        ReadFromMergeTree (default.t_union_agg_unique)
+Expression ((Project names + Projection))
+  Aggregating
+    Union
+      Expression ((Before GROUP BY + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers))))))
+        ReadFromMergeTree (default.t_union_agg_unique)
+      Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+        ReadFromMergeTree (default.t_union_agg_left)
