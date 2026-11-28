@@ -52,7 +52,6 @@
 #include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/types.h>
-#include <base/unit.h>
 #include <base/PackedStringRef.h>
 #include <fmt/ranges.h>
 
@@ -583,19 +582,20 @@ DictionaryBlockRanges blocksMatchingTokenKeyRanges(
     return merged_ranges;
 }
 
-/// Below this many compressed bytes the dictionary scan is cheap whatever the readable rows are,
+/// Below this many dictionary tokens the scan is cheap whatever the readable rows are,
 /// so the cost check below does not bypass it.
-constexpr size_t MIN_DICTIONARY_BYTES_TO_SKIP_PATTERN_SCAN = 1_MiB;
+constexpr size_t MIN_DICTIONARY_TOKENS_TO_SKIP_PATTERN_SCAN = 64 * 1024;
 
-/// Whether the dictionary scan over `block_ranges` reads more compressed bytes than the rows that are still
-/// readable take in the columns the index is built on. Each dictionary block starts a new compressed block,
-/// so the scanned bytes are the differences of the blocks' offsets in the dictionary file. The readable bytes
-/// are estimated from the compressed sizes of the indexed columns, which are known only for wide parts.
-/// Returns false when the rows are not narrowed down or a size is unknown.
-bool isPatternScanCostlierThanReadableRows(
-    const DictionarySparseIndex & sparse_index,
-    const DictionaryBlockRanges & block_ranges,
-    const MergeTreeIndexDeserializationState & state)
+/// How many uncompressed bytes of the indexed columns take as long to read and filter as one dictionary token takes
+/// to scan. Measured: a token costs 28..35 ns to decode and match, a byte of a `String` column 0.25..0.7 ns.
+constexpr size_t PATTERN_SCAN_TOKEN_COST_IN_COLUMN_BYTES = 100;
+
+/// Whether the dictionary scan over `block_ranges` costs more than reading the rows that are still readable in the
+/// columns the index is built on. The scan decodes and matches every token of the blocks, so its cost is the number
+/// of tokens, estimated as the number of blocks times the dictionary block size of the index. The cost of the rows
+/// is their uncompressed bytes, estimated from the sizes of the indexed columns, which are known only for wide parts.
+/// Returns false when the readable rows or a size are unknown.
+bool isPatternScanCostlierThanReadableRows(const DictionaryBlockRanges & block_ranges, const MergeTreeIndexDeserializationState & state)
 {
     if (!state.readable_ranges)
         return false;
@@ -605,28 +605,19 @@ bool isPatternScanCostlierThanReadableRows(
     if (total_rows == 0)
         return false;
 
-    const auto dictionary_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexDictionary);
-    const size_t dictionary_file_size = getIndexStreamFileSize(
-        part_info, state.index.getFileName() + dictionary_substream.suffix, dictionary_substream.extension);
-    if (dictionary_file_size == 0)
-        return false;
-
-    size_t dictionary_bytes_to_scan = 0;
+    size_t blocks_to_scan = 0;
     for (const auto & [range_begin, range_end] : block_ranges)
-    {
-        UInt64 begin_offset = sparse_index.getOffsetInFile(range_begin);
-        UInt64 end_offset = range_end < sparse_index.size() ? sparse_index.getOffsetInFile(range_end) : dictionary_file_size;
-        if (end_offset > begin_offset)
-            dictionary_bytes_to_scan += end_offset - begin_offset;
-    }
+        blocks_to_scan += range_end - range_begin;
 
-    if (dictionary_bytes_to_scan < MIN_DICTIONARY_BYTES_TO_SKIP_PATTERN_SCAN)
+    const size_t dictionary_block_size = typeid_cast<const MergeTreeIndexText &>(state.index).getParams().dictionary_block_size;
+    const size_t tokens_to_scan = blocks_to_scan * dictionary_block_size;
+    if (tokens_to_scan < MIN_DICTIONARY_TOKENS_TO_SKIP_PATTERN_SCAN)
         return false;
 
     size_t indexed_columns_bytes = 0;
     for (const auto & column_name : state.index.index.expression->getRequiredColumns())
     {
-        size_t column_bytes = part_info.getColumnSize(column_name).data_compressed;
+        size_t column_bytes = part_info.getColumnSize(column_name).data_uncompressed;
         if (column_bytes == 0)
             return false;
         indexed_columns_bytes += column_bytes;
@@ -641,7 +632,7 @@ bool isPatternScanCostlierThanReadableRows(
         readable_rows += index_granularity.getRowsCountInRange(range);
 
     const double readable_bytes = static_cast<double>(indexed_columns_bytes) * static_cast<double>(readable_rows) / static_cast<double>(total_rows);
-    return static_cast<double>(dictionary_bytes_to_scan) > readable_bytes;
+    return static_cast<double>(tokens_to_scan) * PATTERN_SCAN_TOKEN_COST_IN_COLUMN_BYTES > readable_bytes;
 }
 
 /// Unique identifier of the text index of a data part in the text index caches.
@@ -725,11 +716,13 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     analyzer = std::make_unique<TextIndexAnalyzer>(condition_text);
 
     /// Push the row ranges still readable after the analysis of the primary key and prior skip indexes into the analyzer.
+    /// When they cover the whole part, there is nothing to clip the postings to.
     if (state.readable_ranges)
     {
         const auto & index_granularity = state.part_info.getIndexGranularity();
         std::vector<RowsRange> readable_row_ranges;
         readable_row_ranges.reserve(state.readable_ranges->size());
+        size_t num_readable_rows = 0;
 
         for (const auto & range : *state.readable_ranges)
         {
@@ -737,10 +730,14 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
             size_t row_end = index_granularity.getMarkStartingRow(range.end);
 
             if (row_begin < row_end)
+            {
                 readable_row_ranges.emplace_back(row_begin, row_end - 1);
+                num_readable_rows += row_end - row_begin;
+            }
         }
 
-        analyzer->setReadableRows(std::move(readable_row_ranges));
+        if (num_readable_rows < state.part_info.getRowCount())
+            analyzer->setReadableRows(std::move(readable_row_ranges));
     }
 
     auto text_index_header = loadHeader(*index_stream, condition_text, index_id_for_caches);
@@ -909,11 +906,11 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     const bool intersect_dictionary = analyzer->canIntersectDictionary();
 
     /// The scan reads every dictionary block in `block_ranges` however few rows are still readable.
-    /// When the readable rows of the indexed columns take fewer bytes than those blocks, the scan
-    /// cannot pay off: skip it and let the filter evaluate the patterns on the readable rows.
+    /// When the readable rows of the indexed columns are cheaper to filter than the tokens of those blocks
+    /// to match, the scan cannot pay off: skip it and let the filter evaluate the patterns on the readable rows.
     /// The automaton walk may skip blocks inside the ranges, so its cost is not estimated here.
     /// Not cached in the pattern bypass cache: the decision depends on the readable ranges of the query.
-    if (!intersect_dictionary && isPatternScanCostlierThanReadableRows(sparse_index, block_ranges, state))
+    if (!intersect_dictionary && isPatternScanCostlierThanReadableRows(block_ranges, state))
     {
         analyzer->bypassPatternQueries();
         ProfileEvents::increment(ProfileEvents::TextIndexPatternScanSkippedByCost);

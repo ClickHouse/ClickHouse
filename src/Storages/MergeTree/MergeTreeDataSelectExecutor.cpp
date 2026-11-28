@@ -3552,7 +3552,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     if (index_helper->isTextIndex())
     {
         MergeTreeIndexGranulePtr granule;
-        reader.read(0, condition.get(), granule, all_match ? nullptr : &ranges);
+        /// The ranges are passed even when they cover the whole part: the cost of the pattern scan is weighed against them.
+        reader.read(0, condition.get(), granule, &ranges);
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
 
         auto may_be_true_on_range = [&](size_t mark_begin, size_t mark_end, auto && disjunction_result_fn) -> bool
