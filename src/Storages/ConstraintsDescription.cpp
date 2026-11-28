@@ -1,12 +1,12 @@
 #include <Storages/ConstraintsDescription.h>
 
+#include <algorithm>
+
 #include <Common/quoteString.h>
 #include <Core/Block.h>
 #include <Interpreters/ComparisonGraph.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeCNFConverter.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 
 #include <Parsers/ASTConstraintDeclaration.h>
@@ -19,12 +19,32 @@
 
 #include <Core/Defines.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/Passes/CNF.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/QueryTreePassManager.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/StorageID.h>
+
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/Planner.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/PlannerSteps.h>
+#include <Planner/Utils.h>
+
+#include <Processors/QueryPlan/QueryPlan.h>
+
+#include <Storages/ColumnsDescription.h>
+#include <Storages/StorageDummy.h>
 
 namespace DB
 {
@@ -32,6 +52,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 String ConstraintsDescription::toString() const
@@ -157,34 +178,140 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
     return std::make_unique<ComparisonGraph<ASTPtr>>(constraints_for_graph);
 }
 
-ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,
-                                                              const DB::NamesAndTypesList & source_columns_) const
+ConstraintsExpressions ConstraintsDescription::getExpressions(
+    ContextMutablePtr context, const NamesAndTypesList & source_columns_, const StorageID & table_id) const
 {
-    /// The columns that are physically available when the constraint is checked (the top-level table columns).
-    /// A constraint expression may reference subcolumns (e.g. `x.null` of a `Nullable` column, `arr.size0` of an
-    /// `Array`) that are not present in this block; they have to be extracted from their parent columns first.
+    auto is_check = [](const ASTPtr & constraint)
+    {
+        return constraint->as<const ASTConstraintDeclaration &>().type == ASTConstraintDeclaration::Type::CHECK;
+    };
+    if (std::ranges::none_of(constraints, is_check))
+        return {};
+
+    /// Only top-level columns are in the checked block; subcolumns are extracted from them.
     Block available_columns;
+    ColumnsDescription fake_columns;
     for (const auto & column : source_columns_)
+    {
         available_columns.insert({column.type->createColumn(), column.type, column.name});
+        fake_columns.add(ColumnDescription(column.name, column.type), /*after_column=*/ "", /*first=*/ false, /*add_subcolumns=*/ false);
+    }
+
+    /// Named as the real table, so that error messages and qualified names refer to it.
+    auto fake_storage = std::make_shared<StorageDummy>(table_id, fake_columns);
 
     ConstraintsExpressions res;
     res.reserve(constraints.size());
     for (const auto & constraint : constraints)
     {
         auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
-        if (constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
-        {
-            // TreeRewriter::analyze has query as non-const argument so to avoid accidental query changes we clone it
-            ASTPtr expr = constraint_ptr->expr->clone();
-            auto syntax_result = TreeRewriter(context).analyze(expr, source_columns_);
-            auto constraint_dag = ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActionsDAG(false, true);
+        if (constraint_ptr->type != ASTConstraintDeclaration::Type::CHECK)
+            continue;
 
-            /// Prepend actions that extract the required subcolumns from their parent columns, so the expression
-            /// can be evaluated on a block that contains only the top-level columns.
+        try
+        {
+            /// The list wrapper lets a bare subquery be resolved as an expression.
+            auto expression_list = make_intrusive<ASTExpressionList>();
+            ASTPtr expression_ast = constraint_ptr->expr->clone();
+            /// The AST may be re-parsed from stored text, e.g. from the metadata of a replicated table.
+            normalizeSetOperations(expression_ast, context);
+            expression_list->children.push_back(expression_ast);
+            auto expression = buildQueryTree(expression_list, context);
+
+            auto fake_table_expression = std::make_shared<TableNode>(fake_storage, context);
+            QueryAnalyzer analyzer(/*only_analyze_=*/ false);
+            analyzer.resolve(expression, fake_table_expression, context);
+            /// The planner tells a column from a lambda argument of the same name by the alias of its table.
+            fake_table_expression->setAlias("__table1");
+
+            /// A guard: no SQL path is known to give several expressions here.
+            if (expression->as<ListNode &>().getNodes().size() != 1)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "Constraint {} for table {} must be a single expression. Expression: ({})",
+                    backQuote(constraint_ptr->name), table_id.getNameForLogs(), constraint_ptr->expr->formatForErrorMessage());
+
+            /// The planner would turn these into inputs of the actions.
+            assertNoAggregateFunctionNodes(expression, "in CHECK constraint");
+            assertNoGroupingFunctionNodes(expression, "in CHECK constraint");
+            assertNoWindowFunctionNodes(expression, "in CHECK constraint");
+
+            auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+            /// Not a copy: functions of the returned actions may refer to the context while they are executed.
+            auto planner_context = std::make_shared<PlannerContext>(context, global_planner_context, SelectQueryOptions{});
+            collectSetsAndSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
+
+            auto [constraint_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+                expression,
+                /*input_columns=*/ {},
+                planner_context,
+                /*correlated_columns_set=*/ {},
+                /*use_column_identifier_as_action_node_name=*/ false);
+            correlated_subtrees.assertEmpty("in a CHECK constraint");
+
+            /// `CheckConstraintsTransform` builds the sets for `IN (SELECT ...)` from these plans.
+            for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
+            {
+                auto query_tree = subquery->detachQueryTree();
+                /// As for scalar subqueries; `QueryAnalysisPass` also creates the unique aliases.
+                QueryTreePassManager query_tree_pass_manager(context);
+                addQueryTreePasses(query_tree_pass_manager);
+                query_tree_pass_manager.run(query_tree);
+                /// The `Planner` mutates the options it is given.
+                auto subquery_options = SelectQueryOptions{}.subquery();
+                subquery_options.forceMaterializeCTE();
+                /// Planned as in `addBuildSubqueriesForSetsStepIfNeeded`; the filters let e.g. `Distributed` skip shards.
+                Planner subquery_planner(
+                    query_tree,
+                    subquery_options,
+                    std::make_shared<GlobalPlannerContext>(
+                        nullptr, nullptr, nullptr, collectFiltersForAnalysis(query_tree, subquery_options, nullptr)));
+                subquery_planner.buildQueryPlanIfNeeded();
+                subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
+            }
+
+            /// `CheckConstraintsTransform` reads the result by the name of the AST.
+            auto & outputs = constraint_dag.getOutputs();
+            const auto * result_node = outputs.at(0);
+            String result_name = constraint_ptr->expr->getColumnName();
+            if (result_node->result_name != result_name)
+                result_node = &constraint_dag.addAlias(*result_node, result_name);
+            outputs = {result_node};
+
+            /// The checked block is shared by all constraints, so the used columns must stay in it.
+            for (const auto * input : constraint_dag.getInputs())
+                if (input != result_node)
+                    outputs.push_back(input);
+
             auto extract_subcolumns_dag = createSubcolumnsExtractionActions(available_columns, constraint_dag.getRequiredColumnsNames(), context);
+            constraint_dag = ActionsDAG::merge(std::move(extract_subcolumns_dag), std::move(constraint_dag));
+
+            /// A guard: every input must be a header column, not e.g. a virtual column of the `StorageDummy`.
+            NameSet required_columns;
+            for (const auto * input : constraint_dag.getInputs())
+            {
+                if (!available_columns.has(input->result_name))
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                        "Unknown identifier {} in constraint {} for table {}. Expression: ({})",
+                        backQuote(input->result_name), backQuote(constraint_ptr->name), table_id.getNameForLogs(),
+                        constraint_ptr->expr->formatForErrorMessage());
+                required_columns.insert(input->result_name);
+            }
+
+            /// The violation message lists the required columns, keep them in the order of the header.
+            ColumnsWithTypeAndName ordered_inputs;
+            for (const auto & column : available_columns)
+                if (required_columns.contains(column.name))
+                    ordered_inputs.push_back(column);
+            constraint_dag = ActionsDAG::merge(ActionsDAG(ordered_inputs), std::move(constraint_dag));
+
             res.push_back(std::make_shared<ExpressionActions>(
-                ActionsDAG::merge(std::move(extract_subcolumns_dag), std::move(constraint_dag)),
-                ExpressionActionsSettings(context, CompileExpressions::yes)));
+                std::move(constraint_dag), ExpressionActionsSettings(context, CompileExpressions::yes)));
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("While building constraint {} for table {}. Expression: ({})",
+                backQuote(constraint_ptr->name), table_id.getNameForLogs(), constraint_ptr->expr->formatForErrorMessage());
+            throw;
         }
     }
     return res;

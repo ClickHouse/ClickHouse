@@ -82,6 +82,8 @@ private:
         unordered_map<StorageIDMaybeEmpty, TableLockHolder, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdContext
         = std::unordered_map<StorageIDMaybeEmpty, ContextPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdMutableContext
+        = std::unordered_map<StorageIDMaybeEmpty, ContextMutablePtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdBlock
         = std::unordered_map<StorageIDMaybeEmpty, SharedHeader, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdThreadGroup = std::
@@ -247,7 +249,7 @@ protected:
 private:
     bool isView(StorageIDMaybeEmpty id) const;
 
-    std::pair<ContextPtr, ContextPtr> createSelectInsertContext(const DependencyPath & path);
+    std::pair<ContextPtr, ContextMutablePtr> createSelectInsertContext(const DependencyPath & path);
     bool observePath(const DependencyPath & path);
     String debugTree() const;
     String debugPath(const DependencyPath & path) const;
@@ -287,7 +289,7 @@ private:
     MapIdLock storage_locks;
     MapIdMetadata metadata_snapshots;
     MapIdAST select_queries;
-    MapIdContext insert_contexts;
+    MapIdMutableContext insert_contexts;
     MapIdContext select_contexts;
     MapIdBlock input_headers;
     MapIdBlock output_headers;
