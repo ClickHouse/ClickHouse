@@ -420,11 +420,12 @@ bool isValidUTF8Strings(const IColumn & column)
     /// The concatenation of the values is valid, so every value is valid if none of them starts in the middle
     /// of a character, i.e. with a continuation byte.
     const auto & offsets = string_column->getOffsets();
-    for (size_t row = 0; row < offsets.size(); ++row)
+    size_t begin = 0;
+    for (size_t end : offsets)
     {
-        size_t begin = offsets[row - 1];
-        if (begin < offsets[row] && (chars[begin] & 0xC0) == 0x80)
+        if (begin < end && (chars[begin] & 0xC0) == 0x80)
             return false;
+        begin = end;
     }
     return true;
 }
