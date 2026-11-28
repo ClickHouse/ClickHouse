@@ -42,7 +42,6 @@ public:
     SetPtr buildOrderedSetInplace(const ContextPtr &) override { return nullptr; }
     Hash getHash() const override { return Hash{0, 0}; }
     ASTPtr getSourceAST() const override { return nullptr; }
-    bool isMutableDuringQuery() const override { return false; }
 
 private:
     DataTypes types;

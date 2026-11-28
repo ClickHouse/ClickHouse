@@ -1,7 +1,5 @@
-#include <atomic>
 #include <string_view>
 
-#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -63,7 +61,9 @@ void validateDictionaryIsNaiveBayes(const ContextPtr & context, const IFunction 
 {
     const String dictionary_name{arguments[0].column->getDataAt(0)};
 
-    const auto layout_type = context->getExternalDictionariesLoader().getDictionaryLayoutType(dictionary_name, context);
+    /// Check access before reading the definition, so that a user without access learns nothing about the dictionary.
+    const auto & external_loader = context->getExternalDictionariesLoader();
+    const auto layout_type = external_loader.getDictionaryLayoutType(external_loader.resolveDictionaryCheckingAccess(dictionary_name, context));
     if (layout_type != "naive_bayes")
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -76,7 +76,6 @@ void validateDictionaryIsNaiveBayes(const ContextPtr & context, const IFunction 
 template <typename ClassifyRow>
 void executeNaiveBayes(
     const ContextPtr & context,
-    std::atomic<bool> & access_checked,
     const ColumnsWithTypeAndName & arguments,
     size_t input_rows_count,
     ClassifyRow && classify_row)
@@ -86,13 +85,10 @@ void executeNaiveBayes(
 
     const String dictionary_name{arguments[0].column->getDataAt(0)};
 
-    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
-
-    if (!access_checked.load(std::memory_order_relaxed))
-    {
-        context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
-        access_checked.store(true, std::memory_order_relaxed);
-    }
+    /// Check access before loading the dictionary, because loading contacts the dictionary source,
+    /// and load the dictionary that passed the check.
+    const auto & external_loader = context->getExternalDictionariesLoader();
+    auto dictionary = external_loader.getDictionary(external_loader.resolveDictionaryCheckingAccess(dictionary_name, context), context);
 
     const auto * nb_dict = typeid_cast<const NaiveBayesDictionary *>(dictionary.get());
     if (!nb_dict)
@@ -128,7 +124,6 @@ class FunctionNaiveBayesBase : public IFunction
 {
 protected:
     ContextPtr context;
-    mutable std::atomic<bool> access_checked{false};
 
 public:
     explicit FunctionNaiveBayesBase(ContextPtr context_)
@@ -155,7 +150,7 @@ public:
     static constexpr auto name = "naiveBayesClassifier";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifier>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -165,7 +160,7 @@ public:
         return arguments[1].type->isNullable() ? makeNullable(result_type) : result_type;
     }
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto result_column = ColumnUInt32::create(input_rows_count);
@@ -182,7 +177,6 @@ public:
 
         executeNaiveBayes(
             context,
-            access_checked,
             effective_arguments,
             input_rows_count,
             [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
@@ -205,7 +199,7 @@ public:
     static constexpr auto name = "naiveBayesClassifierWithProb";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifierWithProb>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -215,7 +209,7 @@ public:
         return arguments[1].type->isNullable() ? makeNullable(result_type) : result_type;
     }
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto class_col = ColumnUInt32::create(input_rows_count);
@@ -234,7 +228,6 @@ public:
 
         executeNaiveBayes(
             context,
-            access_checked,
             effective_arguments,
             input_rows_count,
             [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
@@ -273,7 +266,7 @@ public:
     static constexpr auto name = "naiveBayesClassifierWithAllProbs";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifierWithAllProbs>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -283,7 +276,7 @@ public:
         return arguments[1].type->isNullable() ? makeNullableSafe(result_type) : result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto class_col = ColumnUInt32::create();
         auto prob_col = ColumnFloat64::create();
@@ -303,7 +296,6 @@ public:
 
         executeNaiveBayes(
             context,
-            access_checked,
             effective_arguments,
             input_rows_count,
             [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
@@ -350,24 +342,7 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
         = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
            {"input_text", "Text to classify.", {"String"}}},
         .returned_value = {"Predicted class ID.", {"UInt32"}},
-        .examples = {{"Classify text", R"(
--- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
-CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
-INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
-
-CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
-PRIMARY KEY ngram
-SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
-LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
-LIFETIME(0);
-
-SELECT naiveBayesClassifier('sentiment', 'a good and great film') AS class_id;
-        )",
-        R"(
-┌─class_id─┐
-│        0 │
-└──────────┘
-        )"}},
+        .examples = {{"Classify text", "SELECT naiveBayesClassifier('model', 'some text');", "0"}},
         .introduced_in = {25, 11},
         .category = FunctionDocumentation::Category::MachineLearning});
 
@@ -380,25 +355,7 @@ SELECT naiveBayesClassifier('sentiment', 'a good and great film') AS class_id;
         = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
            {"input_text", "Text to classify.", {"String"}}},
         .returned_value = {"Tuple of (class_id, probability).", {"Tuple(UInt32, Float64)"}},
-        .examples = {{"Classify with probability", R"(
--- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
-CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
-INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
-
-CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
-PRIMARY KEY ngram
-SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
-LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
-LIFETIME(0);
-
-WITH naiveBayesClassifierWithProb('sentiment', 'a good and great film') AS p
-SELECT (p.1, round(p.2, 4)) AS prediction;
-        )",
-        R"(
-┌─prediction─┐
-│ (0,0.9677) │
-└────────────┘
-        )"}},
+        .examples = {{"Classify with probability", "SELECT naiveBayesClassifierWithProb('model', 'some text');", "(0,0.85)"}},
         .introduced_in = {26, 7},
         .category = FunctionDocumentation::Category::MachineLearning});
 
@@ -412,24 +369,7 @@ SELECT (p.1, round(p.2, 4)) AS prediction;
            {"input_text", "Text to classify.", {"String"}}},
         .returned_value
         = {"Array of (class_id, probability) tuples ordered from most to least probable.", {"Array(Tuple(UInt32, Float64))"}},
-        .examples = {{"All class probabilities", R"(
--- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
-CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
-INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
-
-CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
-PRIMARY KEY ngram
-SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
-LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
-LIFETIME(0);
-
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sentiment', 'a good and great film')) AS predictions;
-        )",
-        R"(
-┌─predictions─────────────┐
-│ [(0,0.9677),(1,0.0323)] │
-└─────────────────────────┘
-        )"}},
+        .examples = {{"All class probabilities", "SELECT naiveBayesClassifierWithAllProbs('model', 'some text');", "[(0,0.85),(1,0.15)]"}},
         .introduced_in = {26, 7},
         .category = FunctionDocumentation::Category::MachineLearning});
 }

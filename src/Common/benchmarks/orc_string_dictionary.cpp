@@ -1,9 +1,11 @@
 #include <base/defines.h>
 
-#include <random>
+#include <cstdlib>
 #include <unordered_map>
 
 #include <benchmark/benchmark.h>
+
+#include <unordered_map>
 
 class OldSortedStringDictionary
 {
@@ -87,20 +89,26 @@ void OldSortedStringDictionary::reorder(std::vector<int64_t> & idxBuffer) const
     // iterate the dictionary to get mapping from insertion order to value order
     std::vector<size_t> mapping(dict.size());
     size_t dictIdx = 0;
-    for (const auto & item : dict)
-        mapping[item.second] = dictIdx++;
+    for (auto it = dict.cbegin(); it != dict.cend(); ++it)
+    {
+        mapping[it->second] = dictIdx++;
+    }
 
     // do the transformation
-    for (auto & index : idxBuffer)
-        index = static_cast<int64_t>(mapping[static_cast<size_t>(index)]);
+    for (size_t i = 0; i != idxBuffer.size(); ++i)
+    {
+        idxBuffer[i] = static_cast<int64_t>(mapping[static_cast<size_t>(idxBuffer[i])]);
+    }
 }
 
 // get dict entries in insertion order
 void OldSortedStringDictionary::getEntriesInInsertionOrder(std::vector<const DictEntry *> & entries) const
 {
     entries.resize(dict.size());
-    for (const auto & item : dict)
-        entries[item.second] = &item.first;
+    for (auto it = dict.cbegin(); it != dict.cend(); ++it)
+    {
+        entries[it->second] = &(it->first);
+    }
 }
 
 // return count of entries
@@ -213,13 +221,16 @@ void NewSortedStringDictionary::reorder(std::vector<int64_t> & idxBuffer) const
 {
     // iterate the dictionary to get mapping from insertion order to value order
     std::vector<size_t> mapping(flatDict_.size());
-    size_t dictIdx = 0;
-    for (const auto & item : flatDict_)
-        mapping[item.index] = dictIdx++;
+    for (size_t i = 0; i < flatDict_.size(); ++i)
+    {
+        mapping[flatDict_[i].index] = i;
+    }
 
     // do the transformation
-    for (auto & index : idxBuffer)
-        index = static_cast<int64_t>(mapping[static_cast<size_t>(index)]);
+    for (size_t i = 0; i != idxBuffer.size(); ++i)
+    {
+        idxBuffer[i] = static_cast<int64_t>(mapping[static_cast<size_t>(idxBuffer[i])]);
+    }
 }
 
 // get dict entries in insertion order
@@ -259,13 +270,11 @@ void NewSortedStringDictionary::clear()
 template <size_t cardinality>
 static std::vector<std::string> mockStrings()
 {
-    static_assert(cardinality > 0);
-    std::mt19937_64 random_engine(std::random_device{}());
-    std::uniform_int_distribution<size_t> random_index(0, cardinality - 1);
-
     std::vector<std::string> res(1000000);
     for (auto & s : res)
-        s = "test string dictionary " + std::to_string(random_index(random_engine));
+    {
+        s = "test string dictionary " + std::to_string(rand() % cardinality);
+    }
     return res;
 }
 
@@ -287,7 +296,7 @@ template <typename DictionaryImpl, size_t cardinality>
 static void BM_writeStringDictionary(benchmark::State & state)
 {
     auto strs = mockStrings<cardinality>();
-    for (auto _ [[maybe_unused]] : state)
+    for (auto _ : state)
     {
         auto dict = createAndWriteStringDictionary<DictionaryImpl>(strs);
         benchmark::DoNotOptimize(dict);

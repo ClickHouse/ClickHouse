@@ -1,9 +1,9 @@
 #include <Storages/ProjectionsDescription.h>
 #include <DataTypes/DataTypeString.h>
 
-#include <base/sort.h>
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/FilterDescription.h>
 #include <Common/iota.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -20,7 +20,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
-#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -127,8 +126,6 @@ ProjectionsDescription ProjectionsDescription::clone() const
     ProjectionsDescription other;
     for (const auto & projection : projections)
         other.add(projection.clone());
-    for (const auto & definition_ast : unavailable)
-        other.addUnavailable(definition_ast->clone());
 
     return other;
 }
@@ -243,6 +240,17 @@ private:
     const size_t max_rows_allowed;
 };
 
+/// A projection part stores a persistent virtual column only when its query selects it, so only ephemeral ones are always available.
+VirtualColumnsDescription createProjectionVirtuals(const KeyDescription * partition_key)
+{
+    VirtualColumnsDescription virtuals;
+    for (const auto & virtual_column : MergeTreeData::createVirtuals(partition_key))
+        if (virtual_column.isEphemeral())
+            virtuals.add(virtual_column);
+
+    return virtuals;
+}
+
 }
 
 ProjectionDescription ProjectionDescription::getProjectionFromAST(
@@ -309,17 +317,6 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
     if (isFreshTableDefinition(mode, attach_short_syntax))
     {
-        /// `arrayJoin` is the one function that changes the number of rows, while a projection part is
-        /// written alongside the parent part row by row: `ProjectionDataSink` rejects a block with more
-        /// rows than the parent with a `LOGICAL_ERROR`, so such a projection makes every insert fail.
-        /// The check runs on the raw AST, so it also has to look through the two indirections the
-        /// analyzer would have resolved later: the `unnest` alias (resolved by canonical name, so the
-        /// verdict does not depend on `normalize_function_names`) and a SQL UDF body that is inlined
-        /// into the projection query when it is built. `expressionContainsArrayJoin` does both.
-        if (expressionContainsArrayJoin(projection_definition->query))
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Projection '{}' cannot contain arrayJoin, because it changes the number of rows", result.name);
-
         static const std::unordered_set<std::string_view> ALLOWED_PROJECTION_SETTINGS = {
             "index_granularity",
             "index_granularity_bytes",
@@ -555,7 +552,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     }
 
     metadata.setColumns(std::move(metadata_columns));
-    metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
+    metadata.setVirtuals(createProjectionVirtuals(partition_key));
 
     /// Initialize implicit-minmax skip indices from the effective projection-level MergeTree settings
     /// (defaults from the projection index plus any user-supplied WITH SETTINGS overrides).
@@ -583,11 +580,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 
     auto select_query = make_intrusive<ASTProjectionSelectQuery>();
     ASTPtr select_expression_list = make_intrusive<ASTExpressionList>();
-    /// The i-th min/max pair below is answered from slot i of the part min-max index, whose own order is
-    /// derived the same way: from the partition key column names, never from the table column order.
-    Names sorted_minmax_columns = minmax_columns;
-    ::sort(sorted_minmax_columns.begin(), sorted_minmax_columns.end());
-    for (const auto & column : sorted_minmax_columns)
+    for (const auto & column : minmax_columns)
     {
         select_expression_list->children.push_back(makeASTFunction("min", make_intrusive<ASTIdentifier>(column)));
         select_expression_list->children.push_back(makeASTFunction("max", make_intrusive<ASTIdentifier>(column)));
@@ -672,7 +665,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.type = ProjectionDescription::Type::Aggregate;
     StorageInMemoryMetadata metadata;
     metadata.setColumns(ColumnsDescription(result.sample_block.getNamesAndTypesList()));
-    metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
+    metadata.setVirtuals(createProjectionVirtuals(partition_key));
     metadata.partition_key = KeyDescription::buildEmptyKey();
     metadata.sorting_key = KeyDescription::buildEmptyKey();
     metadata.primary_key = KeyDescription::buildEmptyKey();
@@ -726,39 +719,10 @@ Block ProjectionDescription::calculateByQuery(
     /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
 
-    ASTPtr query_ast_copy = nullptr;
-
     /// Only keep required columns
     Block source_block;
     for (const auto & column : required_columns)
         source_block.insert(block.getByName(column));
-
-    /// Respect the _row_exists column.
-    if (block.has(RowExistsColumn::name))
-    {
-        query_ast_copy = query_ast->clone();
-        auto * select_row_exists = query_ast_copy->as<ASTSelectQuery>();
-        if (!select_row_exists)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get ASTSelectQuery when adding _row_exists = 1. It's a bug");
-
-        auto row_exists_condition = makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1));
-
-        /// If the projection already has a WHERE clause (e.g., from a filtered projection),
-        /// we must AND the _row_exists condition with the existing WHERE rather than replacing it.
-        /// Otherwise the projection's own filter would be lost during mutations.
-        auto existing_where = select_row_exists->where();
-        if (existing_where)
-        {
-            auto combined_where = makeASTFunction("and", std::move(existing_where), std::move(row_exists_condition));
-            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(combined_where));
-        }
-        else
-        {
-            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(row_exists_condition));
-        }
-
-        source_block.insert(block.getByName(RowExistsColumn::name));
-    }
 
     /// Create "_part_offset" column when needed for projection with parent part offsets
     if (with_parent_part_offset)
@@ -785,8 +749,20 @@ Block ProjectionDescription::calculateByQuery(
         source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
     }
 
+    /// Drop lightweight-deleted rows, after `_part_offset` is generated so the survivors keep their parent offsets
+    if (block.has(RowExistsColumn::name))
+    {
+        FilterDescription row_exists_filter(*block.getByName(RowExistsColumn::name).column);
+        const size_t existing_rows = row_exists_filter.countBytesInFilter();
+        if (existing_rows == 0)
+            return sample_block.cloneEmpty();
+        if (existing_rows != block.rows())
+            for (auto & column : source_block)
+                column.column = row_exists_filter.filter(*column.column, static_cast<ssize_t>(existing_rows));
+    }
+
     auto builder = InterpreterSelectQuery(
-                       query_ast_copy ? query_ast_copy : query_ast,
+                       query_ast,
                        mut_context,
                        Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source_block)))),
                        SelectQueryOptions{
@@ -888,19 +864,6 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
             ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists", projection.name);
     }
 
-    for (const auto & definition_ast : unavailable)
-    {
-        if (definition_ast->as<const ASTProjectionDeclaration &>().name != projection.name)
-            continue;
-        if (if_not_exists)
-            return;
-        throw Exception(
-            ErrorCodes::ILLEGAL_PROJECTION,
-            "Cannot add projection {}: a projection with this name is declared but could not be analyzed when the table "
-            "was loaded. Drop it first, or remove the cause recorded in the server log and restart the server",
-            projection.name);
-    }
-
     auto insert_it = projections.cend();
 
     if (first)
@@ -925,14 +888,6 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     auto it = map.find(projection_name);
     if (it == map.end())
     {
-        for (auto unavailable_it = unavailable.begin(); unavailable_it != unavailable.end(); ++unavailable_it)
-        {
-            if ((*unavailable_it)->as<const ASTProjectionDeclaration &>().name != projection_name)
-                continue;
-            unavailable.erase(unavailable_it);
-            return;
-        }
-
         if (if_exists)
             return;
 
@@ -945,20 +900,6 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
 
     projections.erase(it->second);
     map.erase(it);
-}
-
-void ProjectionsDescription::addUnavailable(ASTPtr definition_ast)
-{
-    unavailable.push_back(std::move(definition_ast));
-}
-
-Names ProjectionsDescription::getUnavailableNames() const
-{
-    Names names;
-    names.reserve(unavailable.size());
-    for (const auto & definition_ast : unavailable)
-        names.push_back(definition_ast->as<const ASTProjectionDeclaration &>().name);
-    return names;
 }
 
 void ProjectionsDescription::replace(ProjectionDescription && projection)

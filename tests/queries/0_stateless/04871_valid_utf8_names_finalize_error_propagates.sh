@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 # Tag no-parallel: enables the `write_buffer_valid_utf8_finalize_throw` fail point, which affects
 # the whole server (it fires on the next `WriteBufferValidUTF8` flush anywhere), so a concurrent
 # query from another test could consume the injected fault.

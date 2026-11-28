@@ -62,7 +62,7 @@
               ]
             },
             {
-              "group": "Índices de salto",
+              "group": "Índices de skipping",
               "pages": [
                 "pt-BR/concepts/features/performance/skip-indexes/skipping-indexes",
                 "pt-BR/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -70,7 +70,7 @@
             },
             "pt-BR/concepts/features/performance/lazy-materialization",
             {
-              "group": "Solução de problemas",
+              "group": "Troubleshooting",
               "pages": [
                 "pt-BR/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "pt-BR/concepts/features/performance/troubleshoot/oom-canary",
@@ -83,9 +83,8 @@
         {
           "group": "Operações",
           "pages": [
-            "pt-BR/concepts/features/operations/background-queries",
             {
-              "group": "Inserir",
+              "group": "INSERT",
               "pages": [
                 "pt-BR/concepts/features/operations/insert/inserting-data",
                 "pt-BR/concepts/features/operations/insert/asyncinserts",
@@ -96,13 +95,13 @@
               ]
             },
             {
-              "group": "Selecionar",
+              "group": "SELECT",
               "pages": [
                 "pt-BR/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "Atualizar",
+              "group": "UPDATE",
               "pages": [
                 "pt-BR/concepts/features/operations/update/index",
                 "pt-BR/concepts/features/operations/update/overview",
@@ -110,7 +109,7 @@
               ]
             },
             {
-              "group": "Excluir",
+              "group": "DELETE",
               "pages": [
                 "pt-BR/concepts/features/operations/delete/index",
                 "pt-BR/concepts/features/operations/delete/overview",
@@ -150,8 +149,7 @@
                 "pt-BR/concepts/features/configuration/server-config/workload-scheduling",
                 "pt-BR/concepts/features/configuration/server-config/quotas",
                 "pt-BR/concepts/features/configuration/server-config/composable-protocols",
-                "pt-BR/concepts/features/configuration/server-config/startup-scripts",
-                "pt-BR/concepts/features/configuration/server-config/introspection-port"
+                "pt-BR/concepts/features/configuration/server-config/startup-scripts"
               ]
             }
           ]
@@ -213,34 +211,30 @@
             "pt-BR/concepts/features/interfaces/native-clients-interfaces-index",
             "pt-BR/concepts/features/interfaces/cli",
             "pt-BR/concepts/features/interfaces/client",
-            "pt-BR/concepts/features/interfaces/mcp",
             {
               "group": "Drivers e interfaces",
               "pages": [
                 "pt-BR/concepts/features/interfaces/overview",
                 "pt-BR/concepts/features/interfaces/http",
-                "pt-BR/concepts/features/interfaces/framing-formats",
                 "pt-BR/concepts/features/interfaces/tcp",
-                "pt-BR/concepts/features/interfaces/adbc",
+                "pt-BR/concepts/features/interfaces/jdbc",
                 "pt-BR/concepts/features/interfaces/mysql",
                 {
                   "$ref": "features/interfaces/odbc/navigation.json"
                 },
                 "pt-BR/concepts/features/interfaces/postgresql",
                 "pt-BR/concepts/features/interfaces/prometheus",
-                "pt-BR/concepts/features/interfaces/prometheus-metrics",
                 "pt-BR/concepts/features/interfaces/ssh",
                 "pt-BR/concepts/features/interfaces/grpc",
                 "pt-BR/concepts/features/interfaces/arrowflight"
               ]
             },
+            "pt-BR/concepts/features/interfaces/cpp",
             "pt-BR/concepts/features/interfaces/schema-inference",
             "pt-BR/concepts/features/interfaces/documentation-search",
             "pt-BR/concepts/features/interfaces/web-sql",
-            "pt-BR/concepts/features/interfaces/sql-console",
             "pt-BR/concepts/features/interfaces/web-ui-color-coding",
             "pt-BR/concepts/features/interfaces/web-ui-pinned-columns",
-            "pt-BR/concepts/features/interfaces/web-ui-result-shaping",
             "pt-BR/concepts/features/interfaces/web-terminal",
             {
               "group": "Clientes de terceiros",

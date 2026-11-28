@@ -5,12 +5,15 @@
 #include <DataTypes/NestedUtils.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 
+#include <algorithm>
+#include <limits>
+#include <numeric>
+
 namespace DB
 {
 
 size_t MergeTreeReaderCompactSingleBuffer::readRows(
     size_t from_mark,
-    size_t /* current_range_last_mark */,
     bool continue_reading, size_t max_rows_to_read,
     MutableColumns & res_columns)
 try
@@ -44,7 +47,7 @@ try
         /// and it might be not empty inside res_columns (and SubstreamsCache contains the whole columns).
         std::unordered_map<String, ColumnPtr> columns_cache_for_subcolumns;
 
-        for (size_t pos = 0; pos < num_columns; ++pos)
+        for (size_t pos : read_order)
         {
             if (!res_columns[pos])
             {
@@ -94,7 +97,7 @@ try
 }
 catch (...)
 {
-    if (!isRetryableException(std::current_exception()))
+    if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
         data_part_info_for_read->reportBroken();
 
     /// Better diagnostics.
@@ -110,6 +113,18 @@ catch (...)
     throw;
 }
 
+void MergeTreeReaderCompactSingleBuffer::fillReadOrder()
+{
+    read_order.resize(columns_to_read.size());
+    std::iota(read_order.begin(), read_order.end(), 0);
+
+    /// Stable, since the columns with the same position share the caches of a granule.
+    std::ranges::stable_sort(read_order, {}, [&](size_t pos)
+    {
+        return column_positions[pos].value_or(std::numeric_limits<size_t>::max());
+    });
+}
+
 void MergeTreeReaderCompactSingleBuffer::init()
 try
 {
@@ -122,13 +137,12 @@ try
         all_mark_ranges, settings, uncompressed_cache,
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
-    stream->updateReadRequestMap(read_request_map);
 
     initialized = true;
 }
 catch (...)
 {
-    if (!isRetryableException(std::current_exception()))
+    if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
         data_part_info_for_read->reportBroken();
     throw;
 }

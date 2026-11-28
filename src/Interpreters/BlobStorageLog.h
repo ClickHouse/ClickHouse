@@ -25,7 +25,6 @@ struct BlobStorageLogElement
         MultiPartUploadComplete = 5,
         MultiPartUploadAbort = 6,
         Read = 7,
-        Copy = 8,
     };
 
     EventType event_type{};
@@ -38,8 +37,6 @@ struct BlobStorageLogElement
     String bucket;
     String remote_path;
     String local_path;
-    String source_bucket;
-    String source_remote_path;
 
     size_t data_size{};
     size_t elapsed_microseconds{};

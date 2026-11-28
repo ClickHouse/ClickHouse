@@ -23,8 +23,10 @@
     {
       "group": "Protocole natif",
       "pages": [
-        "fr/resources/develop-contribute/native-protocol/protocol",
-        "fr/resources/develop-contribute/native-protocol/format",
+        "fr/resources/develop-contribute/native-protocol/basics",
+        "fr/resources/develop-contribute/native-protocol/client",
+        "fr/resources/develop-contribute/native-protocol/server",
+        "fr/resources/develop-contribute/native-protocol/columns",
         "fr/resources/develop-contribute/native-protocol/hash"
       ]
     },
@@ -42,7 +44,7 @@
       ]
     },
     {
-      "group": "Développement d’intégrations",
+      "group": "Développement d'intégrations",
       "pages": [
         "fr/resources/develop-contribute/integrations/index",
         "fr/resources/develop-contribute/integrations/building-integrations",
@@ -58,6 +60,6 @@
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "Développement et contributions",
+  "item": "Développement et contribution",
   "root": "fr/resources/develop-contribute/index"
 }

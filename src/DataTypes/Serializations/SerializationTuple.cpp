@@ -13,6 +13,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -162,6 +164,13 @@ void SerializationTuple::readElementsSafe(DB::IColumn & column, std::function<vo
     addElementSafe<void>(assert_cast<ColumnTuple &>(column).getColumns().size(), column, [&](){ read_func(); return true; });
 }
 
+SerializationTuple::SerializationTuple(ElementSerializations elems_, bool has_explicit_names_)
+    : elems(std::move(elems_))
+    , has_explicit_names(has_explicit_names_)
+    , elems_support_pooling(std::ranges::all_of(elems, [](const auto & elem) { return elem->supportsPooling(); }))
+{
+}
+
 SerializationPtr SerializationTuple::create(ElementSerializations elems_, bool has_explicit_names_)
 {
     for (const auto & elem : elems_)
@@ -171,11 +180,6 @@ SerializationPtr SerializationTuple::create(ElementSerializations elems_, bool h
     }
     auto hash = getHash(elems_, has_explicit_names_);
     return ISerialization::pooled(hash, [e = std::move(elems_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(e), has_explicit_names_); });
-}
-
-bool SerializationTuple::isElementSubcolumn(const SubstreamPath & path, const String & element_name)
-{
-    return !path.empty() && path.back().type == Substream::TupleElement && path.back().name_of_substream == element_name;
 }
 
 void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -924,26 +928,20 @@ size_t SerializationTuple::allocatedBytes() const
 
 bool SerializationTuple::supportsPooling() const
 {
-    for (const auto & elem : elems)
-        if (!elem->supportsPooling())
-            return false;
-    return true;
+    return elems_support_pooling;
 }
 
-MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationTuple::createColumnForDeserialization(const IDataType & type) const
 {
-    /// Rebuild the tuple with each element wrapped by its own serialization (element serializations are
-    /// SerializationNamed wrappers that forward to the real element serialization, so kinds compose).
-    const auto & tuple = assert_cast<const ColumnTuple &>(*column);
+    const auto & tuple_type = assert_cast<const DataTypeTuple &>(type);
     if (elems.empty())
-        return column;
+        return tuple_type.createColumn();
 
-    MutableColumns wrapped;
-    wrapped.reserve(elems.size());
+    /// Element serializations are `SerializationNamed` wrappers that forward to the real element serialization, so kinds compose.
+    MutableColumns tuple_columns(elems.size());
     for (size_t i = 0; i != elems.size(); ++i)
-        wrapped.push_back(elems[i]->wrapColumnForDeserialization(tuple.getColumn(i).cloneEmpty()));
-
-    return ColumnTuple::create(std::move(wrapped));
+        tuple_columns[i] = elems[i]->createColumnForDeserialization(*tuple_type.getElement(i));
+    return ColumnTuple::create(std::move(tuple_columns));
 }
 
 }

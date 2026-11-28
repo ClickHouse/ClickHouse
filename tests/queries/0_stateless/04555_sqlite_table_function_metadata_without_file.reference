@@ -1,2 +1,0 @@
-tf_missing	Proxy	CREATE TABLE default.tf_missing (`x` Int32) AS sqlite(\'04555_missing_db_path\', \'tbl\')
-tf_missing	Proxy

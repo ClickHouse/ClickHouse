@@ -5,8 +5,6 @@
 #include <Core/Block.h>
 #include <base/defines.h>
 #include <Common/PODArray.h>
-#include <Interpreters/RowDataStore.h>
-#include <Interpreters/RowRefs.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -384,21 +382,15 @@ struct StoredBlock
     detail::Selector selector;
     UInt32 block_no = 0;
 
-    /// Row-major store for fixed size contiguous columns.
-    RowDataStorePtr row_store;
-
     StoredBlock() = default;
-    explicit StoredBlock(Columns columns_, RowDataStorePtr row_store_ = nullptr);
-    StoredBlock(Columns columns_, detail::Selector selector_, RowDataStorePtr row_store_ = nullptr);
+    explicit StoredBlock(Columns columns_);
+    StoredBlock(Columns columns_, detail::Selector selector_);
 
     /// Must be called after `columns` are replaced in-place (e.g. by cloneResized). The raw pointers in
     /// `replicated_columns` point into the old column objects and dangle once those objects are released.
     void rebuildReplicatedColumns();
 
-    bool hasRowStore() const;
-
     size_t allocatedBytes() const;
-    size_t blockRows() const;
 };
 
 struct ExtraScatteredBlocks

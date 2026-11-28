@@ -96,11 +96,12 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        new (place) GroupFormatData;
-        auto & state = data(place);
-        state.columns.reserve(argument_types.size());
+        /// Build the columns first, so that nothing is left in `place` if an allocation throws.
+        MutableColumns columns;
+        columns.reserve(argument_types.size());
         for (const auto & type : argument_types)
-            state.columns.emplace_back(type->createColumn());
+            columns.emplace_back(type->createColumn());
+        new (place) GroupFormatData{std::move(columns)};
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -321,7 +322,9 @@ SELECT groupFormat('JSONEachRow')(number, toString(number))
 FROM numbers(3)
             )",
             R"(
-{"c1":0,"c2":"0"}\n{"c1":1,"c2":"1"}\n{"c1":2,"c2":"2"}\n
+{"c1":0,"c2":"0"}
+{"c1":1,"c2":"1"}
+{"c1":2,"c2":"2"}
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in{};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;

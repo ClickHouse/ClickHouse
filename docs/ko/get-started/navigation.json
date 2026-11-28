@@ -3,53 +3,11 @@
   "item": "시작하기",
   "pages": [
     {
-      "group": "시작하기",
+      "group": "Get started",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "ko/get-started/index",
-        {
-          "expandable": true,
-          "expanded": false,
-          "group": "빠른 시작",
-          "pages": [
-            "ko/get-started/quickstarts/home",
-            {
-              "expanded": false,
-              "group": "모든 사용 사례",
-              "pages": [
-                "ko/get-started/setup/cloud",
-                "ko/get-started/quickstarts/obtain-your-cloud-connection-details",
-                "ko/get-started/quickstarts/insert-data-using-clickhouse-client",
-                "ko/get-started/quickstarts/creating-tables",
-                "ko/get-started/quickstarts/writing-queries",
-                "ko/get-started/quickstarts/create-your-first-mergetree-table"
-              ]
-            },
-            {
-              "expanded": false,
-              "group": "실시간 분석",
-              "pages": [
-                "ko/get-started/quickstarts/create-your-first-materialized-view",
-                "ko/get-started/quickstarts/create-your-first-projection"
-              ]
-            },
-            {
-              "expanded": false,
-              "group": "데이터 웨어하우징",
-              "pages": [
-                "ko/get-started/quickstarts/connect-your-iceberg-catalog",
-                "ko/get-started/quickstarts/mutations"
-              ]
-            },
-            {
-              "expanded": false,
-              "group": "관측성",
-              "pages": [
-                "ko/get-started/quickstarts/working-with-the-map-type"
-              ]
-            }
-          ]
-        },
+        "ko/get-started/quickstarts/home",
         {
           "expandable": true,
           "expanded": true,
@@ -62,10 +20,9 @@
         },
         {
           "expanded": true,
-          "group": "사용 사례",
+          "group": "활용 사례",
           "pages": [
             "ko/get-started/use-cases/overview",
-            "ko/get-started/use-cases/choosing-a-service",
             "ko/get-started/use-cases/real-time-analytics",
             "ko/get-started/use-cases/observability",
             "ko/get-started/use-cases/data-warehousing",
@@ -77,14 +34,14 @@
     },
     {
       "expanded": true,
-      "group": "설정",
+      "group": "Setup",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
         "ko/get-started/setup/install",
         "ko/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "자체 관리형",
+          "group": "자가 관리형",
           "pages": [
             "ko/get-started/setup/self-managed/overview",
             {
@@ -97,7 +54,7 @@
               ]
             },
             {
-              "group": "프로덕션 서버",
+              "group": "운영 서버",
               "pages": [
                 "ko/get-started/setup/self-managed/debian-ubuntu",
                 "ko/get-started/setup/self-managed/redhat",
@@ -150,7 +107,7 @@
           ]
         },
         {
-          "group": "지리 및 위치",
+          "group": "Geo 및 위치",
           "pages": [
             "ko/get-started/sample-datasets/cell-towers",
             "ko/get-started/sample-datasets/foursquare-os-places",
@@ -237,7 +194,7 @@
           ]
         },
         {
-          "group": "기타 방법",
+          "group": "기타 메서드",
           "pages": [
             "ko/get-started/migrate/other-methods/clickhouse-local-etl",
             "ko/get-started/migrate/other-methods/etl-tool-to-clickhouse",

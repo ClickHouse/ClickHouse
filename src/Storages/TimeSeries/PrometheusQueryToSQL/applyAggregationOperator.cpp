@@ -1,7 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperator.h>
 
 #include <Common/Exception.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperatorCountValues.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentAggregationOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperatorQuantile.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyLimitAggregationOperator.h>
@@ -26,9 +25,6 @@ SQLQueryPiece applyAggregationOperator(
 
     if (isAggregationOperatorQuantile(operator_name))
         return applyAggregationOperatorQuantile(operator_node, std::move(arguments), context);
-
-    if (isAggregationOperatorCountValues(operator_name))
-        return applyAggregationOperatorCountValues(operator_node, std::move(arguments), context);
 
     if (isLimitAggregationOperator(operator_name))
         return applyLimitAggregationOperator(operator_node, std::move(arguments), context);

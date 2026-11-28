@@ -1,4 +1,3 @@
-#include <utility>
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
@@ -7,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
 #include <base/find_symbols.h>
-#include <base/EnumReflection.h>
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
@@ -15,13 +13,13 @@
 #include <Common/ErrnoException.h>
 #include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
 #include <Common/JemallocJITArena.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
-#include <Common/SilkFiberScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -31,6 +29,7 @@
 
 #include <ranges>
 #include <string_view>
+#include <thread>
 
 #include "config.h"
 
@@ -127,7 +126,7 @@ std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(c
 void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
     if (auto path = getCgroupsV2PathContainingFile(filename))
-        openFileIfExists((path.value() + "/" + filename).c_str(), out);
+        openFileIfExists((path.value() + filename).c_str(), out);
 };
 
 #endif
@@ -156,6 +155,7 @@ AsynchronousMetrics::AsynchronousMetrics(
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
     openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    openCgroupv2MetricFile("cpuset.cpus.effective", cgroupcpuset);
     openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
 
     /// CGroups v1
@@ -168,6 +168,8 @@ AsynchronousMetrics::AsynchronousMetrics(
     }
     if (!cgroupcpu_stat)
         openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
+    if (!cgroupcpuset)
+        openFileIfExists("/sys/fs/cgroup/cpuset/cpuset.effective_cpus", cgroupcpuset);
 
     try
     {
@@ -1110,7 +1112,7 @@ static void readPressureFile(
 
                 uint64_t delta = counter - prev;
             new_values[metric_key] = AsynchronousMetricValue(delta,
-                "Microseconds of stall time since last measurement. "
+                "Microseconds of stall time since last measurement."
                 "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
         }
 
@@ -1244,12 +1246,11 @@ void AsynchronousMetrics::processWarningForMemoryOverload(const AsynchronousMetr
 void AsynchronousMetrics::processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const
 {
     const auto * idle_ptr = getAsynchronousMetricValue(new_values, "OSIdleTimeNormalized");
-    const auto * io_wait_ptr = getAsynchronousMetricValue(new_values, "OSIOWaitTimeNormalized");
-    if (!idle_ptr || !io_wait_ptr)
+    if (!idle_ptr)
         return;
 
     /// ensure that the value is always in [0.0, 1.0]
-    const double busy_time = std::clamp(1.0 - idle_ptr->value - io_wait_ptr->value, 0.0, 1.0);
+    const double busy_time = std::clamp(1.0 - idle_ptr->value, 0.0, 1.0);
 
     const auto & cfg = context->getConfigRef();
     const double cpu_warn_ratio = cfg.getDouble("resource_overload_warnings.cpu_overload_warn_ratio", 0.9);
@@ -1305,7 +1306,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         "The difference in time the thread for calculation of the asynchronous metrics was scheduled to wake up and the time it was in fact, woken up."
         " A proxy-indicator of overall system latency and responsiveness." };
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
 #endif
 
@@ -1457,9 +1458,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             const size_t page_size = jemalloc_page_size_mib.getValue();
             new_values["jemalloc.mergetree_arena.active_bytes"] = { mt_pactive * page_size,
                 "Active bytes summed across the dedicated jemalloc MergeTree arena pool "
-                "(`jemalloc.mergetree_arena.count` arenas). Holds long-lived table state, for every engine "
-                "and not only MergeTree: the storage object and its metadata as built by `StorageFactory::get`, "
-                "and for MergeTree also per-part metadata (`SerializationInfoByName`, `MergeTreeDataPartChecksums` tree, the "
+                "(`jemalloc.mergetree_arena.count` arenas). Holds long-lived MergeTree heap "
+                "state: per-part metadata (`SerializationInfoByName`, `MergeTreeDataPartChecksums` tree, the "
                 "`Poco::LRUCache<String, ColumnSize>` delegates inside each `IMergeTreeDataPart`, the "
                 "per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`, and the "
                 "`MergeTreeDataPart{Compact,Wide}` object itself), metadata shared across parts of a table "
@@ -1501,7 +1501,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     /// Process process memory usage according to OS
-#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     {
         MemoryStatisticsOS::Data & data = memory_statistics_data;
 
@@ -1527,20 +1527,18 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             "When userspace page cache is disabled, this value equals MemoryResident."
         };
 
-#if !defined(OS_FREEBSD) && !defined(OS_SUNOS)
+#if !defined(OS_FREEBSD)
         new_values["MemoryShared"] = { data.shared,
             "The amount of memory used by the server process, that is also shared by another processes, in bytes."
             " ClickHouse does not use shared memory, but some memory can be labeled by OS as shared for its own reasons."
             " This metric does not make a lot of sense to watch, and it exists only for completeness reasons."};
 #endif
-#if !defined(OS_SUNOS)
         new_values["MemoryCode"] = { data.code,
             "The amount of virtual memory mapped for the pages of machine code of the server process, in bytes." };
         new_values["MemoryDataAndStack"] = { data.data_and_stack,
             "The amount of virtual memory mapped for the use of stack and for the allocated memory, in bytes."
             " It is unspecified whether it includes the per-thread stacks and most of the allocated memory, that is allocated with the 'mmap' system call."
             " This metric exists only for completeness reasons. I recommend to use the `MemoryResident` metric for monitoring."};
-#endif
 
         if (update_rss)
             MemoryTracker::updateRSS(data.resident);
@@ -1690,9 +1688,37 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    /// With exclusive CPUs (e.g. the static CPU manager of Kubernetes) there is no CFS quota (`cpu.max` is `max`),
+    /// and the limit is only visible in the cpuset.
+    if (cgroupcpuset)
+    {
+        try
+        {
+            cgroupcpuset->rewind();
+
+            String cpu_list;
+            readString(cpu_list, *cgroupcpuset);
+            if (auto cpuset_cpus = countCPUsInList(cpu_list))
+            {
+                const auto cpuset_cores = static_cast<Float64>(*cpuset_cpus);
+                if (max_cpu_cgroups > 0)
+                    max_cpu_cgroups = std::min(max_cpu_cgroups, cpuset_cores);
+                /// Without a quota, a cpuset with all online CPUs is not a limit.
+                else if (*cpuset_cpus < std::thread::hardware_concurrency())
+                    max_cpu_cgroups = cpuset_cores;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
     if (max_cpu_cgroups > 0)
     {
-        new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
+        new_values["CGroupMaxCPU"] = { max_cpu_cgroups,
+            "The maximum number of CPU cores according to CGroups: the minimum of the CPU quota divided by its period "
+            "and the number of CPUs in the effective cpuset."};
     }
 
     if (cgroupcpu_stat || cgroupcpuacct_stat)
@@ -2810,72 +2836,60 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     {
-        /// Metric name and description per protocol. Keyed by the `ServerType::Type` name rather than
-        /// by the config key, so a protocol declared under `<protocols>` is reported under the same
-        /// metrics as the equivalent built-in port. Keeper listeners are not part of `ServerType`; they
-        /// are keyed by their config key. Each entry pairs one key with one metric name and its
-        /// description, which is the shape `utils/generate-async-metrics-docs` extracts the docs from.
-        using MetricNameDoc = std::pair<const char *, const char *>;
-
-        static const std::unordered_map<String, MetricNameDoc> threads_metric_by_protocol =
+        auto threads_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
         {
-            {"TCP", {"TCPThreads", "Number of threads in the server of the TCP protocol (without TLS)."}},
-            {"TCP_SECURE", {"TCPSecureThreads", "Number of threads in the server of the TCP protocol (with TLS)."}},
-            {"TCP_WITH_PROXY", {"TCPWithProxyThreads", "Number of threads in the server of the TCP protocol behind a PROXY protocol handler."}},
-            {"TCP_SSH", {"TCPSSHThreads", "Number of threads in the server of the SSH protocol."}},
-            {"HTTP", {"HTTPThreads", "Number of threads in the server of the HTTP interface (without TLS)."}},
-            {"HTTPS", {"HTTPSecureThreads", "Number of threads in the server of the HTTPS interface."}},
-            {"INTERSERVER_HTTP", {"InterserverThreads", "Number of threads in the server of the replicas communication protocol (without TLS)."}},
-            {"INTERSERVER_HTTPS", {"InterserverSecureThreads", "Number of threads in the server of the replicas communication protocol (with TLS)."}},
-            {"MYSQL", {"MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol."}},
-            {"POSTGRESQL", {"PostgreSQLThreads", "Number of threads in the server of the PostgreSQL compatibility protocol."}},
-            {"GRPC", {"GRPCThreads", "Number of threads in the server of the GRPC protocol."}},
-            {"PROMETHEUS", {"PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
-            {"keeper_server.tcp_port", {"KeeperTCPThreads", "Number of threads in the server of the Keeper TCP protocol (without TLS)."}},
-            {"keeper_server.tcp_port_secure", {"KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS)."}}
+            static std::map<String, std::pair<const char *, const char *>> metric_map =
+            {
+                {"tcp_port", {"TCPThreads", "Number of threads in the server of the TCP protocol (without TLS)."}},
+                {"tcp_port_secure", {"TCPSecureThreads", "Number of threads in the server of the TCP protocol (with TLS)."}},
+                {"http_port", {"HTTPThreads", "Number of threads in the server of the HTTP interface (without TLS)."}},
+                {"https_port", {"HTTPSecureThreads", "Number of threads in the server of the HTTPS interface."}},
+                {"interserver_http_port", {"InterserverThreads", "Number of threads in the server of the replicas communication protocol (without TLS)."}},
+                {"interserver_https_port", {"InterserverSecureThreads", "Number of threads in the server of the replicas communication protocol (with TLS)."}},
+                {"mysql_port", {"MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol."}},
+                {"postgresql_port", {"PostgreSQLThreads", "Number of threads in the server of the PostgreSQL compatibility protocol."}},
+                {"grpc_port", {"GRPCThreads", "Number of threads in the server of the GRPC protocol."}},
+                {"prometheus.port", {"PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
+                {"keeper_server.tcp_port", {"KeeperTCPThreads", "Number of threads in the server of the Keeper TCP protocol (without TLS)."}},
+                {"keeper_server.tcp_port_secure", {"KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS)."}}
+            };
+            auto it = metric_map.find(name);
+            if (it == metric_map.end())
+                return { nullptr, nullptr };
+            return it->second;
         };
 
-        static const std::unordered_map<String, MetricNameDoc> rejected_connections_metric_by_protocol =
+        auto rejected_connections_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
         {
-            {"TCP", {"TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."}},
-            {"TCP_SECURE", {"TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."}},
-            {"TCP_WITH_PROXY", {"TCPWithProxyRejectedConnections", "Number of rejected connections for the TCP protocol behind a PROXY protocol handler."}},
-            {"TCP_SSH", {"TCPSSHRejectedConnections", "Number of rejected connections for the SSH protocol."}},
-            {"HTTP", {"HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."}},
-            {"HTTPS", {"HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."}},
-            {"INTERSERVER_HTTP", {"InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."}},
-            {"INTERSERVER_HTTPS", {"InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."}},
-            {"MYSQL", {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."}},
-            {"POSTGRESQL", {"PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."}},
-            {"GRPC", {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."}},
-            {"PROMETHEUS", {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
-            {"keeper_server.tcp_port", {"KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."}},
-            {"keeper_server.tcp_port_secure", {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}}
+            static std::map<String, std::pair<const char *, const char *>> metric_map =
+                {
+                    {"tcp_port", {"TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."}},
+                    {"tcp_port_secure", {"TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."}},
+                    {"http_port", {"HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."}},
+                    {"https_port", {"HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."}},
+                    {"interserver_http_port", {"InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."}},
+                    {"interserver_https_port", {"InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."}},
+                    {"mysql_port", {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."}},
+                    {"postgresql_port", {"PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."}},
+                    {"grpc_port", {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."}},
+                    {"prometheus.port", {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
+                    {"keeper_server.tcp_port", {"KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."}},
+                    {"keeper_server.tcp_port_secure", {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}}
+                };
+            auto it = metric_map.find(name);
+            if (it == metric_map.end())
+                return { nullptr, nullptr };
+            return it->second;
         };
 
-        /// Several servers can share a protocol - one per listen host, or a built-in port and a
-        /// `<protocols>` endpoint of the same type - so the values are summed before being reported.
-        std::unordered_map<String, std::pair<size_t, size_t>> totals;
-
-        for (const auto & server_metric : protocol_server_metrics_func())
+        const auto server_metrics = protocol_server_metrics_func();
+        for (const auto & server_metric : server_metrics)
         {
-            String key{magic_enum::enum_name(server_metric.protocol_type)};
-            if (!threads_metric_by_protocol.contains(key))
-                key = server_metric.port_name;
-            if (!threads_metric_by_protocol.contains(key))
-                continue;
+            if (auto name_doc = threads_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
+                new_values[name_doc.first] = { server_metric.current_threads, name_doc.second };
 
-            auto & total = totals[key];
-            total.first += server_metric.current_threads;
-            total.second += server_metric.rejected_connections;
-        }
-
-        for (const auto & [key, total] : totals)
-        {
-            const auto & [threads_name, threads_doc] = threads_metric_by_protocol.at(key);
-            new_values[threads_name] = { total.first, threads_doc };
-            const auto & [rejected_name, rejected_doc] = rejected_connections_metric_by_protocol.at(key);
-            new_values[rejected_name] = { total.second, rejected_doc };
+            if (auto name_doc = rejected_connections_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
+                new_values[name_doc.first] = { server_metric.rejected_connections, name_doc.second };
         }
     }
 
@@ -2891,13 +2905,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 = {"channel", std::move(async_logging_queue_sizes),
                    "Number of async messages queued pending for logging, keyed by the logging channel name."};
     }
-
-#if USE_SILK
-    for (const auto & [counter_name, counter_value] : Silk::getRuntimeCounters())
-        new_values[fmt::format("Silk{}", counter_name)] = { counter_value,
-            "Value of the eponymous low-level counter of the silk fiber runtime, accumulated since the fiber scheduler initialization. "
-            "Counters with Time in the name are in nanoseconds." };
-#endif
 
     /// Add more metrics as you wish.
 

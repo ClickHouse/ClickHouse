@@ -11,7 +11,9 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 <ScalePlanFeatureBadge feature="Compute-compute separation" />
 
-## 什么是计算-计算分离？ {#what-is-compute-compute-separation}
+<div id="what-is-compute-compute-separation">
+  ## 什么是计算-计算分离？
+</div>
 
 在讨论什么是计算-计算分离之前，先了解 ClickHouse Cloud 中的**服务**是什么，会很有帮助。
 
@@ -65,13 +67,13 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 * ClickHouse 数据库版本
 * ClickHouse Keeper (用于管理副本)
 
-仓库将共享数据的长期运行的 ClickHouse Cloud 服务归为一组，每个服务都拥有专用的 compute 资源和端点。[按需 Compute](/zh/products/cloud/features/infrastructure/on-demand-compute) 通过现有的服务和端点，从托管池中临时为受支持的 workload 分配工作线程。
-
 <div id="access-controls">
   ## 访问控制
 </div>
 
-### 数据库凭据 {#database-credentials}
+<div id="database-credentials">
+  ### 数据库凭据
+</div>
 
 由于同一仓库中的所有服务共享同一组表，因此它们在服务之间也共享访问控制。
 这意味着，在服务 1 中创建的所有数据库用户，也都可以使用服务 2，并且拥有相同的权限 (针对表、视图等的授权) ，反之亦然。
@@ -83,7 +85,9 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 *图 4 - 用户 Alice 是在服务 1 中创建的，但她可以使用相同的凭据访问所有共享相同数据的服务*
 
-### 网络访问控制 {#network-access-control}
+<div id="network-access-control">
+  ### 网络访问控制
+</div>
 
 若要限制其他应用或临时用户对特定服务的访问，可以配置网络限制。
 为此，请在 ClickHouse Cloud 控制台中，进入你希望限制访问的目标服务的服务选项卡，然后选择 **设置**。
@@ -101,7 +105,9 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 
 当你以个人身份连接、而非使用 *default* 用户时，也可以使用 ClickHouse 角色和授权来控制其对数据的访问。
 
-### 只读与读写服务 {#read-vs-read-write}
+<div id="read-vs-read-write">
+  ### 只读与读写服务
+</div>
 
 服务可以是以下类型之一：
 
@@ -130,7 +136,9 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
   3. 服务的类型 (只读或读写) 在创建时即固定，之后无法在 Cloud Console 中更改。若要在只读与读写访问之间切换，请在仓库中创建一个具有所需类型的新服务。
 </Note>
 
-## 扩缩容 {#scaling}
+<div id="scaling">
+  ## 扩缩容
+</div>
 
 仓库中的各项服务均可独立扩缩容。您可以调整副本数量和规格，启用水平和垂直自动扩缩容，并配置服务在无活动时自动进入空闲状态。
 
@@ -140,7 +148,9 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 
 [定时扩缩容](/zh/products/cloud/features/autoscaling/scheduled-scaling)适用于仓库中的各项服务。仓库限制仍然适用——请合理安排时间表，确保高峰时段所有服务的副本总数不超过仓库上限。有关详细信息，请参阅[自动扩缩容](/zh/products/cloud/features/autoscaling/overview)。
 
-## `clusterAllReplicas` 行为的变化 {#changes-in-behavior}
+<div id="changes-in-behavior">
+  ## `clusterAllReplicas` 行为的变化
+</div>
 
 当一个仓库包含多个服务后，`clusterAllReplicas()` 的行为会发生变化。
 使用 `default` 集群名称时，只会以当前服务中的副本为目标，而不会覆盖仓库中的所有服务。
@@ -156,7 +166,9 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
   ## 局限性
 </div>
 
-### 工作负载隔离的限制 {#workload-isolation-limitations}
+<div id="workload-isolation-limitations">
+  ### 工作负载隔离的限制
+</div>
 
 某些工作负载无法隔离到特定服务；在某些边缘情况下，一个服务中的某类工作负载会影响同一仓库中的另一项服务。这些情况包括：
 
@@ -168,7 +180,9 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 * **如果启用了空闲机制，一个读写服务上的插入操作可能会阻止另一个读写服务进入空闲状态。** 在某些情况下，
   一个服务会为另一个服务执行后台合并操作。这些后台操作可能会阻止第二个服务进入空闲状态。后台操作完成后，该服务将进入休眠。只读服务不受影响。
 
-### 实用提示 {#callouts}
+<div id="callouts">
+  ### 实用提示
+</div>
 
 * **ClickHouse 版本**：[升级计划](/zh/products/cloud/features/admin-features/upgrades)由主节点的设置决定。次级服务不能拥有独立于主节点的发布计划。
 
@@ -204,7 +218,9 @@ SETTINGS distributed_ddl_task_timeout=0
   ## 如何配置仓库
 </div>
 
-### 创建仓库 {#creating-a-warehouse}
+<div id="creating-a-warehouse">
+  ### 创建仓库
+</div>
 
 要创建一个仓库，您需要创建第二个服务，并与现有服务共享数据。您可以点击任意现有服务上的加号来完成此操作：
 

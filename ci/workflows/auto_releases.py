@@ -19,7 +19,7 @@ from ci.defs.defs import BASE_BRANCH, SECRETS, RunnerLabels
 # CreateRelease runs it dispatched (which need that same scarce label) - a
 # self-contention that stalled a dry run for hours. `arm_small` is abundant, so
 # holding one slot while waiting is harmless. The artifact-readiness gate still
-# lists packages in S3 via praktika's `S3` (boto3), which resolves credentials from
+# lists packages in S3 via `S3Helper` (boto3), which resolves credentials from
 # the runner's IAM instance role - available on `arm_small`, so no release-maker
 # runner is needed just to read S3. The heavy release work runs in the dispatched
 # CreateRelease runs on `amd-release-maker`.
@@ -55,7 +55,6 @@ auto_release_job = Job.Config(
 
 workflow = Workflow.Config(
     name="AutoReleases",
-    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[auto_release_job],

@@ -28,8 +28,8 @@ toISOYear(toDate('2024/10/02')) as year1,
 toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
         )",
         R"(
-┌─year1─┬─year2─┐
-│  2024 │  2024 │
+┌─week1─┬─week2─┐
+│    40 │    40 │
 └───────┴───────┘
         )"}
     };

@@ -102,15 +102,9 @@
       "expanded": true,
       "group": "데이터 수집",
       "pages": [
+        "ko/integrations/connectors/data-ingestion/index",
         "ko/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
-        {
-          "expanded": false,
-          "group": "Apache Airflow",
-          "pages": [
-            "ko/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
-            "ko/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin"
-          ]
-        },
+        "ko/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "ko/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
         {
           "expanded": false,
@@ -145,7 +139,7 @@
             "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Dataflow Template",
+              "group": "Dataflow 템플릿",
               "pages": [
                 "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -155,7 +149,15 @@
         },
         "ko/integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
         {
-          "$ref": "data-ingestion/etl-tools/dbt/navigation.json"
+          "expanded": false,
+          "group": "dbt",
+          "pages": [
+            "ko/integrations/connectors/data-ingestion/etl-tools/dbt/index",
+            "ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
+            "ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
+            "ko/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
+            "ko/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
+          ]
         },
         "ko/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
@@ -201,7 +203,6 @@
         "ko/integrations/connectors/tools/data-integration-index",
         "ko/integrations/connectors/data-integrations/integrations/retool",
         "ko/integrations/connectors/data-integrations/integrations/easypanel",
-        "ko/integrations/connectors/data-integrations/integrations/microsoft-fabric",
         "ko/integrations/connectors/data-integrations/integrations/middleware",
         "ko/integrations/connectors/data-integrations/integrations/notion",
         "ko/integrations/connectors/data-integrations/integrations/splunk"

@@ -12,7 +12,6 @@
 #include <IO/WriteSettings.h>
 #include <IO/StdIStreamFromMemory.h>
 #include <IO/S3Settings.h>
-#include <IO/S3/Requests.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/BufferAllocationPolicy.h>
@@ -63,7 +62,6 @@ private:
     String getShortLogDetails() const;
 
     struct PartData;
-    std::optional<S3::RequestChecksum::Algorithm> getUploadChecksumAlgorithm() const;
     void hidePartialData();
     void reallocateFirstBuffer();
     void detachBuffer();
@@ -81,9 +79,6 @@ private:
     S3::PutObjectRequest getPutRequest(PartData & data);
     void makeSinglepartUpload(PartData && data);
 
-    /// `object_metadata` with `idempotency_id` merged in.
-    ObjectAttributes metadataWithIdempotencyId() const;
-
     /// Returns true if not a single byte was written to the buffer
     bool isEmpty() const { return total_size == 0 && count() == 0 && hidden_size == 0 && offset() == 0; }
 
@@ -93,8 +88,6 @@ private:
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<ObjectAttributes> object_metadata;
-    /// Unique identifier of this write, stamped on the object it creates so a replay can recognise it.
-    const String idempotency_id;
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 

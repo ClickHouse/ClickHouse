@@ -39,10 +39,11 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
+    /// Must be done before replication: a DDL worker resolves a bare table name in its own current database.
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
-
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     auto do_drop = [&](const Strings & names, const String & storage_name)
     {
@@ -55,15 +56,15 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
         }
 
         if (query.if_exists)
-            access_control.tryRemove(storage->find(query.type, names));
+            storage->tryRemove(storage->find(query.type, names));
         else
-            access_control.remove(storage->getIDs(query.type, names));
+            storage->remove(storage->getIDs(query.type, names));
     };
 
     if (query.type == AccessEntityType::USER)
     {
         auto & definer_dependencies = DefinerDependencies::instance();
-        for (const auto & name : query.names->toStrings())
+        for (const auto & name : query.names)
         {
             std::vector<String> objects;
             for (const auto & uuid : definer_dependencies.getObjectsForDefiner(name))
@@ -86,7 +87,7 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     else if (query.type == AccessEntityType::MASKING_POLICY)
         do_drop(Strings{query.masking_policy_name->toString()}, query.storage_name);
     else
-        do_drop(query.names->toStrings(), query.storage_name);
+        do_drop(query.names, query.storage_name);
 
     return {};
 }
@@ -100,13 +101,13 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
     {
         case AccessEntityType::USER:
         {
-            for (const auto & name : query.names->toStrings())
+            for (const auto & name : query.names)
                 res.emplace_back(AccessType::DROP_USER, name);
             return res;
         }
         case AccessEntityType::ROLE:
         {
-            for (const auto & name : query.names->toStrings())
+            for (const auto & name : query.names)
                 res.emplace_back(AccessType::DROP_ROLE, name);
             return res;
         }

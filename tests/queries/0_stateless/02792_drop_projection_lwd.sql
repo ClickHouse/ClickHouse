@@ -1,5 +1,4 @@
 SET mutations_sync = 2;
-SET kill_throw_if_noop = false;
 
 DROP TABLE IF EXISTS t_projections_lwd;
 

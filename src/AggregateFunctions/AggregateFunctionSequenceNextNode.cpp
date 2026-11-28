@@ -30,7 +30,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool enable_funnel_functions;
+    extern const SettingsBool allow_experimental_funnel_functions;
 }
 
 constexpr size_t max_events_size = 64;
@@ -460,10 +460,10 @@ inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(
 AggregateFunctionPtr
 createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    if (settings == nullptr || !(*settings)[Setting::enable_funnel_functions])
+    if (settings == nullptr || !(*settings)[Setting::allow_experimental_funnel_functions])
     {
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function {} is experimental. "
-            "Set `enable_funnel_functions` setting to enable it", name);
+            "Set `allow_experimental_funnel_functions` setting to enable it", name);
     }
 
     if (parameters.size() < 2)
@@ -527,7 +527,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
     if (WhichDataType(argument_types[1].get()).idx != TypeIndex::String)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal type {} of second argument of aggregate function {}, must be String",
-                        argument_types[1]->getName(), name);
+                        argument_types[1].get()->getName(), name);
 
     DataTypePtr data_type = makeNullable(argument_types[1]);
 
@@ -547,7 +547,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of first argument of aggregate function {}, must "
-                    "be Unsigned Number, Date, DateTime", argument_types.front()->getName(), name);
+                    "be Unsigned Number, Date, DateTime", argument_types.front().get()->getName(), name);
 }
 
 }

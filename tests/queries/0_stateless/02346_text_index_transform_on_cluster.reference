@@ -1,0 +1,14 @@
+1. ALTER ADD INDEX with a transform is refused.
+1
+2. CREATE with a transform is refused.
+1
+3. Refused on the legacy entry-format path too, which normalizes on the host.
+1
+4. Indices inherited by CREATE AS on the legacy path are refused.
+1
+5. An index without a transform is unaffected.
+idx_plain
+6. CREATE AS with an explicit engine and no privilege on the source.
+SHOW COLUMNS ON default.tab
+7. The same for a source that does not exist.
+SHOW COLUMNS ON default.missing

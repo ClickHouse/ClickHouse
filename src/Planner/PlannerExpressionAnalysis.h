@@ -60,11 +60,6 @@ struct LimitByAnalysisResult
     Names limit_by_column_names;
 };
 
-struct LimitRangeAnalysisResult
-{
-    ActionsAndProjectInputsFlagPtr before_limit_range_actions;
-};
-
 class PlannerExpressionsAnalysisResult
 {
 public:
@@ -94,8 +89,7 @@ public:
 
     bool hasAggregation() const
     {
-        return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty()
-            || !aggregation_analysis_result.grouping_sets_parameters_list.empty();
+        return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty();
     }
 
     AggregationAnalysisResult & getAggregation()
@@ -183,21 +177,6 @@ public:
         limit_by_analysis_result = std::move(limit_by_analysis_result_);
     }
 
-    bool hasLimitRange() const
-    {
-        return limit_range_analysis_result.before_limit_range_actions != nullptr;
-    }
-
-    LimitRangeAnalysisResult & getLimitRange()
-    {
-        return limit_range_analysis_result;
-    }
-
-    void addLimitRange(LimitRangeAnalysisResult limit_range_analysis_result_)
-    {
-        limit_range_analysis_result = std::move(limit_range_analysis_result_);
-    }
-
 private:
     ProjectionAnalysisResult projection_analysis_result;
     FilterAnalysisResult where_analysis_result;
@@ -207,7 +186,6 @@ private:
     FilterAnalysisResult qualify_analysis_result;
     SortAnalysisResult sort_analysis_result;
     LimitByAnalysisResult limit_by_analysis_result;
-    LimitRangeAnalysisResult limit_range_analysis_result;
 };
 
 /// Build expression analysis result for query tree, join tree input columns and planner context.

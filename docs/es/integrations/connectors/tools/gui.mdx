@@ -6,7 +6,9 @@ title: 'Interfaces visuales de terceros'
 doc_type: 'reference'
 ---
 
-## Código abierto {#open-source}
+<div id="open-source">
+  ## Código abierto
+</div>
 
 <Accordion title="agx">
   [agx](https://github.com/agnosticeng/agx) es una aplicación de escritorio creada con Tauri y SvelteKit que proporciona una interfaz moderna para explorar y consultar datos mediante el motor de base de datos integrado de ClickHouse (chdb).
@@ -426,69 +428,9 @@ doc_type: 'reference'
   * Implementación basada en Docker para una configuración rápida en entornos de desarrollo.
 </Accordion>
 
-<Accordion title="Beekeeper Studio">
-  [Beekeeper Studio](https://www.beekeeperstudio.io/) es un editor SQL y gestor de bases de datos gratuito y de código abierto compatible con ClickHouse.
-
-  Características:
-
-  * Editor SQL moderno con autocompletado y ejecución de consultas en varias pestañas.
-  * Explorador de esquema para tablas, vistas y columnas.
-  * Guarda y organiza tus consultas favoritas.
-  * Aplicación de escritorio multiplataforma (Windows, macOS, Linux), además de una edición autohospedado/web.
-
-  [Guía de Beekeeper Studio y ClickHouse](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) · [GitHub](https://github.com/beekeeper-studio/beekeeper-studio)
-</Accordion>
-
-<Accordion title="Tabularis">
-  [Tabularis](https://github.com/TabularisDB/tabularis) es un workspace SQL de escritorio de código abierto para Windows, macOS y Linux, con licencia Apache 2.0. La compatibilidad con ClickHouse se obtiene mediante un plugin oficial que se instala desde la propia aplicación y que se comunica con la interfaz HTTP (`8123`, o `8443` with TLS) a través del client `clickhouse` de Rust.
-
-  Características:
-
-  * Exploración de bases de datos, tablas y vistas con tipos nativos de ClickHouse, incluidos los índices de omisión de datos con su tipo, columnas y granularidad.
-  * Editor SQL basado en Monaco, con autocompletado, ejecución de varias sentencias y resultados paginados.
-  * Inserción, actualización y eliminación en línea desde la cuadrícula de datos; generación de DDL para `CREATE TABLE`, `ALTER TABLE ... ADD/MODIFY/RENAME COLUMN` y `ADD INDEX`.
-  * MCP server integrado, de modo que los AI agents pueden leer el esquema y ejecutar consultas desde la misma aplicación.
-  * ClickHouse junto a PostgreSQL, MySQL, SQLite, DuckDB, Redis, MongoDB y otros motores en una sola ventana.
-
-  [Plugin de ClickHouse para Tabularis](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [Sitio web](https://tabularis.dev)
-</Accordion>
-
-## Comercial {#commercial}
-
-<Accordion title="ADQM Notebook">
-  [ADQM Notebook](https://docs.arenadata.io/en/ADQM/current/notebook.html) es un espacio de trabajo SQL de estilo notebook incluido en la edición Enterprise de [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), el DBMS orientado a columnas creado sobre ClickHouse por Arenadata. Amplía la interfaz web integrada de ClickHouse con notebooks de múltiples celdas, resultados interactivos, análisis de planes de consulta y un explorador de esquemas a nivel de clúster, y está disponible de forma inmediata en `/notebook` en el puerto HTTP (`8123`) de un host ADQM, junto a `/play`, o mediante Chproxy.
-
-  Características:
-
-  * Celdas SQL y Markdown, hasta cinco sentencias por celda y límites de memoria, tiempo y subprocesos por notebook o celda.
-  * Editor SQL con resaltado de sintaxis, autocompletado, sustitución de `{{variable}}` y `Beautify SQL`.
-  * Resultados en una cuadrícula ordenable y con búsqueda, con proporción de NULL, recuento de valores únicos y rango de valores por columna.
-  * Gráficos de líneas, áreas y barras; descargas en CSV, TSV, JSON, JSONLines o Parquet.
-  * Planes de consulta estimados y reales, `EXPLAIN PIPELINE` y vistas lógicas, así como hallazgos con correcciones sugeridas.
-  * Estadísticas de consultas de `system.query_log` con desglose por nodo; historial de las últimas cinco ejecuciones.
-  * Panel de bases de datos para el host local o para todo el clúster, con estadísticas de columnas y consultas predefinidas.
-  * Grafo de dependencias de tablas, vistas, vistas materializadas, diccionarios y proyecciones.
-  * Vista en vivo de las consultas en ejecución con un botón `KILL`.
-  * Acceso mediante Chproxy como punto de entrada único al clúster, con las consultas balanceadas entre todos los hosts.
-  * Guardado automático, exportación e importación en JSON, almacenamiento de notebooks en el servidor de ClickHouse y compartición mediante enlace.
-</Accordion>
-
-<Accordion title="ProbeDeck">
-  [ProbeDeck](https://probedeck.app) es un Client de iOS y iPadOS para monitorizar y consultar ClickHouse.
-
-  Características:
-
-  * ProbeDeck muestra consultas en ejecución, réplicas, partes, fusiones, mutaciones, discos y métricas del servidor.
-  * Puede cancelar consultas con `KILL QUERY` y mutaciones con `KILL MUTATION`.
-  * Puede explorar esquemas y datos o ejecutar SQL en el editor.
-  * ProbeDeck se conecta mediante HTTP(S) a través de la red del dispositivo o de un túnel SSH.
-  * ProbeDeck almacena las credenciales en el llavero de iOS y admite un modo de solo lectura para cada conexión.
-  * La aplicación incluye una demostración sin conexión con datos integrados.
-
-  Los usuarios gratuitos pueden monitorizar un servidor y ejecutar SQL de solo lectura. Pueden guardar una conexión. ProbeDeck Pro añade controles para cancelar, escrituras, DDL y conexiones guardadas ilimitadas.
-
-  Consulte [Conectar ProbeDeck a ClickHouse](/es/integrations/connectors/sql-clients/probedeck) para obtener instrucciones de conexión.
-</Accordion>
+<div id="commercial">
+  ## Comercial
+</div>
 
 <Accordion title="DataGrip">
   [DataGrip](https://www.jetbrains.com/datagrip/) es un IDE de bases de datos de JetBrains con soporte específico para ClickHouse. También está integrado en otras herramientas basadas en IntelliJ: PyCharm, IntelliJ IDEA, GoLand, PhpStorm y otras.
@@ -532,41 +474,41 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Looker">
-  [Looker](https://looker.com) es una plataforma de datos y herramienta de inteligencia empresarial compatible con más de 50 dialectos de bases de datos, incluido ClickHouse. Looker está disponible como plataforma SaaS y en versión autohospedada. Los usuarios pueden utilizar Looker desde el navegador para explorar datos, crear visualizaciones y dashboards, programar informes y compartir sus conclusiones con sus colegas. Looker ofrece un amplio conjunto de herramientas para integrar estas funcionalidades en otras aplicaciones, así como una API
+  [Looker](https://looker.com) es una plataforma de datos y herramienta de inteligencia empresarial compatible con más de 50 dialectos de bases de datos, incluido ClickHouse. Looker está disponible como plataforma SaaS y autohospedada. Los usuarios pueden utilizar Looker mediante el navegador para explorar datos, crear visualizaciones y dashboards, programar informes y compartir información con sus colegas. Looker proporciona un amplio conjunto de herramientas para integrar estas funcionalidades en otras aplicaciones, y una API
   para integrar datos con otras aplicaciones.
 
   Características:
 
   * Desarrollo sencillo y ágil mediante LookML, un lenguaje que admite
-    [Data Modeling](https://looker.com/platform/data-modeling) curado para dar soporte a los autores de informes y a los usuarios finales.
+    [modelado de datos](https://looker.com/platform/data-modeling) cuidadosamente diseñado para ayudar a los creadores de informes y usuarios finales.
   * Potente integración de flujos de trabajo mediante las [Data Actions](https://looker.com/platform/actions) de Looker.
 
   [Cómo configurar ClickHouse en Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 </Accordion>
 
 <Accordion title="SeekTable">
-  [SeekTable](https://www.seektable.com) es una herramienta de BI de autoservicio para explorar datos y generar informes operativos. Está disponible como servicio en la nube y en versión autohospedada. Los informes de SeekTable pueden integrarse en cualquier aplicación web.
+  [SeekTable](https://www.seektable.com) es una herramienta de BI de autoservicio para la exploración de datos y la generación de informes operativos. Está disponible tanto como servicio en la nube como en una versión autohospedada. Los informes de SeekTable pueden integrarse en cualquier aplicación web.
 
   Características:
 
-  * Generador de informes intuitivo para usuarios empresariales.
+  * Generador de informes fácil de usar para usuarios de negocio.
   * Potentes parámetros de informe para el filtrado SQL y la personalización de consultas específicas de cada informe.
-  * Puede conectarse a ClickHouse tanto mediante un endpoint TCP/IP nativo como mediante una interfaz HTTP(S) (2 controladores distintos).
-  * Permite utilizar toda la potencia del dialecto SQL de ClickHouse en las definiciones de dimensiones y medidas.
-  * [API web](https://www.seektable.com/help/web-api-integration) para generar informes automáticamente.
-  * Admite un flujo de desarrollo de informes con [copia de seguridad/restauración](https://www.seektable.com/help/self-hosted-backup-restore) de los datos de la cuenta; la configuración de los modelos de datos (cubos) e informes se almacena en XML legible por humanos y puede guardarse en un sistema de control de versiones.
+  * Puede conectarse a ClickHouse tanto mediante un endpoint TCP/IP nativo como mediante una interfaz HTTP(S) (2 drivers diferentes).
+  * Es posible aprovechar toda la potencia del dialecto ClickHouse SQL en las definiciones de dimensiones/medidas.
+  * [Web API](https://www.seektable.com/help/web-api-integration) para la generación automatizada de informes.
+  * Admite un flujo de desarrollo de informes con [copia de seguridad/restauración](https://www.seektable.com/help/self-hosted-backup-restore) de los datos de la cuenta; la configuración de los modelos de datos (cubos) / informes está en un XML legible para humanos y puede almacenarse en un sistema de control de versiones.
 
-  SeekTable es [gratuito](https://www.seektable.com/help/cloud-pricing) para uso personal.
+  SeekTable es [gratis](https://www.seektable.com/help/cloud-pricing) para uso personal/individual.
 
-  [Cómo configurar una conexión de ClickHouse en SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
+  [Cómo configurar la conexión a ClickHouse en SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
 </Accordion>
 
 <Accordion title="Chadmin">
-  [Chadmin](https://github.com/bun4uk/chadmin) es una interfaz de usuario sencilla que permite visualizar las consultas que se están ejecutando actualmente en su clúster de ClickHouse, consultar información sobre ellas y cancelarlas si lo desea.
+  [Chadmin](https://github.com/bun4uk/chadmin) es una UI sencilla en la que puede visualizar las consultas que se están ejecutando actualmente en su clúster de ClickHouse, consultar información sobre ellas y cancelarlas si lo desea.
 </Accordion>
 
 <Accordion title="TABLUM.IO">
-  [TABLUM.IO](https://tablum.io/) es una herramienta en línea de consultas y analítica para ETL y visualización. Permite conectarse a ClickHouse, consultar datos mediante una versátil consola SQL y cargar datos desde archivos estáticos y servicios de terceros. TABLUM.IO permite visualizar los resultados como gráficos y tablas.
+  [TABLUM.IO](https://tablum.io/) es una herramienta en línea de consultas y análisis para ETL y visualización. Permite conectarse a ClickHouse, consultar datos mediante una versátil consola SQL y cargar datos desde archivos estáticos y servicios de terceros. TABLUM.IO permite visualizar los resultados como gráficos y tablas.
 
   Características:
 
@@ -600,31 +542,16 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="1bench">
-  [1bench](https://1bench.dev) es una interfaz gráfica de escritorio nativa para múltiples bases de datos con soporte de primer nivel para ClickHouse, que abarca el resumen del servidor, la gestión de esquemas, la búsqueda vectorial y la exploración de grandes conjuntos de resultados.
+  [1bench](https://1bench.dev) es una interfaz gráfica de escritorio nativa para múltiples bases de datos con soporte de primer nivel para ClickHouse, que abarca la visión general del servidor, la gestión de esquemas, la búsqueda vectorial y la exploración de grandes conjuntos de resultados.
 
   Características:
 
-  * Resumen del servidor al conectarse: versión, tiempo de actividad, consultas en ejecución, fusiones activas, partes y tamaños de almacenamiento, estado de la réplica, clústeres y nodos de un vistazo.
-  * Constructor visual de consultas (selectores de columnas, filtros, ordenación, límite) junto con un editor SQL de Monaco con resaltado de sintaxis e historial de consultas por conexión.
+  * Visión general del servidor al conectarse: versión, tiempo de actividad, consultas en ejecución, merges activos, partes y tamaños de almacenamiento, estado de la réplica, clústeres y nodos de un vistazo.
+  * Generador visual de consultas (selectores de columnas, filtros, ordenación, límite) junto con un editor SQL de Monaco con resaltado de sintaxis e historial de consultas por conexión.
   * Asistente visual de `CREATE TABLE` compatible con variantes de `MergeTree`, `ORDER BY`, `PARTITION BY`, `SETTINGS` y aplicación automática de `Nullable()`.
   * Manejo nativo de tipos de ClickHouse: `Nullable`, `Array`, `LowCardinality` y objetos anidados.
   * Soporte para búsqueda vectorial: columnas de embeddings `Array(Float32)` representadas como celdas vectoriales compactas, visualización de embeddings en 2D y búsqueda de elementos similares mediante `cosineDistance`.
   * Edición de datos en línea en tablas de resultados con guardado por lotes, además de exportación e importación CSV/JSON/SQL mediante los formatos nativos de ClickHouse.
   * Opciones de conexión: HTTP/HTTPS, túnel SSH para clústeres privados detrás de un firewall y modo opcional de solo lectura para explorar de forma segura entornos de producción.
   * Funciona con ClickHouse Cloud y en entornos autohospedados.
-</Accordion>
-
-<Accordion title="ADQM Control">
-  [ADQM Control](https://docs.arenadata.io/en/ADQMCONTROL/current/concept/overview.html) (Arenadata QuickMarts Control) es una plataforma de observabilidad para clústeres de ClickHouse desplegados como [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), el SGBD orientado a columna desarrollado por Arenadata sobre ClickHouse. Combina métricas de hosts procedentes de Prometheus con datos sobre hosts, tablas y consultas recopilados del clúster para mostrar cómo crecen las tablas, cómo se comportan las consultas y qué hosts están sometidos a mayor carga, en uno o varios clústeres de ADQM. ADQM Control se despliega como un clúster independiente con [Arenadata Cluster Manager (ADCM)](https://github.com/arenadata/adcm) y almacena los datos recopilados en PostgreSQL.
-
-  Características:
-
-  * Mapa de calor del estado de los hosts para el clúster de ADQM seleccionado.
-  * Alertas relacionadas agrupadas en incidentes por tiempo, con sensibilidad ajustable.
-  * Tamaño de las tablas, filas y número de peticiones a lo largo del tiempo, con métricas de sesgo y desequilibrio entre hosts.
-  * Tamaño comprimido y sin comprimir por columna, ahorro por compresión y códec, con gráficos.
-  * Historial completo de consultas con estado, códigos de excepción, duración, memoria y filas y bytes leídos y escritos.
-  * Filtros de consultas por texto, tabla, usuario, host, duración, estado y valores predefinidos de códigos de excepción.
-  * Gráficos de consultas por duración, usuario y tipo; gráficos de carga por host con detección de anomalías.
-  * Alertas por umbral sobre los recursos de los hosts que explican el problema y recomiendan una solución.
 </Accordion>

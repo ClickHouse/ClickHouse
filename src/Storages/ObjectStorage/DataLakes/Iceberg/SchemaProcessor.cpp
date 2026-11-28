@@ -230,17 +230,40 @@ String canonicalizeTypeSpacing(const String & s)
     return result;
 }
 
-/// canonicalizeTypeSpacing, then resolve the names catalogs report instead of the spec ones: AWS Glue
-/// reports `binary` as the Redshift `varbyte` / `varbyte(N)` (a maximum length, no ClickHouse
-/// counterpart), and Hive 3 reports `timestamptz` as `timestamp with local time zone`.
-String canonicalizeTypeName(const String & s)
+/// Calls `callback(id, type)` for `field_id` and for the ids of the fields, list elements and map keys/values nested in it.
+/// `type` is a JSON string (primitive leaf) or object (complex type) describing `field_id`.
+template <typename Callback>
+void forEachFieldId(const Poco::Dynamic::Var & type, Int64 field_id, Callback && callback)
 {
-    String result = canonicalizeTypeSpacing(s);
-    if (result == f_varbyte || (result.starts_with("varbyte(") && result.ends_with(')')))
-        return f_binary;
-    if (result == f_timestamp_with_local_time_zone)
-        return f_timestamptz;
-    return result;
+    checkStackSize();
+    callback(field_id, type);
+    if (type.isString())
+        return;
+
+    const auto & type_object = type.extract<Poco::JSON::Object::Ptr>();
+    auto type_str = type_object->getValue<String>(f_type);
+    if (type_str == "map")
+    {
+        if (type_object->has(f_key))
+            forEachFieldId(type_object->get(f_key), type_object->getValue<Int64>(f_key_id), callback);
+        if (type_object->has(f_value))
+            forEachFieldId(type_object->get(f_value), type_object->getValue<Int64>(f_value_id), callback);
+    }
+    else if (type_str == "list")
+    {
+        if (type_object->has(f_element))
+            forEachFieldId(type_object->get(f_element), type_object->getValue<Int64>(f_element_id), callback);
+    }
+    else if (type_str == "struct")
+    {
+        auto fields = type_object->getArray(f_fields);
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            auto field = fields->getObject(i);
+            if (field->has(f_type))
+                forEachFieldId(field->get(f_type), field->getValue<Int64>(f_id), callback);
+        }
+    }
 }
 
 /// Compare two Iceberg type descriptors for the same field. A type is either a primitive
@@ -261,7 +284,7 @@ bool typesAreStructurallyIdentical(
     /// "binary" would compare unequal and be wrongly rejected.
     if (first.isString())
     {
-        const String canon = canonicalizeTypeName(first.toString());
+        const String canon = canonicalizeTypeSpacing(first.toString());
         first = canon;
         for (const auto & [prefix, mapped] : type_mapping)
             if (canon.starts_with(prefix))
@@ -272,7 +295,7 @@ bool typesAreStructurallyIdentical(
     }
     if (second.isString())
     {
-        const String canon = canonicalizeTypeName(second.toString());
+        const String canon = canonicalizeTypeSpacing(second.toString());
         second = canon;
         for (const auto & [prefix, mapped] : type_mapping)
             if (canon.starts_with(prefix))
@@ -592,7 +615,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
     /// Parameterized primitive type strings (decimal(P, S), fixed[N], geography(...)) can be
     /// serialized with different inner whitespace across metadata files. Canonicalize by removing
     /// ASCII whitespace so parsing accepts every spelling the whitespace-insensitive comparison does.
-    const String type_name = canonicalizeTypeName(type_name_arg);
+    const String type_name = canonicalizeTypeSpacing(type_name_arg);
 
     if (type_name == f_boolean)
         return DataTypeFactory::instance().get("Bool");
@@ -625,7 +648,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         {
             return DataTypeFactory::instance().get("Geometry");
         }
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using geometry/geography types is not allowed without enabled allow_geo_types_in_iceberg flag");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using geometry/geography types is not allowed without enabled allow_experimental_geo_types_in_iceberg flag");
     }
     if (type_name == f_uuid)
         return std::make_shared<DataTypeUUID>();
@@ -821,7 +844,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 /// Parameterized primitive types (decimal, geography, ...) can be serialized with
                 /// different spacing across metadata files, so compare ignoring ASCII whitespace:
                 /// a whitespace-only difference is the same type and needs only a rename, not a cast.
-                if (canonicalizeTypeName(old_type) == canonicalizeTypeName(new_type))
+                if (canonicalizeTypeSpacing(old_type) == canonicalizeTypeSpacing(new_type))
                 {
                     /// Nullability is carried by the separate `required` key, so equal type strings
                     /// can still resolve to different types. Only relaxing required to optional is
@@ -973,6 +996,20 @@ std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::J
         if (current_object->isObject(Iceberg::f_type))
             traverseComplexType(current_object->getObject(Iceberg::f_type), result, cur_name);
         result[cur_name] = field_id;
+    }
+    return result;
+}
+
+Int64 IcebergSchemaProcessor::getMaxFieldId(Poco::JSON::Array::Ptr schema)
+{
+    Int64 result = 0;
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        auto current_object = schema->getObject(i);
+        if (current_object->has(Iceberg::f_type))
+            forEachFieldId(
+                current_object->get(Iceberg::f_type), current_object->getValue<Int64>(Iceberg::f_id),
+                [&](Int64 field_id, const Poco::Dynamic::Var &) { result = std::max(result, field_id); });
     }
     return result;
 }

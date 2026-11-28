@@ -230,9 +230,9 @@ ISerialization::KindStack SerializationSparse::getKindStack() const
     return kind_stack;
 }
 
-MutableColumnPtr SerializationSparse::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationSparse::createColumnForDeserialization(const IDataType & type) const
 {
-    return ColumnSparse::create(nested->wrapColumnForDeserialization(std::move(column)));
+    return ColumnSparse::create(nested->createColumnForDeserialization(type));
 }
 
 SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
@@ -264,6 +264,7 @@ void SerializationSparse::enumerateStreams(
 
     settings.path.push_back(Substream::SparseOffsets);
     auto offsets_data = SubstreamData(SerializationNumber<UInt64>::create())
+                            .withType(data.type ? std::make_shared<DataTypeUInt64>() : nullptr)
                             .withColumn(column_sparse ? column_sparse->getOffsetsPtr() : nullptr)
                             .withSerializationInfo(data.serialization_info);
 

@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Boundary values of the encoded key types (the sign-bit flip must hold at the extremes) and
 -- wide types served by the generic comparator (Int128, UInt128, Decimal128, UUID, FixedString),
 -- all verified against the cross-join oracle.

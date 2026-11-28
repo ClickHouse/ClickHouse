@@ -6,7 +6,6 @@
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
 #include <Backups/getBackupDataFileName.h>
-#include <Backups/findCharacterNotPreservedByXML.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
@@ -23,6 +22,7 @@
 #include <IO/ConcatReadBufferFromFile.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <IO/StdStreamFromReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
@@ -32,6 +32,7 @@
 #if CLICKHOUSE_CLOUD && USE_SSL
 #include <Backups/BackupEncryptionSidecar.h>
 #endif
+#include <Poco/SAX/InputSource.h>
 #include <Poco/SAX/SAXParser.h>
 #include <Poco/SAX/XMLReader.h>
 
@@ -85,7 +86,6 @@ namespace
     /// We may use lightweight backup in version 2.
     const int CURRENT_BACKUP_VERSION = 2;
     constexpr auto BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP = "base_backup_copy_s3_credentials_from_backup";
-    constexpr auto METADATA_FILE_NAME = ".backup";
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
 
@@ -161,24 +161,6 @@ namespace
                 backup_name_for_logging,
                 field_name,
                 quoteString(file_name));
-    }
-
-    void writeDataFileAndCopiesToArchive(
-        IArchiveWriter & archive_writer, const IBackupWriter & writer, const BackupFileInfo & info, const BackupEntryPtr & entry)
-    {
-        const auto write_file = [&](const String & file_name)
-        {
-            auto out = archive_writer.writeFile(file_name, info.size);
-            auto read_buffer = entry->getReadBuffer(writer.getReadSettings());
-            if (info.base_size != 0)
-                read_buffer->seek(info.base_size, SEEK_SET);
-            copyData(*read_buffer, *out);
-            out->finalize();
-        };
-
-        write_file(info.data_file_name);
-        for (const auto & data_file_copy : info.data_file_copies)
-            write_file(data_file_copy);
     }
 }
 
@@ -402,6 +384,9 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         }
 
         BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
+        /// A backup being written only looks up the sizes and checksums of the files of its base, to skip the files the base
+        /// already has. For a base of millions of files, the rest of the information about its files takes gigabytes.
+        base_params.for_file_lookups_only = (open_mode == OpenMode::WRITE);
         base_backup = BackupFactory::instance().createBackup(base_params);
 
         if ((open_mode == OpenMode::READ) && (base_backup_uuid != base_backup->getUUID()))
@@ -506,25 +491,9 @@ void BackupImpl::writeBackupMetadata()
 
     std::unique_ptr<WriteBuffer> out;
     if (use_archive)
-        out = archive_writer->writeFile(METADATA_FILE_NAME);
+        out = archive_writer->writeFile(".backup");
     else
-        out = writer->writeFile(METADATA_FILE_NAME);
-
-    /// A value XML cannot carry unchanged has no escaped form either, and writing it raw reported
-    /// `BACKUP_CREATED` over a manifest that reads back wrong, or not at all.
-    ///
-    /// The value is never quoted in the message: `<base_backup>` holds a locator that can carry credentials.
-    auto xml_string = [](std::string_view element, const String & str)
-    {
-        if (auto offset = findCharacterNotPreservedByXML(str))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot write the backup metadata: the value of <{}> has a character at byte offset {} that "
-                "XML cannot carry unchanged. The value is not shown because it may carry credentials",
-                element,
-                *offset);
-        return std::string_view(str.data(), str.size());
-    };
+        out = writer->writeFile(".backup");
 
     *out << "<config>";
     *out << "<version>" << (params.is_lightweight_snapshot ? CURRENT_BACKUP_VERSION : INITIAL_BACKUP_VERSION) << "</version>";
@@ -539,7 +508,7 @@ void BackupImpl::writeBackupMetadata()
          << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
     if (!backup_id.empty())
-        *out << "<backup_id>" << xml << xml_string("backup_id", backup_id) << "</backup_id>";
+        *out << "<backup_id>" << xml << backup_id << "</backup_id>";
     if (data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
         *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
              << "</data_file_name_generator>";
@@ -577,10 +546,7 @@ void BackupImpl::writeBackupMetadata()
                 base_backup_can_use_this_backup_credentials = base_backup_info_with_this_backup_credentials.toString() == effective_base_backup_info.toString();
             }
 
-            /// Named for readability. Inline would be safe too: the temporary lives to the end of the
-            /// full-expression, which is the whole statement.
-            const String base_backup_text = base_backup_info_for_metadata.toString();
-            *out << "<base_backup>" << xml << xml_string("base_backup", base_backup_text) << "</base_backup>";
+            *out << "<base_backup>" << xml << base_backup_info_for_metadata.toString() << "</base_backup>";
             *out << "<base_backup_uuid>" << getBaseBackupUnlocked()->getUUID() << "</base_backup_uuid>";
             if (base_backup_can_use_this_backup_credentials)
                 *out << "<" << BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP << ">true</"
@@ -590,8 +556,8 @@ void BackupImpl::writeBackupMetadata()
 
     if (params.is_lightweight_snapshot)
     {
-        *out << "<original_endpoint>" << xml << xml_string("original_endpoint", original_endpoint) << "</original_endpoint>";
-        *out << "<original_namespace>" << xml << xml_string("original_namespace", original_namespace) << "</original_namespace>";
+        *out << "<original_endpoint>" << original_endpoint << "</original_endpoint>";
+        *out << "<original_namespace>" << original_namespace << "</original_namespace>";
     }
 
     num_files = num_all_file_infos;
@@ -604,12 +570,12 @@ void BackupImpl::writeBackupMetadata()
     {
         *out << "<file>";
 
-        *out << "<name>" << xml << xml_string("name", info.file_name) << "</name>";
+        *out << "<name>" << xml << info.file_name << "</name>";
         *out << "<size>" << info.size << "</size>";
 
         if (!info.object_key.empty())
         {
-            *out << "<object_key>" << xml << xml_string("object_key", info.object_key) << "</object_key>";
+            *out << "<object_key>" << info.object_key << "</object_key>";
             if (original_endpoint.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "In lightweight snapshot backup, the endpoint should not be empty. Do not run this command with `ON CLUSTER`");
         }
@@ -627,7 +593,7 @@ void BackupImpl::writeBackupMetadata()
                 }
             }
             if (!info.data_file_name.empty() && (info.data_file_name != info.file_name))
-                *out << "<data_file>" << xml << xml_string("data_file", info.data_file_name) << "</data_file>";
+                *out << "<data_file>" << xml << info.data_file_name << "</data_file>";
             if (info.encrypted_by_disk)
                 *out << "<encrypted_by_disk>true</encrypted_by_disk>";
         }
@@ -683,7 +649,7 @@ void BackupImpl::recalculateMetadataCounters()
         }
     });
 
-    uncompressed_size = size_of_entries + writer->getFileSize(METADATA_FILE_NAME);
+    uncompressed_size = size_of_entries + writer->getFileSize(".backup");
 #if USE_SSL
     uncompressed_size += encryption_sidecar->getFileSize();
 #endif
@@ -699,20 +665,17 @@ void BackupImpl::readBackupMetadata()
     std::unique_ptr<ReadBuffer> in;
     if (use_archive)
     {
-        if (!archive_reader->fileExists(METADATA_FILE_NAME))
+        if (!archive_reader->fileExists(".backup"))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Archive {} is not a backup", backup_name_for_logging);
         setCompressedSize();
-        in = archive_reader->readFile(METADATA_FILE_NAME, /*throw_on_not_found=*/true);
+        in = archive_reader->readFile(".backup", /*throw_on_not_found=*/true);
     }
     else
     {
-        if (!reader->fileExists(METADATA_FILE_NAME))
+        if (!reader->fileExists(".backup"))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
-        in = reader->readFile(METADATA_FILE_NAME);
+        in = reader->readFile(".backup");
     }
-
-    String str;
-    readStringUntilEOF(str, *in);
 
     num_files = 0;
     total_size = 0;
@@ -793,8 +756,20 @@ void BackupImpl::readBackupMetadata()
         contents_seen = true;
     };
 
+    /// Many files of a backup have the same size and checksum (e.g. `columns.txt` of the parts of a table), so the keys
+    /// are deduplicated while they are read, whenever their number doubles since the previous time: this keeps the vector
+    /// at about twice the number of distinct keys, however many duplicates there are.
+    static constexpr size_t min_num_sizes_and_checksums_to_deduplicate = 65536;
+    size_t num_sizes_and_checksums_after_deduplication = 0;
+    auto deduplicate_sizes_and_checksums = [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        std::ranges::sort(sizes_and_checksums);
+        sizes_and_checksums.erase(std::ranges::unique(sizes_and_checksums).begin(), sizes_and_checksums.end());
+        num_sizes_and_checksums_after_deduplication = sizes_and_checksums.size();
+    };
+
     /// `readBackupMetadata` runs under `mutex` (TSA_REQUIRES), and `on_file` is invoked synchronously from
-    /// `parseMemoryNP` below while that lock is held, so the guarded members are safe to touch here. TSA cannot
+    /// `parse` below while that lock is held, so the guarded members are safe to touch here. TSA cannot
     /// see through the lambda boundary, hence the explicit suppression.
     handler.on_file = [&](const BackupMetadataHandler::Fields & f) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
@@ -893,7 +868,17 @@ void BackupImpl::readBackupMetadata()
         {
             file_names.emplace(info.file_name, size_and_checksum);
             if (info.size)
-                file_infos.try_emplace(size_and_checksum, std::move(info));
+            {
+                if (params.for_file_lookups_only)
+                {
+                    sizes_and_checksums.push_back(size_and_checksum);
+                    if (sizes_and_checksums.size()
+                        >= std::max(min_num_sizes_and_checksums_to_deduplicate, 2 * num_sizes_and_checksums_after_deduplication))
+                        deduplicate_sizes_and_checksums();
+                }
+                else
+                    file_infos.try_emplace(size_and_checksum, std::move(info));
+            }
         }
     };
 
@@ -904,9 +889,18 @@ void BackupImpl::readBackupMetadata()
     /// ordinary element; with it the handler sees "x:contents" and ignores it (writeBackupMetadata never
     /// emits namespaces, so this only rejects hand-crafted manifests).
     xml_parser.setFeature(Poco::XML::XMLReader::FEATURE_NAMESPACE_PREFIXES, true);
+    /// The metadata is parsed while it is read, in chunks, instead of being read into one string first: it has
+    /// a record per file and can take gigabytes for a backup of many files.
+    ReadBuffer & metadata_in = *in;
+    /// The parser reads the stream from start to end and never seeks, so the stream doesn't need the size.
+    StdIStreamFromReadBuffer metadata_stream(std::move(in), /*size=*/ 0);
+    /// `std::istream` swallows an exception thrown by the buffer and only sets `badbit`, which the parser takes
+    /// for the end of the data. Rethrow it instead, so a read error isn't reported as a malformed manifest.
+    metadata_stream.exceptions(std::ios::badbit);
+    Poco::XML::InputSource metadata_source(metadata_stream);
     try
     {
-        xml_parser.parseMemoryNP(str.data(), str.size());
+        xml_parser.parse(&metadata_source);
     }
     catch (...)
     {
@@ -926,7 +920,10 @@ void BackupImpl::readBackupMetadata()
     if (!contents_seen)
         throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Metadata has no <contents>", backup_name_for_logging);
 
-    uncompressed_size = size_of_entries + str.size();
+    deduplicate_sizes_and_checksums();
+    sizes_and_checksums.shrink_to_fit();
+
+    uncompressed_size = size_of_entries + metadata_in.count();
 
 #if CLICKHOUSE_CLOUD && USE_SSL
     /// A backup written with an encryption config file next to it carries the TDE key information of that
@@ -951,7 +948,7 @@ void BackupImpl::checkBackupDoesntExist() const
     if (use_archive)
         file_name_to_check_existence = archive_params.archive_name;
     else
-        file_name_to_check_existence = METADATA_FILE_NAME;
+        file_name_to_check_existence = ".backup";
 
     if (writer->fileExists(file_name_to_check_existence))
         throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
@@ -977,7 +974,7 @@ void BackupImpl::createLockFile()
     chassert(uuid);
     if (lock_file_contents.empty())
         lock_file_contents = toString(*uuid);
-    const String completed_file = use_archive ? archive_params.archive_name : METADATA_FILE_NAME;
+    const String completed_file = use_archive ? archive_params.archive_name : ".backup";
     FailPointInjection::pauseFailPoint(FailPoints::backup_pause_before_lock_file_creation);
     try
     {
@@ -1196,6 +1193,8 @@ bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     std::lock_guard lock{mutex};
+    if (params.for_file_lookups_only)
+        return std::ranges::binary_search(sizes_and_checksums, size_and_checksum);
     return file_infos.contains(size_and_checksum);
 }
 
@@ -1257,6 +1256,9 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
 {
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
+
+    if (params.for_file_lookups_only)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup {}: Opened only to look up its files, it can't be read from", backup_name_for_logging);
 
     // Zero-sized files are not inserted into `file_infos` during metadata load,
     // but they are present in `file_names`. Short-circuit them here and return
@@ -1435,14 +1437,13 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
+    if (params.for_file_lookups_only)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup {}: Opened only to look up its files, it can't be read from", backup_name_for_logging);
+
     if (size_and_checksum.first == 0)
     {
         /// Entry's data is empty.
-        /// The destination must exist afterwards either way: the non-empty path below writes through
-        /// writeFile(), which creates a missing file, while createFile() throws on an existing one.
-        const bool create_destination
-            = (write_mode == WriteMode::Rewrite) || !destination_disk->existsFile(destination_path);
-        if (create_destination)
+        if (write_mode == WriteMode::Rewrite)
         {
             if (sync)
             {
@@ -1583,28 +1584,47 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 
     /// NOTE: `mutex` must be unlocked during copying otherwise writing will be in one thread maximum and hence slow.
 
+    const auto write_info_to_archive = [&](const auto & file_name)
+    {
+        auto out = archive_writer->writeFile(file_name, info.size);
+        auto read_buffer = entry->getReadBuffer(writer->getReadSettings());
+        if (info.base_size != 0)
+            read_buffer->seek(info.base_size, SEEK_SET);
+        copyData(*read_buffer, *out);
+        out->finalize();
+    };
+
     if (use_archive)
     {
         LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}, adding to archive", info.data_file_name, src_file_desc, info.data_file_index);
-        writeDataFileAndCopiesToArchive(*archive_writer, *writer, info, entry);
+        write_info_to_archive(info.data_file_name);
+    }
+    else if (src_disk && from_immutable_file)
+    {
+        LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
+        writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
     }
     else
     {
-        if (src_disk && from_immutable_file)
-        {
-            LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
-            writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
-        }
-        else
-        {
-            LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
-            auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
-            writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
-        }
-
-        for (const auto & data_file_copy : info.data_file_copies)
-            writer->copyFile(data_file_copy, info.data_file_name, info.size - info.base_size);
+        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
+        auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
+        writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
     }
+
+    std::function<void(const String &)> copy_file_inside_backup;
+    if (use_archive)
+    {
+        copy_file_inside_backup = write_info_to_archive;
+    }
+    else
+    {
+        copy_file_inside_backup = [&](const auto & data_file_copy)
+        {
+            writer->copyFile(data_file_copy, info.data_file_name, info.size - info.base_size);
+        };
+    }
+
+    std::ranges::for_each(info.data_file_copies, copy_file_inside_backup);
 
     {
         std::lock_guard lock{mutex};
@@ -1746,7 +1766,7 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
         }
         else
         {
-            files_to_remove.push_back(METADATA_FILE_NAME);
+            files_to_remove.push_back(".backup");
             coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & file_info)
             {
                 /// Skip entries with no data file — an empty file, or one wholly covered by the base backup.

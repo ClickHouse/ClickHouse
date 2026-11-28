@@ -60,7 +60,7 @@
           ]
         },
         {
-          "group": "Configuração e ajustes",
+          "group": "Configuração e definições",
           "pages": [
             "pt-BR/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity",
             "pt-BR/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
@@ -83,7 +83,7 @@
           ]
         },
         {
-          "group": "Solução de problemas e erros",
+          "group": "Resolução de problemas e erros",
           "pages": [
             "pt-BR/resources/support-center/troubleshooting/index",
             "pt-BR/resources/support-center/troubleshooting/troubleshooting",
@@ -131,8 +131,7 @@
             "pt-BR/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "pt-BR/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
             "pt-BR/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
-            "pt-BR/resources/support-center/knowledge-base/materialized-views/projection-example",
-            "pt-BR/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts"
+            "pt-BR/resources/support-center/knowledge-base/materialized-views/projection-example"
           ]
         },
         {
@@ -174,19 +173,18 @@
           ]
         },
         {
-          "group": "Configuração e instalação",
+          "group": "Instalação e configuração",
           "pages": [
             "pt-BR/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
             "pt-BR/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
             "pt-BR/resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
             "pt-BR/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
             "pt-BR/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-            "pt-BR/resources/support-center/knowledge-base/setup-installation/production",
-            "pt-BR/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server"
+            "pt-BR/resources/support-center/knowledge-base/setup-installation/production"
           ]
         },
         {
-          "group": "Geral e perguntas frequentes",
+          "group": "Geral e FAQs",
           "pages": [
             "pt-BR/resources/support-center/knowledge-base/general-faqs/faq-index",
             {

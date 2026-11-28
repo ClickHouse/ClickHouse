@@ -1,4 +1,5 @@
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
@@ -28,6 +29,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int SYNTAX_ERROR;
     extern const int THERE_IS_NO_QUERY;
     extern const int BAD_ARGUMENTS;
@@ -54,13 +56,10 @@ Block InterpreterShowCreateQuery::getSampleBlock()
 QueryPipeline InterpreterShowCreateQuery::executeImpl()
 {
     ASTPtr create_query;
-    ASTQueryWithTableAndOutput * show_query = query_ptr->as<ASTShowCreateTableQuery>();
-    if (!show_query)
-        show_query = query_ptr->as<ASTShowCreateViewQuery>();
-    if (!show_query)
-        show_query = query_ptr->as<ASTShowCreateDictionaryQuery>();
-
-    if (show_query)
+    ASTQueryWithTableAndOutput * show_query = nullptr;
+    if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()) ||
+        (show_query = query_ptr->as<ASTShowCreateViewQuery>()) ||
+        (show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
     {
         /// Only `SHOW CREATE TABLE` should resolve temporary tables for an unqualified name —
         /// `VIEW` and `DICTIONARY` cannot refer to a temporary table, so resolving to one would
@@ -163,12 +162,16 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
 
         auto & ast_create_query = create_query->as<ASTCreateQuery &>();
 
-        /// An `Alias` has no schema of its own; older servers inlined the resolved target columns into the
-        /// stored definition.
+        /// A table is a `StorageAlias` exactly when its definition names the `Alias` engine, so the
+        /// create query answers that without opening the storage object, which can throw on its own.
         if (!is_dictionary && ast_create_query.storage && ast_create_query.storage->engine
-            && ast_create_query.storage->engine->name == "Alias"
-            && ast_create_query.columns_list && ast_create_query.columns_list->columns)
-            ast_create_query.columns_list->columns->children.clear();
+            && ast_create_query.storage->engine->name == "Alias")
+        {
+            auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+            if (const auto * alias = table ? table->as<StorageAlias>() : nullptr;
+                alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+                throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to show metadata exposed by {}", table_id.getNameForLogs());
+        }
 
         if (query_ptr->as<ASTShowCreateViewQuery>())
         {
@@ -183,7 +186,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
                     backQuote(ast_create_query.getDatabase()), backQuote(ast_create_query.getTable()));
         }
     }
-    else if (show_query = query_ptr->as<ASTShowCreateDatabaseQuery>(); show_query)
+    else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
     {
         if (show_query->isTemporary())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary databases are not possible.");
