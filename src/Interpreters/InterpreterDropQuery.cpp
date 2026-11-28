@@ -950,13 +950,15 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     }
     else if (!drop.isTemporary())
     {
-        /// It can be view or table.
+        /// `DROP VIEW` and `DETACH VIEW` are refused by every host unless the object is a view, so `DROP VIEW` is enough,
+        /// as in `executeToTableImpl`. Without `VIEW` the object can be either a table or a view, so both are required.
+        const AccessFlags drop_storage = drop.is_view ? AccessFlags(AccessType::DROP_VIEW) : (AccessType::DROP_TABLE | AccessType::DROP_VIEW);
         if (drop.kind == ASTDropQuery::Kind::Drop)
-            required_access.emplace_back(AccessType::DROP_TABLE | AccessType::DROP_VIEW, drop.getDatabase(), drop.getTable());
+            required_access.emplace_back(drop_storage, drop.getDatabase(), drop.getTable());
         else if (drop.kind == ASTDropQuery::Kind::Truncate)
             required_access.emplace_back(AccessType::TRUNCATE, drop.getDatabase(), drop.getTable());
         else if (drop.kind == ASTDropQuery::Kind::Detach)
-            required_access.emplace_back(AccessType::DROP_TABLE | AccessType::DROP_VIEW, drop.getDatabase(), drop.getTable());
+            required_access.emplace_back(drop_storage, drop.getDatabase(), drop.getTable());
     }
 
     return required_access;
