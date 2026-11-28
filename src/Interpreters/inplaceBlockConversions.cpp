@@ -643,6 +643,20 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
         /*has_unbuilt_sets=*/ nullptr, reused_sets, enable_experimental_settings);
 }
 
+std::optional<ActionsDAG> analyzeMissingDefaults(
+    const Block & header,
+    const NamesAndTypesList & required_columns,
+    const ColumnsDescription & columns,
+    ContextPtr context,
+    bool save_unneeded_columns)
+{
+    if (!columns.hasDefaults())
+        return {};
+
+    ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, /*null_as_default=*/ false);
+    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context, TablesReading::Skip);
+}
+
 /// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class
 /// it does not expect. It descends exactly the levels whose serializations `assert_cast` the
 /// column (`Array`, `Nullable`, `Tuple`, `Map`, `Variant`, the typed paths of `Object`, and the

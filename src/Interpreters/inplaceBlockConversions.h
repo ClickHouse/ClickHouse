@@ -68,6 +68,16 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     DefaultExpressionsSets * reused_sets = nullptr,
     bool enable_experimental_settings = false);
 
+/// The actions of `evaluateMissingDefaults`, built only to be inspected, such as to tell whether the defaults are
+/// deterministic. They must not be executed: a default that reads a table (`x IN table`) has its set left unbuilt,
+/// so that planning a query does not read the table, which the query itself may never need.
+std::optional<ActionsDAG> analyzeMissingDefaults(
+    const Block & header,
+    const NamesAndTypesList & required_columns,
+    const ColumnsDescription & columns,
+    ContextPtr context,
+    bool save_unneeded_columns = true);
+
 /// Tries to convert columns in block to required_columns
 /// A conversion of `NULL` to the default of a column may read a table (`x IN table`), as in `evaluateMissingDefaults`.
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
