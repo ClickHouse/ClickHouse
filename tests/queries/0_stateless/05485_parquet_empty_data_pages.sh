@@ -60,6 +60,17 @@ ${CLICKHOUSE_LOCAL} -q "SELECT 'flat_hidden', groupArray(x) FROM (SELECT x FROM 
 ${CLICKHOUSE_LOCAL} -q "SELECT 'flat_hidden x = 2', groupArray(x) FROM (SELECT x FROM file('$D/flat_hidden.parquet') WHERE x = 2 ORDER BY x)
     SETTINGS input_format_parquet_page_filter_push_down = 1, input_format_parquet_use_offset_index = 1"
 
+# FLAT with the column index giving the last page [100, 100] instead of [6, 7]: the page is pruned for x = 6 only if
+# the column index is used. It is, because the header of the second page confirms that it has no values,
+# https://github.com/ClickHouse/ClickHouse/issues/133700
+${CLICKHOUSE_LOCAL} -q "SELECT overlay(overlay(base64Decode('$FLAT'), '\\x64', 153), '\\x64', 175) FORMAT RawBLOB" > "$D/flat_stats.parquet"
+for page_filter_push_down in 1 0; do
+    ${CLICKHOUSE_LOCAL} -q "SELECT 'flat_stats x = 6', $page_filter_push_down, groupArray(x) FROM (SELECT x FROM file('$D/flat_stats.parquet') WHERE x = 6)
+        SETTINGS input_format_parquet_page_filter_push_down = $page_filter_push_down, input_format_parquet_use_offset_index = 1"
+done
+${CLICKHOUSE_LOCAL} -q "SELECT 'flat_stats', groupArray(x) FROM (SELECT x FROM file('$D/flat_stats.parquet') WHERE x < 2 OR x = 5 ORDER BY x)
+    SETTINGS input_format_parquet_page_filter_push_down = 1, input_format_parquet_use_offset_index = 1"
+
 for use_offset_index in 1 0; do
     for max_block_size in 1000 1; do
         ${CLICKHOUSE_LOCAL} -q "SELECT 'continued_v2', $use_offset_index, $max_block_size, groupArray(x) FROM (SELECT x FROM file('$D/continued_v2.parquet') ORDER BY x)
