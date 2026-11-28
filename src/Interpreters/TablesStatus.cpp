@@ -84,6 +84,14 @@ std::string TablesStatusRequest::getAuthDigest() const
     return data;
 }
 
+/** The number of tables comes from the peer and each of them is inserted into a collection before
+  * the names that follow are read, so bound it: a request or a response about a hundred thousand
+  * tables is already far beyond what a query touches. A database or a table name is an identifier
+  * and is resized to its declared size before its value arrives, so bound it as well.
+  */
+static constexpr size_t MAX_TABLES_IN_TABLES_STATUS = 100000;
+static constexpr size_t MAX_TABLE_NAME_SIZE_IN_TABLES_STATUS = 64 * 1024;
+
 void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
@@ -92,14 +100,15 @@ void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)
     size_t size = 0;
     readVarUInt(size, in);
 
-    if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size.");
+    if (size > MAX_TABLES_IN_TABLES_STATUS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "Too large collection size: {} (maximum: {})", size, MAX_TABLES_IN_TABLES_STATUS);
 
     for (size_t i = 0; i < size; ++i)
     {
         QualifiedTableName table_name;
-        readBinary(table_name.database, in);
-        readBinary(table_name.table, in);
+        readStringBinary(table_name.database, in, MAX_TABLE_NAME_SIZE_IN_TABLES_STATUS);
+        readStringBinary(table_name.table, in, MAX_TABLE_NAME_SIZE_IN_TABLES_STATUS);
         tables.emplace(std::move(table_name));
     }
 }
@@ -129,14 +138,15 @@ void TablesStatusResponse::read(ReadBuffer & in, UInt64 server_protocol_revision
     size_t size = 0;
     readVarUInt(size, in);
 
-    if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size.");
+    if (size > MAX_TABLES_IN_TABLES_STATUS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "Too large collection size: {} (maximum: {})", size, MAX_TABLES_IN_TABLES_STATUS);
 
     for (size_t i = 0; i < size; ++i)
     {
         QualifiedTableName table_name;
-        readBinary(table_name.database, in);
-        readBinary(table_name.table, in);
+        readStringBinary(table_name.database, in, MAX_TABLE_NAME_SIZE_IN_TABLES_STATUS);
+        readStringBinary(table_name.table, in, MAX_TABLE_NAME_SIZE_IN_TABLES_STATUS);
 
         TableStatus status;
         status.read(in, server_protocol_revision);

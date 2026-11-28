@@ -1,0 +1,143 @@
+<!--
+    Projections at scale. Reads: through a normal projection (`p_user`, `ORDER BY UserID`: `UserID IN` a set of 2071 users, key
+    analysis of the projection with the set, then 9136 of 12 220 granules); through an aggregate projection (`p_agg`: `count`,
+    `sum`, `uniq` by counter and day, rolled up by counter; four times in sequence, `projections_hits.sql`, as a single read of
+    0.3 s varied by 10 %); through the same projection materialized in 4 of the 8 parts only
+    (`p_agg_half`, the state after `ADD PROJECTION` without a full `MATERIALIZE`: the parent aggregates the other 50 M rows).
+    Projection selection over 3000 parts with 3 normal and 3 aggregate projections each (`EXPLAIN`, planning only, one thread,
+    2, 8 or 4 `UNION ALL` branches per statement): a normal projection wins, an aggregate one wins, none helps (every normal
+    candidate is analysed and rejected). Build, after the reads: `CLEAR` + `MATERIALIZE PROJECTION` of `p_user`.
+    Not timed: the `p_agg` build (noisy in A/A runs).
+    `proj`: 6 columns of the 100 M rows of `hits_100m_single`, 8 partitions of one part, so a build runs 8 parts in parallel.
+    `proj_parts`: 7 columns of the 10 M rows of `hits_10m_single`, 3000 partitions of one part (`index_granularity = 256`),
+    written by one insert block, which also builds the projections.
+    The reads pin their projection with `force_optimize_projection_name`, except the `p_user` read (the setting also applies to
+    the plan of the `IN` subquery and fails it), whose projection is checked in `system.query_log`. The setup runs the build
+    twice and checks the projection parts and data, and every timed query once, against the parent read with projections off.
+    Per server and invocation: about 9.1 GB written by the setup, 2.2 GB per build (the projection, its temporary parts and their
+    merges), about 22.3 GB in total with 6 runs of the build; no S3.
+-->
+<test run_all_queries="1" max_query_seconds="60">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <optimize_use_projections>1</optimize_use_projections>
+    <optimize_use_projection_filtering>1</optimize_use_projection_filtering>
+</settings>
+
+<create_query>
+    CREATE TABLE proj (CounterID UInt32, EventDate Date, EventTime DateTime, UserID UInt64, RegionID UInt32, ResolutionWidth UInt16)
+    ENGINE = MergeTree PARTITION BY intHash32(UserID) % 8 ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime)
+    SETTINGS old_parts_lifetime = 10
+</create_query>
+<create_query>CREATE TABLE proj_keys (UserID UInt64) ENGINE = MergeTree ORDER BY UserID</create_query>
+<create_query>
+    CREATE TABLE proj_parts
+    (
+        CounterID UInt32, EventDate Date, EventTime DateTime, UserID UInt64, WatchID UInt64, RegionID UInt32, ResolutionWidth UInt16,
+        PROJECTION pn_user (SELECT * ORDER BY UserID),
+        PROJECTION pn_region (SELECT * ORDER BY RegionID),
+        PROJECTION pn_time (SELECT * ORDER BY EventTime),
+        PROJECTION pa_cd (SELECT CounterID, EventDate, count(), sum(ResolutionWidth), uniq(UserID) GROUP BY CounterID, EventDate),
+        PROJECTION pa_cr (SELECT CounterID, RegionID, count(), sum(ResolutionWidth), uniq(UserID) GROUP BY CounterID, RegionID),
+        PROJECTION pa_rd (SELECT RegionID, EventDate, count(), sum(ResolutionWidth), uniq(UserID) GROUP BY RegionID, EventDate)
+    )
+    ENGINE = MergeTree PARTITION BY toUInt32(EventTime) % 3000 ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime)
+    SETTINGS index_granularity = 256, old_parts_lifetime = 10
+</create_query>
+
+<fill_query>INSERT INTO proj SELECT CounterID, EventDate, EventTime, UserID, RegionID, ResolutionWidth FROM hits_100m_single SETTINGS max_insert_threads = 16, max_partitions_per_insert_block = 0</fill_query>
+<fill_query>ALTER TABLE proj MODIFY SETTING lock_acquire_timeout_for_background_operations = 600</fill_query>
+<fill_query>OPTIMIZE TABLE proj FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1</fill_query>
+<fill_query>SELECT throwIf((count(), uniqExact(partition), sum(rows)) != (8, 8, 100000000)) FROM system.parts WHERE database = 'default' AND table = 'proj' AND active</fill_query>
+<fill_query>
+    ALTER TABLE proj
+        ADD PROJECTION p_user (SELECT * ORDER BY UserID),
+        ADD PROJECTION p_agg (SELECT CounterID, EventDate, count(), sum(ResolutionWidth), uniq(UserID) GROUP BY CounterID, EventDate),
+        ADD PROJECTION p_agg_half (SELECT CounterID, EventDate, count(), sum(ResolutionWidth), uniq(UserID) GROUP BY CounterID, EventDate)
+</fill_query>
+<fill_query>ALTER TABLE proj CLEAR PROJECTION p_user, MATERIALIZE PROJECTION p_user SETTINGS mutations_sync = 2</fill_query>
+<fill_query>SELECT throwIf((count(), sum(rows)) != (8, 100000000)) FROM system.projection_parts WHERE database = 'default' AND table = 'proj' AND name = 'p_user' AND active</fill_query>
+<fill_query>SELECT throwIf((count(), sum(cityHash64(CounterID, EventDate, EventTime, UserID, RegionID, ResolutionWidth))) != (100000000, 1099098086923679816)) FROM proj WHERE UserID > 0 SETTINGS force_optimize_projection = 1, preferred_optimize_projection_name = 'p_user', force_optimize_projection_name = 'p_user'</fill_query>
+<fill_query>ALTER TABLE proj CLEAR PROJECTION p_user, MATERIALIZE PROJECTION p_user SETTINGS mutations_sync = 2</fill_query>
+<fill_query>SELECT throwIf((count(), sum(rows)) != (8, 100000000)) FROM system.projection_parts WHERE database = 'default' AND table = 'proj' AND name = 'p_user' AND active</fill_query>
+<fill_query>SELECT throwIf((count(), sum(cityHash64(CounterID, EventDate, EventTime, UserID, RegionID, ResolutionWidth))) != (100000000, 1099098086923679816)) FROM proj WHERE UserID > 0 SETTINGS force_optimize_projection = 1, preferred_optimize_projection_name = 'p_user', force_optimize_projection_name = 'p_user'</fill_query>
+<fill_query>ALTER TABLE proj CLEAR PROJECTION p_agg, MATERIALIZE PROJECTION p_agg SETTINGS mutations_sync = 2</fill_query>
+<fill_query>SELECT throwIf((count(), sum(rows)) != (8, 123789)) FROM system.projection_parts WHERE database = 'default' AND table = 'proj' AND name = 'p_agg' AND active</fill_query>
+<fill_query>SELECT throwIf((count(), sum(cityHash64(CounterID, c, s, u))) != (6506, 613506612325587037)) FROM (SELECT CounterID, count() AS c, sum(ResolutionWidth) AS s, uniq(UserID) AS u FROM proj GROUP BY CounterID) SETTINGS force_optimize_projection_name = 'p_agg'</fill_query>
+<fill_query>ALTER TABLE proj MATERIALIZE PROJECTION p_agg_half IN PARTITION 0, MATERIALIZE PROJECTION p_agg_half IN PARTITION 1, MATERIALIZE PROJECTION p_agg_half IN PARTITION 2, MATERIALIZE PROJECTION p_agg_half IN PARTITION 3 SETTINGS mutations_sync = 2</fill_query>
+<fill_query>SELECT throwIf((countIf(name = 'p_user'), countIf(name = 'p_agg'), countIf(name = 'p_agg_half')) != (8, 8, 4)) FROM system.projection_parts WHERE database = 'default' AND table = 'proj' AND active</fill_query>
+<fill_query>SELECT throwIf((count(), sum(cityHash64(CounterID, c, s, u))) != (6506, 613506612325587037)) FROM (SELECT CounterID, count() AS c, sum(ResolutionWidth) AS s, uniq(UserID) AS u FROM proj GROUP BY CounterID) SETTINGS preferred_optimize_projection_name = 'p_agg_half', force_optimize_projection_name = 'p_agg_half'</fill_query>
+<fill_query>INSERT INTO proj_keys SELECT DISTINCT UserID FROM hits_100m_single WHERE cityHash64(UserID) % 8192 = 0</fill_query>
+<fill_query>SELECT throwIf(count() != 2071) FROM proj_keys</fill_query>
+<fill_query>SELECT throwIf((count(), sum(ResolutionWidth), uniqExact(RegionID)) != (12467, 16373756, 360)) FROM proj WHERE UserID IN proj_keys SETTINGS log_comment = 'projections_hits.r1'</fill_query>
+
+<fill_query>INSERT INTO proj_parts SELECT CounterID, EventDate, EventTime, UserID, WatchID, RegionID, ResolutionWidth FROM hits_10m_single SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 1000000000, min_insert_block_size_bytes = 0, max_insert_block_size = 1000000000, max_partitions_per_insert_block = 0</fill_query>
+<fill_query>SELECT throwIf((count(), uniqExact(partition), sum(rows), sum(marks)) != (3000, 3000, 10000000, 42028)) FROM system.parts WHERE database = 'default' AND table = 'proj_parts' AND active</fill_query>
+<fill_query>SELECT throwIf((count(), uniqExact(name)) != (18000, 6)) FROM system.projection_parts WHERE database = 'default' AND table = 'proj_parts' AND active</fill_query>
+<fill_query>
+    SELECT throwIf(arraySort(groupArray(s)) != [468120, 468121]) FROM
+    (
+        SELECT sum(ResolutionWidth) AS s FROM proj_parts WHERE UserID = 362758785828905237 UNION ALL SELECT sum(ResolutionWidth) + 1 FROM proj_parts WHERE UserID = 362758785828905237
+    )
+    SETTINGS force_optimize_projection_name = 'pn_user'
+</fill_query>
+<fill_query>
+    SELECT throwIf((count(), sum(cityHash64(CounterID, c, u)), sum(k)) != (1512, 15485829256428204168, 5292)) FROM
+    (
+        SELECT CounterID, count() AS c, uniq(UserID) AS u, 0 AS k FROM proj_parts GROUP BY CounterID UNION ALL SELECT CounterID, count(), uniq(UserID), 1 FROM proj_parts GROUP BY CounterID
+        UNION ALL SELECT CounterID, count(), uniq(UserID), 2 FROM proj_parts GROUP BY CounterID UNION ALL SELECT CounterID, count(), uniq(UserID), 3 FROM proj_parts GROUP BY CounterID
+        UNION ALL SELECT CounterID, count(), uniq(UserID), 4 FROM proj_parts GROUP BY CounterID UNION ALL SELECT CounterID, count(), uniq(UserID), 5 FROM proj_parts GROUP BY CounterID
+        UNION ALL SELECT CounterID, count(), uniq(UserID), 6 FROM proj_parts GROUP BY CounterID UNION ALL SELECT CounterID, count(), uniq(UserID), 7 FROM proj_parts GROUP BY CounterID
+    )
+    SETTINGS force_optimize_projection_name = 'pa_cd'
+</fill_query>
+<fill_query>
+    SELECT throwIf(arraySort(groupArray(s)) != [1839, 1840, 1841, 1842]) FROM
+    (
+        SELECT sum(ResolutionWidth) AS s FROM proj_parts WHERE WatchID = 6917558722909864349 UNION ALL SELECT sum(ResolutionWidth) + 1 FROM proj_parts WHERE WatchID = 6917558722909864349
+        UNION ALL SELECT sum(ResolutionWidth) + 2 FROM proj_parts WHERE WatchID = 6917558722909864349 UNION ALL SELECT sum(ResolutionWidth) + 3 FROM proj_parts WHERE WatchID = 6917558722909864349
+    )
+    SETTINGS log_comment = 'projections_hits.p3'
+</fill_query>
+<fill_query>SYSTEM FLUSH LOGS query_log</fill_query>
+<fill_query>
+    SELECT throwIf(groupArray((log_comment, projections)) != [('projections_hits.p3', []), ('projections_hits.r1', ['default.proj.p_user'])])
+    FROM
+    (
+        SELECT log_comment, projections FROM system.query_log
+        WHERE type = 'QueryFinish' AND log_comment IN ('projections_hits.p3', 'projections_hits.r1')
+            AND event_time >= (SELECT metadata_modification_time FROM system.tables WHERE database = 'default' AND name = 'proj')
+        ORDER BY log_comment
+    )
+</fill_query>
+
+<query>SELECT count(), sum(ResolutionWidth), uniqExact(RegionID) FROM proj WHERE UserID IN proj_keys FORMAT Null</query>
+<query file="projections_hits.sql"/>
+<query>SELECT CounterID, count(), sum(ResolutionWidth), uniq(UserID) FROM proj GROUP BY CounterID FORMAT Null SETTINGS preferred_optimize_projection_name = 'p_agg_half', force_optimize_projection_name = 'p_agg_half'</query>
+<query>
+    EXPLAIN
+    SELECT sum(ResolutionWidth) FROM proj_parts WHERE UserID = 362758785828905237 UNION ALL SELECT sum(ResolutionWidth) + 1 FROM proj_parts WHERE UserID = 362758785828905237
+    FORMAT Null SETTINGS max_threads = 1, force_optimize_projection_name = 'pn_user'
+</query>
+<query>
+    EXPLAIN
+    SELECT CounterID, count(), uniq(UserID), 0 FROM proj_parts GROUP BY CounterID UNION ALL SELECT CounterID, count(), uniq(UserID), 1 FROM proj_parts GROUP BY CounterID
+    UNION ALL SELECT CounterID, count(), uniq(UserID), 2 FROM proj_parts GROUP BY CounterID UNION ALL SELECT CounterID, count(), uniq(UserID), 3 FROM proj_parts GROUP BY CounterID
+    UNION ALL SELECT CounterID, count(), uniq(UserID), 4 FROM proj_parts GROUP BY CounterID UNION ALL SELECT CounterID, count(), uniq(UserID), 5 FROM proj_parts GROUP BY CounterID
+    UNION ALL SELECT CounterID, count(), uniq(UserID), 6 FROM proj_parts GROUP BY CounterID UNION ALL SELECT CounterID, count(), uniq(UserID), 7 FROM proj_parts GROUP BY CounterID
+    FORMAT Null SETTINGS max_threads = 1, force_optimize_projection_name = 'pa_cd'
+</query>
+<query>
+    EXPLAIN
+    SELECT sum(ResolutionWidth) FROM proj_parts WHERE WatchID = 6917558722909864349 UNION ALL SELECT sum(ResolutionWidth) + 1 FROM proj_parts WHERE WatchID = 6917558722909864349
+    UNION ALL SELECT sum(ResolutionWidth) + 2 FROM proj_parts WHERE WatchID = 6917558722909864349 UNION ALL SELECT sum(ResolutionWidth) + 3 FROM proj_parts WHERE WatchID = 6917558722909864349
+    FORMAT Null SETTINGS max_threads = 1
+</query>
+<query type="shell"><![CDATA[${CLICKHOUSE_CLIENT} --mutations_sync 2 --query "ALTER TABLE proj CLEAR PROJECTION p_user, MATERIALIZE PROJECTION p_user"]]></query>
+
+<drop_query>DROP TABLE IF EXISTS proj, proj_keys, proj_parts SYNC</drop_query>
+
+</test>

@@ -1,0 +1,6 @@
+--- fixture: rows and the NULL count of s (field id 2) per data file
+1000	1000
+1000	0
+--- the Estimated statistics trace line of s
+Expect null 0.5: 1000 NULLs in 2000 rows; with the first file alone it was 1.
+__table1.s: 200 [null 0.5]

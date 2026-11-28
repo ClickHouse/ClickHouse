@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
@@ -53,7 +54,7 @@ inline std::optional<size_t> adjustedIndexFromField(const Field & index, size_t 
     else if (index.getType() == Field::Types::Int64)
     {
         /// Cast to UInt64 before negation allows to avoid undefined behaviour for negation of the most negative number.
-        UInt64 index_from_end = -static_cast<UInt64>(index.safeGet<Int64>());
+        UInt64 index_from_end = common::negateIgnoreOverflow(static_cast<UInt64>(index.safeGet<Int64>()));
         if (index_from_end <= array_size)
             return array_size - index_from_end;
     }
@@ -89,7 +90,7 @@ struct LowCardinalityArrayView
 
     /// Build arrayElement(Array(LowCardinality), const) by selecting dictionary values through LC indexes,
     /// instead of materializing the whole nested array first.
-    inline ColumnPtr arrayElementConst(const Field & index, const IDataType & result_type) const
+    [[nodiscard]] inline ColumnPtr arrayElementConst(const Field & index, const IDataType & result_type) const
     {
         auto result = result_type.createColumn();
         result->reserve(rows);
@@ -107,7 +108,7 @@ struct LowCardinalityArrayView
     }
 
     /// Given a per-dictionary-entry predicate result, compute whether any element in each array row matches.
-    inline ColumnUInt8::MutablePtr existsByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
+    [[nodiscard]] inline ColumnUInt8::MutablePtr existsByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
     {
         auto result = ColumnUInt8::create();
         auto & result_data = result->getData();
@@ -128,8 +129,39 @@ struct LowCardinalityArrayView
         return result;
     }
 
+    /// Given a per-dictionary-entry match number in [1, matches_count] (0 for no match), compute whether each
+    /// array row holds an element of every match number. [matches_count] is in [1, 64].
+    [[nodiscard]] inline ColumnUInt8::MutablePtr allByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches, size_t matches_count) const
+    {
+        UInt64 all_matched = matches_count == 64 ? ~UInt64(0) : (UInt64(1) << matches_count) - 1;
+
+        auto result = ColumnUInt8::create();
+        auto & result_data = result->getData();
+        result_data.resize_fill(rows);
+
+        forEachRange([&](size_t row, size_t begin, size_t end)
+        {
+            UInt64 matched = 0;
+            for (size_t i = begin; i != end; ++i)
+            {
+                UInt8 match = dictionary_matches[elements.getIndexAt(i)];
+                if (!match)
+                    continue;
+
+                matched |= UInt64(1) << (match - 1);
+                if (matched == all_matched)
+                {
+                    result_data[row] = 1;
+                    break;
+                }
+            }
+        });
+
+        return result;
+    }
+
     /// Given a per-dictionary-entry predicate result, build a filter and offsets for matching array elements.
-    inline FilterAndOffsets filterByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
+    [[nodiscard]] inline FilterAndOffsets filterByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
     {
         FilterAndOffsets result{.filter = IColumn::Filter(elements.size()), .offsets = ColumnArray::ColumnOffsets::create()};
         auto & new_offsets = result.offsets->getData();

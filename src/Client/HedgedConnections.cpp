@@ -1,5 +1,5 @@
 #include <Core/Protocol.h>
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Client/HedgedConnections.h>
 #include <Client/scaleInteractiveDelayByFanout.h>
@@ -20,9 +20,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_changing_replica_until_first_data_packet;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 connections_with_failover_max_tries;
-    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
@@ -59,6 +57,7 @@ HedgedConnections::HedgedConnections(
           context_->getSettingsRef()[Setting::fallback_to_stale_replicas_for_distributed_queries].value,
           context_->getSettingsRef()[Setting::max_parallel_replicas].value,
           context_->getSettingsRef()[Setting::skip_unavailable_shards].value,
+          /*fail_if_replica_unprobed_=*/ true,
           table_to_check_,
           priority_func)
     , context(std::move(context_))
@@ -222,6 +221,7 @@ void HedgedConnections::sendQuery(
         /// Demote the `compatibility`-derived values and force ClickHouse SQL. Runs before the
         /// overrides below, so all of them are marked changed afterwards and are serialized.
         prepareSecondaryQuerySettings(modified_settings);
+        markAggregationMethodSettingsChanged(modified_settings);
 
         modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
             modified_settings[Setting::interactive_delay],
@@ -242,18 +242,18 @@ void HedgedConnections::sendQuery(
             modified_settings[Setting::parallel_replica_offset] = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
         }
 
-        /// FIXME: Remove once we will make `allow_experimental_analyzer` obsolete setting.
-        /// Make the analyzer being set, so it will be effectively applied on the remote server.
-        /// In other words, the initiator always controls whether the analyzer enabled or not for
-        /// all servers involved in the distributed query processing.
-        modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
+        /// The analyzer is the only query analysis this server has, but a replica in a rolling upgrade
+        /// can be older than 26.9 and have it switched off by its own profile. The setting is never
+        /// `changed` here anymore, so force it into the changed set to be sent: the initiator decides
+        /// how a query is analyzed on every server that takes part in it, and the two analyses do not
+        /// speak the same inter-server protocol.
+        modified_settings.set("allow_experimental_analyzer", true);
 
-        /// Two-level aggregation bucket numbers for a single String key depend on this value, so all
-        /// servers of a distributed query must agree on it even when it comes only from server/profile
-        /// defaults. Force it into the changed set, so it is always sent to the remote servers.
-        modified_settings.set(
-            "enable_packed_string_keys_in_aggregation",
-            static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
+        /// The quotas over profile events charge the initiating user with what the remote servers report
+        /// in their `ProfileEvents` packets, so the reports must not depend on `send_profile_events` of the
+        /// query or of the user's profile on the remote server. Force it into the changed set, so it is
+        /// always sent. The initiator does not pass the reports on to its client unless the client asked.
+        modified_settings.set("send_profile_events", true);
 
         replica.connection->sendQuery(
             timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
@@ -519,6 +519,8 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
 {
     ReplicaState & replica = offset_states[replica_location.offset].replicas[replica_location.index];
     Packet packet = std::move(last_received_packet);
+    /// Take the revision before `finishProcessReplica` below releases the connection.
+    server_revision_of_last_packet = replica.connection->getServerRevision(hedged_connections_factory.getConnectionTimeouts());
     switch (packet.type)
     {
         case Protocol::Server::Data:

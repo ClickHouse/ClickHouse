@@ -1,0 +1,122 @@
+---
+description: 'How BACKUP and RESTORE handle SQL-created named collections, and the settings and privileges controlling them.'
+sidebarTitle: 'Named collections'
+slug: /operations/backup/named-collections
+title: 'Backing up and restoring named collections'
+keywords: ['backup', 'restore', 'named collections', 'backup_named_collections', 'restore_named_collections', 'create_named_collection']
+doc_type: 'reference'
+---
+
+SQL-created [named collections](/concepts/features/configuration/server-config/named-collections)
+can be exported to a backup and restored from it through the `system.named_collections` table.
+An exported collection carries its values, including the secret ones, so backing collections up
+and restoring them is governed by their own privileges and settings, documented on this page.
+
+Collections defined in the server configuration files are rendered from the configuration and are
+never part of a backup; restoring a backed-up collection does not overwrite a configuration-defined
+collection with the same name.
+
+## Selecting the collections {#selecting-the-collections}
+
+A `BACKUP` query exports the named collections when it selects the `system.named_collections`
+table:
+
+- Explicitly: `BACKUP TABLE system.named_collections`. The required privileges (see below) are
+  mandatory.
+- Implicitly, through a `DATABASE system` or `ALL` element. By default such a backup exports the
+  collections only if the user may read their values, and otherwise skips them with a warning, so
+  that `BACKUP ALL` keeps working for a user who may back up everything but may not read the
+  values.
+
+A selection excluding the table's data - `BACKUP TABLE system.named_collections EXCEPT DATA FROM
+TABLE system.named_collections`, or a wildcard element with `EXCEPT DATA FROM TABLES
+system.named_collections` - keeps only the table's definition in the backup. It exports no
+collection and requires none of the privileges below.
+
+## Required privileges {#required-privileges}
+
+Exporting the collections writes their values into the backup, so it requires the same privileges
+as reading the values from `system.named_collections`:
+[`SHOW NAMED COLLECTIONS`](/reference/statements/grant#named-collection-admin),
+`SHOW NAMED COLLECTIONS SECRETS` and
+[`displaySecretsInShowAndSelect`](/reference/statements/grant#displaysecretsinshowandselect).
+This holds for an encrypted named collections storage too: the entries are copied as ciphertext,
+but any server holding the same key restores them into collections whose values can then be read.
+
+Restoring the collections requires the
+[`CREATE NAMED COLLECTION`](/reference/statements/grant#named-collection-admin) privilege. It does
+not require the privileges listed above: an operator may restore a backup without being able to
+read it, and the errors and logs of such a restore never name a collection.
+
+For `BACKUP ON CLUSTER` and `RESTORE ON CLUSTER` the privileges are checked against the initiating
+user on the initiating host before the query is dispatched to the other hosts. During a rolling
+upgrade, a host running a version with this feature never exports or restores the collections for
+a query dispatched by an initiator running a version without it, because such an initiator cannot
+check the privileges: the export is skipped (or, for an explicit selection, rejected), and the
+restore of collection entries is rejected.
+
+## `backup_named_collections` {#backup-named-collections}
+
+Type: `Bool`. Optional; unset by default.
+
+Controls whether a `BACKUP` query exports the named collections:
+
+- Unset (the default): an explicit `TABLE system.named_collections` element exports them and
+  requires the privileges; a `DATABASE system` or `ALL` element exports them only if the user
+  holds the privileges, and skips them with a warning otherwise.
+- `true`: the backup exports the collections whenever the query selects the table, and the missing
+  privileges are an error even for an implicit selection.
+- `false`: the backup never exports the collections, even for an explicitly named
+  `system.named_collections` table, and requires none of the privileges.
+
+```sql
+-- Fails instead of skipping the collections when the privileges are missing:
+BACKUP ALL TO Disk('backups', 'everything') SETTINGS backup_named_collections = 1
+
+-- Never exports the collections:
+BACKUP ALL TO Disk('backups', 'no_collections') SETTINGS backup_named_collections = 0
+```
+
+## `restore_named_collections` {#restore-named-collections}
+
+Type: `Bool`. Default: `true`.
+
+Whether a `RESTORE` query restores the named collections held by the backup. Unlike
+[`restore_table_data`](/concepts/features/backup-restore/restore-settings) and its siblings, the default stays
+`true` under `structure_only`: the collections are definitions, and a table whose engine
+references a collection (e.g. `ENGINE = URL(collection)`) cannot be created without it.
+
+```sql
+-- Restores everything except the named collections:
+RESTORE ALL FROM Disk('backups', 'everything') SETTINGS restore_named_collections = 0
+```
+
+## `create_named_collection` {#create-named-collection}
+
+Type: `String`. Default: `'if-not-exists'`.
+
+How `RESTORE` handles a named collection which already exists:
+
+- `'if-not-exists'` (the default): the existing collection is kept and the backed-up one is
+  skipped.
+- `'create'`: an existing collection fails the restore.
+- `'replace'`: the existing collection is replaced with the backed-up one. A collection defined in
+  the server configuration cannot be replaced and fails the restore.
+
+```sql
+RESTORE TABLE system.named_collections FROM Disk('backups', 'everything')
+SETTINGS create_named_collection = 'replace'
+```
+
+## Encrypted named collections storage {#encrypted-storage}
+
+With an [encrypted storage for named collections](/concepts/features/configuration/server-config/named-collections)
+(`local_encrypted` or `zookeeper_encrypted`), the entries are copied into the backup as the
+ciphertext the storage holds, followed by an authentication code: no plaintext value appears
+anywhere in the backup, and a modified entry fails the restore before anything is decrypted.
+
+Restoring such a backup requires a server whose named collections storage is also encrypted and
+holds the key the collections were encrypted with. The restored entries are re-encrypted under the
+restoring server's key. A backup with encrypted entries cannot be restored into an unencrypted
+storage; either configure an encrypted storage holding the key, or skip the collections with
+`restore_named_collections = 0`.

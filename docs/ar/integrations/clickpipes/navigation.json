@@ -1,6 +1,6 @@
 {
-  "icon": "/images/icons/icon-clickpipes.svg",
   "item": "ClickPipes",
+  "root": "ar/integrations/clickpipes/home",
   "pages": [
     "ar/integrations/clickpipes/home",
     {
@@ -101,6 +101,7 @@
             {
               "group": "Source",
               "pages": [
+                "ar/integrations/clickpipes/postgres/source/managed-postgres",
                 "ar/integrations/clickpipes/postgres/source/alloydb",
                 "ar/integrations/clickpipes/postgres/source/rds",
                 "ar/integrations/clickpipes/postgres/source/aurora",
@@ -188,7 +189,8 @@
           "icon": "/images/logo-bigquery.svg",
           "pages": [
             "ar/integrations/clickpipes/bigquery/overview",
-            "ar/integrations/clickpipes/bigquery/get-started"
+            "ar/integrations/clickpipes/bigquery/get-started",
+            "ar/integrations/clickpipes/bigquery/faq"
           ]
         }
       ]
@@ -199,6 +201,14 @@
       "pages": [
         "ar/integrations/clickpipes/programmatic-access/openapi",
         "ar/integrations/clickpipes/programmatic-access/terraform"
+      ]
+    },
+    {
+      "group": "Security and access",
+      "icon": "shield-check",
+      "pages": [
+        "ar/integrations/clickpipes/security/aws-iam-role",
+        "ar/integrations/clickpipes/security/gcp-workload-identity"
       ]
     },
     {
@@ -214,6 +224,5 @@
     },
     "ar/integrations/clickpipes/monitoring",
     "ar/integrations/clickpipes/dynamodb"
-  ],
-  "root": "ar/integrations/clickpipes/home"
+  ]
 }

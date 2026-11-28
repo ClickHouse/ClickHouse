@@ -105,6 +105,8 @@ namespace
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
 {
+    AggregateFunctionProperties properties = {.is_order_dependent = true};
+
     // stochasticLinearRegression documentation
     FunctionDocumentation::Description description_linear = R"(
 This function implements stochastic linear regression.
@@ -269,7 +271,7 @@ SELECT length(stochasticLinearRegression(0.01)(target, x1, x2)) FROM train_data
     FunctionDocumentation::Category category_linear = FunctionDocumentation::Category::MachineLearning;
     FunctionDocumentation documentation_linear = {description_linear, syntax_linear, arguments_linear, {}, returned_value_linear, examples_linear, introduced_in_linear, category_linear};
 
-    factory.registerFunction("stochasticLinearRegression", {createAggregateFunctionMLMethod<FuncLinearRegression>, documentation_linear, {}});
+    factory.registerFunction("stochasticLinearRegression", {createAggregateFunctionMLMethod<FuncLinearRegression>, documentation_linear, properties});
 
     // stochasticLogisticRegression documentation
     FunctionDocumentation::Description description_logistic = R"(
@@ -441,7 +443,7 @@ evalMLMethod(model, x1, x2) AS result FROM test_data)
     FunctionDocumentation::Category category_logistic = FunctionDocumentation::Category::MachineLearning;
     FunctionDocumentation documentation_logistic = {description_logistic, syntax_logistic, arguments_logistic, {}, returned_value_logistic, examples_logistic, introduced_in_logistic, category_logistic};
 
-    factory.registerFunction("stochasticLogisticRegression", {createAggregateFunctionMLMethod<FuncLogisticRegression>, documentation_logistic, {}});
+    factory.registerFunction("stochasticLogisticRegression", {createAggregateFunctionMLMethod<FuncLogisticRegression>, documentation_logistic, properties});
 }
 
 LinearModelData::LinearModelData(
@@ -506,9 +508,9 @@ void LinearModelData::returnWeights(IColumn & to) const
 void LinearModelData::read(ReadBuffer & buf, UInt64 expected_param_num)
 {
     readBinary(bias, buf);
-    readBinary(weights, buf);
+    readVectorBinary(weights, buf, expected_param_num);
     readBinary(iter_num, buf);
-    readBinary(gradient_batch, buf);
+    readVectorBinary(gradient_batch, buf, expected_param_num + 1);
     readBinary(batch_size, buf);
 
     if (weights.size() != expected_param_num)
@@ -606,8 +608,8 @@ void Adam::write(WriteBuffer & buf) const
 
 void Adam::read(ReadBuffer & buf, UInt64 expected_size)
 {
-    readBinary(average_gradient, buf);
-    readBinary(average_squared_gradient, buf);
+    readVectorBinary(average_gradient, buf, expected_size);
+    readVectorBinary(average_squared_gradient, buf, expected_size);
     checkUpdaterVectorSize(average_gradient.size(), expected_size);
     checkUpdaterVectorSize(average_squared_gradient.size(), expected_size);
 
@@ -685,7 +687,7 @@ void Adam::addToBatch(
 
 void Nesterov::read(ReadBuffer & buf, UInt64 expected_size)
 {
-    readBinary(accumulated_gradient, buf);
+    readVectorBinary(accumulated_gradient, buf, expected_size);
     checkUpdaterVectorSize(accumulated_gradient.size(), expected_size);
 }
 
@@ -752,7 +754,7 @@ void Nesterov::addToBatch(
 
 void Momentum::read(ReadBuffer & buf, UInt64 expected_size)
 {
-    readBinary(accumulated_gradient, buf);
+    readVectorBinary(accumulated_gradient, buf, expected_size);
     checkUpdaterVectorSize(accumulated_gradient.size(), expected_size);
 }
 

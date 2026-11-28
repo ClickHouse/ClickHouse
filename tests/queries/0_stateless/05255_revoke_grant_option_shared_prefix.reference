@@ -1,0 +1,20 @@
+--- SHOW GRANTS
+GRANT SELECT ON *.* TO grantor WITH GRANT OPTION
+REVOKE SELECT ON d.t1 FROM grantor
+REVOKE GRANT OPTION FOR SELECT ON d.t2 FROM grantor
+REVOKE GRANT OPTION FOR SELECT ON d.zt2 FROM grantor
+REVOKE SELECT ON db1.* FROM grantor
+REVOKE GRANT OPTION FOR SELECT ON db2.* FROM grantor
+REVOKE GRANT OPTION FOR SELECT ON zdb2.* FROM grantor
+--- system.grants
+d	t1	SELECT	0	1
+d	t2	SELECT	1	1
+d	zt2	SELECT	1	1
+db1	\N	SELECT	0	1
+db2	\N	SELECT	1	1
+zdb2	\N	SELECT	1	1
+\N	\N	SELECT	1	0
+--- the grant option cannot be passed on for a database whose grant option was revoked
+GRANT SELECT ON db2.* TO victim1
+--- positive control: a database that was never revoked is still passed on with grant option
+GRANT SELECT ON db3.* TO victim2 WITH GRANT OPTION

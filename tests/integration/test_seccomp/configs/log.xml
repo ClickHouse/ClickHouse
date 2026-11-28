@@ -1,0 +1,3 @@
+<clickhouse>
+    <seccomp>log</seccomp>
+</clickhouse>

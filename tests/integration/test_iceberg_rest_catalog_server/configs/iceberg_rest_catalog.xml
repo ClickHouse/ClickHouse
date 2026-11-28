@@ -1,0 +1,7 @@
+<clickhouse>
+    <enable_iceberg_rest_catalog>1</enable_iceberg_rest_catalog>
+    <iceberg_rest_catalog>
+        <port>8182</port>
+        <secure_port>8183</secure_port>
+    </iceberg_rest_catalog>
+</clickhouse>

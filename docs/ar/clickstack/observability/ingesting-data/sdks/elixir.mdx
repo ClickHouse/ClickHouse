@@ -1,0 +1,54 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/elixir
+description: 'إعداد Elixir وتهيئته للاستخدام مع ClickHouse Observability وفي عمليات النشر المُدارة ذاتيًا.'
+title: 'Elixir'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+sidebarTitle: 'Elixir'
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+استخدم حزمة تطوير البرمجيات (SDK) الخاصة بـ OpenTelemetry للغتَي Erlang/Elixir لإرسال بيانات التتبّع إلى ClickHouse Observability.
+
+<ClickStackIntegrates signals={['traces']} />
+
+## إعداد OpenTelemetry {#set-up-opentelemetry}
+
+اتبع [تعليمات إعداد OpenTelemetry الرسمية لـ Erlang/Elixir](https://opentelemetry.io/docs/languages/erlang/getting-started/) لتهيئة SDK وتزويد تطبيقك بأدوات جمع بيانات الرصد.
+
+هيّئ [تصدير OTLP عبر HTTP](https://opentelemetry.io/docs/languages/erlang/exporters/) لبيانات التتبّع باستخدام إعدادات الاتصال الموضّحة أدناه. استبدل أي وجهات واردة على سبيل المثال في تعليمات المصدر الأصلي، بما في ذلك تجاوزات إعدادات نقاط النهاية الخاصة بكل إشارة.
+
+## تهيئة الوجهة {#configure-destination}
+
+<Tabs>
+  <Tab title="مُدار بالكامل">
+    <BetaBadge label="إصدار تجريبي" />
+
+    افتح **إعدادات الفريق ← بيانات ← Managed Telemetry** في خدمتك، وانسخ **نقطة نهاية OTLP HTTP** و**مفتاح API**. استخدم نقطة نهاية HTTPS كاملةً بما فيها المنفذ:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا">
+    استخدم نقطة نهاية OTLP HTTP الخاصة بجامع البيانات ومفتاح الإدخال. استخدم `http://` بدلًا من `https://` إذا لم يكن TLS مُهيّأً على جامع البيانات. لإعداد جامع البيانات، راجع [استيعاب البيانات باستخدام OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured).
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## التحقق من إدخال البيانات {#verify-ingestion}
+
+شغّل تطبيقك المزوّد بأدوات الرصد وأنشئ بعض النشاط عليه. في ClickHouse Observability، اختر نطاقًا زمنيًا حديثًا، ثم ابحث عن اسم الخدمة الخاص بتطبيقك ضمن Traces.
+
+لاستكشاف الأخطاء المتعلقة بإضافة أدوات الرصد أو بالمُصدِّر وإصلاحها، راجع [وثائق OpenTelemetry الخاصة بـ Erlang/Elixir](https://opentelemetry.io/docs/languages/erlang/).

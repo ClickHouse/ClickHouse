@@ -93,29 +93,29 @@ public:
     }
 
     /// If not found, return an empty string.
-    String getContainingPart(const MergeTreePartInfo & part_info) const;
-    String getContainingPart(const String & name) const;
+    [[nodiscard]] String getContainingPart(const MergeTreePartInfo & part_info) const;
+    [[nodiscard]] String getContainingPart(const String & name) const;
 
-    Strings getPartsCoveredBy(const MergeTreePartInfo & part_info) const;
-    std::vector<MergeTreePartInfo> getPartInfosCoveredBy(const MergeTreePartInfo & part_info) const;
+    [[nodiscard]] Strings getPartsCoveredBy(const MergeTreePartInfo & part_info) const;
+    [[nodiscard]] std::vector<MergeTreePartInfo> getPartInfosCoveredBy(const MergeTreePartInfo & part_info) const;
 
     /// Returns parts in ascending order of the partition_id and block number.
-    Strings getParts() const;
-    Strings getPartsWithLimit(size_t limit) const;
-    std::vector<MergeTreePartInfo> getPartInfos() const;
-    std::vector<MergeTreePartInfo> getPatchPartInfos() const;
-    bool hasPartitionId(const String & partition_id) const;
+    [[nodiscard]] Strings getParts() const;
+    [[nodiscard]] Strings getPartsWithLimit(size_t limit) const;
+    [[nodiscard]] std::vector<MergeTreePartInfo> getPartInfos() const;
+    [[nodiscard]] std::vector<MergeTreePartInfo> getPatchPartInfos() const;
+    [[nodiscard]] bool hasPartitionId(const String & partition_id) const;
 
-    bool isEmpty() const;
-    bool hasSome() const;
-    size_t size() const;
+    [[nodiscard]] bool isEmpty() const;
+    [[nodiscard]] bool hasSome() const;
+    [[nodiscard]] size_t size() const;
 
     void clear()
     {
         part_info_to_name.clear();
     }
 
-    MergeTreeDataFormatVersion getFormatVersion() const { return format_version; }
+    [[nodiscard]] MergeTreeDataFormatVersion getFormatVersion() const { return format_version; }
 
     void checkIntersectingParts(const MergeTreePartInfo & part_info) const;
     void checkIntersectingParts(const String & name) const;
@@ -128,9 +128,9 @@ private:
     using PartInfoToName = std::map<MergeTreePartInfo, String>;
     PartInfoToName part_info_to_name;
 
-    std::vector<std::map<MergeTreePartInfo, String>::const_iterator> getPartsCoveredByImpl(const MergeTreePartInfo & part_info) const;
+    [[nodiscard]] std::vector<std::map<MergeTreePartInfo, String>::const_iterator> getPartsCoveredByImpl(const MergeTreePartInfo & part_info) const;
 
-    std::map<MergeTreePartInfo, String>::const_iterator getContainingPartImpl(const MergeTreePartInfo & part_info) const;
+    [[nodiscard]] std::map<MergeTreePartInfo, String>::const_iterator getContainingPartImpl(const MergeTreePartInfo & part_info) const;
 };
 
 }

@@ -1,0 +1,53 @@
+---
+description: 'Overlay 数据库引擎将多个现有数据库中的表合并后统一对外暴露。'
+sidebarTitle: 'Overlay'
+slug: /engines/database-engines/overlay
+title: 'Overlay'
+doc_type: 'reference'
+---
+
+`Overlay` 数据库引擎将多个现有数据库中的表合并后统一对外暴露。
+
+## 创建数据库 {#creating-a-database}
+
+```sql
+CREATE DATABASE overlay_db
+ENGINE = Overlay(db1[, db2, ...]);
+```
+
+表名会按照源数据库的列出顺序依次解析：以第一个包含同名表的数据库为准。
+
+该数据库本身不拥有任何表。Overlay 数据库中的每个表都相当于指向源数据库中对应表的 [`Alias`](/zh/reference/engines/table-engines/special/alias) 表：读写操作都会作用于源表。
+不支持在 Overlay 数据库中对表执行 `CREATE`、`DROP`、`RENAME`、`ATTACH` 和 `DETACH` 操作。
+
+每次访问时都会按名称解析源数据库：某个源数据库被删除后，其中的表会从 Overlay 数据库中消失；该数据库重新创建后，这些表又会重新出现。
+`Overlay` 数据库不能用作另一个 `Overlay` 数据库的源数据库。
+
+## 访问控制 {#access-control}
+
+与 `Alias` 表一样，操作 overlay 数据库中的表时，需要同时具备 overlay 数据库和源表上的授权，且两者的行策略都会生效。
+只有同时能看到 overlay 数据库和源表 (即在两者上都拥有 `SHOW TABLES` 特权) 的用户，才能看到 overlay 数据库中的表。
+解析名称时，会在用户能看到该名称对应表的第一个源数据库中进行解析：对用户隐藏的表会被跳过，视同不存在。
+
+## 示例 {#example}
+
+```sql
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+CREATE TABLE db1.a (x UInt8) ENGINE = Memory;
+CREATE TABLE db2.b (y String) ENGINE = Memory;
+INSERT INTO db2.b VALUES ('Hello');
+CREATE DATABASE overlay_db ENGINE = Overlay(db1, db2);
+SELECT name, engine FROM system.tables WHERE database = 'overlay_db' ORDER BY name;
+SELECT * FROM overlay_db.b;
+```
+
+```response
+┌─name─┬─engine─┐
+│ a    │ Alias  │
+│ b    │ Alias  │
+└──────┴────────┘
+┌─y─────┐
+│ Hello │
+└───────┘
+```

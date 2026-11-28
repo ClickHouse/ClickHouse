@@ -1,6 +1,6 @@
 -- Core KQL tabular operators.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- print --';

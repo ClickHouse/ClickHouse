@@ -1,0 +1,299 @@
+---
+slug: /clickstack/observability/integration-examples/nginx-traces
+title: '使用 ClickHouse Observability 监控 Nginx 链路追踪'
+sidebarTitle: 'Nginx 链路追踪'
+description: '借助托管或自管理的摄取方式，在 ClickHouse Observability 中收集、搜索和可视化 Nginx 链路追踪数据。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'Nginx', 'traces', 'otel']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+借助 OpenTelemetry Nginx 模块采集 Nginx 的分布式链路追踪数据，并将其发送到 ClickHouse Observability。无需安装 Nginx，即可使用[演示数据集](#demo-dataset)试用此集成。
+
+## 前置条件 {#prerequisites}
+
+* 一个 ClickHouse Observability 服务
+* 如需采集您自己的链路追踪数据，需要已安装带有 OpenTelemetry 模块的 Nginx，并具有修改其配置的权限；下文的 Docker 示例使用的是 `nginx:1.27-otel`
+* 如需使用演示数据集，需要 `curl` 和 Docker
+
+### 连接详情 {#connection-details}
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版服务" />
+
+    打开 ClickHouse Observability，进入 **团队设置 → Data → Managed Telemetry**。点击 **Copy connection details** 复制端点和 API key，或点击 **Reveal key** 查看被遮盖的 key。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 连接详情](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Nginx 模块通过 **OTLP/gRPC** 导出数据，通常使用端口 **4317**。JSON 演示使用 **OTLP/HTTP**，通常使用端口 **4318**。请使用与相应协议匹配的端点；如需 TLS，请加上 `https://`：
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_GRPC_ENDPOINT='https://YOUR_OTEL_HOST:4317'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    将占位符替换为您服务的连接详情。HTTP 端点只需填写基础地址，无需包含 `/v1/traces`；采集器导出器会自动添加该路径。
+  </Tab>
+
+  <Tab title="自管理">
+    使用采集器的 OTLP 端点和身份验证设置。如果采集器不需要身份验证，请省略 Nginx 的 `header authorization` 指令以及演示采集器的 `headers` 块。详见[自管理入门指南](/zh/clickstack/self-configured/getting-started/managed)。
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_GRPC_ENDPOINT='http://YOUR_COLLECTOR_HOST:4317'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+Nginx 必须能够访问 gRPC 端点。使用 Docker Desktop 时，可通过 `host.docker.internal` 访问主机上的采集器。如果容器位于同一 Docker 网络中，请使用采集器的容器名称。对于不使用 TLS 的本地端点，请使用 `http://`。
+
+## 与现有 Nginx 集成 {#existing-nginx}
+
+<Steps>
+  <Step title="安装 OpenTelemetry Nginx 模块" id="install-module">
+    `nginx:1.27-otel` 镜像已包含 `ngx_otel_module.so`。如需在 Docker 之外安装，请参阅 [Nginx OpenTelemetry 模块文档](https://nginx.org/en/docs/ngx_otel_module.html)中链接的安装说明。
+  </Step>
+
+  <Step title="配置 Nginx 追踪" id="configure-nginx">
+    以下 Docker 示例使用模板，由容器的启动脚本替换其中的连接环境变量。请将其保存为 `nginx.conf.template`。其中 `return 200` 所在的 location 用于简单的冒烟测试；对于您自己的应用程序，请保留现有的 server 和路由配置，只需添加此处所示的追踪指令。
+
+    ```nginx
+    load_module modules/ngx_otel_module.so;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        otel_exporter {
+            endpoint ${OTEL_EXPORTER_OTLP_GRPC_ENDPOINT};
+            header authorization "${OTEL_EXPORTER_OTLP_AUTHORIZATION}";
+        }
+
+        otel_service_name "nginx-proxy";
+        otel_trace on;
+
+        server {
+            listen 80;
+
+            location / {
+                otel_trace_context propagate;
+                otel_span_name "$request_method $uri";
+                otel_span_attr http.status_code $status;
+                otel_span_attr http.request.method $request_method;
+                otel_span_attr http.route $uri;
+                return 200 "Nginx tracing is enabled\n";
+            }
+        }
+    }
+    ```
+
+    在同一目录下将以下内容保存为 `compose.yaml`：
+
+    ```yaml
+    services:
+      nginx:
+        image: nginx:1.27-otel
+        ports:
+          - "8081:80"
+        environment:
+          OTEL_EXPORTER_OTLP_GRPC_ENDPOINT: ${OTEL_EXPORTER_OTLP_GRPC_ENDPOINT}
+          OTEL_EXPORTER_OTLP_AUTHORIZATION: ${OTEL_EXPORTER_OTLP_AUTHORIZATION}
+          NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+          NGINX_ENVSUBST_FILTER: ^OTEL_EXPORTER_OTLP_
+        volumes:
+          - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+    ```
+
+    该替换过滤器可确保 `$request_method`、`$uri` 等 Nginx 变量不被替换。如果直接挂载 `nginx.conf`，Nginx 不会自动替换其中的 shell 环境变量。在 Docker 之外部署时，请在验证配置前将连接占位符替换为实际值，并限制对包含密钥的文件的访问权限。
+  </Step>
+
+  <Step title="验证并启动 Nginx" id="run-nginx">
+    在同一终端中设置[连接变量](#connection-details)，然后运行：
+
+    ```bash
+    docker compose run --rm nginx nginx -t
+    docker compose up -d nginx
+    curl http://localhost:8081/
+    ```
+
+    每个请求都会生成一个 span，其中包含方法、路径、状态码和耗时。对于现有部署，请向您的应用程序 URL 发送请求。修改模板或环境变量后，运行 `docker compose up -d --force-recreate nginx` 使更改生效。
+  </Step>
+
+  <Step title="在 UI 中验证链路追踪" id="verifying-traces">
+    打开 **搜索**，选择 **Traces**，并按 `ServiceName:nginx-proxy` 进行过滤。选择涵盖这些请求的时间范围，并等待几秒钟让数据完成导出。打开任意 trace，即可查看其中的 span 及 HTTP 属性。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![搜索视图中的 Nginx 链路追踪](/images/clickstack/observability-nginx-demo-traces.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 演示数据集 {#demo-dataset}
+
+该示例数据包含分布在九个端点上的 1,000 个 Nginx span，其中既有成功的请求，也有 HTTP 错误，且延迟各不相同。发送前，请先设置[连接变量](#connection-details)。
+
+<Steps>
+  <Step title="下载样本数据集" id="download-sample">
+    ```bash
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nginx-traces-sample.json
+    ```
+  </Step>
+
+  <Step title="配置演示采集器" id="configure-demo-collector">
+    将以下内容保存到下载目录中，文件名为 `nginx-traces-demo.yaml`：
+
+    ```yaml
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/demo_timestamps:
+        error_mode: propagate
+        trace_statements:
+          - context: span
+            statements:
+              - set(cache["duration_ns"], end_time_unix_nano - start_time_unix_nano)
+              - >-
+                set(start_time,
+                  Now() - Duration("2m") -
+                  (Time("2025-10-27T19:36:05Z", "%Y-%m-%dT%H:%M:%SZ") - start_time)
+                )
+              - set(end_time_unix_nano, start_time_unix_nano + cache["duration_ns"])
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+    service:
+      pipelines:
+        traces/nginx-demo:
+          receivers: [otlp]
+          processors: [memory_limiter, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    <Note>
+      `transform/demo_timestamps` 处理器仅用于演示，它会将此样本的时间整体平移到大约过去 24 小时内 (截止于摄取前两分钟) ，同时保留 span 耗时和流量模式。处理您自己的 Nginx 链路追踪时，请去掉此处理器，以保留原始时间戳。重复发送该样本可能会产生重复的 span。
+    </Note>
+  </Step>
+
+  <Step title="运行演示采集器" id="run-demo-collector">
+    <Note>
+      如果目标采集器运行在本机上，请将 `OTEL_EXPORTER_OTLP_ENDPOINT` 设置为 `http://host.docker.internal:4318`。下面的命令已包含 Docker 主机映射。
+    </Note>
+
+    在已设置连接变量的终端中，进入配置文件所在目录，运行 OpenTelemetry Collector Contrib `0.161.0`。请勿关闭此终端：
+
+    ```bash
+    docker run --rm --name nginx-traces-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -p 127.0.0.1:14318:4318 \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/nginx-traces-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    本地接收器使用端口 `14318`，以免与端口 `4318` 上已有的采集器冲突。采集器会使用上述身份验证设置，将链路追踪转发到您配置的端点。
+  </Step>
+
+  <Step title="发送链路追踪" id="send-traces">
+    打开另一个终端，在下载目录中将原始样本发送到本地采集器：
+
+    ```bash
+    curl --fail-with-body -sS http://localhost:14318/v1/traces \
+      -H "Content-Type: application/json" \
+      --data-binary @nginx-traces-sample.json
+    ```
+
+    如果返回 `{}` 或 `{"partialSuccess":{}}` 之类的空成功响应，即表示本地采集器已接受该请求。请检查采集器输出中是否有导出错误，并稍等几秒，让批次到达您的服务。完成后，按 **Ctrl+C** 停止演示采集器。
+  </Step>
+
+  <Step title="验证演示链路追踪" id="verify-demo-traces">
+    打开 **搜索**，选择 **Traces**，按 `ServiceName:nginx-proxy` 过滤，并选择 **最近 2 天**，以涵盖平移后的完整数据集。打开任一 trace 即可查看其 HTTP 属性。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![搜索视图中的 Nginx 链路追踪示例](/images/clickstack/observability-nginx-demo-traces.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 仪表盘与可视化 {#dashboards}
+
+<Steps>
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
+  </Step>
+
+  <Step title="导入仪表盘" id="import-dashboard">
+    1. 打开 **仪表盘**，点击右上角的 **Import**。
+    2. 上传 `nginx-traces-dashboard.json`。
+    3. 将图表映射到您的 **Traces** source，然后点击 **Finish Import**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![仪表盘 页面，Import 按钮已高亮显示](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="查看仪表盘" id="created-dashboard">
+    按 `ServiceName:nginx-proxy` 进行过滤，并选择涵盖您的链路追踪数据的时间范围。在本演示中，请选择 **最近 2 天**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Nginx 链路追踪仪表盘示例](/images/clickstack/observability-nginx-traces-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 故障排查 {#troubleshooting}
+
+### Nginx 无法启动 {#nginx-fails-to-start}
+
+运行 `docker compose run --rm nginx nginx -t` 以验证生成的配置。如果报告未知的 `otel_*` 指令或缺少模块文件，则说明该模块未安装或未加载。请确认使用的是 `-otel` 镜像，并且模板已挂载到文档中指定的路径。
+
+### 未显示链路追踪数据 {#no-traces}
+
+* 检查 gRPC 端点以及目标端采集器所需的身份验证配置。managed service 使用 `Bearer` 前缀。Nginx 模块不能使用 HTTP 端点。
+* 确认 Nginx 容器能够访问该端点，且其协议方案与目标端的 TLS 配置相匹配。
+* 发送一些请求；空闲的 Nginx 实例不会产生请求 span。
+* 检查 **Traces**、服务名称过滤器以及所选的时间范围。如果使用演示环境，请确认采集器流水线中已包含 `transform/demo_timestamps`，并选择 **最近 2 天**。
+* 如果使用演示环境，请在采集器终端中检查是否有身份验证错误或导出错误，并对照你的连接详情核对其 HTTP 端点和 authorization 值。
+* 使用 `docker compose logs nginx` 查看 Nginx 错误。如果未在 Docker 中运行，请查看 Nginx 错误日志。
+
+## 后续步骤 {#next-steps}
+
+* 针对错误或延迟阈值设置[告警](/zh/clickstack/observability/features/alerts)。
+* 创建更多[仪表盘](/zh/clickstack/observability/features/dashboards/overview)。
+* 如需在 Nginx 与目标端之间部署采集器，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/observability/ingesting-data/opentelemetry)。

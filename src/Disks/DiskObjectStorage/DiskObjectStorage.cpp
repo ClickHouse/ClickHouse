@@ -37,6 +37,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <base/sleep.h>
+#include <base/defines.h>
 
 namespace CurrentMetrics
 {
@@ -162,27 +163,23 @@ DiskObjectStorage::DiskObjectStorage(
         {
             std::unique_lock lock{resource_mutex};
 
-            // Sets of matching resource names. Required to resolve possible conflicts in deterministic way
-            std::set<String> new_read_resource_name_from_sql;
-            std::set<String> new_write_resource_name_from_sql;
-            std::set<String> new_read_resource_name_from_sql_any;
-            std::set<String> new_write_resource_name_from_sql_any;
-
-            // Current state
-            if (!read_resource_name_from_sql.empty())
-                new_read_resource_name_from_sql.insert(read_resource_name_from_sql);
-            if (!write_resource_name_from_sql.empty())
-                new_write_resource_name_from_sql.insert(write_resource_name_from_sql);
-            if (!read_resource_name_from_sql_any.empty())
-                new_read_resource_name_from_sql_any.insert(read_resource_name_from_sql_any);
-            if (!write_resource_name_from_sql_any.empty())
-                new_write_resource_name_from_sql_any.insert(write_resource_name_from_sql_any);
+            // All matching resources are kept, so the selection stays deterministic when the selected one goes away
+            auto & new_read_resource_name_from_sql = read_resource_candidates;
+            auto & new_write_resource_name_from_sql = write_resource_candidates;
+            auto & new_read_resource_name_from_sql_any = read_resource_any_candidates;
+            auto & new_write_resource_name_from_sql_any = write_resource_any_candidates;
 
             // Process all updates in specified order
             for (const auto & [entity_type, resource_name, resource] : events)
             {
                 if (entity_type == WorkloadEntityType::Resource)
                 {
+                    // A replaced resource may no longer serve the operations it served before
+                    new_read_resource_name_from_sql.erase(resource_name);
+                    new_write_resource_name_from_sql.erase(resource_name);
+                    new_read_resource_name_from_sql_any.erase(resource_name);
+                    new_write_resource_name_from_sql_any.erase(resource_name);
+
                     if (resource) // CREATE RESOURCE
                     {
                         auto * create = typeid_cast<ASTCreateResourceQuery *>(resource.get());
@@ -208,13 +205,6 @@ DiskObjectStorage::DiskObjectStorage(
                                 }
                             }
                         }
-                    }
-                    else // DROP RESOURCE
-                    {
-                        new_read_resource_name_from_sql.erase(resource_name);
-                        new_write_resource_name_from_sql.erase(resource_name);
-                        new_read_resource_name_from_sql_any.erase(resource_name);
-                        new_write_resource_name_from_sql_any.erase(resource_name);
                     }
                 }
             }
@@ -519,16 +509,18 @@ time_t DiskObjectStorage::getLastChanged(const String & path) const
     return metadata_storage->getLastChanged(path);
 }
 
+bool DiskObjectStorage::isRemote() const
+{
+    for (const auto & location : cluster->getEnabledLocations())
+        if (object_storages->takePointingTo(location)->isRemote())
+            return true;
+
+    return metadata_storage->isRemote();
+}
+
 struct stat DiskObjectStorage::stat(const String & path) const
 {
     return metadata_storage->stat(path);
-}
-
-void DiskObjectStorage::chmod(const String & path, mode_t mode)
-{
-    auto transaction = createObjectStorageTransaction();
-    transaction->chmod(path, mode);
-    transaction->commit();
 }
 
 void DiskObjectStorage::shutdown()
@@ -758,6 +750,31 @@ bool DiskObjectStorage::isWriteOnce() const
     return metadata_storage->isWriteOnce();
 }
 
+bool DiskObjectStorage::prefersRecursiveRemoval() const
+{
+    /// `plain_rewritable` copies the blob of every unlinked file so that the unlink can be undone, while its
+    /// recursive removal only rewrites the directory metadata and deletes all objects in bulk.
+    return metadata_storage->getType() == MetadataStorageType::PlainRewritable;
+}
+
+bool DiskObjectStorage::supportsAtomicFileCreation() const
+{
+    if (metadata_storage->getType() != MetadataStorageType::PlainRewritable)
+        return false;
+
+    /// `plain_rewritable` writes a new file and, in a directory with an explicit file list, its `prefix.path`, with
+    /// ordinary writes, which S3 and Azure Blob Storage publish at once.
+    const auto object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
+    switch (object_storage->getType())
+    {
+        case ObjectStorageType::S3:
+        case ObjectStorageType::Azure:
+            return object_storage->supportsAtomicWrite();
+        default:
+            return false;
+    }
+}
+
 bool DiskObjectStorage::isSharedCompatible() const
 {
     switch (object_storages->takePointingTo(cluster->getLocalLocation())->getType())
@@ -784,7 +801,7 @@ bool DiskObjectStorage::isSharedCompatible() const
 
 bool DiskObjectStorage::supportsHardLinks() const
 {
-    return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
+    return metadata_storage->supportsHardLinks();
 }
 
 String DiskObjectStorage::getReadResourceNameNoLock() const
@@ -1006,8 +1023,11 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
     metadata_storage->applyNewSettings(config, config_prefix, context);
 
     /// FIXME we cannot use config_prefix that was passed through arguments because the disk may be wrapped with cache and we need another name
+    /// The client is rebuilt unconditionally on config reload: this is where a server disk picks up changes that the
+    /// settings comparison in `applyNewSettings` does not cover (e.g. the proxy configuration).
     for (const auto & [location, info] : cluster->getConfiguration())
-        object_storages->takePointingTo(location)->applyNewSettings(config, info.config_prefix, context, IObjectStorage::ApplyNewSettingsOptions{ .allow_client_change = true });
+        object_storages->takePointingTo(location)->applyNewSettings(
+            config, info.config_prefix, context, IObjectStorage::ApplyNewSettingsOptions{.allow_client_change = true, .force_client_rebuild = true});
 
     {
         std::unique_lock lock(resource_mutex);

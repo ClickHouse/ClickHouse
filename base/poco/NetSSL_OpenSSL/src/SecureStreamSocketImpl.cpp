@@ -39,6 +39,15 @@ SecureStreamSocketImpl::SecureStreamSocketImpl(StreamSocketImpl* pStreamSocket, 
 }
 
 
+SecureStreamSocketImpl::SecureStreamSocketImpl(Poco::AutoPtr<StreamSocketImpl> pStreamSocket, Context::Ptr pContext):
+    underlying_socket(pStreamSocket.get()),
+	_impl(pStreamSocket, pContext),
+	_lazyHandshake(false)
+{
+	reset(_impl.sockfd());
+}
+
+
 SecureStreamSocketImpl::~SecureStreamSocketImpl()
 {
 	try
@@ -208,6 +217,12 @@ bool SecureStreamSocketImpl::havePeerCertificate() const
 		return true;
 	}
 	else return false;
+}
+
+
+bool SecureStreamSocketImpl::needHandshake() const
+{
+	return _impl.needHandshake();
 }
 
 

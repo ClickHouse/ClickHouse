@@ -16,19 +16,18 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int ILLEGAL_COLUMN;
-        extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     }
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
     class ExecutableFunctionToModifiedJulianDay final : public IExecutableFunction
     {
     public:
-        String getName() const override
+        [[nodiscard]] String getName() const override
         {
             return Name::name;
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             const IColumn * col_from = arguments[0].column.get();
             const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(col_from);
@@ -97,9 +96,17 @@ namespace DB
                 return col_to;
         }
 
-        bool useDefaultImplementationForConstants() const override
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override
         {
             return true;
+        }
+
+        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+        /// row references it, so the throwing variant must not be executed on the whole dictionary -
+        /// the empty string is not a date and it would fail on entirely valid data.
+        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override
+        {
+            return nullOnErrors;
         }
     };
 
@@ -179,23 +186,13 @@ namespace DB
             return std::make_unique<FunctionBaseToModifiedJulianDay<Name, ToDataType, nullOnErrors>>(argument_types, return_type);
         }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        String getSignatureString() const override
         {
-            if (!isStringOrFixedString(arguments[0]))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be String or FixedString",
-                    getName());
-            }
-
-            DataTypePtr base_type = std::make_shared<ToDataType>();
+            const String to = ToDataType{}.getName();
             if constexpr (nullOnErrors)
-            {
-                return std::make_shared<DataTypeNullable>(base_type);
-            }
+                return "(StringOrFixedString) -> Nullable(" + to + ")";
             else
-            {
-                return base_type;
-            }
+                return "(StringOrFixedString) -> " + to;
         }
 
         size_t getNumberOfArguments() const override

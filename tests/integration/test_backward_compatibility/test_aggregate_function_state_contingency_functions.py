@@ -22,8 +22,8 @@ old_node_2 = cluster.add_instance(
     with_installed_binary=True,
 )
 
-new_node_1 = cluster.add_instance("new_node_1", with_zookeeper=False, use_old_analyzer=True)
-new_node_2 = cluster.add_instance("new_node_2", with_zookeeper=False, use_old_analyzer=True)
+new_node_1 = cluster.add_instance("new_node_1", with_zookeeper=False)
+new_node_2 = cluster.add_instance("new_node_2", with_zookeeper=False)
 
 
 @pytest.fixture(scope="module")
@@ -44,9 +44,9 @@ def cleanup():
 def test_contingency_backward_compatibility(start_cluster):
     """Backward compatibility for contingency/CrossTab functions.
 
-    The branch adds window-optimized variants with different internal state
-    representations but identical serialization format. This test verifies that
-    mixed-version distributed queries produce correct results.
+    The serialization format of the states must stay the same between versions,
+    for states of plain aggregation and for states returned by window functions.
+    This test verifies that mixed-version distributed queries produce correct results.
     """
     all_nodes = (old_node_1, old_node_2, new_node_1, new_node_2)
 
@@ -228,7 +228,7 @@ def test_contingency_backward_compatibility(start_cluster):
     )
     assert old_node_1.query(read_agg).strip() == old_result, "new window -> old agg mismatch"
 
-    # Direction 4: new window -> new agg (same binary, cross-variant)
+    # Direction 4: new window -> new agg (same binary)
     new_node_2.query("TRUNCATE TABLE agg_states")
     new_node_2.query(
         "INSERT INTO agg_states SELECT * FROM remote('new_node_1', default, agg_states)"

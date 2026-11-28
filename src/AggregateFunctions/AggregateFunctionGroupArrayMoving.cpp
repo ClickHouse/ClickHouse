@@ -59,7 +59,7 @@ struct MovingSumData : public MovingData<T>
 {
     static constexpr auto name = "groupArrayMovingSum";
 
-    T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
+    [[nodiscard]] T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
     {
         if (idx < window_size)
             return this->value[idx];
@@ -72,7 +72,7 @@ struct MovingAvgData : public MovingData<T>
 {
     static constexpr auto name = "groupArrayMovingAvg";
 
-    T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
+    [[nodiscard]] T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
     {
         if (idx < window_size)
             return this->value[idx] / T(window_size);
@@ -100,15 +100,11 @@ public:
         : IAggregateFunctionDataHelper<Data, MovingImpl<T, LimitNumElements, Data>>({data_type_}, parameters_, createResultType(data_type_))
         , window_size(window_size_) {}
 
-    String getName() const override { return Data::name; }
-
-    /// The window size accepts both Int64 and UInt64, so the printed type name needs the type
-    /// suffix to round-trip: without it 42::Int64 reparses as UInt64.
-    bool shouldPrintParametersWithTypes() const override { return true; }
+    [[nodiscard]] String getName() const override { return Data::name; }
 
     /// The window size only affects finalization, not the serialized state, so parameterized and
     /// parameterless states share one representation and stay Merge-/CAST-compatible.
-    DataTypePtr getNormalizedStateType() const override
+    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
     {
         DataTypes normalized_argument_types;
         normalized_argument_types.reserve(this->argument_types.size());
@@ -200,7 +196,7 @@ public:
         }
     }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return true;
     }
@@ -310,7 +306,7 @@ AggregateFunctionPtr createAggregateFunctionMoving(
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     FunctionDocumentation::Description description_sum = R"(
 Calculates the moving sum of input values.
@@ -379,10 +375,10 @@ FROM t;
     FunctionDocumentation::Description description = R"(
 Calculates the moving average of input values.
 
-:::note
+<Note>
 The function uses rounding towards zero.
 It truncates the decimal places insignificant for the resulting data type.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 groupArrayMovingAvg(numbers_for_summing)

@@ -16,6 +16,8 @@ El comando cambia la [clave de ordenación](/es/reference/engines/table-engines/
 
 El comando es ligero en el sentido de que solo cambia los metadatos. Para conservar la propiedad de que las filas de las partes de datos estén ordenadas según la expresión de la clave de ordenación, no se pueden añadir a la clave de ordenación expresiones que contengan columnas existentes (solo columnas añadidas por el comando `ADD COLUMN` en la misma consulta `ALTER`, sin valor predeterminado para la columna).
 
+Por el mismo motivo, no se puede cambiar la dirección de ordenación (`ASC` o `DESC`) de una columna de la clave de ordenación que conserve `new_expression`: las partes existentes permanecen ordenadas físicamente en la dirección que tenía la columna cuando se escribieron, y ninguna parte de datos normal registra esa dirección. Para usar una dirección diferente, cree una tabla nueva con el `ORDER BY` deseado y copie los datos en ella con `INSERT ... SELECT`.
+
 <Note>
   Solo funciona para tablas de la familia [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree) (incluidas las tablas [replicadas](/es/reference/engines/table-engines/mergetree-family/replication)).
 </Note>

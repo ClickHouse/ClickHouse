@@ -14,11 +14,11 @@ describe p3(t = 'String');
 
 -- The common supertype `Variant(Int64, UInt64)` requires `use_variant_as_common_type`, which is honored only
 -- by the analyzer; the old interpreter throws `NO_COMMON_TYPE` here, so pin the analyzer for this query.
-describe (SELECT * FROM p3(t = 'Int64') union all SELECT * FROM p3(t = 'UInt64')) SETTINGS use_variant_as_common_type = 1, allow_experimental_analyzer = 1;
+describe (SELECT * FROM p3(t = 'Int64') union all SELECT * FROM p3(t = 'UInt64')) SETTINGS use_variant_as_common_type = 1;
 
 SELECT * FROM p3(t = 'String');
 
-SELECT * FROM p3(plus(equals(equals(equals(t), equals(toLowCardinality(6) = 6, 2), top)), 'String', 6, 6), materialize(3), equals(p3(globalIn(1), p2(equals(top)), t = 'Int') = top, p3(globalIn(1), p2(equals(top)), t = 'Int'), 'Int', toNullable(toUInt256(3)), 3, 3), t = 'String') SETTINGS allow_experimental_analyzer = 1;
+SELECT * FROM p3(plus(equals(equals(equals(t), equals(toLowCardinality(6) = 6, 2), top)), 'String', 6, 6), materialize(3), equals(p3(globalIn(1), p2(equals(top)), t = 'Int') = top, p3(globalIn(1), p2(equals(top)), t = 'Int'), 'Int', toNullable(toUInt256(3)), 3, 3), t = 'String');
 
 select arrayReduce('sum', (select groupArray(number) from paramview(top=10)));
 

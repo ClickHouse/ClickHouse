@@ -7,72 +7,61 @@ description: 'Accès des employés de ClickHouse aux données client dans les d�
 doc_type: 'reference'
 ---
 
-Par défaut, les employés de ClickHouse n’ont pas accès à vos données. Vos données ClickHouse, y compris toutes les tables utilisateur et les résultats de requête, restent dans votre VPC. Les seuls moyens par lesquels ClickHouse interagit avec votre déploiement sont décrits ci-dessous — aucun ne donne accès aux données des tables client.
+Par défaut, les employés de ClickHouse n’ont pas accès à vos données. Vos données ClickHouse, y compris toutes les tables utilisateur et les résultats de requête, restent dans votre propre compte cloud. Les seuls moyens par lesquels ClickHouse interagit avec votre déploiement sont décrits ci-dessous — aucun ne donne accès aux données des tables client.
 
-<div id="routine-operations">
-  ## Opérations de routine
-</div>
+## Opérations courantes {#routine-operations}
 
-Le plan de contrôle de ClickHouse Cloud exécute votre déploiement BYOC sans lire les données client. Les composants qui envoient des données hors de votre VPC ne transportent que des métadonnées opérationnelles :
+Le control plane de ClickHouse Cloud pilote votre BYOC deployment sans lire les données client. Les composants qui envoient des données vers l&#39;infrastructure détenue par ClickHouse ne transmettent que des metadata opérationnelles :
 
-| Composant                 | Ce qui sort de votre VPC                                                                                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Exportateur d’état        | État du service et des sauvegardes (santé, statut — événements opérationnels, et non contenu des sauvegardes) vers une file d’attente `SQS` appartenant à ClickHouse Cloud. |
-| Collecteur de facturation | Métriques CPU et mémoire vers un bucket de stockage d’objets appartenant à ClickHouse Cloud.                                                                                |
-| AlertManager              | Alertes sur l’état de santé du cluster vers ClickHouse Cloud.                                                                                                               |
+| Composant          | Ce qui parvient à l&#39;infrastructure détenue par ClickHouse                                                                                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| State exporter     | State du service et de la Backup (health, status — événements opérationnels, et non le contenu des Backup) vers une queue détenue par ClickHouse Cloud : `SQS` sur AWS, Pub/Sub sur GCP, Service Bus sur Azure. |
+| Scraper de billing | Métriques de CPU et de mémoire vers un bucket d&#39;object storage détenu par ClickHouse Cloud.                                                                                                                 |
+| AlertManager       | Alertes de health du cluster vers ClickHouse Cloud.                                                                                                                                                             |
 
-Le trafic des requêtes, le contenu des tables et les schémas ne transitent jamais par ces canaux. Les log et les métriques restent à l’intérieur de votre VPC BYOC.
+Le trafic de query, le contenu des tables et les schemas ne transitent jamais par ces canaux. L&#39;intégralité de votre dataset de monitoring — la stack Prometheus et Thanos, ainsi que vos logs — reste dans votre propre account ; la telemetry limitée décrite dans le tableau ci-dessus constitue les seules données d&#39;observability exportées en continu vers les systèmes détenus par ClickHouse. Les tableaux de bord Monitoring de ClickHouse et, après escalation approuvée, ses ingénieurs peuvent en outre interroger cette stack et vos logs sur place via Tailscale, sans qu&#39;aucune donnée ne soit persistée du côté de ClickHouse — voir [accès de dépannage](#troubleshooting-access). Consultez les [frontières réseau](/fr/products/bring-your-own-cloud/reference/network-security#network-boundaries) pour la référence complète des flux Inbound et Outbound.
 
-<div id="troubleshooting-access">
-  ## Accès de dépannage
-</div>
+## Accès de dépannage {#troubleshooting-access}
 
 Lorsque les ingénieurs ClickHouse doivent diagnostiquer un problème dans votre déploiement, ils demandent un accès juste à temps via un processus interne d’escalade et d’approbation. Une fois approuvé, cet accès est accordé au moyen d’un certificat à durée limitée et acheminé via [Tailscale](/fr/products/bring-your-own-cloud/reference/network-security#tailscale-private-network), jamais via l’internet public.
 
-<div id="what-engineers-can-see">
-  ### Ce que les ingénieurs peuvent voir
-</div>
+### Ce que les ingénieurs peuvent voir {#what-engineers-can-see}
 
-Avec un accès de dépannage approuvé, les ingénieurs peuvent uniquement consulter les tables système de ClickHouse. Cela inclut :
+Au sein de ClickHouse, l’accès de dépannage approuvé est limité aux tables système. Cela inclut :
 
 * `system.query_log` — le texte de la requête et les métadonnées d’exécution des requêtes exécutées sur votre service
 * `system.tables`, `system.columns` et des tables système similaires — le schéma et les métadonnées
-* D’autres tables `system.*` utilisées pour le diagnostic (par ex. : parts, mutations, réplicas)
+* D’autres tables `system.*` utilisées pour le diagnostic (par ex. : parts, mutations, réplicas)
 
-<div id="what-engineers-cant-see">
-  ### Ce que les ingénieurs ne peuvent pas voir
-</div>
+### Ce que les ingénieurs ne peuvent pas voir {#what-engineers-cant-see}
 
-Les ingénieurs ne peuvent pas consulter les tables utilisateur des clients. L’accès est limité aux seules tables système.
+Les ingénieurs ne peuvent pas consulter les tables utilisateur des clients. Au sein de ClickHouse, l’accès est limité aux seules tables système.
 
-<div id="how-access-is-enforced">
-  ### Comment l’accès est contrôlé
-</div>
+### Diagnostics d&#39;infrastructure {#infrastructure-diagnostics}
 
-* **Approbation requise** : chaque demande d’accès passe par un système d’approbation interne avec des approbateurs désignés. Les ingénieurs ne peuvent pas s’octroyer eux-mêmes un accès.
-* **Certificats à durée limitée** : un certificat temporaire, à durée limitée, est généré pour chaque session approuvée. L’accès expire automatiquement.
-* **Authentification par certificat** : les certificats remplacent l’authentification par mot de passe pour tout accès humain aux instances BYOC.
-* **Lecture seule sur les tables système** : l’identité du certificat est limitée à la lecture des tables système.
-* **Aucune donnée exportée** : les logs et les résultats de requête des sessions de dépannage ne sont jamais renvoyés vers l’infrastructure ClickHouse.
+Cette même procédure d&#39;escalation soumise à approbation peut également accorder, de façon distincte, un accès limité dans le temps aux surfaces d&#39;infrastructure via Tailscale : le Kubernetes API server, ainsi que le monitoring stack et les logs internes au cluster. Il s&#39;agit d&#39;une surface distincte de l&#39;accès à ClickHouse décrit ci-dessus : elle ne contient aucune donnée de table client, et rien de ce qui y est consulté n&#39;est persisté du côté de ClickHouse.
 
-<div id="auditing">
-  ## Audit
-</div>
+### Comment l’accès est contrôlé {#how-access-is-enforced}
 
-L’activité des ingénieurs est visible de votre côté et fait l’objet d’un audit par ClickHouse :
+* **Approbation requise** : chaque demande d’accès passe par un système d’approbation interne avec des approbateurs désignés. Les ingénieurs ne peuvent pas s’octroyer eux-mêmes un accès.
+* **Certificats à durée limitée** : un certificat temporaire, à durée limitée, est généré pour chaque session approuvée. L’accès expire automatiquement.
+* **Authentification par certificat** : les certificats remplacent l’authentification par mot de passe pour tout accès humain aux instances BYOC.
+* **Lecture seule sur les tables système** : l’identité du certificat est limitée à la lecture des tables système.
+* **Aucune persistance côté ClickHouse** : les résultats consultés lors d’une session de dépannage — qu’ils proviennent des tables système, de la stack de monitoring ou de vos logs — parviennent à l’outillage de l’ingénieur pour y être affichés, mais ne sont ni stockés dans l’infrastructure ClickHouse ni renvoyés vers celle-ci.
 
-* **Visible côté client** : chaque requête qu’un ingénieur ClickHouse exécute sur votre instance apparaît dans votre propre `system.query_log`, y compris le texte de la requête et l’identité du certificat. Vous pouvez en faire l’audit directement depuis votre service ClickHouse.
-* **Côté ClickHouse** : l’équipe sécurité de ClickHouse journalise et audite en interne toutes les demandes d’accès, les approbations et les connexions Tailscale.
+## Audit {#auditing}
 
-<div id="future-controls">
-  ## Contrôles futurs
-</div>
+L’activité des ingénieurs est visible de votre côté et fait l’objet d’un audit par ClickHouse :
+
+* **Visible côté client (ClickHouse)** : chaque requête qu’un ingénieur ClickHouse exécute sur votre instance apparaît dans votre propre `system.query_log`, y compris le texte de la requête et l’identité du certificat. Vous pouvez en faire l’audit directement depuis votre service ClickHouse.
+* **Visible côté client (infrastructure)** : `system.query_log` ne peut pas rendre compte des surfaces d’infrastructure ci-dessus. Les appels à l’API Kubernetes apparaissent dans les audit logs Kubernetes de votre cluster, les appels à l’API cloud dans votre piste d’audit cloud, et les connexions Tailscale elles-mêmes dans vos journaux de flux, là où vous les avez activés. Consultez [Auditer la frontière](/fr/products/bring-your-own-cloud/reference/network-security#auditing-the-boundary) pour savoir où se trouve chacun de ces éléments selon le cloud, et lesquels sont activés par défaut.
+* **Côté ClickHouse** : l’équipe sécurité de ClickHouse journalise et audite en interne toutes les demandes d’accès, les approbations et les connexions Tailscale.
+
+## Contrôles futurs {#future-controls}
 
 L&#39;approbation contrôlée par le client — où vous approuvez chaque demande d&#39;accès d&#39;un ingénieur avant sa prise d&#39;effet — figure sur la feuille de route. Aujourd&#39;hui, l&#39;approbation est gérée via le processus d&#39;escalade interne de ClickHouse.
 
-<div id="related">
-  ## Voir aussi
-</div>
+## Voir aussi {#related}
 
 * [Sécurité réseau BYOC](/fr/products/bring-your-own-cloud/reference/network-security) — comment fonctionnent Tailscale et les frontières réseau
 * [Privilège BYOC](/fr/products/bring-your-own-cloud/reference/privilege) — IAM roles créés lors de la mise en place de BYOC

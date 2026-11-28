@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Regression test for https://github.com/ClickHouse/clickhouse-core-incidents/issues/1021
 -- When multiple patch parts (Merge + Join mode) update the same columns,
 -- the column ordering in patch blocks must be deterministic to avoid

@@ -10,27 +10,38 @@ namespace DB
 class FillingStep : public ITransformingStep
 {
 public:
+    /// `sort_description` is the whole `ORDER BY`; the columns to fill are its `WITH FILL` elements.
     FillingStep(
         SharedHeader input_header_,
         SortDescription sort_description_,
-        SortDescription fill_description_,
         InterpolateDescriptionPtr interpolate_description_,
         bool use_with_fill_by_sorting_prefix);
 
-    String getName() const override { return "Filling"; }
+    [[nodiscard]] String getName() const override { return "Filling"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const SortDescription & getSortDescription() const override { return sort_description; }
+    [[nodiscard]] const SortDescription & getSortDescription() const override { return sort_description; }
+    [[nodiscard]] const InterpolateDescriptionPtr & getInterpolateDescription() const { return interpolate_description; }
+
+    void serialize(Serialization & ctx) const override;
+    [[nodiscard]] bool isSerializable() const override { return true; }
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
+
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+    /// How many leading `ORDER BY` keys the output is still sorted by.
+    [[nodiscard]] size_t getPreservedSortPrefixSize() const;
 
 private:
     void updateOutputHeader() override;
 
     SortDescription sort_description;
-    SortDescription fill_description;
     InterpolateDescriptionPtr interpolate_description;
     const bool use_with_fill_by_sorting_prefix;
 };

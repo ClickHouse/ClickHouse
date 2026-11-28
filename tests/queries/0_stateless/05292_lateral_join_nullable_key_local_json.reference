@@ -1,0 +1,19 @@
+-- (1) LEFT, aggregate
+1	1	2	21
+2	\N	0	0
+3	3	0	0
+-- (1) INNER, aggregate
+1	1	2
+2	\N	0
+3	3	0
+-- (1) the subquery sees the NULL outer value
+1	2
+2	1
+3	0
+-- (1) LEFT, not aggregating
+1	10
+1	11
+2	0
+3	0
+SELECT * FROM t1 INNER JOIN t2 ON true
+SELECT * FROM t1 INNER JOIN LATERAL (SELECT * FROM t2 WHERE t2.k = t1.k) AS s ON true

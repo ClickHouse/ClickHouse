@@ -12,45 +12,18 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="use_minimalistic_part_header_in_zookeeper">
-  ## use_minimalistic_part_header_in_zookeeper
-</div>
+## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
-Méthode de stockage des en-têtes des parties de données dans ZooKeeper. Ce paramètre s&#39;applique uniquement à la famille [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/index). Il peut être défini :
+Paramètre obsolète, sans effet. Les tables [répliquées](/fr/reference/engines/table-engines/mergetree-family/replication) stockent toujours l&#39;en-tête d&#39;une partie de données de manière compacte dans un seul `znode`. Les en-têtes de parties écrits par des versions antérieures, avec des `znodes` enfants `columns` et `checksums` distincts, restent lisibles.
 
-**Globalement dans la section [merge&#95;tree](/fr/reference/settings/server-settings/settings/merge#merge_tree) du fichier `config.xml`**
-
-ClickHouse utilise ce paramètre pour toutes les tables du serveur. Vous pouvez le modifier à tout moment. Les tables existantes changent de comportement lorsque ce paramètre est modifié.
-
-**Pour chaque table**
-
-Lors de la création d&#39;une table, spécifiez le [paramètre de moteur](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) correspondant. Le comportement d&#39;une table existante dotée de ce paramètre ne change pas, même si le paramètre global est modifié.
-
-**Valeurs possibles**
-
-* `0` — La fonctionnalité est désactivée.
-* `1` — La fonctionnalité est activée.
-
-Si [`use_minimalistic_part_header_in_zookeeper = 1`](/fr/reference/settings/server-settings/settings/use#use_minimalistic_part_header_in_zookeeper), les tables [répliquées](/fr/reference/engines/table-engines/mergetree-family/replication) stockent les en-têtes des parties de données de manière compacte à l&#39;aide d&#39;un seul `znode`. Si la table contient de nombreuses colonnes, cette méthode de stockage réduit considérablement le volume de données stockées dans ZooKeeper.
-
-<Note>
-  Après avoir appliqué `use_minimalistic_part_header_in_zookeeper = 1`, vous ne pouvez pas revenir à une version antérieure du serveur ClickHouse qui ne prend pas en charge ce paramètre. Soyez prudent lors de la mise à niveau de ClickHouse sur les serveurs d&#39;un cluster. Ne mettez pas tous les serveurs à niveau en même temps. Il est plus sûr de tester les nouvelles versions de ClickHouse dans un environnement de test, ou sur seulement quelques serveurs du cluster.
-
-  Les en-têtes des parties de données déjà stockés avec ce paramètre ne peuvent pas être rétablis dans leur représentation précédente (non compacte).
-</Note>
-
-<div id="use_separate_cache_arena">
-  ## use_separate_cache_arena
-</div>
+## use_separate_cache_arena {#use_separate_cache_arena}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 Active une arène jemalloc dédiée pour les allocations de cache (mark cache, uncompressed cache, page cache).
 Isole les données de cache des allocations liées au traitement des requêtes, ce qui réduit la fragmentation mémoire.
 
-<div id="use_shared_merge_tree_log_pipeline">
-  ## use_shared_merge_tree_log_pipeline
-</div>
+## use_shared_merge_tree_log_pipeline {#use_shared_merge_tree_log_pipeline}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 

@@ -3,6 +3,7 @@
 #include <type_traits>
 #include <typeinfo>
 #include <vector>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <gtest/gtest.h>
 #include <Common/Exception.h>
@@ -69,10 +70,20 @@ static void testFilter()
         PaddedPODArray<UInt8> flit(rows);
         for (size_t i = 0; i < rows; ++i)
             flit[i] = rng() % filter_ratio == 0;
-        auto res_column = vector_column->filter(flit, -1);
+        const ssize_t exact_hint = countBytesInFilter(flit);
+        for (ssize_t hint : {static_cast<ssize_t>(-1), static_cast<ssize_t>(0), exact_hint})
+        {
+            auto res_column = vector_column->filter(flit, hint);
 
-        if (!checkFilter(flit, *vector_column, *res_column))
-            throw Exception(error_code, "VectorColumn filter failure, type: {}", typeid(T).name());
+            if (!checkFilter(flit, *vector_column, *res_column))
+                throw Exception(error_code, "VectorColumn filter failure, type: {}, hint: {}", typeid(T).name(), hint);
+        }
+
+        auto in_place_column = vector_column->cloneResized(rows);
+        in_place_column->filter(flit);
+
+        if (!checkFilter(flit, *vector_column, *in_place_column))
+            throw Exception(error_code, "VectorColumn in-place filter failure, type: {}", typeid(T).name());
     };
 
     try

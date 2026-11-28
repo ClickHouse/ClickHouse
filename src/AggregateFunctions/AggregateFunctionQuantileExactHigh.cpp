@@ -57,7 +57,7 @@ void registerAggregateFunctionsQuantileExactHigh(AggregateFunctionFactory & fact
 void registerAggregateFunctionsQuantileExactHigh(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     FunctionDocumentation::Description description = R"(
 Similar to [`quantileExact`](/reference/functions/aggregate-functions/quantileExact), this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
@@ -111,7 +111,7 @@ SELECT quantileExactHigh(0.1)(number) FROM numbers(10);
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileExactHigh::name, {createAggregateFunctionQuantile<FuncQuantileExactHigh>, documentation});
+    factory.registerFunction(NameQuantileExactHigh::name, {createAggregateFunctionQuantile<FuncQuantileExactHigh>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously. For an even number of elements at level `0.5` it returns the higher of the two middle values.

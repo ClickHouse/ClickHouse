@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="url_base">
-  ## url_base
-</div>
+## url_base {#url_base}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "Новая настройка для указания базового URL при разрешении относительных URL в табличной функции url и движке таблицы URL."}]}]} />
 
@@ -37,9 +35,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * `/test/data.csv` преобразуется в `https://example.com/test/data.csv`
 * `//other.com/test/data.csv` преобразуется в `https://other.com/test/data.csv`
 
-<div id="url_wildcard_max_directories_to_read">
-  ## url_wildcard_max_directories_to_read
-</div>
+Если относительный URL берётся из [именованной коллекции](/ru/concepts/features/configuration/server-config/named-collections), его разрешение считается переопределением ключа `url` этой коллекции и требует привилегии `SHOW NAMED COLLECTIONS SECRETS` на эту коллекцию.
+
+## url_wildcard_max_directories_to_read {#url_wildcard_max_directories_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 

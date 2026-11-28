@@ -1,0 +1,6 @@
+2
+2
+2
+2
+Map(String, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))
+492708

@@ -74,6 +74,12 @@ bool SettingsChanges::removeSetting(std::string_view name)
     return true;
 }
 
+void SettingsChanges::removeSettings(const Strings & names)
+{
+    for (const auto & name : names)
+        removeSetting(name);
+}
+
 void SettingsChanges::setSetting(std::string_view name, const Field & value)
 {
     if (auto * setting_value = tryGet(name))

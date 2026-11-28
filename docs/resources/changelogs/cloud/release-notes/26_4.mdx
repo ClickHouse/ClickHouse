@@ -246,7 +246,7 @@ doc_type: 'changelog'
 ### Table engines and storage {#table-engines-and-storage-improvements}
 
 * Added a dedicated cleanup thread for MergeTree to prevent cleanup delays under heavy merge load. [#91574](https://github.com/ClickHouse/ClickHouse/pull/91574) ([Amos Bird](https://github.com/amosbird)).
-* Tables with `DELETE TTL` rules can now use the vertical merge algorithm. [#97332](https://github.com/ClickHouse/ClickHouse/pull/97332) ([murphy-4o](https://github.com/murphy-4o)).
+* Tables with `DELETE TTL` rules can now use the vertical merge algorithm only with the `MergeTree` table engine. [#97332](https://github.com/ClickHouse/ClickHouse/pull/97332) ([murphy-4o](https://github.com/murphy-4o)).
 * Marks of secondary indexes are now prewarmed when the `prewarm_mark_cache` setting is enabled (loaded into the index mark cache during data part fetches and table startup). [#97772](https://github.com/ClickHouse/ClickHouse/pull/97772) ([Anton Popov](https://github.com/CurtizJ)).
 * Text indexes can now be built on `Nullable([Fixed]String)` and `Array(Nullable([Fixed]String))` columns. [#98118](https://github.com/ClickHouse/ClickHouse/pull/98118) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
 * Cancel background merges early in `DROP DATABASE` for ordinary shared merge tree. [#98161](https://github.com/ClickHouse/ClickHouse/pull/98161) ([Shaohua Wang](https://github.com/tiandiwonder)).

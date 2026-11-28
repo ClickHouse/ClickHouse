@@ -1,0 +1,152 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "f2bc299b-e512-41b6-af4c-ce034ec06afa",
+  "location" : "/home/nik/work/clickhouse-private1/.claude/worktrees/agent-a6fdc5f56a0fac63a/tmp/data-lake-corpus-work/iceberg/spark-3.5.5-iceberg-1.4.3/warehouse/db/ice143_v2_position_deletes",
+  "last-sequence-number" : 3,
+  "last-updated-ms" : 1793282626584,
+  "last-column-id" : 4,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "s",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "p",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "ts",
+      "required" : false,
+      "type" : "timestamptz"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "p",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "nik",
+    "write.merge.mode" : "merge-on-read",
+    "write.update.mode" : "merge-on-read",
+    "write.delete.mode" : "merge-on-read",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 1550687649109535801,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 1550687649109535801,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 8119238068862445850,
+    "timestamp-ms" : 1793282619993,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1793282579604",
+      "added-data-files" : "4",
+      "added-records" : "60",
+      "added-files-size" : "5330",
+      "changed-partition-count" : "4",
+      "total-records" : "60",
+      "total-files-size" : "5330",
+      "total-data-files" : "4",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/home/nik/work/clickhouse-private1/.claude/worktrees/agent-a6fdc5f56a0fac63a/tmp/data-lake-corpus-work/iceberg/spark-3.5.5-iceberg-1.4.3/warehouse/db/ice143_v2_position_deletes/metadata/snap-8119238068862445850-1-002c4ce9-6cf1-47a9-b470-56bf9911aa70.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 2,
+    "snapshot-id" : 7667081420371473560,
+    "parent-snapshot-id" : 8119238068862445850,
+    "timestamp-ms" : 1793282624241,
+    "summary" : {
+      "operation" : "overwrite",
+      "spark.app.id" : "local-1793282579604",
+      "added-position-delete-files" : "4",
+      "added-delete-files" : "4",
+      "added-files-size" : "8670",
+      "added-position-deletes" : "20",
+      "changed-partition-count" : "4",
+      "total-records" : "60",
+      "total-files-size" : "14000",
+      "total-data-files" : "4",
+      "total-delete-files" : "4",
+      "total-position-deletes" : "20",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/home/nik/work/clickhouse-private1/.claude/worktrees/agent-a6fdc5f56a0fac63a/tmp/data-lake-corpus-work/iceberg/spark-3.5.5-iceberg-1.4.3/warehouse/db/ice143_v2_position_deletes/metadata/snap-7667081420371473560-1-d8078a06-7333-4f05-8c1a-03ed55985941.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 3,
+    "snapshot-id" : 1550687649109535801,
+    "parent-snapshot-id" : 7667081420371473560,
+    "timestamp-ms" : 1793282626584,
+    "summary" : {
+      "operation" : "overwrite",
+      "spark.app.id" : "local-1793282579604",
+      "added-data-files" : "4",
+      "added-position-delete-files" : "4",
+      "added-delete-files" : "4",
+      "added-records" : "8",
+      "added-files-size" : "13453",
+      "added-position-deletes" : "8",
+      "changed-partition-count" : "4",
+      "total-records" : "68",
+      "total-files-size" : "27453",
+      "total-data-files" : "8",
+      "total-delete-files" : "8",
+      "total-position-deletes" : "28",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/home/nik/work/clickhouse-private1/.claude/worktrees/agent-a6fdc5f56a0fac63a/tmp/data-lake-corpus-work/iceberg/spark-3.5.5-iceberg-1.4.3/warehouse/db/ice143_v2_position_deletes/metadata/snap-1550687649109535801-1-8357bae8-aa43-4163-89b6-bf0b81ce9bb4.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1793282619993,
+    "snapshot-id" : 8119238068862445850
+  }, {
+    "timestamp-ms" : 1793282624241,
+    "snapshot-id" : 7667081420371473560
+  }, {
+    "timestamp-ms" : 1793282626584,
+    "snapshot-id" : 1550687649109535801
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1793282617918,
+    "metadata-file" : "/home/nik/work/clickhouse-private1/.claude/worktrees/agent-a6fdc5f56a0fac63a/tmp/data-lake-corpus-work/iceberg/spark-3.5.5-iceberg-1.4.3/warehouse/db/ice143_v2_position_deletes/metadata/v1.metadata.json"
+  }, {
+    "timestamp-ms" : 1793282619993,
+    "metadata-file" : "/home/nik/work/clickhouse-private1/.claude/worktrees/agent-a6fdc5f56a0fac63a/tmp/data-lake-corpus-work/iceberg/spark-3.5.5-iceberg-1.4.3/warehouse/db/ice143_v2_position_deletes/metadata/v2.metadata.json"
+  }, {
+    "timestamp-ms" : 1793282624241,
+    "metadata-file" : "/home/nik/work/clickhouse-private1/.claude/worktrees/agent-a6fdc5f56a0fac63a/tmp/data-lake-corpus-work/iceberg/spark-3.5.5-iceberg-1.4.3/warehouse/db/ice143_v2_position_deletes/metadata/v3.metadata.json"
+  } ]
+}

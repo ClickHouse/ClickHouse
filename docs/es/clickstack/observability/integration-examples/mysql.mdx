@@ -1,0 +1,441 @@
+---
+slug: /clickstack/observability/integration-examples/mysql
+title: 'Monitorización de Registros de MySQL con ClickHouse Observability'
+sidebarTitle: 'Registros de MySQL'
+description: 'Configuración de la monitorización de Registros de MySQL con ClickHouse Observability, tanto en ClickHouse Observability como en implementaciones autogestionadas.'
+doc_type: 'guide'
+keywords: ['MySQL', 'logs', 'OTEL', 'ClickHouse Observability', 'monitorización de bases de datos', 'consulta lenta']
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Recopile los logs de errores y de consultas lentas de MySQL con un recolector de OpenTelemetry y envíelos a ClickHouse Observability. Use el [conjunto de datos de demostración](#demo-dataset) para probar la integración sin necesidad de instalar MySQL.
+
+## Requisitos previos {#prerequisites}
+
+* Un servicio de ClickHouse Observability
+* Docker para ejecutar los ejemplos del recolector, o una implementación existente de OpenTelemetry Collector Contrib
+* Para sus propios log, MySQL 5.7 o una versión posterior, con acceso a su configuración y a sus archivos de registro
+* Para la demo, `curl` para descargar los archivos de muestra
+
+### Datos de conexión {#connection-details}
+
+<Tabs>
+  <Tab title="Totalmente gestionado">
+    <BetaBadge label="Oferta en fase beta" />
+
+    Abra ClickHouse Observability y vaya a **Team Settings → Data → Managed Telemetry**. Copie su endpoint OTLP HTTP y su clave de API. Puede usar **Copiar datos de conexión** para copiar la configuración o **Reveal key** para ver la clave enmascarada.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Datos de conexión de Managed Telemetry](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Para los ejemplos de exportador OTLP que aparecen a continuación, defina estas variables en la terminal donde vaya a ejecutar el recolector:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    Reemplace los marcadores de posición por el endpoint exacto (incluido el puerto) y la clave de API de su servicio. Use el endpoint HTTP base sin el sufijo `/v1/logs`; el exportador añade al final la ruta de cada señal.
+  </Tab>
+
+  <Tab title="Autogestionado">
+    Use un endpoint OTLP HTTP de su recolector que sea accesible (por ejemplo, `http://YOUR_COLLECTOR_HOST:4318`) y los ajustes de autenticación correspondientes. Si su recolector no requiere autenticación, omita el bloque `headers` del exportador en las configuraciones siguientes. Consulte la [guía de introducción para la versión autogestionada](/es/clickstack/self-configured/getting-started/managed) para obtener instrucciones de configuración.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+El endpoint debe ser accesible desde el contenedor del recolector. Si el recolector de destino se ejecuta en este mismo equipo, use `http://host.docker.internal:4318`. Los comandos de Docker que aparecen a continuación ya incluyen la correspondencia del host.
+
+## Integración con una instancia de MySQL existente {#existing-mysql}
+
+<Steps>
+  <Step title="Configure el registro de MySQL" id="configure-mysql">
+    MySQL admite varios tipos de log. Para una monitorización completa con OpenTelemetry, recomendamos habilitar el log de errores y el log de consultas lentas.
+
+    El archivo de configuración `my.cnf` o `my.ini` suele encontrarse en:
+
+    * **Linux (apt/yum)**: `/etc/mysql/my.cnf` o `/etc/my.cnf`
+    * **macOS (Homebrew)**: `/usr/local/etc/my.cnf` o `/opt/homebrew/etc/my.cnf`
+    * **Docker**: la configuración suele definirse mediante variables de entorno o un archivo de configuración montado
+
+    Añada o modifique estos ajustes en la sección `[mysqld]`:
+
+    ```ini
+    [mysqld]
+    # Error log configuration
+    log_error = /var/log/mysql/error.log
+
+    # Slow query log configuration
+    slow_query_log = ON
+    slow_query_log_file = /var/log/mysql/mysql-slow.log
+    long_query_time = 1
+    log_output = FILE
+
+    ```
+
+    <Note>
+      El registro de consultas lentas captura las consultas que tardan más de `long_query_time` segundos. Ajuste este umbral según los requisitos de rendimiento de su aplicación. Si lo establece en un valor demasiado bajo, se generará una cantidad excesiva de logs.
+    </Note>
+
+    Asegúrese de que `/var/log/mysql` exista y de que MySQL tenga permiso de escritura en él. Después de realizar estos cambios, reinicie MySQL:
+
+    ```bash
+    # For systemd
+    sudo systemctl restart mysql
+
+    # For Docker
+    docker restart <mysql-container>
+    ```
+
+    Verifique que se estén escribiendo los logs:
+
+    ```bash
+    # Check error log
+    tail -n 5 /var/log/mysql/error.log
+
+    # Check slow query log
+    tail -n 5 /var/log/mysql/mysql-slow.log
+    ```
+  </Step>
+
+  <Step title="Configure el recolector" id="configure-collector">
+    Guarde este archivo como `mysql-logs-monitoring.yaml`. Los receivers esperan los formatos de texto de MySQL para el log de errores y el log de consultas lentas; los logs de errores en JSON requieren un analizador diferente.
+
+    ```yaml
+    receivers:
+      filelog/mysql_error:
+        include:
+          - /var/log/mysql/error.log
+        start_at: end
+        force_flush_period: 1s
+        multiline:
+          line_start_pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+        operators:
+          - type: regex_parser
+            parse_from: body
+            parse_to: attributes
+            regex: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+(?:Z|[+-]\d{2}:\d{2}))\s+(?P<thread_id>\d+)\s+\[(?P<level>[^\]]+)\]\s+(\[(?P<error_code>[^\]]+)\]\s+)?(?P<message>.*)$'
+
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '2006-01-02T15:04:05.999999999Z07:00'
+
+          - type: add
+            field: attributes.source
+            value: "mysql-error"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mysql-service"
+
+      filelog/mysql_slow:
+        include:
+          - /var/log/mysql/mysql-slow.log
+        start_at: end
+        force_flush_period: 1s
+        multiline:
+          line_start_pattern: '^# Time:'
+        operators:
+          - type: filter
+            expr: 'body matches "^/.*mysqld, Version:"'
+          - type: regex_parser
+            parse_from: body
+            parse_to: attributes
+            regex: '(?s)^# Time: (?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+(?:Z|[+-]\d{2}:\d{2}))\n# User@Host: (?P<user>[^\[]+)\[(?P<user_host>[^\]]*)\]\s+@\s+(?P<host>[^\[]*)\[(?P<ip>[^\]]*)\].*\n# Query_time: (?P<query_time>[\d.]+)\s+Lock_time: (?P<lock_time>[\d.]+)\s+Rows_sent: (?P<rows_sent>\d+)\s+Rows_examined: (?P<rows_examined>\d+)[^\n]*\n(?:use [^\n]+;\n)?SET timestamp=\d+;\n(?P<query>.*)$'
+
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '2006-01-02T15:04:05.999999999Z07:00'
+
+          - type: add
+            field: attributes.source
+            value: "mysql-slow"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mysql-service"
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/mysql:
+        error_mode: ignore
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, "error") where log.attributes["level"] == "ERROR" or log.attributes["level"] == "Error"
+              - set(log.severity_number, SEVERITY_NUMBER_ERROR) where log.severity_text == "error"
+              - set(log.severity_text, "warn") where log.attributes["level"] == "Warning"
+              - set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warn"
+              - set(log.severity_text, "info") where log.severity_text == ""
+              - set(log.severity_number, SEVERITY_NUMBER_INFO) where log.severity_text == "info"
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+    service:
+      pipelines:
+        logs/mysql:
+          receivers: [filelog/mysql_error, filelog/mysql_slow]
+          processors: [memory_limiter, transform/mysql, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    Ambos receptores analizan sus respectivos formatos, conservan las marcas de tiempo y los cuerpos de los logs, y asignan `mysql-service` como valor de `service.name`. Los atributos del log de errores incluyen `level`, `error_code` y `message`. Las consultas lentas incluyen `query_time`, `lock_time`, `rows_sent`, `rows_examined` y `query`.
+  </Step>
+
+  <Step title="Ejecute el recolector" id="run-collector">
+    Ejecute el comando desde el directorio que contiene la configuración. Reemplace el directorio de logs del host si es necesario y asegúrese de que el recolector pueda leer sus archivos:
+
+    Si los logs solo pueden ser leídos por su propietario y su grupo, agregue `--group-add LOG_GROUP_ID` al siguiente comando y reemplace `LOG_GROUP_ID` por el ID numérico del grupo que muestra `ls -ln /var/log/mysql`. El grupo debe tener permiso de lectura sobre los archivos y acceso al directorio.
+
+    ```bash
+    docker run --rm --name mysql-logs-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/mysql-logs-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log/mysql:/var/log/mysql:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Deje esta terminal abierta. Los receivers usan `start_at: end`, por lo que debe generar nuevos logs después de iniciar el recolector. Por ejemplo, ejecute esta consulta en MySQL:
+
+    ```sql
+    SELECT SLEEP(2);
+    ```
+  </Step>
+
+  <Step title="Compruebe los logs" id="verify-logs">
+    Abra **Búsqueda**, seleccione **Logs**, filtre por `ServiceName:mysql-service` y seleccione **Last 15 minutes**. Expanda una entrada para inspeccionar los atributos analizados. Filtre por `LogAttributes.source:mysql-error` o `LogAttributes.source:mysql-slow` para seleccionar un tipo de log.
+  </Step>
+</Steps>
+
+## Conjunto de datos de demostración {#demo-dataset}
+
+La muestra contiene 30 entradas de log de errores y 10 consultas lentas multilínea.
+
+<Steps>
+  <Step title="Descargue los logs de ejemplo" id="download-sample">
+    ```bash
+    curl -fLo error.log https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/error.log
+    curl -fLo mysql-slow.log https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/mysql-slow.log
+    ```
+  </Step>
+
+  <Step title="Configure el recolector de demostración" id="demo-config">
+    Guarde este contenido como `mysql-logs-demo.yaml`:
+
+    ```yaml
+    receivers:
+      filelog/mysql_error:
+        include:
+          - /var/log/mysql/error.log
+        start_at: beginning
+        force_flush_period: 1s
+        multiline:
+          line_start_pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+        operators:
+          - type: regex_parser
+            parse_from: body
+            parse_to: attributes
+            regex: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+(?:Z|[+-]\d{2}:\d{2}))\s+(?P<thread_id>\d+)\s+\[(?P<level>[^\]]+)\]\s+(\[(?P<error_code>[^\]]+)\]\s+)?(?P<message>.*)$'
+
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '2006-01-02T15:04:05.999999999Z07:00'
+
+          - type: add
+            field: attributes.source
+            value: "mysql-demo-error"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mysql-demo"
+
+      filelog/mysql_slow:
+        include:
+          - /var/log/mysql/mysql-slow.log
+        start_at: beginning
+        force_flush_period: 1s
+        multiline:
+          line_start_pattern: '^# Time:'
+        operators:
+          - type: filter
+            expr: 'body matches "^/.*mysqld, Version:"'
+          - type: regex_parser
+            parse_from: body
+            parse_to: attributes
+            regex: '(?s)^# Time: (?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+(?:Z|[+-]\d{2}:\d{2}))\n# User@Host: (?P<user>[^\[]+)\[(?P<user_host>[^\]]*)\]\s+@\s+(?P<host>[^\[]*)\[(?P<ip>[^\]]*)\].*\n# Query_time: (?P<query_time>[\d.]+)\s+Lock_time: (?P<lock_time>[\d.]+)\s+Rows_sent: (?P<rows_sent>\d+)\s+Rows_examined: (?P<rows_examined>\d+)[^\n]*\n(?:use [^\n]+;\n)?SET timestamp=\d+;\n(?P<query>.*)$'
+
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '2006-01-02T15:04:05.999999999Z07:00'
+
+          - type: add
+            field: attributes.source
+            value: "mysql-demo-slow"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mysql-demo"
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/mysql:
+        error_mode: ignore
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, "error") where log.attributes["level"] == "ERROR" or log.attributes["level"] == "Error"
+              - set(log.severity_number, SEVERITY_NUMBER_ERROR) where log.severity_text == "error"
+              - set(log.severity_text, "warn") where log.attributes["level"] == "Warning"
+              - set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warn"
+              - set(log.severity_text, "info") where log.severity_text == ""
+              - set(log.severity_number, SEVERITY_NUMBER_INFO) where log.severity_text == "info"
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.time, Now() - Duration("2m") - (Time("2025-11-14T23:45:16Z", "%Y-%m-%dT%H:%M:%SZ") - log.time))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+    service:
+      pipelines:
+        logs/mysql:
+          receivers: [filelog/mysql_error, filelog/mysql_slow]
+          processors: [memory_limiter, transform/mysql, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    El procesador de marcas de tiempo, exclusivo de la demo, desplaza la muestra aproximadamente a las últimas 24 horas, de modo que termina dos minutos antes de la ingestión. Los atributos de marca de tiempo originales y los cuerpos de los log no se modifican. Omita este procesador con sus propios log.
+  </Step>
+
+  <Step title="Ejecute el recolector de demostración" id="run-demo">
+    Desde el directorio que contiene la configuración y los dos archivos de registro descargados, ejecute:
+
+    ```bash
+    docker run --rm --name mysql-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/mysql-logs-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/error.log:/var/log/mysql/error.log:ro" \
+      -v "$(pwd)/mysql-slow.log:/var/log/mysql/mysql-slow.log:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Deje la terminal abierta mientras verifica la ingestión. Cuando termine, detenga el recolector con **Ctrl+C**. Si vuelve a ejecutar la demo, la muestra se reingesta con marcas de tiempo actualizadas.
+  </Step>
+
+  <Step title="Compruebe los logs de demostración" id="verify-demo">
+    Abra **Búsqueda**, seleccione **Logs**, filtre por `ServiceName:mysql-demo` y seleccione **Últimos 2 días**. Debería ver 40 registros: 30 con `LogAttributes.source:mysql-demo-error` y 10 con `LogAttributes.source:mysql-demo-slow`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Logs de la demo de MySQL en la Búsqueda de ClickHouse Observability con 40 resultados](/images/clickstack/observability-mysql-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Paneles y visualización {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json" download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">Descargar la configuración del panel de control</TrackedLink>} id="download-dashboard" />
+
+  <Step title="Importar el panel de control" id="import-dashboard">
+    1. Abra **Dashboards** y haga clic en **Import** en la esquina superior derecha.
+    2. Cargue `mysql-logs-dashboard.json`.
+    3. Asigne los gráficos a su fuente **Logs** y haga clic en **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Página de Dashboards con el botón Import resaltado](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Ver el panel de control" id="view-dashboard">
+    Para los datos de muestra, seleccione **últimos 2 días**. Si lo desea, filtre por `ServiceName:mysql-demo` para aislarlos de otros servicios.
+
+    Para sus propios logs, cambie los filtros de los gráficos **Errors** y **consultas lentas** de `mysql-demo-error` y `mysql-demo-slow` a `mysql-error` y `mysql-slow`, respectivamente, y luego seleccione un intervalo de tiempo que abarque sus registros.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Panel de control de Registros de MySQL con el volumen de logs, los niveles de log, los problemas de conexión, las consultas lentas y los errores](/images/clickstack/observability-mysql-logs-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Resolución de problemas {#troubleshooting}
+
+### El recolector no se inicia {#collector-fails-to-start}
+
+Revise la salida del recolector en busca de errores de configuración. Compruebe el montaje de la configuración y las variables de conexión en la terminal donde se ejecuta Docker.
+
+### No aparecen logs {#no-logs}
+
+Compruebe si hay errores de autenticación o de exportación. Verifique que MySQL escriba archivos en las rutas montadas y que el recolector pueda leerlos. Con `start_at: end`, solo se recopilan las entradas nuevas. Para la demo, seleccione **Últimos 2 días** e incluya el procesador de marca de tiempo.
+
+### No aparecen las consultas lentas {#no-slow-queries}
+
+Revise la configuración de MySQL:
+
+```sql
+SHOW VARIABLES LIKE 'slow_query_log';
+SHOW VARIABLES LIKE 'log_output';
+SHOW VARIABLES LIKE 'long_query_time';
+```
+
+Compruebe que `slow_query_log` está habilitado y que `log_output` incluye `FILE`. Ejecute una consulta que supere el umbral configurado y, a continuación, revise `mysql-slow.log`.
+
+### Los logs no se analizan correctamente {#logs-not-parsing}
+
+Compare su formato de registro con los patrones del receptor. Estos ejemplos esperan marcas de tiempo en formato ISO 8601 y el formato de registro de texto de MySQL. Los formatos personalizados, los logs de errores en JSON y los campos adicionales de consultas lentas pueden requerir cambios en el analizador.
+
+## Próximos pasos {#next-steps}
+
+* Configure [alertas](/es/clickstack/observability/features/alerts) para errores y consultas lentas.
+* Cree [dashboards](/es/clickstack/observability/features/dashboards/overview) adicionales.

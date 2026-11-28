@@ -6,6 +6,8 @@
 #include <Storages/System/StorageSystemResources.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Parsers/ASTCreateResourceQuery.h>
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/RestorerFromBackup.h>
 
 
 namespace DB
@@ -19,7 +21,8 @@ ColumnsDescription StorageSystemResources::getColumnsDescription()
         {"read_disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of disk names that uses this resource for read operations."},
         {"write_disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of disk names that uses this resource for write operations."},
         {"unit", std::make_shared<DataTypeString>(), "Resource unit used for cost measurements."},
-        {"create_query", std::make_shared<DataTypeString>(), "CREATE query of the resource."},
+        {"create_query", std::make_shared<DataTypeString>(), "CREATE query of the resource. For an implicit resource (`source` = `implicit`) it describes the resource and cannot be executed."},
+        {"source", std::make_shared<DataTypeString>(), "The name of the storage that defines the resource: `configuration` for the server configuration, `disk` or `keeper` for SQL, `implicit` for resources created implicitly by the server."},
     };
 }
 
@@ -28,11 +31,11 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
     /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
     auto storage = context->getWorkloadEntityStoragePtr();
     const auto & entities = storage->getAllEntities();
-    for (const auto & [name, ast] : entities)
+    for (const auto & [key, ast] : entities)
     {
         if (auto * resource = typeid_cast<ASTCreateResourceQuery *>(ast.get()))
         {
-            res_columns[0]->insert(name);
+            res_columns[0]->insert(key.name);
             {
                 Array read_disks;
                 Array write_disks;
@@ -58,20 +61,20 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
             }
             res_columns[3]->insert(DB::costUnitToString(resource->unit));
             res_columns[4]->insert(ast->formatForLogging());
+            res_columns[5]->insert(storage->getEntitySource(key.type, key.name));
         }
     }
 }
 
-void StorageSystemResources::backupData(BackupEntriesCollector & /*backup_entries_collector*/, const String & /*data_path_in_backup*/, const std::optional<ASTs> & /* partitions */)
+void StorageSystemResources::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    // TODO(serxa): add backup for resources
-    // storage.backup(backup_entries_collector, data_path_in_backup);
+    backup_entries_collector.getContext()->getWorkloadEntityStoragePtr()->backup(
+        backup_entries_collector, data_path_in_backup, WorkloadEntityType::Resource);
 }
 
-void StorageSystemResources::restoreDataFromBackup(RestorerFromBackup & /*restorer*/, const String & /*data_path_in_backup*/, const std::optional<ASTs> & /* partitions */)
+void StorageSystemResources::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    // TODO(serxa): add restore for resources
-    // storage.restore(restorer, data_path_in_backup);
+    restorer.getContext()->getWorkloadEntityStoragePtr()->restore(restorer, data_path_in_backup, WorkloadEntityType::Resource);
 }
 
 }

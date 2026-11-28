@@ -1,0 +1,53 @@
+--- the fragment carries the LIMIT
+plain	1
+offset	1
+filter	1
+union	2
+--- when every row must be read, the LIMIT is shipped and reads till the end
+exact_rows_before_limit	1
+--- the same results as classic parallel replicas
+plain	100	100
+offset	100	100
+deep offset	500	500
+filter	100	100
+deep offset, classic	500	500
+--- rows_before_limit_at_least
+{
+	"meta":
+	[
+		{
+			"name": "x",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		{
+			"x": 1
+		},
+		{
+			"x": 1
+		},
+		{
+			"x": 1
+		},
+		{
+			"x": 1
+		},
+		{
+			"x": 1
+		}
+	],
+
+	"rows": 5,
+
+	"rows_before_limit_at_least": 100000
+}
+--- each replica returns at most limit + offset rows
+replicas used	1	at most 150 rows each	1
+--- an outer WITH TOTALS does not make the inner LIMIT read till the end
+50
+
+100
+LIMITs that read all data	1

@@ -10,7 +10,7 @@
 #    include <Common/CurrentMetrics.h>
 #    include <Common/CurrentMemoryTracker.h>
 #    include <Common/MemoryTracker.h>
-#    include <Common/MemoryTrackerSwitcher.h>
+#    include <Common/ServerOwnedMemory.h>
 #    include <Common/ProfileEvents.h>
 #    include <Common/Stopwatch.h>
 #    include <Common/ThreadPool.h>
@@ -90,7 +90,7 @@ IOUringReader::IOUringReader(uint32_t entries_)
         tracked_ring_size = static_cast<size_t>(ring_size);
         /// The io_uring ring is a process-wide singleton, attribute its memory to global tracker
         /// rather than the query that happens to trigger lazy initialization.
-        MemoryTrackerSwitcher switcher{&total_memory_tracker};
+        ServerOwnedMemoryScope server_owned;
         [[maybe_unused]] auto trace = CurrentMemoryTracker::allocNoThrow(static_cast<Int64>(tracked_ring_size));
     }
 
@@ -104,7 +104,7 @@ IOUringReader::IOUringReader(uint32_t entries_)
         io_uring_queue_exit(&ring);
         if (tracked_ring_size)
         {
-            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            ServerOwnedMemoryScope server_owned;
             [[maybe_unused]] auto trace = CurrentMemoryTracker::free(static_cast<Int64>(tracked_ring_size));
             tracked_ring_size = 0;
         }
@@ -145,7 +145,7 @@ std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
             {
                 ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
                 return makeFailedResult(Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Tried enqueuing read request for {} that is already submitted", request_id));
+                    ErrorCodes::LOGICAL_ERROR, "Tried enqueuing a read request into a buffer that is already submitted"));
             }
             return (kv->second).promise.get_future();
         }
@@ -221,7 +221,7 @@ void IOUringReader::finalizeRequest(const EnqueuedIterator & requestIt)
                 in_flight_requests.emplace(request_id, std::move(pending_request));
             else
                 failPromise(pending_request.promise, Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Tried enqueuing pending read request for {} that is already submitted", request_id));
+                    "Tried enqueuing a pending read request into a buffer that is already submitted"));
         }
         else
         {
@@ -282,7 +282,7 @@ void IOUringReader::monitorRing()
         const auto it = in_flight_requests.find(request_id);
         if (it == in_flight_requests.end())
         {
-            LOG_ERROR(log, "Got a completion event for a request {} that was not submitted", request_id);
+            LOG_ERROR(log, "Got a completion event for a request that was not submitted");
 
             io_uring_cqe_seen(&ring, cqe);
             continue;
@@ -312,8 +312,8 @@ void IOUringReader::monitorRing()
             int fd = assert_cast<const LocalFileDescriptor &>(*req.descriptor).fd;
             failRequest(it, Exception(
                 ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
-                "Failed reading {} bytes at offset {} to address {} from fd {}: {}",
-                req.size, req.offset, static_cast<void*>(req.buf), fd, errnoToString(-cqe->res)
+                "Failed reading {} bytes at offset {} from fd {}: {}",
+                req.size, req.offset, fd, errnoToString(-cqe->res)
             ));
 
             ProfileEvents::increment(ProfileEvents::IOUringCQEsFailed);
@@ -380,7 +380,7 @@ IOUringReader::~IOUringReader()
     io_uring_queue_exit(&ring);
     if (tracked_ring_size)
     {
-        MemoryTrackerSwitcher switcher{&total_memory_tracker};
+        ServerOwnedMemoryScope server_owned;
         [[maybe_unused]] auto trace = CurrentMemoryTracker::free(static_cast<Int64>(tracked_ring_size));
         tracked_ring_size = 0;
     }

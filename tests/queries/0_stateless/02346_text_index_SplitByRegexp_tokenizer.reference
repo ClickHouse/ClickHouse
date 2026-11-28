@@ -39,3 +39,9 @@ phrase: hasPhrase([C# and]) -> 2 (not row 1 with C++)
 2
 phrase: hasPhrase([C++ and]) -> 1
 1
+phrase + postprocessor: hasPhrase([C# and]) -> 2
+2
+2
+phrase + postprocessor: hasPhrase([C++ and]) -> 1
+1
+1

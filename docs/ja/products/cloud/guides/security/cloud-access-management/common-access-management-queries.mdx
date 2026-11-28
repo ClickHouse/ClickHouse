@@ -17,9 +17,7 @@ import CommonUserRolesContent from '/snippets/ja/_users-and-roles-common.mdx';
 
 この記事では、SQL ユーザーとロールを定義する基本と、それらの権限やアクセス許可をデータベース、テーブル、行、カラムに適用する方法を説明します。
 
-<div id="admin-user">
-  ## Admin ユーザー
-</div>
+## Admin ユーザー {#admin-user}
 
 ClickHouse Cloud サービスには、サービスの作成時に `default` という admin ユーザーが作成されます。パスワードはサービス作成時に設定され、**Admin** ロールを持つ ClickHouse Cloud ユーザーであればリセットできます。
 
@@ -40,20 +38,16 @@ GRANT default_role TO clickhouse_admin;
   これらの自動生成された SQL Console ユーザーには、`default` ロールが付与されます。
 </Note>
 
-<div id="passwordless-authentication">
-  ## パスワードレス認証
-</div>
+## パスワードレス認証 {#passwordless-authentication}
 
 SQL Console で使用できるロールは 2 つあります。`default_role` と同じ権限を持つ `sql_console_admin` と、読み取り専用権限を持つ `sql_console_read_only` です。
 
 Admin ユーザーにはデフォルトで `sql_console_admin` ロールが割り当てられているため、特に変更はありません。一方、`sql_console_read_only` ロールを使うと、Admin 以外のユーザーに対して、任意のインスタンスへの読み取り専用アクセスまたはフルアクセスを付与できます。このアクセスは Admin が設定する必要があります。これらのロールは、インスタンスごとの要件に合わせて `GRANT` または `REVOKE` コマンドで調整でき、加えた変更は永続的に保持されます。
 
-<div id="granular-access-control">
-  ### きめ細かなアクセス制御
-</div>
+### きめ細かなアクセス制御 {#granular-access-control}
 
 <Tip>
-  コンソールからデータベースアクセスを管理するには、[Cloud管理のデータベースロール](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (ベータ) の使用を推奨します。`sql-console-role:<email>`ロールは、[JWT認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)と互換性がありません。
+  コンソールからデータベースアクセスを管理するには、[Cloud管理のデータベースロール](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles)の使用を推奨します。`sql-console-role:<email>`ロールは、SQL Console内のJWTセッションと互換性がありません。
 </Tip>
 
 このアクセス制御機能は、ユーザーレベルできめ細かく手動設定することもできます。新しい`sql_console_*`ロールをユーザーに割り当てる前に、`sql-console-role:<email>`ネームスペースに対応する、SQL Consoleのユーザー固有のデータベースロールを作成しておく必要があります。例:

@@ -1,5 +1,4 @@
 {
-  "icon": "/images/icons/icon-concepts.svg",
   "item": "Concepts",
   "pages": [
     "pt-BR/concepts/index",
@@ -83,11 +82,13 @@
         {
           "group": "Operations",
           "pages": [
+            "pt-BR/concepts/features/operations/background-queries",
             {
               "group": "Insert",
               "pages": [
                 "pt-BR/concepts/features/operations/insert/inserting-data",
                 "pt-BR/concepts/features/operations/insert/asyncinserts",
+                "pt-BR/concepts/features/operations/insert/async-insert-select",
                 "pt-BR/concepts/features/operations/insert/bulkinserts",
                 "pt-BR/concepts/features/operations/insert/deduplication",
                 "pt-BR/concepts/features/operations/insert/deduplicating-inserts-on-retries",
@@ -97,7 +98,16 @@
             {
               "group": "Select",
               "pages": [
-                "pt-BR/concepts/features/operations/select/joining-tables"
+                {
+                  "group": "JOINs",
+                  "pages": [
+                    "pt-BR/concepts/features/operations/select/joining-tables",
+                    "pt-BR/concepts/features/operations/select/join-execution",
+                    "pt-BR/concepts/features/operations/select/join-algorithms",
+                    "pt-BR/concepts/features/operations/select/join-memory-management",
+                    "pt-BR/concepts/features/operations/select/join-settings"
+                  ]
+                }
               ]
             },
             {
@@ -199,6 +209,7 @@
           "pages": [
             "pt-BR/concepts/features/backup-restore/overview",
             "pt-BR/concepts/features/backup-restore/restore-settings",
+            "pt-BR/concepts/features/backup-restore/named-collections",
             "pt-BR/concepts/features/backup-restore/local-disk",
             "pt-BR/concepts/features/backup-restore/s3-endpoint",
             "pt-BR/concepts/features/backup-restore/azure-blob-storage",
@@ -221,24 +232,25 @@
                 "pt-BR/concepts/features/interfaces/framing-formats",
                 "pt-BR/concepts/features/interfaces/tcp",
                 "pt-BR/concepts/features/interfaces/adbc",
-                "pt-BR/concepts/features/interfaces/jdbc",
                 "pt-BR/concepts/features/interfaces/mysql",
                 {
                   "$ref": "features/interfaces/odbc/navigation.json"
                 },
                 "pt-BR/concepts/features/interfaces/postgresql",
                 "pt-BR/concepts/features/interfaces/prometheus",
+                "pt-BR/concepts/features/interfaces/prometheus-metrics",
                 "pt-BR/concepts/features/interfaces/ssh",
                 "pt-BR/concepts/features/interfaces/grpc",
                 "pt-BR/concepts/features/interfaces/arrowflight"
               ]
             },
-            "pt-BR/concepts/features/interfaces/cpp",
             "pt-BR/concepts/features/interfaces/schema-inference",
             "pt-BR/concepts/features/interfaces/documentation-search",
             "pt-BR/concepts/features/interfaces/web-sql",
+            "pt-BR/concepts/features/interfaces/sql-console",
             "pt-BR/concepts/features/interfaces/web-ui-color-coding",
             "pt-BR/concepts/features/interfaces/web-ui-pinned-columns",
+            "pt-BR/concepts/features/interfaces/web-ui-notebook",
             "pt-BR/concepts/features/interfaces/web-ui-result-shaping",
             "pt-BR/concepts/features/interfaces/web-terminal",
             {

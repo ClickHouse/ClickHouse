@@ -18,40 +18,57 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
+│ CHARACTER_SETS          │
 │ COLLATIONS              │
 │ COLUMNS                 │
+│ COLUMN_PRIVILEGES       │
+│ ENGINES                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
 │ SCHEMATA                │
-| STATISTICS              |
+│ SCHEMA_PRIVILEGES       │
+│ STATISTICS              │
 │ TABLES                  │
+│ TABLE_PRIVILEGES        │
+│ USER_PRIVILEGES         │
 │ VIEWS                   │
+│ character_sets          │
+│ collations              │
+│ column_privileges       │
 │ columns                 │
+│ engines                 │
 │ key_column_usage        │
 │ referential_constraints │
+│ schema_privileges       │
 │ schemata                │
-| statistics              |
+│ statistics              │
+│ table_privileges        │
 │ tables                  │
+│ user_privileges         │
 │ views                   │
 └─────────────────────────┘
 ```
 
 `INFORMATION_SCHEMA` содержит следующие представления:
 
+* [CHARACTER&#95;SETS](#character_sets)
 * [COLUMNS](#columns)
+* [COLUMN&#95;PRIVILEGES](#column_privileges)
 * [COLLATIONS](#collations)
+* [ENGINES](#engines)
 * [KEY&#95;COLUMN&#95;USAGE](#key_column_usage)
 * [REFERENTIAL&#95;CONSTRAINTS](#referential_constraints)
 * [SCHEMATA](#schemata)
+* [SCHEMA&#95;PRIVILEGES](#schema_privileges)
 * [STATISTICS](#statistics)
 * [TABLES](#tables)
+* [TABLE&#95;PRIVILEGES](#table_privileges)
+* [USER&#95;PRIVILEGES](#user_privileges)
 * [VIEWS](#views)
 
 Регистронезависимые эквиваленты этих представлений, например `INFORMATION_SCHEMA.columns`, предусмотрены для совместимости с другими базами данных. То же самое относится ко всем столбцам в этих представлениях: доступны варианты как в нижнем регистре (например, `table_name`), так и в верхнем (`TABLE_NAME`).
 
-<div id="columns">
-  ## COLUMNS
-</div>
+## COLUMNS {#columns}
 
 Содержит столбцы из системной таблицы [system.columns](/ru/reference/system-tables/columns), а также столбцы, которые не поддерживаются в ClickHouse или не имеют смысла (всегда `NULL`), но должны присутствовать по стандарту.
 
@@ -143,9 +160,7 @@ domain_schema:            ᴺᵁᴸᴸ
 domain_name:              ᴺᵁᴸᴸ
 ```
 
-<div id="schemata">
-  ## SCHEMATA
-</div>
+## SCHEMATA {#schemata}
 
 Содержит столбцы из системной таблицы [system.databases](/ru/reference/system-tables/databases), а также столбцы, которые не поддерживаются в ClickHouse или не имеют смысла (всегда `NULL`), но требуются стандартом.
 
@@ -187,9 +202,7 @@ default_character_set_name:    ᴺᵁᴸᴸ
 sql_path:                      ᴺᵁᴸᴸ
 ```
 
-<div id="tables">
-  ## TABLES
-</div>
+## TABLES {#tables}
 
 Содержит столбцы из системной таблицы [system.tables](/ru/reference/system-tables/tables).
 
@@ -237,9 +250,7 @@ table_collation: utf8mb4_0900_ai_ci
 table_comment:   
 ```
 
-<div id="views">
-  ## VIEWS
-</div>
+## VIEWS {#views}
 
 Содержит столбцы из системной таблицы [system.tables](/ru/reference/system-tables/tables), считываемые при использовании движка таблицы [View](/ru/reference/engines/table-engines/special/view).
 
@@ -298,9 +309,7 @@ is_trigger_deletable:       NO
 is_trigger_insertable_into: NO
 ```
 
-<div id="key_column_usage">
-  ## KEY_COLUMN_USAGE
-</div>
+## KEY_COLUMN_USAGE {#key_column_usage}
 
 Содержит столбцы из системной таблицы [system.tables](/ru/reference/system-tables/tables), для которых заданы ограничения.
 
@@ -357,9 +366,7 @@ referenced_table_name:         ᴺᵁᴸᴸ
 referenced_column_name:        ᴺᵁᴸᴸ
 ```
 
-<div id="referential_constraints">
-  ## REFERENTIAL_CONSTRAINTS
-</div>
+## REFERENTIAL_CONSTRAINTS {#referential_constraints}
 
 Содержит информацию о внешних ключах. В настоящее время возвращает пустой результат (без строк), чего достаточно для совместимости со сторонними инструментами, такими как Tableau Online.
 
@@ -377,15 +384,11 @@ referenced_column_name:        ᴺᵁᴸᴸ
 * `table_name` ([String](/ru/reference/data-types/string)) — В настоящее время не используется.
 * `referenced_table_name` ([String](/ru/reference/data-types/string)) — В настоящее время не используется.
 
-<div id="statistics">
-  ## STATISTICS
-</div>
+## STATISTICS {#statistics}
 
 Предоставляет информацию об индексах таблицы. В настоящее время возвращает пустой результат (ни одной строки), чего достаточно для совместимости со сторонними инструментами, такими как Tableau Online.
 
-<div id="collations">
-  ## COLLATIONS
-</div>
+## COLLATIONS {#collations}
 
 Содержит сведения о доступных collation. Включает collation из [system.collations](/ru/reference/system-tables/collations), а также две строки для совместимости с MySQL: `utf8mb4_0900_ai_ci` — collation, которую протокол MySQL объявляет при рукопожатии, в `SCHEMATA.DEFAULT_COLLATION_NAME` и `TABLES.TABLE_COLLATION`, — и `binary` — псевдо-collation, которую протокол MySQL указывает для числовых и других нестроковых столбцов в метаданных набора результатов. Это позволяет клиенту с поддержкой MySQL, который использует объявленные collation для поиска в этом представлении, находить их.
 
@@ -398,3 +401,76 @@ referenced_column_name:        ᴺᵁᴸᴸ
 * `is_compiled` ([Nullable](/ru/reference/data-types/nullable)([String](/ru/reference/data-types/string))) — Встроена ли collation в сервер (`Yes` для обеих строк совместимости с MySQL, в остальных случаях `NULL`). Предоставляется для совместимости с MySQL.
 * `sortlen` ([Nullable](/ru/reference/data-types/nullable)([UInt64](/ru/reference/data-types/int-uint))) — Минимальная длина сортировки (`0` для `utf8mb4_0900_ai_ci`, `1` для `binary`, в остальных случаях `NULL`). Предоставляется для совместимости с MySQL.
 * `pad_attribute` ([Nullable](/ru/reference/data-types/nullable)([String](/ru/reference/data-types/string))) — Атрибут заполнения: `NO PAD` или `PAD SPACE` (`NO PAD` для обеих строк совместимости с MySQL, в остальных случаях `NULL`). Предоставляется для совместимости с MySQL.
+
+## CHARACTER_SETS {#character_sets}
+
+Содержит статический список кодировок (`utf8`, `utf8mb4`, `ascii`, `binary`) для совместимости с инструментами MySQL. Сам ClickHouse работает с UTF-8.
+
+Столбцы:
+
+* `character_set_name` ([String](/ru/reference/data-types/string)) — название кодировки.
+
+## ENGINES {#engines}
+
+Содержит информацию о доступных движках таблиц, полученную из системной таблицы [system.table&#95;engines](/ru/reference/system-tables/table_engines). Предназначена для совместимости с MySQL.
+
+Столбцы:
+
+* `engine` ([String](/ru/reference/data-types/string)) — имя движка таблицы.
+* `support` ([String](/ru/reference/data-types/string)) — `DEFAULT` для движка, заданного в настройке [default&#95;table&#95;engine](/ru/operations/settings/settings#default_table_engine), в остальных случаях — `YES`.
+
+## USER_PRIVILEGES {#user_privileges}
+
+Содержит информацию о глобальных привилегиях, считываемую из системной таблицы [system.grants](/ru/reference/system-tables/grants) (строки, в которых не указана база данных).
+
+Представления `*_PRIVILEGES` показывают только положительные grant без подстановочных шаблонов: частичные отзывы привилегий, grant с подстановочными знаками (например, `GRANT SELECT ON db_prefix*.*`) и grant на конкретные именованные объекты для параметризованных типов привилегий (например, `GRANT TABLE ENGINE ON TinyLog`) невозможно представить в MySQL-совместимом формате, поэтому они не выводятся. Как следствие, получатель, ограниченный частичным отзывом, отображается с неограниченным grant. Grant `ON *` для параметризованных типов отображаются как обычные глобальные привилегии. Основным источником достоверных данных является `system.grants`. В отличие от MySQL, представления показывают grant всех пользователей и ролей, а для их чтения требуется доступ к `system.grants`; без него запрос завершается с исключением `ACCESS_DENIED`. Столбец `GRANTOR` отсутствует, поскольку ClickHouse не сохраняет сведения о том, кто выдал grant.
+
+Столбцы:
+
+* `grantee` ([String](/ru/reference/data-types/string)) — пользователь или роль, которым выдана привилегия, в формате MySQL: `'name'@'%'`. У ролей нет аналога в MySQL, поэтому они отображаются так же, как пользователи.
+* `table_catalog` ([String](/ru/reference/data-types/string)) — всегда `def`.
+* `privilege_type` ([String](/ru/reference/data-types/string)) — имя привилегии, например `SELECT` или `ALTER UPDATE`. Полный список см. в [system.privileges](/ru/reference/system-tables/privileges).
+* `is_grantable` ([String](/ru/reference/data-types/string)) — `YES`, если привилегия выдана с `WITH GRANT OPTION`, иначе `NO`.
+* `grantee_type` ([String](/ru/reference/data-types/string)) — `USER` или `ROLE`. Нестандартный столбец: в ClickHouse пользователь и роль могут иметь одинаковое имя, и этот столбец позволяет их различать.
+
+## SCHEMA_PRIVILEGES {#schema_privileges}
+
+Содержит информацию о привилегиях уровня базы данных, получаемую из системной таблицы [system.grants](/ru/reference/system-tables/grants) (строки, в которых указана база данных, но не указана таблица). Ограничения, общие для всех представлений `*_PRIVILEGES`, описаны в разделе [USER&#95;PRIVILEGES](#user_privileges).
+
+Столбцы:
+
+* `grantee` ([String](/ru/reference/data-types/string)) — пользователь или роль, которым выдана привилегия, в формате MySQL: `'name'@'%'`.
+* `table_catalog` ([String](/ru/reference/data-types/string)) — всегда `def`.
+* `table_schema` ([String](/ru/reference/data-types/string)) — имя базы данных.
+* `privilege_type` ([String](/ru/reference/data-types/string)) — название привилегии.
+* `is_grantable` ([String](/ru/reference/data-types/string)) — `YES`, если привилегия выдана с `WITH GRANT OPTION`, иначе `NO`.
+* `grantee_type` ([String](/ru/reference/data-types/string)) — `USER` или `ROLE`. Нестандартный столбец: в ClickHouse пользователь и роль могут иметь одинаковое имя, и этот столбец позволяет различать таких получателей привилегий.
+
+## TABLE_PRIVILEGES {#table_privileges}
+
+Содержит информацию о привилегиях на уровне таблиц, получаемую из системной таблицы [system.grants](/ru/reference/system-tables/grants) (строки, в которых указана таблица, но не указан столбец). Ограничения, общие для всех представлений `*_PRIVILEGES`, описаны в разделе [USER&#95;PRIVILEGES](#user_privileges).
+
+Столбцы:
+
+* `grantee` ([String](/ru/reference/data-types/string)) — пользователь или роль, которым выдана привилегия, в формате MySQL: `'name'@'%'`.
+* `table_catalog` ([String](/ru/reference/data-types/string)) — всегда `def`.
+* `table_schema` ([String](/ru/reference/data-types/string)) — имя базы данных.
+* `table_name` ([String](/ru/reference/data-types/string)) — имя таблицы.
+* `privilege_type` ([String](/ru/reference/data-types/string)) — название привилегии.
+* `is_grantable` ([String](/ru/reference/data-types/string)) — `YES`, если привилегия выдана с `WITH GRANT OPTION`, иначе `NO`.
+* `grantee_type` ([String](/ru/reference/data-types/string)) — `USER` или `ROLE`. Нестандартный столбец: в ClickHouse пользователь и роль могут иметь одинаковые имена, и этот столбец позволяет различить таких получателей привилегий.
+
+## COLUMN_PRIVILEGES {#column_privileges}
+
+Содержит информацию о привилегиях на уровне столбца, получаемую из системной таблицы [system.grants](/ru/reference/system-tables/grants) (строки, в которых указан столбец; по одной строке на каждый столбец). Ограничения, общие для всех представлений `*_PRIVILEGES`, описаны в разделе [USER&#95;PRIVILEGES](#user_privileges).
+
+Столбцы:
+
+* `grantee` ([String](/ru/reference/data-types/string)) — пользователь или роль, которым выдана привилегия, в формате MySQL: `'name'@'%'`.
+* `table_catalog` ([String](/ru/reference/data-types/string)) — всегда `def`.
+* `table_schema` ([String](/ru/reference/data-types/string)) — имя базы данных.
+* `table_name` ([String](/ru/reference/data-types/string)) — имя таблицы.
+* `column_name` ([String](/ru/reference/data-types/string)) — имя столбца.
+* `privilege_type` ([String](/ru/reference/data-types/string)) — название привилегии.
+* `is_grantable` ([String](/ru/reference/data-types/string)) — `YES`, если привилегия выдана с `WITH GRANT OPTION`, иначе `NO`.
+* `grantee_type` ([String](/ru/reference/data-types/string)) — `USER` или `ROLE`. Нестандартный столбец: в ClickHouse пользователь и роль могут иметь одинаковое имя, и этот столбец позволяет отличить их друг от друга.
