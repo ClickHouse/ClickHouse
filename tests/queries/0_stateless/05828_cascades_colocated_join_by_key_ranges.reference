@@ -1,0 +1,85 @@
+-- 1. inner join of two tables
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders)) )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (RangePartitionedRead default.t_range_join_events)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (RangePartitionedRead default.t_range_join_groups)
+49000	400475500
+49000	400475500
+-- 2. left join
+49000	400475500	0
+49000	400475500	0
+-- 3. right join
+50500	400475500	1501
+50500	400475500	1501
+-- 4. full join
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders)) )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (RangePartitionedRead default.t_range_join_events)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (RangePartitionedRead default.t_range_join_groups)
+50500	400475500	1501
+50500	400475500	1501
+-- 5. three tables: all reads use the same ranges
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders))  swapped)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (RangePartitionedRead default.t_range_join_events)
+            JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders))  swapped)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (RangePartitionedRead default.t_range_join_details)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (RangePartitionedRead default.t_range_join_groups)
+40500	337104750	117519
+40500	337104750	117519
+-- 6. a filter on the key: the ranges divide the selected marks
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + ))
+          JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders)) )
+            Expression ((WHERE + Change column names to column identifiers))
+              ReadFromMergeTree (RangePartitionedRead default.t_range_join_events)
+            Filter ((WHERE + Change column names to column identifiers))
+              ReadFromMergeTree (RangePartitionedRead default.t_range_join_groups)
+41000	335479500
+41000	335479500
+-- 7. the join column is not the first key column: no ranges
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_range_join_events)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_range_join_details)
+4000
+4000
+-- 8. the setting is off
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_range_join_events)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_range_join_groups)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
 #include <Common/Logger.h>
@@ -27,6 +28,20 @@ public:
 
     void dump(WriteBuffer & out) const;
     [[nodiscard]] String dump() const;
+
+    /// The table reads that one key range function divides, and how.
+    struct KeyRangeLayoutFunctionKey
+    {
+        VectorWithMemoryTracking<GroupId> read_groups;
+        size_t key_size = 0;
+        size_t node_count = 0;
+
+        auto operator<=>(const KeyRangeLayoutFunctionKey & other) const = default;
+    };
+
+    /// The functions that `getKeyRangeLayoutFunction` made. The rules that divide the same reads get the same
+    /// function, and the borders are computed one time. A null value: the reads have nothing to divide.
+    MapWithMemoryTracking<KeyRangeLayoutFunctionKey, StorageLayoutFunctionPtr> key_range_layout_functions;
 
 private:
     LoggerPtr log;

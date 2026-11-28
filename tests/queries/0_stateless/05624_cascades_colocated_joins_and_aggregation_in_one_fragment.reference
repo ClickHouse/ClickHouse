@@ -1,0 +1,80 @@
+-- 1. two joins on the key
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by modulo(cityHash64(#0), 8))  swapped)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_chain_events)
+            JoinLogical (Shuffle HashJoin (co-located by modulo(cityHash64(#0), 8))  swapped)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (PartitionedRead default.t_coloc_chain_details)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (PartitionedRead default.t_coloc_chain_groups)
+10000	104995000	30010
+10000	104995000	30010
+-- 2. a join and GROUP BY the key
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression (Before GROUP BY)
+              JoinLogical (Shuffle HashJoin (co-located by modulo(cityHash64(#0), 8)) )
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (PartitionedRead default.t_coloc_chain_events)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (PartitionedRead default.t_coloc_chain_groups)
+1000	10000	104995000
+1000	10000	104995000
+-- 3. two joins and GROUP BY the key of the last table
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression (Before GROUP BY)
+              JoinLogical (Shuffle HashJoin (co-located by modulo(cityHash64(#0), 8))  swapped)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (PartitionedRead default.t_coloc_chain_events)
+                JoinLogical (Shuffle HashJoin (co-located by modulo(cityHash64(#0), 8))  swapped)
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (PartitionedRead default.t_coloc_chain_details)
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (PartitionedRead default.t_coloc_chain_groups)
+1000	10000	30010
+1000	10000	30010
+-- 4. LEFT join and GROUP BY the key of the right table: the rows with no match are one group on all nodes
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression (Before GROUP BY)
+              ShuffleExchange
+                JoinLogical (Shuffle HashJoin (co-located by modulo(cityHash64(#0), 8)) )
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (PartitionedRead default.t_coloc_chain_events)
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (PartitionedRead default.t_coloc_chain_groups)
+1001	20000	10000
+1001	20000	10000
+-- 5. LEFT join and GROUP BY the key of the left table
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression (Before GROUP BY)
+              JoinLogical (Shuffle HashJoin (co-located by modulo(cityHash64(#0), 8)) )
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (PartitionedRead default.t_coloc_chain_events)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (PartitionedRead default.t_coloc_chain_groups)
+2000	20000	10
+2000	20000	10

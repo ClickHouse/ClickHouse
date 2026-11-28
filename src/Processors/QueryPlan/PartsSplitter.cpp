@@ -270,6 +270,9 @@ public:
     {
         return parts[part_idx].data_part->index_granularity->getMarkRows(mark);
     }
+
+    /// The number of key columns in the values that `getValue` returns.
+    [[nodiscard]] size_t getLoadedColumns() const { return loaded_columns; }
 private:
     const RangesInDataParts & parts;
     VectorWithMemoryTracking<IMergeTreeDataPart::IndexPtr> indices;
@@ -896,6 +899,75 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
     }
 
     return {std::move(result_layers), std::move(borders), in_reverse_order};
+}
+
+VectorWithMemoryTracking<RangesInDataParts> splitPartsRangesByBorders(
+    const RangesInDataParts & ranges_in_data_parts,
+    const VectorWithMemoryTracking<SplitPartsByRanges::Values> & borders,
+    bool in_reverse_order)
+{
+    const size_t border_size = borders.empty() ? 0 : borders.front().size();
+    IndexAccess index_access(ranges_in_data_parts, border_size);
+
+    /// With fewer key columns in memory than the borders have, a comparison would see a border and a mark
+    /// with the same first columns as equal, and a layer would miss the granules above the border.
+    if (index_access.getLoadedColumns() < border_size)
+        return {};
+
+    const size_t layers_count = borders.size() + 1;
+    VectorWithMemoryTracking<RangesInDataParts> layers(layers_count);
+
+    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
+    {
+        const auto & part = ranges_in_data_parts[part_index];
+        const size_t marks_count = part.data_part->index_granularity->getMarksCount();
+
+        VectorWithMemoryTracking<MarkRanges> ranges_of_layers(layers_count);
+        for (const auto & range : part.ranges)
+        {
+            /// The key at the mark after the range, if the part has it, is not less than the keys of the last granule.
+            const bool has_key_after_range = range.end < marks_count;
+            const size_t search_end = has_key_after_range ? range.end + 1 : range.end;
+
+            size_t layer_begin = range.begin;
+            for (size_t layer = 0; layer < layers_count && layer_begin < range.end; ++layer)
+            {
+                size_t layer_end = range.end;
+                size_t next_layer_begin = range.end;
+                if (layer < borders.size())
+                {
+                    /// The granules before this mark start with a key of this layer or of a layer before it.
+                    /// The last one of them can also hold keys above the border, so the next layer reads it too.
+                    auto first_mark_above_border = index_access.findLeftmostMarkGreaterThanValueInRange(
+                        part_index, borders[layer], range.begin, search_end, in_reverse_order);
+                    if (first_mark_above_border)
+                    {
+                        layer_end = std::min(*first_mark_above_border, range.end);
+                        next_layer_begin = std::max(layer_begin, *first_mark_above_border - (*first_mark_above_border > range.begin ? 1 : 0));
+                    }
+                    else if (!has_key_after_range)
+                    {
+                        /// The largest key of the last granule is not known.
+                        next_layer_begin = std::max(layer_begin, range.end - 1);
+                    }
+                }
+
+                if (layer_begin < layer_end)
+                    ranges_of_layers[layer].push_back(MarkRange{layer_begin, layer_end});
+                layer_begin = next_layer_begin;
+            }
+        }
+
+        for (size_t layer = 0; layer < layers_count; ++layer)
+        {
+            if (ranges_of_layers[layer].empty())
+                continue;
+            auto & part_of_layer = layers[layer].emplace_back(part);
+            part_of_layer.ranges = std::move(ranges_of_layers[layer]);
+        }
+    }
+
+    return layers;
 }
 
 
