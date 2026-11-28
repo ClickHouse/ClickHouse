@@ -12,6 +12,7 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <boost/noncopyable.hpp>
 #include <Poco/JSON/Array.h>
 #include <unordered_set>
@@ -110,6 +111,8 @@ private:
         /// Partition columns list (not stored in read schema)
         DB::Names partition_columns;
         std::unordered_set<String> timestamp_ntz_paths;
+        /// See `TableSchemaResult`.
+        DeltaTimestampColumns timestamp_columns;
     };
     mutable std::optional<SchemaInfo> schema;
 

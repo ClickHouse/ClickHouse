@@ -98,6 +98,9 @@ EXCLUDE=(
     05443_int96_out_of_range.parquet
     # `INT96` timestamp on the lower boundary day of the `DateTime64(9)` range, tested by 05444.
     05444_int96_lower_boundary.parquet
+    # `INT96` fixtures of the 05627 Delta Lake pruning test; the first one is beyond the `DateTime64(9)` range.
+    05627_int96_beyond_int64_nanoseconds.parquet
+    05627_int96_before_epoch_sub_microsecond.parquet
     # Hand-crafted `DELTA_BINARY_PACKED` file for the 05479 filter-in-decoder test.
     05479_delta_binary_packed_filter_int8.parquet
 )

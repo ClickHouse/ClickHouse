@@ -6,7 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Core/NamesAndTypes.h>
-#include <Formats/FormatFactory.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 
 #include <delta_kernel_ffi.hpp>
 
@@ -31,12 +31,13 @@ public:
         const DB::ActionsDAG & filter_,
         std::exception_ptr & exception_,
         DB::ContextPtr context_,
-        const DB::NamesAndTypesList & table_schema_)
+        const DB::NamesAndTypesList & table_schema_,
+        DeltaTimestampColumns timestamp_columns_)
         : filter(filter_)
         , exception(exception_)
         , context(context_)
-        , format_settings(context_ ? DB::getFormatSettings(context_) : DB::FormatSettings{})
         , table_schema(table_schema_)
+        , timestamp_columns(std::move(timestamp_columns_))
     {
         predicate = this;
         visitor = &visitPredicate;
@@ -53,7 +54,14 @@ public:
 
     [[nodiscard]] const DB::ActionsDAG & getFilterDAG() const { return filter; }
     [[nodiscard]] DB::ContextPtr getContext() const { return context; }
-    [[nodiscard]] const DB::FormatSettings & getFormatSettings() const { return format_settings; }
+
+    [[nodiscard]] const DeltaTimestampColumn * getTimestampColumn(const String & column_name) const
+    {
+        auto it = timestamp_columns.find(column_name);
+        if (it == timestamp_columns.end())
+            return nullptr;
+        return &it->second;
+    }
 
     /// Whether a column of the filter can be referenced in the predicate by its name.
     /// delta-kernel splits the name by dots into a path of struct fields and throws
@@ -74,9 +82,10 @@ private:
     std::exception_ptr & exception;
     /// Context for accessing settings
     DB::ContextPtr context;
-    const DB::FormatSettings format_settings;
     /// The logical schema of the table.
     const DB::NamesAndTypesList table_schema;
+    /// See `TableSchemaResult`.
+    const DeltaTimestampColumns timestamp_columns;
 
     static uintptr_t visitPredicate(void * data, ::KernelExpressionVisitorState * state);
 };
@@ -85,7 +94,8 @@ std::shared_ptr<EnginePredicate> getEnginePredicate(
     const DB::ActionsDAG & filter,
     std::exception_ptr & exception,
     DB::ContextPtr context,
-    const DB::NamesAndTypesList & table_schema);
+    const DB::NamesAndTypesList & table_schema,
+    DeltaTimestampColumns timestamp_columns);
 }
 
 #endif

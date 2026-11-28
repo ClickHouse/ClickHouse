@@ -324,7 +324,7 @@ DB::ObjectIterator TableChanges::iterate(
     std::exception_ptr predicate_exception;
     std::shared_ptr<EnginePredicate> predicate;
     if (filter_dag && context->getSettingsRef()[DB::Setting::delta_lake_enable_engine_predicate])
-        predicate = getEnginePredicate(*filter_dag, predicate_exception, context, predicate_schema);
+        predicate = getEnginePredicate(*filter_dag, predicate_exception, context, predicate_schema, {});
     KernelTableChangesScan scan(KernelUtils::unwrapResult(
         ::table_changes_scan(table_changes.release(), engine.get(), predicate.get()), "table_changes_scan"));
     if (predicate_exception)
