@@ -76,6 +76,9 @@ def clear_workloads_and_resources(set_default_configs):
         drop workload if exists prod_mutations;
         drop workload if exists dev_mutations;
         drop workload if exists sys_mutations;
+        drop workload if exists prod_moves;
+        drop workload if exists dev_moves;
+        drop workload if exists sys_moves;
         drop workload if exists all;
         drop resource if exists network_write;
         drop resource if exists network_read;
@@ -718,6 +721,198 @@ def test_mutation_workload_change():
         writes_after = int(
             node.query(
                 f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_mutations/%' and type='request_queue'"
+            ).strip()
+        )
+
+        assert reads_before < reads_after
+        assert writes_before < writes_after
+
+
+def wait_for_parts_on_disk(table, expected_disk, timeout=120):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        disks = node.query(
+            f"select distinct disk_name from system.parts where table = '{table}' and active"
+        ).split()
+        if disks and set(disks) == {expected_disk}:
+            return
+        time.sleep(0.5)
+    raise Exception(
+        f"Parts of {table} did not move to disk {expected_disk} in {timeout}s; current disks={disks}"
+    )
+
+
+def test_move_workload():
+    node.query(
+        """
+        create resource network_write (write disk s3_no_fake_tx, write disk s3_no_fake_tx_2);
+        create resource network_read (read disk s3_no_fake_tx, read disk s3_no_fake_tx_2);
+        create workload all settings max_bytes_inflight = 1000000;
+        create workload sys_moves in all;
+    """
+    )
+    node.query(
+        """
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE), value String CODEC(NONE)) engine=MergeTree() order by tuple()
+            ttl now() - 1 TO VOLUME 'cold'
+            settings min_bytes_for_wide_part=1e9, storage_policy='s3_tiered';
+    """,
+        settings={"allow_suspicious_ttl_expressions": 1},
+    )
+
+    reads_before = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_moves/%' and type='request_queue'"
+        ).strip()
+    )
+    writes_before = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_moves/%' and type='request_queue'"
+        ).strip()
+    )
+
+    node.query("insert into data select number, randomString(1000) from numbers(1e4)")
+    wait_for_parts_on_disk("data", "s3_no_fake_tx_2")
+
+    reads_after = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_moves/%' and type='request_queue'"
+        ).strip()
+    )
+    writes_after = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_moves/%' and type='request_queue'"
+        ).strip()
+    )
+
+    assert reads_before < reads_after
+    assert writes_before < writes_after
+
+
+def test_move_workload_override():
+    node.query(
+        """
+        create resource network_write (write disk s3_no_fake_tx, write disk s3_no_fake_tx_2);
+        create resource network_read (read disk s3_no_fake_tx, read disk s3_no_fake_tx_2);
+        create workload all settings max_bytes_inflight = 1000000;
+        create workload prod_moves in all;
+        create workload dev_moves in all;
+    """
+    )
+    node.query(
+        """
+        drop table if exists prod_data;
+        drop table if exists dev_data;
+        create table prod_data (key UInt64 CODEC(NONE), value String CODEC(NONE)) engine=MergeTree() order by tuple()
+            ttl now() - 1 TO VOLUME 'cold'
+            settings min_bytes_for_wide_part=1e9, storage_policy='s3_tiered', move_workload='prod_moves';
+        create table dev_data (key UInt64 CODEC(NONE), value String CODEC(NONE)) engine=MergeTree() order by tuple()
+            ttl now() - 1 TO VOLUME 'cold'
+            settings min_bytes_for_wide_part=1e9, storage_policy='s3_tiered', move_workload='dev_moves';
+    """,
+        settings={"allow_suspicious_ttl_expressions": 1},
+    )
+
+    prod_reads_before = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_moves/%' and type='request_queue'"
+        ).strip()
+    )
+    prod_writes_before = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_moves/%' and type='request_queue'"
+        ).strip()
+    )
+    dev_reads_before = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_moves/%' and type='request_queue'"
+        ).strip()
+    )
+    dev_writes_before = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_moves/%' and type='request_queue'"
+        ).strip()
+    )
+
+    node.query("insert into prod_data select number, randomString(1000) from numbers(1e4)")
+    node.query("insert into dev_data select number, randomString(1000) from numbers(1e4)")
+    wait_for_parts_on_disk("prod_data", "s3_no_fake_tx_2")
+    wait_for_parts_on_disk("dev_data", "s3_no_fake_tx_2")
+
+    prod_reads_after = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_moves/%' and type='request_queue'"
+        ).strip()
+    )
+    prod_writes_after = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_moves/%' and type='request_queue'"
+        ).strip()
+    )
+    dev_reads_after = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_moves/%' and type='request_queue'"
+        ).strip()
+    )
+    dev_writes_after = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_moves/%' and type='request_queue'"
+        ).strip()
+    )
+
+    assert prod_reads_before < prod_reads_after
+    assert prod_writes_before < prod_writes_after
+    assert dev_reads_before < dev_reads_after
+    assert dev_writes_before < dev_writes_after
+
+
+def test_move_workload_change():
+    node.query(
+        """
+        create resource network_write (write disk s3_no_fake_tx, write disk s3_no_fake_tx_2);
+        create resource network_read (read disk s3_no_fake_tx, read disk s3_no_fake_tx_2);
+        create workload all settings max_bytes_inflight = 1000000;
+        create workload prod_moves in all;
+        create workload dev_moves in all;
+    """
+    )
+    for env in ["prod", "dev"]:
+        update_workloads_config(move_workload=f"{env}_moves")
+
+        table = f"data_{env}"
+        node.query(
+            f"""
+            drop table if exists {table};
+            create table {table} (key UInt64 CODEC(NONE), value String CODEC(NONE)) engine=MergeTree() order by tuple()
+                ttl now() - 1 TO VOLUME 'cold'
+                settings min_bytes_for_wide_part=1e9, storage_policy='s3_tiered';
+        """,
+            settings={"allow_suspicious_ttl_expressions": 1},
+        )
+
+        reads_before = int(
+            node.query(
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_moves/%' and type='request_queue'"
+            ).strip()
+        )
+        writes_before = int(
+            node.query(
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_moves/%' and type='request_queue'"
+            ).strip()
+        )
+
+        node.query(f"insert into {table} select number, randomString(1000) from numbers(1e4)")
+        wait_for_parts_on_disk(table, "s3_no_fake_tx_2")
+
+        reads_after = int(
+            node.query(
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_moves/%' and type='request_queue'"
+            ).strip()
+        )
+        writes_after = int(
+            node.query(
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_moves/%' and type='request_queue'"
             ).strip()
         )
 

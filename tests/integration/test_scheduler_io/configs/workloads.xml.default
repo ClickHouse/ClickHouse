@@ -1,4 +1,5 @@
 <clickhouse>
     <merge_workload>sys_merges</merge_workload>
     <mutation_workload>sys_mutations</mutation_workload>
+    <move_workload>sys_moves</move_workload>
 </clickhouse>
