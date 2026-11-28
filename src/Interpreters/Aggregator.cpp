@@ -1736,6 +1736,85 @@ void NO_INLINE Aggregator::executeImplBatch(
     executeImplBatchNoAggregates<prefetch, top_k>(method, state, key_columns, aggregates_pool, row_begin, row_end, all_keys_are_const);
 }
 
+namespace
+{
+
+/// `countRowsByRunsOfEqualKeys` looks for runs in groups of this many rows.
+constexpr size_t key_runs_group_rows = 64;
+
+/// A group with at most this many runs is counted run by run: a lookup per run, plus finding the runs, costs less than
+/// a lookup per row. Near the limit both cost about the same, and switching between them costs more, so the next
+/// group is looked at only after a group with at most `max_runs_to_continue` runs.
+constexpr size_t max_runs_to_count = 48;
+constexpr size_t max_runs_to_continue = 40;
+
+/// Bit `i` is set if the key of row `i` of the group differs from the key of the row after it, which must exist; the bit of
+/// the last row is always set. Compares 32 bytes of keys at a time. As in `bytes64MaskToBits64Mask`, the `bool` lanes are
+/// `!= 0`, and copying them to an integer puts row `i` in bit `i` only on little-endian targets, the only ones that use this.
+template <typename Key>
+ALWAYS_INLINE UInt64 runEndsInGroup(const Key * keys)
+{
+    static constexpr size_t lanes = 32 / sizeof(Key);
+    using Keys = Key __attribute__((ext_vector_type(lanes)));
+    using Lanes = bool __attribute__((ext_vector_type(lanes)));
+    static_assert(sizeof(Lanes) == 1 && std::endian::native == std::endian::little);
+
+    UInt64 run_ends = 0;
+    for (size_t i = 0; i < key_runs_group_rows; i += lanes)
+    {
+        Keys current;
+        Keys next;
+        memcpy(&current, keys + i, sizeof(current));
+        memcpy(&next, keys + i + 1, sizeof(next));
+        const Lanes differs = __builtin_convertvector(current ^ next, Lanes);
+        UInt8 bits;
+        memcpy(&bits, &differs, sizeof(bits));
+        run_ends |= static_cast<UInt64>(bits & ((1U << lanes) - 1)) << i;
+    }
+    return run_ends | (1ULL << (key_runs_group_rows - 1));
+}
+
+/// `GROUP BY` of one number key with only `count()` keeps the count in the cell (see `is_simple_count`), so it has no
+/// consecutive-keys cache and looks the key up for every row. But sorted or clustered data often repeats the key of
+/// the previous row: in `hits`, ordered by `(CounterID, EventDate, UserID, EventTime)`, the next hit of a user mostly
+/// has the same `RegionID` and the same hour. This counts rows from `row_begin`: it finds where the runs of equal keys
+/// end in a group of 64 rows and looks each run up once, group after group. It stops at a group with more than
+/// `max_runs_to_count` runs, after a group with more than `max_runs_to_continue` runs, and at the last group of the
+/// range, which has no row after it, and returns the first row it did not count.
+template <typename Method, typename State>
+NO_INLINE size_t countRowsByRunsOfEqualKeys(Method & method, State & state, Arena & pool, size_t row_begin, size_t row_end)
+{
+    const auto * keys = state.getKeyData();
+    size_t row = row_begin;
+    for (; row + key_runs_group_rows < row_end; row += key_runs_group_rows)
+    {
+        UInt64 run_ends = runEndsInGroup(keys + row);
+        const size_t runs = static_cast<size_t>(std::popcount(run_ends));
+        if (runs > max_runs_to_count)
+            break;
+
+        /// A run is looked up at its first row and counted up to its last one, as the rows of a run share the cell.
+        size_t run_begin = 0;
+        do
+        {
+            const size_t run_end = static_cast<size_t>(std::countr_zero(run_ends)) + 1;
+            run_ends &= run_ends - 1;
+            auto emplace_result = state.emplaceKey(method.data, row + run_begin, pool);
+            if (emplace_result.isInserted())
+                getInlineCountState(emplace_result.getMapped()) = run_end - run_begin;
+            else
+                getInlineCountState(emplace_result.getMapped()) += run_end - run_begin;
+            run_begin = run_end;
+        } while (run_ends);
+
+        if (runs > max_runs_to_continue)
+            return row + key_runs_group_rows;
+    }
+    return row;
+}
+
+}
+
 /// `count()` alone keeps the count in the hash table cell, so the batch creates no aggregate states.
 template <bool prefetch, bool top_k, typename Method, typename State>
 void NO_INLINE Aggregator::executeImplBatchSimpleCount(
@@ -1802,6 +1881,21 @@ void NO_INLINE Aggregator::executeImplBatchSimpleCount(
     }
     else
     {
+        /// See `countRowsByRunsOfEqualKeys`. Only on little-endian targets (see `runEndsInGroup`), for a single-level table that
+        /// is not prefetched, as it fits in the cache, keys compared as the unsigned integers the table compares, and the state
+        /// without the consecutive-keys cache, the one used when the count is kept in the cell.
+        static constexpr bool count_by_runs = std::endian::native == std::endian::little && !prefetch && !top_k
+            && !Method::one_key_nullable_optimization && !requires { Method::Data::NUM_BUCKETS; }
+            && !requires(const State & s) { s.positions; } && requires(const State & s)
+            {
+                requires std::is_same_v<State, typename Method::StateNoCache>;
+                requires std::is_same_v<std::remove_cvref_t<decltype(*s.getKeyData())>, UInt32>
+                    || std::is_same_v<std::remove_cvref_t<decltype(*s.getKeyData())>, UInt64>;
+            };
+
+        if constexpr (count_by_runs)
+            row_begin = countRowsByRunsOfEqualKeys(method, state, *aggregates_pool, row_begin, row_end);
+
         top_k_rows.startBatch(key_columns, row_begin, row_end);
 
         static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
