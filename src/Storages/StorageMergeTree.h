@@ -288,7 +288,8 @@ private:
     void addPreparedMutationEntry(PreparedMutationEntry prepared);
 
     /// Register a mutation prepared by `prepareMutationEntry` in the in-memory structures
-    /// and wake up the merge-mutation task. Returns the mutation version.
+    /// and wake up the merge-mutation task. Takes `currently_processing_in_background_mutex` itself.
+    /// Returns the mutation version.
     Int64 startMutation(PreparedMutationEntry prepared, ContextPtr query_context);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, bool wait_for_another_mutation);
