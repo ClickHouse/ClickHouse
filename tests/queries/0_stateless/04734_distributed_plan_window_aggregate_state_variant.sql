@@ -1,6 +1,5 @@
--- The plan header encoding does not carry the aggregate function state variant, so a Window-variant
--- state (CrossTab family) was decoded as an Aggregation-variant one and the deserialized plan header
--- was rejected. Results must match the non-distributed plan.
+-- A state that a window function of the CrossTab family returns must pass through a serialized
+-- distributed plan. Results must match the non-distributed plan.
 
 DROP TABLE IF EXISTS t_window_state_variant;
 
@@ -31,7 +30,7 @@ FROM t_window_state_variant ORDER BY s SETTINGS distributed_plan_fallback_to_loc
 SELECT round(finalizeAggregation(contingencyState(a, b) OVER (ORDER BY a, b)), 6) + 0 AS s
 FROM t_window_state_variant ORDER BY s SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
--- Combinators propagate the variant to the wrapping function, and -ForEach nests the state in an Array.
+-- The same with a combinator around the function; -ForEach nests the state in an Array.
 SELECT round(finalizeAggregation(theilsUStateIf(a, b, a > 1) OVER (ORDER BY a, b)), 6) + 0 AS s
 FROM t_window_state_variant ORDER BY s SETTINGS distributed_plan_fallback_to_local_execution = 0;
 

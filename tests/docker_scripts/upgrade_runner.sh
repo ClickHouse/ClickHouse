@@ -219,6 +219,53 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
 # endpoint retries for tens of minutes). The replica restarts below need their tables exclusively, so cancel them.
 timeout 2m clickhouse-client --query "KILL QUERY WHERE 1 SYNC" ||:
 
+# A detached database or table is not in `system.mutations`, so the kill below does not see its mutations,
+# while the upgraded server loads it from its metadata and resumes them. The stress runner leaves such objects
+# behind: `01254_dict_load_after_detach_attach` detaches and attaches its database, which several test files
+# share under `--upgrade-check`, and `ATTACH DATABASE` fails when another test left a table there that cannot
+# be attached by a query (an experimental engine without its setting). The database then stays detached with
+# a broken mutation of an interrupted test in it, and the `<Error>` scan at the end reports that mutation.
+#
+# Restarting the old server loads the same set of objects that the upgraded server is going to load, which
+# attaching them one by one does not: the server tolerates at startup a table that it refuses in a query.
+# Restart only when something is detached, so the other runs still upgrade a server exactly as the stress
+# phase left it.
+#
+# The metadata files of the databases are listed from the default metadata disk, because a detached database
+# is not known to the server. Their names are the database names escaped for the file system, which
+# `decodeURLComponent` reverses. Not finding the `default` database there means that the listing is wrong,
+# and it is reported instead of being read as "nothing is detached".
+echo "Restart the server if the stress phase left detached databases or tables"
+
+detached_objects=unknown
+if database_metadata_files=$(find /var/lib/clickhouse/metadata -maxdepth 1 -name '*.sql' -printf '%f ' 2> /test_output/detached_objects_error.txt)
+then
+    detached_objects=$(timeout 1m clickhouse-client --param_metadata_files="$database_metadata_files" --query "
+        SELECT
+            (
+                SELECT throwIf(NOT has(groupArray(name), 'default'), 'No metadata file of the default database')
+                    + countIf(name NOT IN (SELECT name FROM system.databases))
+                FROM
+                (
+                    SELECT decodeURLComponent(replaceRegexpOne(arrayJoin(splitByChar(' ', {metadata_files:String})), '\\\\.sql\$', '')) AS name
+                )
+                WHERE name != ''
+            )
+            + (SELECT count() FROM system.detached_tables WHERE NOT is_permanently)" \
+        2> /test_output/detached_objects_error.txt) || detached_objects=unknown
+fi
+[ -s /test_output/detached_objects_error.txt ] || rm -f /test_output/detached_objects_error.txt
+
+if [ "$detached_objects" = unknown ]
+then
+    echo -e "Cannot count the databases and tables left detached by the stress phase (see detached_objects_error.txt)$FAIL" >> /test_output/test_results.tsv
+elif [ "$detached_objects" != 0 ]
+then
+    echo "The stress phase left $detached_objects detached databases and tables, restarting the server"
+    stop_server 300 false || (echo "Failed to stop server" && exit 1)
+    start_server || (echo "Failed to start server" && exit 1)
+fi
+
 # Kill the mutations that the stress phase left unfinished, before the server is upgraded.
 #
 # Several tests deliberately start a mutation that can never succeed - `toUInt32` of a non-numeric
@@ -886,6 +933,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       them and logs this per table instead of refusing to start, which is what #115941 made it do on purpose.
 #       Requires the `StorageKeeperMap` logger AND the backquoted fixture-table prefix, so the same message on any
 #       other KeeperMap table - the shape a real metadata-compatibility regression takes - still fails this job.
+# `RefreshTask` + a `test_*_r.bad_mv` view + `Keeper server doesn't have all feature flags` is the same class for
+#       `04218_refreshable_mv_secondary_create`, whose `ATTACH`ed coordinated view a Keeper drawn without
+#       `create_if_not_exists` stops already in the stress phase; a stop of the file before its final `DROP DATABASE`
+#       leaves it to the upgraded server, which on the same flags stops it again. Any other stopped view still fails.
 # `shard_1.data` + `ReplicatedMergeTreeAttachThread` + a read-only initialization on an empty `columns` znode is
 #       `02980_dist_insert_readonly_replica` breaking it on purpose; an injected fault can stop the file before its
 #       final `DROP DATABASE`. Other tables and error codes still fail; a `columns` value cut inside its header does not.
@@ -947,6 +998,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       it does not match. That scope is needed because the count line carries no error text of its own and
 #       `Authentication failed` above can already remove its partner line. Removable once the previous
 #       release's copies of these tests stop deleting a topic whose table may survive.
+# `Code: 669` + a `05816_kafka_server_local_file_properties_` collection + `kafka_altered_table` or `kafka_altered_null_table`
+#       is that test's table left detached: when a statement between its `DETACH` and the last `ATTACH` does not reach the
+#       server (stress worker 1 injects memory faults), the cleanup drops the collection but not the detached table, and the
+#       upgrade restart cannot attach it. Removable once the previous release's copy of the test detaches it `PERMANENTLY`.
 # `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
 #       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
 #       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
@@ -1047,6 +1102,9 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `TABLE_ALREADY_EXISTS` errors all still surface.
 # `StorageFileLog` + `The absolute data path should be inside` is expected:
 #       `04202_filelog_attach_path_outside_user_files` has an explicit `ATTACH` query for a path outside `user_files_path`.
+# `StorageFileLog::StorageFileLog` + `neither a regular file, nor a directory` (a file path) or
+#       `The directory ... of the path ... does not exist` (a glob path) is a `FileLog` table left behind without its
+#       files by an interrupted test. Scoped to the tests that do this, so a missing path of any other table still fails.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -1116,6 +1174,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
     | grep -av -e "getInfoIfClickHouseDictionarySource.*Code: 198\. DB::NetException: Not found address of host: \[x\. (DNS_ERROR)" \
     | grep -av -e "StorageKeeperMap (.*\.\`05024_keeper_map_parenthesized_metadata.*Failed to activate table because of invalid metadata in ZooKeeper" \
+    | grep -av -e "RefreshTask(test_[a-z0-9_]*_r\.bad_mv): Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS\. The view is stopped\." \
     | grep -av -e "<Error> shard_1\.data (ReplicatedMergeTreeAttachThread): Initialization failed, table will remain readonly\. Error: Code: 27\. DB::Exception: Cannot parse input: expected 'columns format version: 1.n' at end of stream" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
@@ -1125,6 +1184,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "StorageKafka2.*Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*Consumer error: Broker: Unknown topic or partition" \
     | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*There were [0-9][0-9]* messages with an error" \
+    | grep -av -e "Code: 669\. DB::Exception: There is no named collection \`05816_kafka_server_local_file_properties_[^\`]*\`: Cannot attach table \`[^\`]*\`\.\`kafka_altered\(_null\)\?_table\` " \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
@@ -1140,6 +1200,8 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "03277_database_backup_database_file_engine.*_restore.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "StorageFileLog (.*): The absolute data path should be inside" \
+    | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The path .*/user_files/\(05316_file_log_copytruncate\|05316_file_log_error_does_not_lock_table\|05317_file_log_partial_last_line\|05318_file_log_one_bad_file\|05394_filelog_engine_file_source_grant\|05395_filelog_drop_idle_while_other_busy\)_.* neither a regular file, nor a directory" \
+    | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The directory .*/user_files/05316_file_log_globs_.* of the path .* does not exist" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
