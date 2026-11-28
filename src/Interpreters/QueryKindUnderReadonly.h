@@ -24,8 +24,9 @@ bool isQueryKindRejectedUnderReadonly(IAST::QueryKind kind);
 /// - `BACKUP` writes an archive to disk or object storage and `RESTORE` writes data into tables, yet
 ///   `BackupsWorker` rejects them only under the strict, user-set `readonly = 1`.
 /// - Session- and transaction-mutating statements: `SET` changes session settings (allowed under `readonly = 2`,
-///   which forbids only changing `readonly` itself), `SET ROLE` changes the active roles (which `readonly` blocks
-///   only when `access_control_improvements.readonly_restricts_set_role` is enabled), `USE` changes the
+///   which forbids only changing `readonly` itself), `SET ROLE` changes the active roles and `SET DEFAULT ROLE` the
+///   roles of the next sessions of the user (which `readonly` blocks only when
+///   `access_control_improvements.readonly_restricts_set_role` is enabled), `USE` changes the
 ///   session database, and `BEGIN` / `COMMIT` / `ROLLBACK` / `SET TRANSACTION SNAPSHOT` mutate the current
 ///   transaction - none of which `readonly` blocks by default. These effects outlive the query whenever the session outlives
 ///   it, which for the HTTP interface is the case when the client passes `session_id`.

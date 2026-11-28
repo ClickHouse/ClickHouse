@@ -1,0 +1,29 @@
+---
+slug: /clickstack/observability/managing/overview
+title: 'Administración de ClickHouse Observability'
+sidebarTitle: 'Descripción general'
+description: 'Gestione el acceso a la telemetría, las conexiones de API y de agentes, los ajustes de consulta y los permisos del equipo en el servicio totalmente gestionado de ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'administración', 'fuentes', 'ajustes de consulta', 'roles', 'permisos']
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Oferta en fase beta" />
+
+<Note>
+  Esta guía trata sobre ClickHouse Observability totalmente gestionado. Para Self-managed ClickHouse Observability, consulte [administración de bases de datos](/es/clickstack/self-configured/managing/overview) para obtener información sobre dimensionamiento, retención, optimización del esquema y recomendaciones para producción, y [opciones de configuración](/es/clickstack/self-configured/managing/config) para la configuración de la fuente.
+</Note>
+
+Use **Configuración del equipo** para administrar el acceso a la telemetría, las fuentes, las conexiones de API y de agentes, las integraciones, los ajustes de consulta y los permisos del equipo en ClickHouse Observability.
+
+## Guías de administración {#admin-guides}
+
+| Guía                                                                         | Qué puede hacer                                                                                                                                                                  |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Opciones de configuración](/es/clickstack/observability/managing/config)       | Administre las fuentes y el acceso del recolector, consulte los datos de conexión de telemetría, configure el acceso a la API y del agente, y modifique los ajustes de consulta. |
+| [Control de acceso basado en roles](/es/clickstack/observability/managing/rbac) | Revise los roles predefinidos, cree roles personalizados y configure permisos para dashboards, búsquedas guardadas, fuentes y otros recursos.                                    |
+
+## Envío de telemetría {#sending-telemetry}
+
+Para conectar aplicaciones y recolectores, consulte primero los datos de conexión en **Configuración del equipo → Datos → Managed Telemetry** y, a continuación, siga las [guías de ingestión](/es/clickstack/observability/ingesting-data/overview).

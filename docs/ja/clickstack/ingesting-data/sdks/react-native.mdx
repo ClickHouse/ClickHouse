@@ -39,9 +39,9 @@ HyperDXRum.init({
 });
 ```
 
-### ユーザー情報またはメタデータを関連付ける (任意)
+### ユーザー情報またはメタデータを関連付ける (任意) {#attach-user-information-metadata}
 
-ユーザー情報を関連付けると、HyperDX で
+ユーザー情報を関連付けると、ClickStack UI で
 セッションやイベントを検索・絞り込みできるようになります。これはクライアント
 セッション中のどの時点でも呼び出せます。現在のクライアント
 セッションと、この呼び出し以降に送信されるすべてのイベントが
@@ -58,7 +58,7 @@ HyperDXRum.setGlobalAttributes({
   userEmail: user.email,
   userName: user.name,
   teamName: user.team.name,
-  // その他のカスタムプロパティ...
+  // Other custom properties...
 });
 ```
 
